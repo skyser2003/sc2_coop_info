@@ -2376,42 +2376,6 @@ impl ReplayAnalysis {
         replays
     }
 
-    pub(crate) fn merge_cached_detailed_replays_from_path(
-        replays: &[ReplayInfo],
-        cache_path: &Path,
-        main_names: &HashSet<String>,
-        main_handles: &HashSet<String>,
-    ) -> Vec<ReplayInfo> {
-        if replays.is_empty() {
-            return Vec::new();
-        }
-
-        let detailed_replays = Self::load_detailed_analysis_replays_snapshot_from_path(
-            cache_path,
-            UNLIMITED_REPLAY_LIMIT,
-            main_names,
-            main_handles,
-        );
-        if detailed_replays.is_empty() {
-            return replays.to_vec();
-        }
-
-        let detailed_by_file: HashMap<String, ReplayInfo> = detailed_replays
-            .into_iter()
-            .map(|replay| (replay.file.clone(), replay))
-            .collect();
-
-        replays
-            .iter()
-            .map(|replay| {
-                detailed_by_file
-                    .get(&replay.file)
-                    .cloned()
-                    .unwrap_or_else(|| replay.clone())
-            })
-            .collect()
-    }
-
     pub fn modified_seconds(path: &Path) -> u64 {
         path.metadata()
             .ok()

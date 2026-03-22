@@ -122,6 +122,42 @@ fn sample_cache_entry(file: &Path) -> CacheReplayEntry {
     }
 }
 
+fn merge_cached_detailed_replays_from_path(
+    replays: &[ReplayInfo],
+    cache_path: &Path,
+    main_names: &HashSet<String>,
+    main_handles: &HashSet<String>,
+) -> Vec<ReplayInfo> {
+    if replays.is_empty() {
+        return Vec::new();
+    }
+
+    let detailed_replays = ReplayAnalysis::load_detailed_analysis_replays_snapshot_from_path(
+        cache_path,
+        UNLIMITED_REPLAY_LIMIT,
+        main_names,
+        main_handles,
+    );
+    if detailed_replays.is_empty() {
+        return replays.to_vec();
+    }
+
+    let detailed_by_file: HashMap<String, ReplayInfo> = detailed_replays
+        .into_iter()
+        .map(|replay| (replay.file.clone(), replay))
+        .collect();
+
+    replays
+        .iter()
+        .map(|replay| {
+            detailed_by_file
+                .get(&replay.file)
+                .cloned()
+                .unwrap_or_else(|| replay.clone())
+        })
+        .collect()
+}
+
 #[test]
 fn stats_response_prefers_detailed_analysis_cache_when_unit_data_is_enabled() {
     let root = unique_temp_path("stats_source");
@@ -226,7 +262,7 @@ fn merge_cached_detailed_replays_replaces_matching_simple_entries() {
         ..ReplayInfo::default()
     };
 
-    let merged = ReplayAnalysis::merge_cached_detailed_replays_from_path(
+    let merged = merge_cached_detailed_replays_from_path(
         &[simple_replay],
         &cache_path,
         &HashSet::new(),
