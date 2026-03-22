@@ -2,12 +2,22 @@ import { Container, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import ConfigRoute from "./ConfigRoute";
 import styles from "./page.module.css";
+import { app } from "@tauri-apps/api";
+import { useEffect, useState } from "react";
 
 type ConfigPageProps = {
     onThemeModeChange: (darkThemeEnabled: boolean) => void;
 };
 
 export default function ConfigPage({ onThemeModeChange }: ConfigPageProps) {
+    const [appVersion, setAppVersion] = useState<string>("v0.0.0");
+
+    useEffect(() => {
+        app.getVersion().then((version) => {
+            setAppVersion(`${version}`);
+        });
+    });
+
     return (
         <Container
             component="main"
@@ -98,7 +108,7 @@ export default function ConfigPage({ onThemeModeChange }: ConfigPageProps) {
             }}
         >
             <Typography variant="h4" component="h1" gutterBottom>
-                SC2 Info Config
+                SC2 Coop Info v{appVersion}
             </Typography>
             <Typography variant="body2" color="text.secondary">
                 Editing settings applies changes immediately to the running
