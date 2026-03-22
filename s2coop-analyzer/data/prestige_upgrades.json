@@ -1,0 +1,92 @@
+{
+  "Abathur": {
+    "CommanderPrestigeAbathurBiomass": "Essence Hoarder",
+    "CommanderPrestigeAbathurDeepTunnel": "Tunneling Horror",
+    "CommanderPrestigeAbathurUltEvo": "The Limitless"
+  },
+  "Alarak": {
+    "CommanderPrestigeAlarakMech": "Artificer of Souls",
+    "CommanderPrestigeAlarakEmpowerMe": "Tyrant Ascendant",
+    "CommanderPrestigeAlarakDeathFleet": "Shadow of Death"
+  },
+  "Artanis": {
+    "CommanderPrestigeArtanisCombatAbilities": "Valorous Inspirator",
+    "CommanderPrestigeArtanisPowerField": "Nexus Legate",
+    "CommanderPrestigeArtanisOrbitalStrikes": "Arkship Commandant"
+  },
+  "Dehaka": {
+    "CommanderPrestigeDehakaDevour": "Devouring One",
+    "CommanderPrestigeDehakaPackLeaders": "Primal Contender",
+    "CommanderPrestigeDehakaClone": "Broodbrother"
+  },
+  "Fenix": {
+    "CommanderPrestigeFenixSuitSwap": "Akhundelar",
+    "CommanderPrestigeFenixDataWeb": "Network Administrator",
+    "CommanderPrestigeFenixAvenger": "Unconquered Spirit"
+  },
+  "Horner": {
+    "CommanderPrestigeHornerMagMines": "Chaotic Power Couple",
+    "CommanderPrestigeHornerStarport": "Wing Commanders",
+    "CommanderPrestigeHornerBombingPlatforms": "Galactic Gunrunners"
+  },
+  "Karax": {
+    "CommanderPrestigeKaraxStructures": "Architect of War",
+    "CommanderPrestigeKaraxArmy": "Templar Apparent",
+    "CommanderPrestigeKaraxTopBar": "Solarite Celestial"
+  },
+  "Kerrigan": {
+    "CommanderPrestigeKerriganCreep": "Malevolent Matriarch",
+    "CommanderPrestigeKerriganAbilities": "Folly of Man",
+    "CommanderPrestigeKerriganAssimilationAura": "Desolate Queen"
+  },
+  "Mengsk": {
+    "CommanderPrestigeMengskArtillery": "Toxic Tyrant",
+    "CommanderPrestigeMengskRoyalGuard": "Principal Proletariat",
+    "CommanderPrestigeMengskTroopers": "Merchant of Death"
+  },
+  "Nova": {
+    "CommanderPrestigeNovaBio": "Soldier of Fortune",
+    "CommanderPrestigeNovaAirlift": "Tactical Dispatcher",
+    "CommanderPrestigeNovaSuperCloak": "Infiltration Specialist"
+  },
+  "Raynor": {
+    "CommanderPrestigeRaynorBio": "Backwater Marshal",
+    "CommanderPrestigeRaynorMechAfterburners": "Rough Rider",
+    "CommanderPrestigeRaynorAir": "Rebel Raider"
+  },
+  "Stetmann": {
+    "CommanderPrestigeStetmannStetellites": "Signal Savant",
+    "CommanderPrestigeStetmannGary": "Best Buddy",
+    "CommanderPrestigeStetmannCombatBuff": "Oil Baron"
+  },
+  "Stukov": {
+    "CommanderPrestigeStukovMech": "Frightful Fleshwelder",
+    "CommanderPrestigeStukovBanshees": "Plague Warden",
+    "CommanderPrestigeStukovBunkers": "Lord of the Horde"
+  },
+  "Swann": {
+    "CommanderPrestigeSwannDrill": "Heavy Weapons Specialist",
+    "CommanderPrestigeSwannTurrets": "Grease Monkey",
+    "CommanderPrestigeSwannHercules": "Payload Director"
+  },
+  "Tychus": {
+    "CommanderPrestigeTychusSquadAbilities": "Technical Recruiter",
+    "CommanderPrestigeTychusLoneWolf": "Lone Wolf",
+    "CommanderPrestigeTychusOdin": "Dutiful Dogwalker"
+  },
+  "Vorazun": {
+    "CommanderPrestigeVorazunEmergencyRecall": "Spirit of Respite",
+    "CommanderPrestigeVorazunStasis": "Withering Siphon",
+    "CommanderPrestigeVorazunTimeStop": "Keeper of Shadows"
+  },
+  "Zagara": {
+    "CommanderPrestigeZagaraMaxSupply": "Scourge Queen",
+    "CommanderPrestigeZagaraCorruptorsAberrations": "Mother of Constructs",
+    "CommanderPrestigeZagaraZagara": "Apex Predator"
+  },
+  "Zeratul": {
+    "CommanderPrestigeZeratulVoidSeeker": "Anakh Su'n",
+    "CommanderPrestigeZeratulArtifactFragments": "Knowledge Seeker",
+    "CommanderPrestigeZeratulTornadoes": "Herald of the Void"
+  }
+}

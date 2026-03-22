@@ -1,0 +1,88 @@
+{
+    "$schema": "https://schema.tauri.app/config/2",
+    "productName": "SC2_Coop_Info",
+    "version": "0.1.0",
+    "identifier": "com.sco.overlay",
+    "build": {
+        "beforeDevCommand": "npm run dev",
+        "devUrl": "http://localhost:5173",
+        "beforeBuildCommand": "npm run build",
+        "frontendDist": "../dist"
+    },
+    "app": {
+        "withGlobalTauri": false,
+        "windows": [
+            {
+                "label": "config",
+                "title": "SC2 Info Config",
+                "url": "/#/config",
+                "width": 1600,
+                "height": 1080,
+                "visible": true,
+                "resizable": true,
+                "decorations": true,
+                "fullscreen": false
+            },
+            {
+                "label": "overlay",
+                "title": "SC2 Info overlay",
+                "width": 1400,
+                "height": 900,
+                "visible": false,
+                "url": "/#/overlay",
+                "transparent": true,
+                "decorations": false,
+                "shadow": false,
+                "resizable": true,
+                "fullscreen": false,
+                "alwaysOnTop": true,
+                "skipTaskbar": true
+            },
+            {
+                "label": "performance",
+                "title": "SC2 Performance",
+                "width": 780,
+                "height": 860,
+                "visible": false,
+                "url": "/#/performance",
+                "transparent": true,
+                "decorations": false,
+                "shadow": false,
+                "resizable": true,
+                "fullscreen": false,
+                "alwaysOnTop": true,
+                "skipTaskbar": true
+            }
+        ],
+        "security": {
+            "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' 'nonce-sco-overlay-mui'; style-src-elem 'self' 'unsafe-inline' 'nonce-sco-overlay-mui'; style-src-attr 'unsafe-inline'; connect-src 'self' data:;",
+            "capabilities": [
+                {
+                    "identifier": "event-handler",
+                    "windows": ["*"],
+                    "permissions": [
+                        "core:event:allow-listen",
+                        "core:event:allow-unlisten",
+                        "core:event:allow-emit",
+                        "opener:allow-default-urls",
+                        {
+                            "identifier": "opener:allow-open-url",
+                            "allow": [
+                                {
+                                    "url": "https://github.com/*"
+                                },
+                                {
+                                    "url": "mailto:sc2coopinfo@gmial.com"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    },
+    "bundle": {
+        "active": true,
+        "icon": ["icons/icon.ico", "icons/icon.png"]
+    }
+}

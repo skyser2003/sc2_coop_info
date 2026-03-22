@@ -1,0 +1,175 @@
+:root {
+    --performance-text: #f5f7fb;
+    --performance-dim: rgb(245 247 251 / 82%);
+    --performance-muted: rgb(245 247 251 / 30%);
+    --performance-hot: #ff8d8d;
+    --performance-gap: 56px;
+}
+
+html,
+body,
+#root {
+    width: 100%;
+    height: 100%;
+}
+
+body {
+    font-family: "Segoe UI", Tahoma, sans-serif;
+}
+
+.performance-overlay-root {
+    width: max-content;
+    min-width: max-content;
+    min-height: 100%;
+    padding: 16px 18px 12px;
+    box-sizing: border-box;
+    color: var(--performance-text);
+    user-select: none;
+}
+
+.performance-dragbar {
+    display: block;
+    margin-bottom: 10px;
+    width: fit-content;
+    padding: 6px 10px;
+    border: 1px solid rgb(255 255 255 / 16%);
+    border-radius: 10px;
+    background: rgb(255 255 255 / 6%);
+    color: var(--performance-text);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    cursor: move;
+}
+
+.performance-dragbar.is-visible {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.performance-card {
+    display: inline-block;
+    width: max-content;
+    min-width: 0;
+    padding: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.performance-columns {
+    display: grid;
+    grid-template-columns: max-content max-content;
+    column-gap: var(--performance-gap);
+    align-items: start;
+}
+
+.performance-column {
+    display: block;
+    width: max-content;
+}
+
+.performance-column h1,
+.performance-cpu-list h2 {
+    margin: 0 0 4px;
+    color: var(--performance-text);
+    font-size: 24px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    text-align: center;
+    text-shadow: 0 2px 3px rgb(0 0 0 / 65%);
+}
+
+.performance-cpu-list h2 {
+    margin-bottom: 4px;
+    font-size: 23px;
+}
+
+.performance-stat-grid {
+    display: grid;
+    grid-template-columns: max-content max-content;
+    row-gap: 2px;
+    column-gap: 12px;
+    align-items: baseline;
+    width: max-content;
+}
+
+.performance-label,
+.performance-section-title {
+    justify-self: end;
+    color: var(--performance-text);
+    font-size: 17px;
+    text-shadow: 0 2px 3px rgb(0 0 0 / 65%);
+}
+
+.performance-value {
+    color: var(--performance-dim);
+    font-size: 17px;
+    white-space: nowrap;
+    text-shadow: 0 2px 3px rgb(0 0 0 / 65%);
+}
+
+.performance-spacer {
+    display: block;
+}
+
+.performance-process-cpu {
+    margin-top: 32px;
+    display: grid;
+    grid-template-columns: max-content max-content;
+    gap: 12px;
+    align-items: baseline;
+    width: max-content;
+}
+
+.performance-section-title {
+    font-weight: 800;
+}
+
+.performance-cpu-list {
+    margin-top: 32px;
+    width: max-content;
+}
+
+.performance-cpu-row {
+    display: grid;
+    grid-template-columns: max-content max-content;
+    gap: 10px;
+    margin-top: 0;
+    align-items: baseline;
+}
+
+.performance-cpu-label {
+    color: var(--performance-text);
+    min-width: 50px;
+    font-size: 16px;
+    text-align: right;
+    text-shadow: 0 2px 3px rgb(0 0 0 / 65%);
+}
+
+.performance-cpu-value {
+    min-width: 64px;
+    text-align: left;
+    color: var(--performance-dim);
+    font-size: 16px;
+    white-space: nowrap;
+    text-shadow: 0 2px 3px rgb(0 0 0 / 65%);
+}
+
+.performance-cpu-total {
+    margin-top: 6px;
+}
+
+.performance-value.is-high,
+.performance-cpu-value.is-high {
+    color: var(--performance-hot);
+}
+
+.performance-value.is-low,
+.performance-cpu-value.is-low {
+    color: var(--performance-muted);
+}

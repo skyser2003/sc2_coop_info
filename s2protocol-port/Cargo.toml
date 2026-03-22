@@ -1,0 +1,18 @@
+[package]
+name = "s2protocol-port"
+version = "0.1.0"
+edition = "2021"
+description = "Port of https://github.com/Blizzard/s2protocol"
+
+[dependencies]
+byteorder = "1.5"
+mpq = "0.8.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+walkdir = "2"
+
+[dev-dependencies]
+tempfile = "3"
+walkdir = "2"
+rand = "0.8"

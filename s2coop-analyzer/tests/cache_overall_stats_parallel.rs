@@ -1,0 +1,60 @@
+use s2coop_analyzer::cache_overall_stats_generator::{
+    generate_cache_overall_stats, CacheReplayEntry, GenerateCacheConfig,
+};
+use std::fs;
+use std::path::Path;
+use tempfile::TempDir;
+
+fn write_replay_file(path: &Path) {
+    fs::create_dir_all(
+        path.parent()
+            .expect("test replay path must have parent directory"),
+    )
+    .expect("failed to create replay directory");
+    fs::write(path, b"SC2ReplayTestData").expect("failed to write replay file");
+}
+
+#[test]
+fn generate_cache_parallel_runs_are_deterministic() {
+    let temp_dir = TempDir::new().expect("failed to create tempdir");
+    let account_dir = temp_dir.path().join("Accounts");
+
+    for index in 0..24 {
+        let account_id = if index % 2 == 0 {
+            "2-S2-1-111"
+        } else {
+            "1-S2-1-42"
+        };
+        let replay_name = format!("Replay_{index:02}.SC2Replay");
+        write_replay_file(&account_dir.join(account_id).join(replay_name));
+    }
+
+    let first_output = temp_dir.path().join("cache_overall_stats_first");
+    let second_output = temp_dir.path().join("cache_overall_stats_second");
+
+    let first_summary = generate_cache_overall_stats(&GenerateCacheConfig {
+        account_dir: account_dir.clone(),
+        output_file: first_output.clone(),
+    })
+    .expect("first cache generation should succeed");
+    let second_summary = generate_cache_overall_stats(&GenerateCacheConfig {
+        account_dir,
+        output_file: second_output.clone(),
+    })
+    .expect("second cache generation should succeed");
+
+    assert_eq!(first_summary.scanned_replays, 0);
+    assert_eq!(second_summary.scanned_replays, 0);
+
+    let first_entries: Vec<CacheReplayEntry> = serde_json::from_str(
+        &fs::read_to_string(first_output).expect("first cache file should exist"),
+    )
+    .expect("first cache should deserialize");
+    let second_entries: Vec<CacheReplayEntry> = serde_json::from_str(
+        &fs::read_to_string(second_output).expect("second cache file should exist"),
+    )
+    .expect("second cache should deserialize");
+
+    assert_eq!(first_entries, second_entries);
+    assert!(first_entries.is_empty());
+}

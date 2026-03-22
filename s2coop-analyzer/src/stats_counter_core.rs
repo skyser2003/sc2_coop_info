@@ -1,0 +1,799 @@
+use crate::cache_overall_stats_generator::PlayerStatsSeries;
+use crate::dictionary_data::UnitBaseCostsJson;
+use s2protocol_port::Value;
+use std::collections::{BTreeSet, HashMap, HashSet};
+
+#[derive(Clone, Debug)]
+pub struct StatsCounterDictionaries {
+    pub unit_base_costs: UnitBaseCostsJson,
+    pub royal_guards: HashSet<String>,
+    pub horners_units: HashSet<String>,
+    pub tychus_base_upgrades: HashSet<String>,
+    pub tychus_ultimate_upgrades: HashSet<String>,
+    pub outlaws: HashSet<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ReplayDroneIdentifierCore {
+    commanders: [String; 2],
+    recently_used: bool,
+    drones: i64,
+    refineries: HashSet<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ReplayStatsCounterCore {
+    dictionaries: StatsCounterDictionaries,
+    masteries: [i64; 6],
+    unit_dict: HashMap<String, (f64, f64)>,
+    commander: String,
+    prestige: Option<String>,
+    enable_updates: bool,
+    salvaged_units: Vec<String>,
+    unit_costs_cache: HashMap<String, Vec<f64>>,
+    army_value_offset: f64,
+    trooper_weapon_cost: (f64, f64),
+    tychus_gear_cost: (f64, f64),
+    tychus_has_first_outlaw: bool,
+    zagara_free_banelings: i64,
+    kills: Vec<i64>,
+    army_value: Vec<f64>,
+    supply: Vec<f64>,
+    collection_rate: Vec<f64>,
+}
+
+fn normalize_commander_name(commander: &str) -> String {
+    if commander == "Han & Horner" {
+        "Horner".to_string()
+    } else {
+        commander.to_string()
+    }
+}
+
+fn remove_upward_spikes(values: &mut [f64]) {
+    if values.len() < 3 {
+        return;
+    }
+    for idx in 1..(values.len() - 1) {
+        if values[idx] > values[idx - 1] && values[idx] > values[idx + 1] {
+            values[idx] = (values[idx - 1] + values[idx + 1]) / 2.0;
+        }
+    }
+}
+
+fn value_as_i64(value: &Value) -> Option<i64> {
+    value
+        .as_i128()
+        .and_then(|value| i64::try_from(value).ok())
+        .or_else(|| match value {
+            Value::Float(number) => Some(*number as i64),
+            Value::String(text) => text.parse::<i64>().ok(),
+            _ => None,
+        })
+}
+
+fn value_as_text(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => Some(text.clone()),
+        Value::Bytes(bytes) => Some(String::from_utf8_lossy(bytes).into_owned()),
+        _ => None,
+    }
+}
+
+fn upward_spike_indices(values: &[f64]) -> HashSet<usize> {
+    let mut indices = HashSet::new();
+    if values.len() < 3 {
+        return indices;
+    }
+    for idx in 1..(values.len() - 1) {
+        if values[idx] > values[idx - 1] && values[idx] > values[idx + 1] {
+            indices.insert(idx);
+        }
+    }
+    indices
+}
+
+impl ReplayDroneIdentifierCore {
+    pub fn new(com1: Option<String>, com2: Option<String>) -> Self {
+        Self {
+            commanders: [com1.unwrap_or_default(), com2.unwrap_or_default()],
+            recently_used: false,
+            drones: 0,
+            refineries: HashSet::new(),
+        }
+    }
+
+    pub fn update_commanders(&mut self, idx: i64, commander: &str) {
+        if idx == 1 || idx == 2 {
+            let Ok(position) = usize::try_from(idx - 1) else {
+                return;
+            };
+            self.commanders[position] = commander.to_string();
+        }
+    }
+
+    pub fn get_bonus_vespene(&self) -> f64 {
+        self.drones as f64 * 19.055
+    }
+
+    pub fn event(&mut self, event: &Value) {
+        let Some(event_name) = event.get_key("_event").map(|value| match value {
+            Value::String(text) => text.clone(),
+            _ => String::new(),
+        }) else {
+            return;
+        };
+        if event_name != "NNet.Game.SCmdEvent"
+            && event_name != "NNet.Game.SCmdUpdateTargetUnitEvent"
+        {
+            return;
+        }
+
+        let Some(user_id) = event
+            .get_key("_userid")
+            .and_then(|value| value.get_key("m_userId"))
+            .and_then(value_as_i64)
+        else {
+            return;
+        };
+        if !(0..=1).contains(&user_id) {
+            return;
+        }
+        let Ok(user_idx) = usize::try_from(user_id) else {
+            return;
+        };
+        if self.commanders[user_idx] != "Swann" {
+            return;
+        }
+
+        let parse_snapshot_point = |snapshot: &Value| -> Option<String> {
+            let Value::Object(snapshot_dict) = snapshot else {
+                return None;
+            };
+            let mut values: Vec<String> = Vec::new();
+            for value in snapshot_dict.values() {
+                if let Some(integer) = value_as_i64(value) {
+                    values.push(integer.to_string());
+                } else if let Some(number) = value.as_f64() {
+                    values.push(format!("{number}"));
+                }
+            }
+            if values.is_empty() {
+                None
+            } else {
+                Some(values.join(":"))
+            }
+        };
+
+        if event_name == "NNet.Game.SCmdEvent" {
+            self.recently_used = false;
+            let ability_link = event
+                .get_key("m_abil")
+                .and_then(|value| value.get_key("m_abilLink"))
+                .and_then(value_as_i64)
+                .unwrap_or_default();
+            if ability_link == 2536 {
+                self.recently_used = true;
+                if let Some(snapshot_key) = event
+                    .get_key("m_data")
+                    .and_then(|value| value.get_key("TargetUnit"))
+                    .and_then(|value| value.get_key("m_snapshotPoint"))
+                    .and_then(parse_snapshot_point)
+                {
+                    if !self.refineries.contains(&snapshot_key) {
+                        self.drones += 1;
+                        self.refineries.insert(snapshot_key);
+                    }
+                }
+            }
+            return;
+        }
+
+        if self.recently_used && event_name == "NNet.Game.SCmdUpdateTargetUnitEvent" {
+            if let Some(snapshot_key) = event
+                .get_key("m_target")
+                .and_then(|value| value.get_key("m_snapshotPoint"))
+                .and_then(parse_snapshot_point)
+            {
+                if !self.refineries.contains(&snapshot_key) {
+                    self.drones += 1;
+                    self.refineries.insert(snapshot_key);
+                }
+            }
+        }
+    }
+}
+
+impl ReplayStatsCounterCore {
+    pub fn new(
+        dictionaries: StatsCounterDictionaries,
+        masteries: [u32; 6],
+        commander: Option<String>,
+    ) -> Self {
+        let parsed_masteries = masteries.map(i64::from);
+        Self {
+            dictionaries,
+            masteries: parsed_masteries,
+            unit_dict: HashMap::new(),
+            commander: normalize_commander_name(&commander.unwrap_or_default()),
+            prestige: None,
+            enable_updates: false,
+            salvaged_units: Vec::new(),
+            unit_costs_cache: HashMap::new(),
+            army_value_offset: 0.0,
+            trooper_weapon_cost: (160.0, 0.0),
+            tychus_gear_cost: (750.0, 1600.0),
+            tychus_has_first_outlaw: false,
+            zagara_free_banelings: 0,
+            kills: Vec::new(),
+            army_value: Vec::new(),
+            supply: Vec::new(),
+            collection_rate: Vec::new(),
+        }
+    }
+
+    fn update_cost(cost: &[f64], min_mult: f64, gas_mult: f64) -> Vec<f64> {
+        if cost.len() == 2 {
+            return vec![cost[0] * min_mult, cost[1] * gas_mult];
+        }
+        if cost.len() == 4 {
+            return vec![
+                cost[0] * min_mult,
+                cost[1] * gas_mult,
+                cost[2] * min_mult,
+                cost[3] * gas_mult,
+            ];
+        }
+        vec![0.0, 0.0]
+    }
+
+    fn get_base_cost(&self, unit: &str) -> Vec<f64> {
+        if self.commander.is_empty() {
+            return vec![0.0, 0.0];
+        }
+        let Some(commander_costs) = self.dictionaries.unit_base_costs.get(&self.commander) else {
+            return vec![0.0, 0.0];
+        };
+        if let Some(cost) = commander_costs.get(unit) {
+            return cost.clone();
+        }
+
+        let replacements: [(&str, &str); 6] = [
+            ("Burrowed", ""),
+            ("Phasing", ""),
+            ("Uprooted", ""),
+            ("Sieged", ""),
+            ("SiegeMode", ""),
+            ("Fighter", "Assault"),
+        ];
+        for (suffix, replace_with) in replacements {
+            if unit.ends_with(suffix) {
+                let candidate = if replace_with.is_empty() {
+                    unit.replace(suffix, "")
+                } else {
+                    unit.replace(suffix, replace_with)
+                };
+                if let Some(cost) = commander_costs.get(&candidate) {
+                    return cost.clone();
+                }
+            }
+        }
+
+        vec![0.0, 0.0]
+    }
+
+    fn unit_cost(&mut self, unit: &str) -> Vec<f64> {
+        if let Some(cost) = self.unit_costs_cache.get(unit) {
+            return cost.clone();
+        }
+
+        let mut cost = self.get_base_cost(unit);
+        let prestige = self.prestige.as_deref().unwrap_or("");
+
+        if self.commander == "Abathur" && prestige == "Essence Hoarder" {
+            cost = vec![
+                cost.first().copied().unwrap_or_default(),
+                cost.get(1).copied().unwrap_or_default() * 1.2,
+            ];
+        } else if self.commander == "Alarak" && prestige == "Shadow of Death" {
+            if unit == "SOAMothershipv4" {
+                cost = vec![400.0, 400.0];
+            } else if unit == "VoidRayTaldarim" {
+                cost = vec![125.0, 75.0];
+            }
+        }
+
+        if cost.iter().sum::<f64>() == 0.0 {
+            self.unit_costs_cache
+                .insert(unit.to_string(), vec![0.0, 0.0]);
+            return vec![0.0, 0.0];
+        }
+
+        if self.commander == "Artanis"
+            && prestige == "Valorous Inspirator"
+            && unit != "PhotonCannon"
+            && unit != "Observer"
+            && unit != "ObserverSiegeMode"
+        {
+            cost = Self::update_cost(&cost, 1.3, 1.3);
+        } else if self.commander == "Fenix"
+            && prestige == "Network Administrator"
+            && unit != "PhotonCannon"
+            && unit != "Observer"
+            && unit != "ObserverSiegeMode"
+        {
+            cost = Self::update_cost(&cost, 0.5, 0.5);
+        } else if self.commander == "Horner" {
+            if prestige == "Chaotic Power Couple" && self.dictionaries.horners_units.contains(unit)
+            {
+                cost = Self::update_cost(&cost, 1.3, 1.3);
+            } else if prestige == "Wing Commanders"
+                && self.dictionaries.horners_units.contains(unit)
+            {
+                cost = Self::update_cost(&cost, 1.0, 0.8);
+            } else if prestige == "Galactic Gunrunners" && unit == "HHBomberPlatform" {
+                cost = Self::update_cost(&cost, 2.0, 2.0);
+            }
+        } else if self.commander == "Karax"
+            && prestige == "Templar Apparent"
+            && !matches!(
+                unit,
+                "ShieldBattery"
+                    | "KhaydarinMonolith"
+                    | "PhotonCannon"
+                    | "Observer"
+                    | "ObserverSiegeMode"
+            )
+        {
+            cost = Self::update_cost(&cost, 0.6, 0.6);
+        } else if self.commander == "Kerrigan" && self.masteries[2] > 0 {
+            cost = Self::update_cost(&cost, 1.0, 1.0 - self.masteries[2] as f64 / 100.0);
+        } else if self.commander == "Mengsk" {
+            if self.masteries[3] > 0 && self.dictionaries.royal_guards.contains(unit) {
+                let coef = 1.0 - 20.0 * self.masteries[3] as f64 / 3000.0;
+                cost = Self::update_cost(&cost, coef, coef);
+            }
+            if prestige == "Principal Proletariat" && self.dictionaries.royal_guards.contains(unit)
+            {
+                cost = Self::update_cost(&cost, 2.0, 0.75);
+            }
+            if prestige == "Merchant of Death"
+                && matches!(
+                    unit,
+                    "TrooperMengskAA" | "TrooperMengskFlamethrower" | "TrooperMengskImproved"
+                )
+            {
+                cost = vec![40.0, 20.0, 80.0, 20.0];
+            }
+        } else if self.commander == "Raynor" {
+            if prestige == "Rough Rider"
+                && matches!(
+                    unit,
+                    "Banshee"
+                        | "Battlecruiser"
+                        | "VikingAssault"
+                        | "VikingFighter"
+                        | "SiegeTank"
+                        | "SiegeTankSieged"
+                )
+            {
+                cost = Self::update_cost(&cost, 1.0, 1.25);
+            } else if prestige == "Rebel Raider" {
+                if matches!(
+                    unit,
+                    "Banshee" | "Battlecruiser" | "VikingAssault" | "VikingFighter"
+                ) {
+                    cost = Self::update_cost(&cost, 1.5, 0.7);
+                } else if !matches!(unit, "Bunker" | "MissileTurret" | "SpiderMine") {
+                    cost = Self::update_cost(&cost, 1.5, 1.0);
+                }
+            }
+        } else if self.commander == "Stetmann"
+            && prestige == "Oil Baron"
+            && !matches!(
+                unit,
+                "SpineCrawlerStetmann"
+                    | "SpineCrawlerUprootedStetmann"
+                    | "SporeCrawlerStetmann"
+                    | "SporeCrawlerUprootedStetmann"
+                    | "OverseerStetmann"
+                    | "OverseerStetmannSiegeMode"
+            )
+        {
+            cost = Self::update_cost(&cost, 1.4, 1.0);
+        } else if self.commander == "Stukov"
+            && prestige == "Frightful Fleshwelder"
+            && matches!(
+                unit,
+                "SILiberator"
+                    | "StukovInfestedBanshee"
+                    | "StukovInfestedBansheeBurrowed"
+                    | "StukovInfestedDiamondBack"
+                    | "StukovInfestedSiegeTank"
+                    | "StukovInfestedSiegeTankUprooted"
+            )
+        {
+            cost = Self::update_cost(&cost, 0.7, 0.7);
+        } else if self.commander == "Swann" {
+            if prestige == "Grease Monkey"
+                && !matches!(
+                    unit,
+                    "KelMorianGrenadeTurret"
+                        | "KelMorianMissileTurret"
+                        | "PerditionTurret"
+                        | "PerditionTurretUnderground"
+                )
+            {
+                cost = Self::update_cost(&cost, 1.0, 1.5);
+            }
+        } else if self.commander == "Tychus" {
+            if prestige == "Technical Recruiter" && unit != "TychusSCVAutoTurret" {
+                cost = Self::update_cost(&cost, 1.5, 1.5);
+            }
+        } else if self.commander == "Zagara" {
+            if prestige == "Mother of Constructs"
+                && matches!(unit, "ZagaraCorruptor" | "InfestedAbomination")
+            {
+                cost = Self::update_cost(&cost, 0.75, 0.75);
+            } else if prestige == "Apex Predator"
+                && !matches!(
+                    unit,
+                    "BileLauncherZagara"
+                        | "QueenCoop"
+                        | "QueenCoopBurrowed"
+                        | "Overseer"
+                        | "OverseerSiegeMode"
+                        | "SpineCrawler"
+                        | "SpineCrawlerUprooted"
+                        | "SporeCrawler"
+                        | "SporeCrawlerUprooted"
+                )
+            {
+                cost = Self::update_cost(&cost, 1.25, 1.25);
+            }
+        } else if self.commander == "Zeratul"
+            && prestige == "Knowledge Seeker"
+            && !matches!(
+                unit,
+                "ZeratulObserver"
+                    | "ZeratulObserverSiegeMode"
+                    | "ZeratulPhotonCannon"
+                    | "ZeratulWarpPrism"
+                    | "ZeratulWarpPrismPhasing"
+            )
+        {
+            cost = Self::update_cost(&cost, 1.25, 1.25);
+        }
+
+        self.unit_costs_cache.insert(unit.to_string(), cost.clone());
+        cost
+    }
+
+    fn calculate_total_unit_value(&self, unit: &str, cost: &[f64]) -> f64 {
+        if cost.iter().sum::<f64>() == 0.0 {
+            return 0.0;
+        }
+
+        let Some((mut unit_alive, mut unit_dead)) = self.unit_dict.get(unit).copied() else {
+            return 0.0;
+        };
+
+        if self.dictionaries.outlaws.contains(unit) {
+            unit_dead = 0.0;
+        }
+
+        let salvaged_count = self
+            .salvaged_units
+            .iter()
+            .filter(|saved| saved.as_str() == unit)
+            .count();
+        unit_alive -= salvaged_count as f64;
+
+        if self.commander == "Zagara" && (unit == "Baneling" || unit == "HotSSplitterlingBig") {
+            let primary_cost = cost.first().copied().unwrap_or_default()
+                + cost.get(1).copied().unwrap_or_default();
+            let full_cost =
+                cost.get(2).copied().unwrap_or_default() + cost.get(3).copied().unwrap_or_default();
+            let free_banelings = self.zagara_free_banelings as f64;
+            let mut result = (unit_alive - free_banelings) * primary_cost;
+            result += free_banelings * full_cost;
+            result -= unit_dead * full_cost;
+            return result;
+        }
+
+        if cost.len() == 2 {
+            return (unit_alive - unit_dead)
+                * (cost.first().copied().unwrap_or_default()
+                    + cost.get(1).copied().unwrap_or_default());
+        }
+        if cost.len() == 4 {
+            return unit_alive
+                * (cost.first().copied().unwrap_or_default()
+                    + cost.get(1).copied().unwrap_or_default())
+                - unit_dead
+                    * (cost.get(2).copied().unwrap_or_default()
+                        + cost.get(3).copied().unwrap_or_default());
+        }
+        0.0
+    }
+
+    fn calculate_army_value(&mut self) -> i64 {
+        let mut total = 0.0_f64;
+        let keys = self.unit_dict.keys().cloned().collect::<Vec<String>>();
+        for unit in keys {
+            let cost = self.unit_cost(&unit);
+            total += self.calculate_total_unit_value(&unit, &cost);
+        }
+
+        total += self.army_value_offset;
+
+        if self.commander == "Tychus" && !self.tychus_has_first_outlaw {
+            if self
+                .unit_dict
+                .keys()
+                .any(|unit| self.dictionaries.outlaws.contains(unit))
+            {
+                self.tychus_has_first_outlaw = true;
+            }
+        }
+        if self.tychus_has_first_outlaw && total > 600.0 {
+            total -= 600.0;
+        }
+
+        total = total.round_ties_even();
+        if total < 0.0 {
+            total = 0.0;
+        }
+        total as i64
+    }
+
+    pub fn set_unit_dict(&mut self, unit_dict: &indexmap::IndexMap<String, [i64; 4]>) {
+        let mut out: HashMap<String, (f64, f64)> = HashMap::new();
+        for (unit, values) in unit_dict {
+            out.insert(unit.clone(), (values[0] as f64, values[1] as f64));
+        }
+        self.unit_dict = out;
+    }
+
+    pub fn set_enable_updates(&mut self, enabled: bool) {
+        self.enable_updates = enabled;
+    }
+
+    pub fn append_salvaged_unit(&mut self, unit: &str) {
+        self.salvaged_units.push(unit.to_string());
+    }
+
+    pub fn update_mastery(&mut self, idx: i64, count: i64) {
+        let Ok(index) = usize::try_from(idx) else {
+            return;
+        };
+        if self.enable_updates && index < self.masteries.len() && self.masteries[index] != count {
+            self.masteries[index] = count;
+        }
+    }
+
+    pub fn update_prestige(&mut self, prestige: &str) {
+        let prestige_string = prestige.to_string();
+        if self.prestige.as_ref() == Some(&prestige_string) {
+            return;
+        }
+        self.prestige = Some(prestige_string.clone());
+
+        if prestige_string == "Merchant of Death" {
+            self.trooper_weapon_cost = (40.0, 20.0);
+        }
+        if prestige_string == "Lone Wolf" {
+            self.tychus_gear_cost = (self.tychus_gear_cost.0 * 1.25, 0.0);
+        }
+        self.unit_costs_cache.clear();
+    }
+
+    pub fn update_commander(&mut self, commander: &str) {
+        let commander_name = normalize_commander_name(commander);
+        if self.enable_updates && self.commander != commander_name {
+            self.commander = commander_name;
+            self.unit_costs_cache.clear();
+        }
+    }
+
+    pub fn unit_change_event(&mut self, unit: &str, old_unit: &str) {
+        if old_unit == "TrooperMengsk"
+            && matches!(
+                unit,
+                "TrooperMengskAA" | "TrooperMengskFlamethrower" | "TrooperMengskImproved"
+            )
+        {
+            self.army_value_offset += self.trooper_weapon_cost.0 + self.trooper_weapon_cost.1;
+        } else if old_unit == "GaryStetmann" && unit == "SuperGaryStetmann" {
+            self.army_value_offset += 750.0;
+        } else if old_unit == "TrooperMengsk" && unit == "SCVMengsk" {
+            self.army_value_offset -= 40.0;
+        } else if old_unit == "SCVMengsk" && unit == "TrooperMengsk" {
+            self.army_value_offset += 40.0;
+        } else if matches!(
+            old_unit,
+            "TrooperMengskAA" | "TrooperMengskFlamethrower" | "TrooperMengskImproved"
+        ) && unit == "SCVMengsk"
+        {
+            self.army_value_offset -=
+                40.0 + self.trooper_weapon_cost.0 + self.trooper_weapon_cost.1;
+        } else if old_unit == "Thor" && unit == "ThorWreckageSwann" {
+            self.army_value_offset -= self.unit_cost("Thor").get(1).copied().unwrap_or_default();
+        } else if old_unit == "ThorWreckageSwann" && unit == "Thor" {
+            self.army_value_offset += self.unit_cost("Thor").get(1).copied().unwrap_or_default();
+        } else if old_unit == "SiegeTank" && unit == "SiegeTankWreckage" {
+            self.army_value_offset -= self
+                .unit_cost("SiegeTank")
+                .get(1)
+                .copied()
+                .unwrap_or_default();
+        } else if old_unit == "SiegeTankWreckage" && unit == "SiegeTank" {
+            self.army_value_offset += self
+                .unit_cost("SiegeTank")
+                .get(1)
+                .copied()
+                .unwrap_or_default();
+        } else if old_unit == "GuardianMP" && unit == "LeviathanCocoon" {
+            let guardian = self.unit_cost("GuardianMP");
+            let mutalisk = self.unit_cost("Mutalisk");
+            let guardian_additive = guardian.get(2).copied().unwrap_or_default()
+                + guardian.get(3).copied().unwrap_or_default();
+            self.army_value_offset -= guardian_additive - mutalisk.iter().sum::<f64>();
+        } else if old_unit == "LeviathanCocoon" && unit == "GuardianMP" {
+            let guardian = self.unit_cost("GuardianMP");
+            let mutalisk = self.unit_cost("Mutalisk");
+            let guardian_additive = guardian.get(2).copied().unwrap_or_default()
+                + guardian.get(3).copied().unwrap_or_default();
+            self.army_value_offset += guardian_additive - mutalisk.iter().sum::<f64>();
+        } else if old_unit == "Devourer" && unit == "LeviathanCocoon" {
+            let devourer = self.unit_cost("Devourer");
+            let mutalisk = self.unit_cost("Mutalisk");
+            let devourer_additive = devourer.get(2).copied().unwrap_or_default()
+                + devourer.get(3).copied().unwrap_or_default();
+            self.army_value_offset -= devourer_additive - mutalisk.iter().sum::<f64>();
+        } else if old_unit == "LeviathanCocoon" && unit == "Devourer" {
+            let devourer = self.unit_cost("Devourer");
+            let mutalisk = self.unit_cost("Mutalisk");
+            let devourer_additive = devourer.get(2).copied().unwrap_or_default()
+                + devourer.get(3).copied().unwrap_or_default();
+            self.army_value_offset += devourer_additive - mutalisk.iter().sum::<f64>();
+        } else if old_unit == "Viper" && unit == "LeviathanCocoon" {
+            let viper = self.unit_cost("Viper");
+            let mutalisk = self.unit_cost("Mutalisk");
+            self.army_value_offset -= viper.iter().sum::<f64>() - mutalisk.iter().sum::<f64>();
+        } else if old_unit == "LeviathanCocoon" && unit == "Viper" {
+            let viper = self.unit_cost("Viper");
+            let mutalisk = self.unit_cost("Mutalisk");
+            self.army_value_offset += viper.iter().sum::<f64>() - mutalisk.iter().sum::<f64>();
+        } else if matches!(old_unit, "SwarmHost" | "SwarmHostBurrowed")
+            && unit == "BrutaliskCocoonSwarmhost"
+        {
+            let swarm_host = self.unit_cost("SwarmHost");
+            let roach = self.unit_cost("RoachVile");
+            self.army_value_offset -= swarm_host.iter().sum::<f64>() - roach.iter().sum::<f64>();
+        } else if old_unit == "BrutaliskCocoonSwarmhost"
+            && matches!(unit, "SwarmHost" | "SwarmHostBurrowed")
+        {
+            let swarm_host = self.unit_cost("SwarmHost");
+            let roach = self.unit_cost("RoachVile");
+            self.army_value_offset += swarm_host.iter().sum::<f64>() - roach.iter().sum::<f64>();
+        } else if matches!(old_unit, "RavagerAbathur" | "RavagerAbathurBurrowed")
+            && unit == "BrutaliskCocoonRavager"
+        {
+            let ravager = self.unit_cost("RavagerAbathur");
+            let roach = self.unit_cost("RoachVile");
+            let ravager_additive = ravager.get(2).copied().unwrap_or_default()
+                + ravager.get(3).copied().unwrap_or_default();
+            self.army_value_offset -= ravager_additive - roach.iter().sum::<f64>();
+        } else if old_unit == "BrutaliskCocoonRavager"
+            && matches!(unit, "RavagerAbathur" | "RavagerAbathurBurrowed")
+        {
+            let ravager = self.unit_cost("RavagerAbathur");
+            let roach = self.unit_cost("RoachVile");
+            let ravager_additive = ravager.get(2).copied().unwrap_or_default()
+                + ravager.get(3).copied().unwrap_or_default();
+            self.army_value_offset += ravager_additive - roach.iter().sum::<f64>();
+        } else if matches!(old_unit, "Queen" | "QueenBurrowed") && unit == "BrutaliskCocoonQueen" {
+            let queen = self.unit_cost("Queen");
+            let roach = self.unit_cost("RoachVile");
+            self.army_value_offset -= queen.iter().sum::<f64>() - roach.iter().sum::<f64>();
+        } else if old_unit == "BrutaliskCocoonQueen" && matches!(unit, "Queen" | "QueenBurrowed") {
+            let queen = self.unit_cost("Queen");
+            let roach = self.unit_cost("RoachVile");
+            self.army_value_offset += queen.iter().sum::<f64>() - roach.iter().sum::<f64>();
+        }
+    }
+
+    pub fn mindcontrolled_unit_dies(&mut self, unit: &str) {
+        let cost = self.unit_cost(unit).iter().sum::<f64>();
+        if cost > 0.0 {
+            self.army_value_offset += cost;
+        }
+    }
+
+    pub fn upgrade_event(&mut self, upgrade: &str) {
+        if self.dictionaries.tychus_base_upgrades.contains(upgrade) {
+            self.army_value_offset += self.tychus_gear_cost.0;
+        } else if self.dictionaries.tychus_ultimate_upgrades.contains(upgrade) {
+            self.army_value_offset += self.tychus_gear_cost.1;
+        }
+    }
+
+    pub fn unit_created_event(&mut self, unit_type: &str, event: &Value) {
+        if self.commander != "Zagara"
+            || (unit_type != "Baneling" && unit_type != "HotSSplitterlingBig")
+        {
+            return;
+        }
+
+        let creator_ability = event
+            .get_key("m_creatorAbilityName")
+            .and_then(value_as_text);
+        if creator_ability.as_deref() != Some("MorphZerglingToSplitterling") {
+            self.zagara_free_banelings += 1;
+        }
+    }
+
+    pub fn add_stats(
+        &mut self,
+        drone_counter: &ReplayDroneIdentifierCore,
+        kills: i64,
+        supply_used: f64,
+        collection_rate: f64,
+    ) {
+        self.kills.push(kills);
+        let current_army = self.calculate_army_value() as f64;
+        self.army_value.push(current_army);
+        self.supply.push(supply_used);
+        self.collection_rate
+            .push(collection_rate + drone_counter.get_bonus_vespene());
+    }
+
+    pub fn get_stats(&mut self, player_name: &str) -> PlayerStatsSeries {
+        let mut dehaka_changed_indices = BTreeSet::new();
+        if self.commander == "Dehaka" {
+            dehaka_changed_indices = upward_spike_indices(&self.army_value).into_iter().collect();
+            remove_upward_spikes(&mut self.army_value);
+        }
+
+        let army = self
+            .army_value
+            .iter()
+            .enumerate()
+            .map(|(idx, value)| {
+                if dehaka_changed_indices.contains(&idx) {
+                    *value
+                } else if value.is_finite() && value.fract().abs() < 1e-9 {
+                    value.round()
+                } else {
+                    *value
+                }
+            })
+            .collect::<Vec<f64>>();
+
+        PlayerStatsSeries {
+            name: player_name.to_string(),
+            killed: self.kills.iter().map(|value| *value as f64).collect(),
+            army,
+            supply: self.supply.clone(),
+            mining: rolling_average(&self.collection_rate),
+            army_force_float_indices: dehaka_changed_indices,
+        }
+    }
+}
+
+fn rolling_average(values: &[f64]) -> Vec<f64> {
+    if values.is_empty() {
+        return Vec::new();
+    }
+
+    let mut out = Vec::with_capacity(values.len());
+    for (idx, value) in values.iter().enumerate() {
+        if idx == 0 {
+            out.push(*value);
+        } else {
+            out.push(0.5 * *value + 0.5 * values[idx - 1]);
+        }
+    }
+    out
+}

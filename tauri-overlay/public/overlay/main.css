@@ -1,0 +1,574 @@
+@font-face {
+    font-family: "Eurostile";
+    src: url("Eurostile-Reg.otf") format("opentype");
+    font-weight: normal;
+    font-style: normal;
+}
+
+:root {
+    --overlay-font-family:
+        "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR",
+        "Noto Sans CJK KR", "Segoe UI", sans-serif;
+}
+
+html,
+body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    font-family: var(--overlay-font-family);
+    background-color: transparent !important;
+    background: transparent !important;
+}
+
+body {
+    font-family: var(--overlay-font-family);
+    overflow: hidden;
+}
+
+#bgdiv {
+    position: absolute;
+    display: block;
+    height: 100%;
+    width: 100vh;
+    top: 0px;
+    right: 0px;
+    background-color: rgba(0, 0, 0, 0.8);
+    opacity: 1;
+    transition: opacity 2s;
+    -webkit-mask-image: linear-gradient(
+        90deg,
+        rgba(0, 0, 0, 0),
+        rgba(0, 0, 0, 0.8),
+        rgba(0, 0, 0, 0.8),
+        rgba(0, 0, 0, 0.8)
+    );
+    mask-image: linear-gradient(
+        90deg,
+        rgba(0, 0, 0, 0),
+        rgba(0, 0, 0, 0.8),
+        rgba(0, 0, 0, 0.8),
+        rgba(0, 0, 0, 0.8)
+    );
+}
+
+#ibgdiv {
+    position: absolute;
+    display: block;
+    width: 100%;
+    height: calc(100% - 4.5vh - 3vh);
+    background-color: black;
+    box-shadow: 3vh 3vh 3vh black;
+}
+
+#stats {
+    color: white;
+    position: absolute;
+    top: 4vh;
+    right: 1vh;
+    width: 48vh;
+    transition:
+        right 1.5s,
+        opacity 1s;
+}
+
+#topstats,
+.commstats,
+#otherstats,
+#playerstats,
+#mutatorinfo {
+    line-height: 1;
+}
+
+#resultsp,
+#name1,
+#name2,
+#CMname1,
+#CMname2,
+#CMname3,
+#percent1,
+#percent2,
+#com1,
+#com2,
+#apm1,
+#apm2,
+.unitkills,
+.unitcreated,
+.unitdied,
+.icontext {
+    display: inline-block;
+    height: 1em;
+    line-height: 1;
+    overflow: visible;
+    white-space: nowrap;
+}
+
+#result,
+#record,
+#brutal,
+.prestige,
+#comp,
+#rng,
+#session {
+    height: 1em;
+    line-height: 1;
+    overflow: visible;
+    white-space: nowrap;
+}
+
+#map,
+.mastery,
+.unitline {
+    line-height: 1;
+}
+
+#mutators {
+    top: -0.7vh;
+    position: absolute;
+    height: 3.6vh;
+    width: 100%;
+    text-align: center;
+}
+
+#mutators img {
+    margin-right: 0.2vh;
+    height: 100%;
+    outline: 0.2vh solid rgba(0, 0, 0, 0.5);
+    outline-offset: -0.2vh;
+}
+
+#resultsp {
+    font-size: 2.5vh;
+    position: relative;
+    top: 0.7vh;
+    color: #b8b8b8;
+}
+
+#topstats {
+    margin-bottom: 0.35vh;
+}
+
+#nodata {
+    color: red;
+    font-size: 3vh;
+    position: absolute;
+    top: 20vh;
+    right: 15vh;
+    font-weight: bold;
+}
+
+#name1,
+#CMname1 {
+    font-size: 2.5vh;
+    text-shadow: 0.1vh 0.1vh 0.1vh black;
+    font-weight: bold;
+    position: relative;
+    z-index: 100;
+}
+
+#name2,
+#CMname2 {
+    font-size: 2.5vh;
+    text-shadow: 0.1vh 0.1vh 0.1vh black;
+    font-weight: bold;
+}
+
+#CMname3 {
+    font-size: 2.5vh;
+    text-shadow: 0.1vh 0.1vh 0.1vh black;
+    font-weight: bold;
+    margin-bottom: -2.6vh;
+}
+
+#name2 {
+    position: absolute;
+    right: 0vh;
+}
+
+#killbar {
+    margin-top: 0.4vh;
+    margin-bottom: 0.4vh;
+    width: 100%;
+    height: 4.2vh;
+    position: relative;
+    text-shadow: 0.1vh 0.1vh 0.1vh black;
+    font-size: 2.2vh;
+    display: none;
+}
+
+#killbar1 {
+    height: 100%;
+    width: 50%;
+    position: absolute;
+    left: 0px;
+    transition: width 1s;
+}
+
+#percent1 {
+    z-index: 1;
+}
+
+#killbar2 {
+    height: 100%;
+    width: 50%;
+    position: absolute;
+    right: 0px;
+    text-align: right;
+    transition: width 1s;
+}
+
+#killbar2 span {
+    position: absolute;
+    top: 1vh;
+    right: 1.2vh;
+}
+
+#killbar1 span {
+    position: absolute;
+    top: 1vh;
+    left: 1.2vh;
+}
+
+#result {
+    position: absolute;
+    top: 1vh;
+    width: 100%;
+    text-align: center;
+    color: #e1e1e1;
+}
+
+#morestats {
+    opacity: 0.7;
+    font-size: 1.7vh;
+    padding-top: 0.42px;
+    text-shadow: 0.1vh 0.1vh 0.1vh #060606;
+}
+
+#map {
+    position: absolute;
+    top: 7.8vh;
+    width: 100%;
+    text-align: center;
+    font-size: 1.7vh;
+}
+
+#record {
+    position: absolute;
+    top: 9.5vh;
+    left: 63%;
+    width: 37%;
+    text-align: left;
+    font-size: 1.5vh;
+    color: rgb(216, 62, 255);
+    display: none;
+}
+
+#brutal {
+    position: absolute;
+    top: 9.8vh;
+    width: 100%;
+    font-size: 1.7vh;
+    text-align: center;
+}
+
+#com2 {
+    position: absolute;
+    right: 0px;
+}
+
+#apm1 {
+    position: absolute;
+    top: 9.8vh;
+    left: 0px;
+}
+
+#apm2 {
+    position: absolute;
+    top: 9.8vh;
+    right: 0px;
+}
+
+.commstats {
+    margin-top: 4vh;
+    color: white;
+    right: 0px;
+}
+
+#commstats2 {
+    margin-top: 1.5vh;
+}
+
+#amon {
+    margin-top: 1.5vh;
+}
+
+.prestige {
+    opacity: 1;
+    font-size: 1.5vh;
+    text-shadow: 0.1vh 0.1vh 0.1vh black;
+}
+
+#comp {
+    font-size: 1.5vh;
+    text-shadow: 0.1vh 0.1vh 0.1vh black;
+}
+
+.mastery {
+    font-size: 1.5vh;
+    text-shadow: 0.1vh 0.1vh 0.1vh black;
+    margin-top: 0.8vh;
+}
+
+.nomastery {
+    opacity: 0.4;
+    margin-left: 0.9vh;
+}
+
+.singlemastery {
+    margin-left: 0.9vh;
+}
+
+#CMunits3 {
+    margin-top: -2vh;
+}
+
+.killpadding {
+    margin-left: 0.9vh;
+}
+
+.nokillpadding {
+    margin-left: -0.9vh;
+}
+
+#mutatorinfo {
+    margin: auto;
+    margin-top: 8.33vh;
+    width: 65vh;
+    height: 65vh;
+    text-align: center;
+}
+
+#mutatorinfo div {
+    width: 60vh;
+    height: 10vh;
+    border: 2px solid #444;
+    margin: 0px 4px 10px 4px;
+    color: white;
+    background-image: linear-gradient(
+        rgba(0, 0, 0, 0.8),
+        rgba(20, 20, 20, 0.7)
+    );
+    box-shadow: 0px 0px 10px black;
+    text-align: left;
+    display: none;
+    opacity: 0;
+    transition: opacity 2s;
+}
+
+#mutatorinfo div img {
+    height: 100%;
+    border-right: 2px solid #222;
+}
+
+#mutatorinfo div p {
+    margin-left: 11vh;
+    margin-top: -10vh;
+    margin-right: 0.52vh;
+    height: 2vh;
+}
+
+.muttop {
+    color: orange;
+    text-transform: uppercase;
+    font-size: 2vh;
+}
+
+.mutvalue {
+    font-size: 1.04vh;
+    color: #777;
+    font-size: 2vh;
+}
+
+.mutdesc {
+    display: block;
+    height: 7vh;
+    overflow: hidden;
+    font-size: 1.7vh;
+}
+
+#otherstats {
+    position: absolute;
+    bottom: 7vh;
+    right: 2vh;
+    width: 50vh;
+    font-size: 1.5vh;
+    text-align: center;
+    color: white;
+}
+
+#rng {
+    font-size: 1.6vh;
+    height: 2vh;
+    color: white;
+    opacity: 0;
+    transition: opacity 1s;
+}
+
+#session {
+    height: 2vh;
+    color: white;
+    opacity: 0;
+    transition: opacity 1s;
+}
+
+#loader {
+    height: 2vh;
+    opacity: 0;
+    transition: opacity 1s;
+}
+
+#update {
+    margin-top: 0.1vh;
+    margin-bottom: 0.1vh;
+    text-align: center;
+    display: none;
+    color: green;
+    font-weight: bold;
+}
+
+.commstats div:first-child {
+    display: inline-block;
+}
+
+.icons {
+    display: inline-block;
+    padding-left: 1.5vh;
+    color: #ccc;
+    height: 2vh;
+    overflow: visible;
+}
+
+.icons img {
+    height: 4vh;
+    margin-top: -0.5vh;
+    vertical-align: middle;
+}
+
+.icontext {
+    position: relative;
+    left: -1.5vh;
+    top: 0.9vh;
+    color: #fff;
+    text-shadow: 0.1vh 0.1vh 0.1vh black;
+}
+
+.killbotkills {
+    color: #ff3333;
+    font-weight: bold;
+}
+
+.iconcreated {
+    color: #21d84d;
+    font-weight: bold;
+}
+
+#playerstats {
+    position: absolute;
+    top: 5vh;
+    right: -60vh;
+    width: 100vh;
+    height: 8vh;
+    text-align: right;
+    transition: all 1.5s;
+    color: white;
+    font-size: 1.7vh;
+    text-shadow: 0.1vh 0.1vh 0.1vh black;
+    font-size: 2vh;
+    opacity: 0;
+}
+
+.player_stat {
+    color: #f4f489;
+}
+
+#killbar > div > img {
+    position: absolute;
+    top: 0vh;
+    opacity: 0.5;
+    height: 4.2vh;
+}
+
+#killbar1img {
+    left: 0vh;
+}
+
+#killbar2img {
+    right: 0vh;
+    -webkit-transform: scaleX(-1);
+    transform: scaleX(-1);
+}
+
+.unitkillbg {
+    height: 1.5vh;
+    position: absolute;
+    margin-top: 0.09vh;
+    margin-left: -0.13vh;
+    text-align: right;
+    opacity: 0.6;
+}
+
+.unitline {
+    position: relative;
+}
+
+.units {
+    font-size: 1.5vh;
+    text-shadow: 0.1vh 0.1vh 0.1vh black;
+    margin-top: -1vh;
+    padding: 0.94vh;
+    padding-left: 0px;
+}
+
+.unitkills {
+    position: absolute;
+    left: 22vh;
+    opacity: 0.9;
+}
+
+.unitcreated {
+    color: #2fff00;
+    position: absolute;
+    right: 7vh;
+    opacity: 0.6;
+}
+
+.unitcreated.header {
+    right: 8vh;
+}
+
+.unitdied {
+    color: #ff0000;
+    position: absolute;
+    right: -1vh;
+    opacity: 0.9;
+}
+
+.unitdied.header {
+    right: -0.02vh;
+}
+
+#charts {
+    position: absolute;
+    display: none;
+    width: 38vh;
+    top: 4.2vh;
+    right: 50vh;
+    opacity: 0;
+    transition: opacity 2s;
+}
+
+#charts canvas {
+    display: none;
+}

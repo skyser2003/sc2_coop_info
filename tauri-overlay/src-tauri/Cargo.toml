@@ -1,0 +1,32 @@
+[package]
+name = "sco-tauri-overlay"
+version = "0.1.0"
+description = "SC2 info host using Tauri"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+s2protocol-port = { path = "../../s2protocol-port" }
+s2coop-analyzer = { path = "../../s2coop-analyzer", default-features = false }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+tauri = { version = "2", features = ["tray-icon"] }
+display-info = { version = "0.5.9" }
+serde_json = { version = "1", features = ["preserve_order"] }
+serde = { version = "1", features = ["derive"] }
+ts-rs = "10"
+tauri-plugin-global-shortcut = "2"
+rayon = "1.10.0"
+notify = "6"
+fastrand = "2.3.0"
+sysinfo = "0.33"
+rfd = "0.15"
+tauri-plugin-opener = "2"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+
+[features]
+default = []

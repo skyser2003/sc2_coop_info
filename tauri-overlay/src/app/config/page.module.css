@@ -1,0 +1,2318 @@
+.configPage {
+    color: var(--config-page-text);
+}
+
+.configPage h1 {
+    margin: 0 0 10px;
+}
+
+.configPage :global(.tabs) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 12px 0 8px;
+    padding: 4px;
+    border-bottom: 1px solid #243145;
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+.configPage :global(.tab-btn) {
+    border: 1px solid #1f2a3d;
+    border-bottom: 0;
+    border-radius: 8px 8px 0 0;
+    padding: 9px 12px;
+    background: #1a2236;
+    color: #9fb2c7;
+    white-space: nowrap;
+}
+
+.configPage :global(.tab-btn:hover) {
+    background: #273451;
+    color: #e5e7eb;
+}
+
+.configPage :global(.tab-btn.is-active) {
+    color: #dbeafe;
+    background: #111827;
+    box-shadow: inset 0 1px 0 #60a5fa;
+}
+
+.configPage :global(.subtle) {
+    color: #93a4b8;
+    margin-top: 0;
+}
+
+.configPage :global(.status) {
+    margin-top: 6px;
+    color: #f1f5f9;
+    min-height: 1.2em;
+    background: #111827;
+    border: 1px solid #243245;
+    padding: 8px 10px;
+    border-radius: 8px;
+}
+
+.configPage :global(.note) {
+    margin: 0 0 8px;
+    color: #98a9bf;
+}
+
+.configPage :global(.link-list) {
+    margin: 6px 0 0;
+    padding-left: 20px;
+}
+
+.configPage :global(.link-list li) {
+    margin: 6px 0;
+}
+
+.configPage :global(.link-list a) {
+    color: #93c5fd;
+}
+
+.configPage :global(.link-list a:hover) {
+    color: #bfdbfe;
+}
+
+.configPage :global(.card) {
+    background: rgba(17, 24, 39, 0.95);
+    border-radius: 10px;
+    padding: 14px;
+    border: 1px solid #253451;
+    margin-top: 14px;
+    box-shadow: 0 6px 18px rgb(0 0 0 / 18%);
+}
+
+.configPage :global(.tab-content .card:first-child) {
+    margin-top: 10px;
+}
+
+.configPage :global(.section-title) {
+    color: #8cb4ff;
+    margin-bottom: 8px;
+}
+
+.configPage :global(.node-depth-0 summary) {
+    font-weight: 700;
+    margin-top: 4px;
+}
+
+.configPage :global(.field) {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid #1f2a3d;
+}
+
+.configPage :global(.field:last-child) {
+    border-bottom: 0;
+}
+
+.configPage :global(.field-label) {
+    width: 260px;
+    font-size: 14px;
+    color: #e2e8f0;
+}
+
+.configPage :global(.input),
+.configPage :global(textarea.input) {
+    background: #0a1020;
+    border: 1px solid #334155;
+    color: #e2e8f0;
+    border-radius: 6px;
+    padding: 8px;
+    min-width: 250px;
+    flex: 1;
+    max-width: 620px;
+}
+
+.configPage :global(textarea.input) {
+    min-height: 84px;
+    font-family: "Courier New", monospace;
+}
+
+.configPage :global(details.card) {
+    margin-top: 8px;
+}
+
+.configPage :global(details.card > .field) {
+    padding-left: 8px;
+}
+
+.configPage :global(.node-depth-1) {
+    margin-left: 12px;
+}
+
+.configPage :global(.node-depth-2) {
+    margin-left: 24px;
+}
+
+.configPage :global(.node-depth-3) {
+    margin-left: 36px;
+}
+
+.configPage :global(.footer) {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+}
+
+.configPage :global(.is-hidden) {
+    display: none !important;
+}
+
+.configPage :global(.toolbar) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.configPage :global(.table-wrap) {
+    overflow-x: auto;
+}
+
+.configPage :global(.table-pagination) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.configPage :global(.table-pagination-summary) {
+    margin: 0;
+    color: #cbd5e1;
+    font-size: 13px;
+}
+
+.configPage :global(.table-pagination-controls) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.configPage :global(.table-pagination-page) {
+    min-width: 86px;
+    color: #e5e7eb;
+    text-align: center;
+    font-size: 13px;
+}
+
+.configPage :global(.table-pagination-btn) {
+    min-width: 96px;
+    padding: 8px 12px;
+    background: #334155;
+}
+
+.configPage :global(.data-table) {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid #27364f;
+}
+
+.configPage :global(.data-table th),
+.configPage :global(.data-table td) {
+    border-bottom: 1px solid #27364f;
+    text-align: left;
+    padding: 8px 10px;
+    font-size: 13px;
+    vertical-align: top;
+}
+
+.configPage :global(.data-table th) {
+    background: rgba(15, 23, 42, 0.85);
+    position: sticky;
+    top: 0;
+}
+
+.configPage :global(.table-sort-btn) {
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    text-align: inherit;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.configPage :global(.table-sort-btn:focus-visible) {
+    outline: 1px solid #60a5fa;
+    outline-offset: 2px;
+}
+
+.configPage :global(.data-table tbody tr) {
+    cursor: default;
+}
+
+.configPage :global(.data-table tbody tr:hover) {
+    background: rgba(37, 99, 235, 0.18);
+}
+
+.configPage :global(.data-table tr.selected-row) {
+    background: rgba(37, 99, 235, 0.3);
+}
+
+.configPage :global(.data-table .empty-cell) {
+    text-align: center;
+    color: #93a4b8;
+}
+
+.configPage :global(.games-panel) {
+    background: #4a4a4a;
+    border-color: #5f5f5f;
+}
+
+.configPage :global(.games-toolbar) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.configPage :global(.games-toolbar h3) {
+    margin: 0;
+}
+
+.configPage :global(.games-toolbar-actions) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.configPage :global(.games-search) {
+    width: 320px;
+    min-width: 220px;
+    max-width: 360px;
+}
+
+.configPage :global(.games-filters) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    margin-bottom: 12px;
+}
+
+.configPage :global(.games-filter-group) {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+}
+
+.configPage :global(.games-filter-label) {
+    color: #cbd5e1;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.configPage :global(.games-filter-check) {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #e2e8f0;
+    font-size: 13px;
+}
+
+.configPage :global(.games-icon-btn) {
+    min-width: 44px;
+    padding: 8px 10px;
+    background: #505050;
+    border: 1px solid #6b6b6b;
+}
+
+.configPage :global(.games-table th),
+.configPage :global(.games-table td) {
+    font-size: 15px;
+    padding: 12px 14px;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.configPage :global(.games-table th:nth-child(1)),
+.configPage :global(.games-table td:nth-child(1)) {
+    width: 1%;
+    min-width: max-content;
+}
+
+.configPage :global(.games-player-cell) {
+    max-width: 420px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.configPage :global(.games-actions-cell) {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.configPage :global(.games-mutator-list) {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+    min-width: 48px;
+}
+
+.configPage :global(.games-mutator-icon) {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+    border-radius: 6px;
+    background: rgba(2, 6, 23, 0.72);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    padding: 2px;
+}
+
+.configPage :global(.games-mutator-empty) {
+    color: #93a4b8;
+}
+
+.configPage :global(.weeklies-layout) {
+    display: grid;
+    grid-template-columns: minmax(520px, 1.15fr) minmax(340px, 0.85fr);
+    gap: 14px;
+    align-items: start;
+}
+
+.configPage :global(.weeklies-table-pane) {
+    min-width: 0;
+}
+
+.configPage :global(.weeklies-row-clickable) {
+    cursor: pointer;
+}
+
+.configPage :global(.weeklies-name-cell) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.configPage :global(.weeklies-current-pill) {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(96, 165, 250, 0.18);
+    border: 1px solid rgba(96, 165, 250, 0.38);
+    color: #dbeafe;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.configPage :global(.weeklies-detail-pane) {
+    min-width: 0;
+    position: sticky;
+    top: 12px;
+    align-self: start;
+}
+
+.configPage :global(.weeklies-detail-card) {
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid #68768c;
+    border-radius: 10px;
+    background:
+        radial-gradient(
+            circle at top right,
+            rgb(96 165 250 / 0.12),
+            transparent 28%
+        ),
+        linear-gradient(
+            180deg,
+            rgb(15 23 42 / 0.82) 0%,
+            rgb(8 15 30 / 0.82) 100%
+        );
+    max-height: calc(100vh - 32px);
+    overflow: auto;
+}
+
+.configPage :global(.weeklies-detail-head) {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.configPage :global(.weeklies-detail-title) {
+    margin: 0;
+    color: #f8fafc;
+    font-size: 24px;
+    line-height: 1.1;
+}
+
+.configPage :global(.weeklies-map) {
+    margin: 4px 0 0;
+    color: #93c5fd;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.configPage :global(.weeklies-meta-row) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.configPage :global(.weeklies-stat-chip) {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(30, 41, 59, 0.9);
+    border: 1px solid #334155;
+    color: #e2e8f0;
+    font-size: 12px;
+}
+
+.configPage :global(.weeklies-mutator-grid) {
+    display: grid;
+    gap: 10px;
+}
+
+.configPage :global(.weeklies-mutator-card) {
+    display: grid;
+    grid-template-columns: 68px minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid #334155;
+    background: rgba(15, 23, 42, 0.72);
+}
+
+.configPage :global(.weeklies-mutator-icon) {
+    width: 68px;
+    height: 68px;
+    object-fit: contain;
+    border-radius: 8px;
+    background: rgba(2, 6, 23, 0.72);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    padding: 6px;
+}
+
+.configPage :global(.weeklies-mutator-copy) {
+    min-width: 0;
+}
+
+.configPage :global(.weeklies-mutator-name) {
+    margin: 0 0 6px;
+    color: #f8fafc;
+    font-size: 16px;
+    line-height: 1.2;
+}
+
+.configPage :global(.weeklies-mutator-description) {
+    margin: 0;
+    color: #cbd5e1;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.configPage :global(.players-summary-row.is-expanded) {
+    background: rgba(37, 99, 235, 0.24);
+}
+
+.configPage :global(.players-row-clickable) {
+    cursor: pointer;
+}
+
+.configPage :global(.players-player-cell) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.configPage :global(.players-player-name) {
+    min-width: 0;
+}
+
+.configPage :global(.players-expander-btn) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    border-radius: 6px;
+    background: rgba(30, 41, 59, 0.62);
+    color: #dbe7f5;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    flex: 0 0 24px;
+}
+
+.configPage :global(.players-expander-btn:hover) {
+    background: rgba(51, 65, 85, 0.9);
+    border-color: rgba(96, 165, 250, 0.6);
+}
+
+.configPage :global(.players-expander-btn:focus-visible) {
+    outline: 2px solid rgba(96, 165, 250, 0.8);
+    outline-offset: 2px;
+}
+
+.configPage :global(.players-expander-btn:active) {
+    transform: translateY(1px);
+}
+
+.configPage :global(.players-expander-btn:disabled) {
+    opacity: 0.6;
+    color: #93a4b8;
+}
+
+.configPage :global(.players-handle-count) {
+    color: #93a4b8;
+    font-size: 12px;
+}
+
+.configPage :global(.players-detail-row:hover) {
+    background: transparent;
+}
+
+.configPage :global(.players-detail-cell) {
+    background: rgba(15, 23, 42, 0.55);
+    white-space: normal;
+}
+
+.configPage :global(.players-detail-block) {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.configPage :global(.players-detail-label) {
+    color: #cbd5e1;
+    font-weight: 700;
+}
+
+.configPage :global(.players-handle-list) {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.configPage :global(.players-handle-chip) {
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid #334155;
+    background: rgba(30, 41, 59, 0.9);
+    color: #e2e8f0;
+    font-size: 12px;
+}
+
+.configPage :global(.games-row-btn) {
+    background: #5a5a5a;
+    border: 1px solid #7a7a7a;
+    padding: 6px 12px;
+    border-radius: 6px;
+    min-width: 86px;
+}
+
+.configPage :global(.chat-modal-backdrop) {
+    position: fixed;
+    inset: 0;
+    z-index: 1400;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgb(2 6 23 / 72%);
+    backdrop-filter: blur(4px);
+}
+
+.configPage :global(.chat-modal) {
+    width: min(960px, 100%);
+    max-height: min(78vh, 860px);
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    background: linear-gradient(
+        180deg,
+        rgb(23 31 49 / 98%) 0%,
+        rgb(14 21 36 / 98%) 100%
+    );
+    border: 1px solid #3c4d6a;
+    border-radius: 14px;
+    box-shadow: 0 28px 90px rgb(0 0 0 / 44%);
+    overflow: hidden;
+}
+
+.configPage :global(.chat-modal-header) {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px 20px 14px;
+    border-bottom: 1px solid #334155;
+}
+
+.configPage :global(.chat-modal-heading h3) {
+    margin: 0;
+    color: #f8fafc;
+}
+
+.configPage :global(.chat-modal-meta) {
+    margin: 6px 0 0;
+    color: #93a4b8;
+    font-size: 13px;
+}
+
+.configPage :global(.chat-modal-close) {
+    min-width: auto;
+}
+
+.configPage :global(.chat-modal-body) {
+    min-height: 0;
+    padding: 18px 20px 20px;
+    overflow: auto;
+}
+
+.configPage :global(.chat-log) {
+    display: grid;
+    gap: 8px;
+}
+
+.configPage :global(.chat-row) {
+    display: grid;
+    grid-template-columns: 74px minmax(140px, 220px) minmax(0, 1fr);
+    gap: 14px;
+    align-items: start;
+    padding: 9px 12px;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.7);
+}
+
+.configPage :global(.chat-time) {
+    color: #93c5fd;
+    font-family: "Courier New", monospace;
+    font-size: 13px;
+}
+
+.configPage :global(.chat-player) {
+    color: #e2e8f0;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.configPage :global(.chat-text) {
+    color: #f8fafc;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.configPage :global(.chat-empty) {
+    margin: 0;
+    color: #cbd5e1;
+}
+
+.configPage :global(.stats-block) {
+    margin-top: 2px;
+    background: #0a1020;
+    border: 1px solid #334155;
+    color: #e2e8f0;
+    border-radius: 6px;
+    padding: 10px;
+    white-space: pre-wrap;
+    min-height: 180px;
+    font-family: "Courier New", monospace;
+    font-size: 13px;
+}
+
+.configPage :global(button) {
+    border: 0;
+    border-radius: 8px;
+    padding: 10px 14px;
+    cursor: pointer;
+    background: #2563eb;
+    color: #ffffff;
+    font-weight: 600;
+}
+
+.configPage :global(button:disabled) {
+    background: #475569;
+    cursor: not-allowed;
+}
+
+.configPage :global(.mini-btn) {
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    background: #334155;
+}
+
+.configPage :global(.mini-btn.is-active) {
+    background: #2563eb;
+}
+
+.configPage :global(.stats-root) {
+    background: #4a4a4a;
+    border-color: #5f5f5f;
+}
+
+.configPage :global(.stats-top-grid) {
+    display: flex;
+    gap: 18px;
+    align-items: flex-start;
+}
+
+.configPage :global(.stats-check-cols) {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(130px, 1fr));
+    gap: 12px;
+    flex: 1;
+}
+
+.configPage :global(.stats-col) {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.configPage :global(.stats-checkbox-line) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+}
+
+.configPage :global(.stats-filters-side) {
+    width: 430px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.configPage :global(.stats-filters-side h4) {
+    margin: 0 0 6px;
+}
+
+.configPage :global(.stats-minmax label),
+.configPage :global(.stats-dates label) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.configPage :global(.stats-minmax .input),
+.configPage :global(.stats-dates .input) {
+    min-width: 0;
+    width: 100%;
+}
+
+.configPage :global(.stats-side-actions) {
+    grid-column: span 2;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.configPage :global(.stats-side-actions p) {
+    width: 100%;
+    margin: 0;
+    text-align: right;
+    font-size: 15px;
+}
+
+.configPage :global(.stats-subtabs) {
+    margin-top: 10px;
+    display: flex;
+    gap: 6px;
+    border-bottom: 1px solid #6f6f6f;
+    overflow-x: auto;
+    padding-bottom: 4px;
+}
+
+.configPage :global(.stats-subtab-btn) {
+    background: #505050;
+    border: 1px solid #6f6f6f;
+    border-radius: 6px 6px 0 0;
+    padding: 8px 12px;
+}
+
+.configPage :global(.stats-subtab-btn.is-active) {
+    background: #5e5e5e;
+}
+
+.configPage :global(.stats-sub-content) {
+    margin-top: 10px;
+}
+
+.configPage :global(.stats-split) {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.configPage :global(.stats-commanders-split) {
+    display: grid;
+    grid-template-columns: minmax(520px, 1fr) minmax(360px, 0.9fr);
+    gap: 12px;
+    align-items: start;
+}
+
+.configPage :global(.stats-pane) {
+    min-width: 0;
+}
+
+.configPage :global(.stats-pane-right) {
+    background: rgba(0, 0, 0, 0.12);
+    border: 1px solid #666;
+    border-radius: 8px;
+    padding: 10px;
+}
+
+.configPage :global(.selection-preview) {
+    position: relative;
+    overflow: hidden;
+    background: #111827;
+}
+
+.configPage :global(.selection-preview-media) {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.configPage :global(.selection-preview-scrim) {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.configPage :global(.selection-preview-map .selection-preview-scrim) {
+    background: linear-gradient(
+        180deg,
+        rgb(15 23 42 / 12%) 0%,
+        rgb(15 23 42 / 28%) 44%,
+        rgb(2 6 23 / 72%) 100%
+    );
+}
+
+.configPage :global(.selection-preview-commander .selection-preview-scrim) {
+    background: linear-gradient(
+        90deg,
+        rgb(2 6 23 / 54%) 0%,
+        rgb(2 6 23 / 18%) 38%,
+        rgb(2 6 23 / 70%) 100%
+    );
+}
+
+.configPage :global(.selection-preview.is-fallback.selection-preview-map) {
+    background:
+        radial-gradient(
+            circle at top left,
+            rgb(59 130 246 / 32%),
+            transparent 38%
+        ),
+        linear-gradient(135deg, #0f172a 0%, #13233e 52%, #0b1220 100%);
+}
+
+.configPage
+    :global(.selection-preview.is-fallback.selection-preview-commander) {
+    background:
+        radial-gradient(
+            circle at top right,
+            rgb(148 163 184 / 24%),
+            transparent 36%
+        ),
+        linear-gradient(120deg, #111827 0%, #18263d 50%, #0f172a 100%);
+}
+
+.configPage :global(.stats-dense th),
+.configPage :global(.stats-dense td) {
+    padding: 6px 8px;
+    font-size: 12px;
+}
+
+.configPage :global(.stats-map-hero) {
+    height: 120px;
+    border-radius: 6px;
+    position: relative;
+    margin-bottom: 10px;
+    border: 1px solid #334155;
+}
+
+.configPage :global(.stats-map-name) {
+    position: absolute;
+    left: 12px;
+    bottom: 28px;
+    font-size: 42px;
+    font-weight: 800;
+    color: #fff;
+    text-shadow: 1px 1px 2px #000;
+}
+
+.configPage :global(.stats-map-sub) {
+    position: absolute;
+    left: 12px;
+    bottom: 8px;
+    color: #fff;
+    text-shadow: 1px 1px 2px #000;
+}
+
+.configPage :global(.stats-map-players) {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.configPage :global(.stats-map-player) {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.45);
+}
+
+.configPage :global(.stats-map-player-head) {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.configPage :global(.stats-map-player h4) {
+    margin: 0;
+}
+
+.configPage :global(.stats-map-player-apm) {
+    color: #93c5fd;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.configPage :global(.stats-map-player-line) {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0;
+    color: #cbd5e1;
+}
+
+.configPage :global(.stats-map-player-line strong),
+.configPage :global(.stats-map-masteries strong) {
+    color: #e2e8f0;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.configPage :global(.analysis-progress-group) {
+    margin: 10px 0 6px;
+}
+
+.configPage :global(.analysis-progress-bar) {
+    overflow: hidden;
+    width: 100%;
+    height: 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    background: linear-gradient(
+        180deg,
+        rgba(15, 23, 42, 0.78),
+        rgba(15, 23, 42, 0.58)
+    );
+}
+
+.configPage :global(.analysis-progress-fill) {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #38bdf8 0%, #0ea5e9 55%, #0284c7 100%);
+    transition: width 180ms ease-out;
+}
+
+.configPage :global(.analysis-progress-count) {
+    font-variant-numeric: tabular-nums;
+}
+
+.configPage :global(.stats-map-player-line span) {
+    text-align: right;
+}
+
+.configPage :global(.stats-map-masteries) {
+    display: grid;
+    gap: 6px;
+}
+
+.configPage :global(.stats-map-mastery-row),
+.configPage :global(.stats-map-player-empty) {
+    color: #cbd5e1;
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+.configPage :global(.stats-map-player-empty) {
+    font-style: italic;
+}
+
+.configPage :global(.stats-map-foot) {
+    text-align: right;
+    margin-top: 8px;
+}
+
+.configPage :global(.stats-detail-empty) {
+    background: rgba(0, 0, 0, 0.16);
+    border: 1px solid #68768c;
+    border-radius: 8px;
+    padding: 16px;
+    color: #cbd5e1;
+}
+
+.configPage :global(.main-setting-check) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.configPage :global(.main-setting-check span) {
+    color: #e5e7eb;
+}
+
+.configPage :global(.main-setting-check.is-disabled) {
+    opacity: 1;
+}
+
+.configPage :global(.main-setting-check.is-disabled span) {
+    color: #94a3b8;
+}
+
+.configPage :global(.hotkey-entry) {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 6px 0;
+}
+
+.configPage :global(.hotkey-action-btn) {
+    background: #505050;
+    border: 1px solid #6f6f6f;
+    min-width: 150px;
+}
+
+.configPage :global(.hotkey-input) {
+    flex: 1;
+    max-width: 320px;
+}
+
+.configPage :global(.hotkey-input.is-recording) {
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 1px #60a5fa inset;
+}
+
+.configPage :global(.color-row) {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.configPage :global(.color-row-label) {
+    min-width: 90px;
+    color: #e5e7eb;
+    font-weight: 600;
+}
+
+.configPage :global(.color-row-input) {
+    width: 72px;
+    min-width: 72px;
+    flex: 0 0 auto;
+}
+
+.configPage :global(.color-row-text) {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    flex: 0 0 auto;
+    font-family: "Courier New", monospace;
+    text-transform: uppercase;
+}
+
+.configPage :global(.color-row-input-button) {
+    display: block;
+    width: 100%;
+    height: 42px;
+    padding: 4px;
+    background: #0a1020;
+    border: 1px solid #334155;
+    border-radius: 8px;
+}
+
+.configPage :global(.color-row-input-button:hover) {
+    background: #101a31;
+}
+
+.configPage :global(.color-row-input-button[aria-expanded="true"]) {
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 1px #60a5fa inset;
+}
+
+.configPage :global(.color-row-swatch) {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 4px;
+    border: 0;
+    box-shadow: none;
+}
+
+.configPage :global(.color-picker-popup[data-disabled="true"]) {
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+.configPage :global(.color-picker-popup) {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid #334155;
+    border-radius: 14px;
+    background: linear-gradient(
+        180deg,
+        rgb(23 31 49 / 98%) 0%,
+        rgb(14 21 36 / 98%) 100%
+    );
+    box-shadow: 0 24px 64px rgb(0 0 0 / 0.45);
+}
+
+.configPage :global(.color-wheel-picker) {
+    position: relative;
+    width: 220px;
+    aspect-ratio: 1;
+    touch-action: none;
+}
+
+.configPage :global(.color-wheel-ring) {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: conic-gradient(
+        #ff0000 0deg,
+        #ffff00 60deg,
+        #00ff00 120deg,
+        #00ffff 180deg,
+        #0000ff 240deg,
+        #ff00ff 300deg,
+        #ff0000 360deg
+    );
+    cursor: crosshair;
+}
+
+.configPage :global(.color-wheel-ring::before) {
+    content: "";
+    position: absolute;
+    inset: 14%;
+    border-radius: 50%;
+    background: radial-gradient(
+        circle at center,
+        rgb(15 23 42 / 0.98) 0%,
+        rgb(8 15 30 / 0.94) 68%,
+        rgb(8 15 30 / 0.72) 100%
+    );
+    box-shadow: inset 0 0 0 1px rgb(148 163 184 / 0.14);
+}
+
+.configPage :global(.color-wheel-ring-marker) {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    border: 2px solid #ffffff;
+    box-shadow:
+        0 0 0 2px rgb(15 23 42 / 0.95),
+        0 2px 8px rgb(0 0 0 / 0.45);
+    pointer-events: none;
+}
+
+.configPage :global(.color-wheel-square) {
+    position: absolute;
+    inset: 24%;
+    border-radius: 18px;
+    overflow: hidden;
+    border: 1px solid rgb(148 163 184 / 0.24);
+    cursor: crosshair;
+    box-shadow:
+        inset 0 0 0 1px rgb(255 255 255 / 0.08),
+        0 12px 30px rgb(2 6 23 / 0.34);
+}
+
+.configPage :global(.color-row-popup-anchor) {
+    position: relative;
+    flex: 0 0 auto;
+}
+
+.configPage :global(.color-wheel-square-marker) {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    border: 2px solid #ffffff;
+    box-shadow:
+        0 0 0 2px rgb(15 23 42 / 0.95),
+        0 2px 8px rgb(0 0 0 / 0.45);
+    pointer-events: none;
+}
+
+.configPage :global(.main-settings-content) {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.configPage :global(.main-settings-top) {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    align-items: start;
+}
+
+.configPage :global(.main-settings-left-cols) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+}
+
+.configPage :global(.main-settings-groups) {
+    display: grid;
+    gap: 12px;
+}
+
+.configPage :global(.main-settings-group) {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    background: rgba(8, 15, 30, 0.48);
+}
+
+.configPage :global(.main-settings-group-title) {
+    margin: 0;
+    font-size: 15px;
+    color: #93c5fd;
+}
+
+.configPage :global(.main-settings-group-fields) {
+    display: grid;
+    gap: 8px;
+}
+
+.configPage :global(.main-settings-box) {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    background: rgba(8, 15, 30, 0.48);
+}
+
+.configPage :global(.main-number-row) {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.configPage :global(.main-select-row) {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.configPage :global(.main-row-label) {
+    color: #e5e7eb;
+    flex: 1 1 auto;
+}
+
+.configPage :global(.main-number-row input) {
+    width: 120px;
+}
+
+.configPage :global(.main-fixed-select) {
+    width: 160px;
+    min-width: 160px;
+    max-width: 160px;
+    flex: 0 0 160px;
+}
+
+.configPage :global(.main-paths-title) {
+    margin: 0 0 10px;
+    color: #93c5fd;
+}
+
+.configPage :global(.main-path-btn) {
+    display: inline;
+    min-width: auto;
+    width: 100%;
+    text-align: left;
+    justify-content: flex-start;
+}
+
+.configPage :global(.main-path-value) {
+    font-family: "Courier New", monospace;
+    font-size: 13px;
+    color: #a7b5cf;
+    margin-top: 4px;
+}
+
+.configPage :global(.main-panel) {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+}
+
+.configPage :global(.main-panel h3) {
+    margin: 0;
+}
+
+.configPage :global(.main-settings-bottom) {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    align-items: start;
+}
+
+.configPage :global(.main-bottom-left),
+.configPage :global(.main-bottom-right) {
+    display: grid;
+    gap: 8px;
+}
+
+.configPage :global(.main-bottom-left .note) {
+    margin-bottom: 8px;
+}
+
+.configPage :global(.group-field) {
+    margin-top: 8px;
+}
+
+.configPage :global(.stats-commander-pane) {
+    background: transparent;
+    border: 0;
+    padding: 0;
+}
+
+.configPage :global(.stats-commander-detail) {
+    display: grid;
+    gap: 10px;
+}
+
+.configPage :global(.stats-commander-hero) {
+    height: 140px;
+    background-position: left center;
+    background-size: cover;
+    border-radius: 0;
+    position: relative;
+    overflow: hidden;
+    border: 1px solid #334155;
+}
+
+.configPage :global(.stats-commander-title) {
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-weight: 800;
+    font-size: clamp(26px, 2.4vw, 52px);
+    line-height: 1;
+    color: #fff;
+    letter-spacing: 0.2px;
+    text-shadow: 2px 2px 2px #000;
+}
+
+.configPage :global(.stats-commander-meta) {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    color: #f8fafc;
+    font-size: clamp(16px, 1.1vw, 22px);
+    line-height: 1.2;
+}
+
+.configPage :global(.stats-commander-meta span strong) {
+    font-weight: 800;
+}
+
+.configPage :global(.stats-commander-bottom) {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    align-items: start;
+}
+
+.configPage :global(.stats-commander-bottom-col) {
+    min-width: 0;
+}
+
+.configPage :global(.stats-commander-subheading) {
+    margin: 0 0 6px;
+    color: #f8fafc;
+    font-size: clamp(18px, 1.35vw, 26px);
+    font-weight: 700;
+    line-height: 1.1;
+    text-decoration: underline;
+}
+
+.configPage :global(.stats-commander-table td) {
+    font-size: clamp(14px, 0.95vw, 20px);
+    line-height: 1.2;
+    padding: 5px 8px;
+}
+
+.configPage :global(.stats-commander-table) {
+    width: auto;
+    max-width: none;
+}
+
+.configPage :global(.stats-commander-table-pct) {
+    width: 74px;
+    text-align: right;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.configPage :global(.stats-commander-prestige-row td) {
+    font-weight: 700;
+    color: #dbeafe;
+    background: rgba(30, 41, 59, 0.75);
+}
+
+.configPage :global(.stats-commander-empty-row td) {
+    padding: 5px 8px;
+}
+
+.configPage :global(.stats-commander-empty-row-cell) {
+    min-height: 1.2em;
+}
+
+.configPage :global(.stats-commander-category-gap td) {
+    border-top: 3px solid #3b82f6;
+}
+
+.configPage :global(.stats-units-layout) {
+    display: grid;
+    grid-template-columns: 420px minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+}
+
+.configPage :global(.stats-unit-selectors) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    align-self: start;
+}
+
+.configPage :global(.stats-unit-commanders) {
+    align-items: start;
+}
+
+.configPage :global(.stats-unit-column) {
+    min-width: 0;
+}
+
+.configPage :global(.stats-unit-column h4) {
+    margin: 0 0 6px;
+    color: #f1f5f9;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.1;
+}
+
+.configPage :global(.stats-unit-picker-table) {
+    table-layout: fixed;
+}
+
+.configPage :global(.stats-unit-picker-table tbody tr) {
+    cursor: pointer;
+}
+
+.configPage :global(.stats-unit-picker-table td) {
+    text-align: left;
+    font-size: 12px;
+    padding: 6px 8px;
+    white-space: nowrap;
+}
+
+.configPage :global(.stats-unit-table) {
+    min-width: 0;
+}
+
+.configPage :global(.stats-unit-table h3) {
+    margin: 0 0 8px;
+    color: #f3f4f6;
+    font-size: 40px;
+    font-weight: 500;
+    line-height: 1.15;
+}
+
+.configPage :global(.stats-unit-table-grid) {
+    table-layout: fixed;
+}
+
+.configPage :global(.stats-unit-table-grid th),
+.configPage :global(.stats-unit-table-grid td) {
+    white-space: nowrap;
+}
+
+.configPage :global(.stats-sort-btn) {
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    text-align: inherit;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.configPage :global(.stats-sort-btn-right) {
+    text-align: inherit;
+}
+
+.configPage :global(.stats-unit-col-name) {
+    text-align: left;
+}
+
+.configPage :global(.stats-unit-col-num) {
+    text-align: left;
+}
+
+.configPage :global(.stats-right-note) {
+    margin-top: 8px;
+    color: #94a3b8;
+    font-size: 15px;
+}
+
+.configPage :global(.stats-sum-row td) {
+    color: #dbe7f8;
+}
+
+.configPage :global(.randomizer-root) {
+    background: #4a4a4a;
+    border-color: #5f5f5f;
+}
+
+.configPage :global(.randomizer-controls) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 18px;
+}
+
+.configPage :global(.randomizer-inline-field) {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.configPage :global(.randomizer-inline-field .field-label) {
+    width: auto;
+}
+
+.configPage :global(.randomizer-select) {
+    min-width: 240px;
+    max-width: 320px;
+}
+
+.configPage :global(.randomizer-toggle) {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #e5e7eb;
+}
+
+.configPage :global(.randomizer-choice-box) {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.configPage :global(.randomizer-main-grid) {
+    display: grid;
+    grid-template-columns: max-content minmax(320px, 1fr);
+    gap: 16px;
+    align-items: start;
+    margin-top: 14px;
+}
+
+.configPage :global(.randomizer-choice-box h3),
+.configPage :global(.randomizer-result-box h3) {
+    margin: 0 0 10px;
+}
+
+.configPage :global(.randomizer-table-shell) {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: visible;
+    border: 1px solid #6b7280;
+    background: rgba(15, 23, 42, 0.32);
+}
+
+.configPage :global(.randomizer-choice-table) {
+    border: 0;
+    width: auto;
+    table-layout: fixed;
+}
+
+.configPage :global(.randomizer-choice-table th) {
+    top: 0;
+    z-index: 1;
+}
+
+.configPage :global(.randomizer-choice-table td),
+.configPage :global(.randomizer-choice-table th) {
+    padding: 7px 8px;
+}
+
+.configPage :global(.randomizer-commander-cell) {
+    width: 108px;
+    min-width: 108px;
+    max-width: 108px;
+    white-space: nowrap;
+}
+
+.configPage :global(.randomizer-checkbox-cell) {
+    width: 42px;
+    min-width: 42px;
+    text-align: center;
+}
+
+.configPage :global(.randomizer-checkbox-cell input) {
+    width: 16px;
+    height: 16px;
+}
+
+.configPage :global(.randomizer-commander-toggle),
+.configPage :global(.randomizer-header-toggle) {
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    text-align: inherit;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.configPage :global(.randomizer-commander-toggle) {
+    text-align: left;
+}
+
+.configPage :global(.randomizer-header-toggle-cell) {
+    text-align: center;
+}
+
+.configPage :global(.randomizer-header-toggle) {
+    text-align: center;
+}
+
+.configPage :global(.randomizer-commander-toggle:focus-visible),
+.configPage :global(.randomizer-header-toggle:focus-visible) {
+    outline: 1px solid #60a5fa;
+    outline-offset: 2px;
+}
+
+.configPage :global(.randomizer-actions) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-top: 14px;
+}
+
+.configPage :global(.randomizer-actions .note) {
+    margin: 0;
+}
+
+.configPage :global(.randomizer-result-box) {
+    min-width: 0;
+}
+
+.configPage :global(.randomizer-result-head) {
+    margin-bottom: 10px;
+    font-size: 20px;
+    color: #f8fafc;
+}
+
+.configPage :global(.randomizer-result-previews) {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.configPage :global(.randomizer-result-preview) {
+    min-height: 148px;
+    border: 1px solid #334155;
+    border-radius: 8px;
+}
+
+.configPage :global(.randomizer-result-preview-title) {
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    bottom: 34px;
+    color: #fff;
+    font-size: 24px;
+    font-weight: 800;
+    line-height: 1.05;
+    text-shadow: 1px 1px 2px #000;
+}
+
+.configPage :global(.randomizer-result-preview-subtitle) {
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    bottom: 12px;
+    color: #e2e8f0;
+    font-size: 13px;
+    font-weight: 600;
+    text-shadow: 1px 1px 2px #000;
+}
+
+.configPage :global(.randomizer-result-body) {
+    min-height: 150px;
+    font-family: inherit;
+}
+
+.configPage :global(.randomizer-result-row) {
+    display: flex;
+    gap: 12px;
+    line-height: 1.5;
+}
+
+.configPage :global(.randomizer-result-row.is-zero) {
+    color: #9ca3af;
+}
+
+.configPage :global(.randomizer-result-points) {
+    width: 24px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.configPage :global(.randomizer-result-empty) {
+    color: #94a3b8;
+    font-style: italic;
+}
+
+.configPage :global(.randomizer-result-foot) {
+    margin-top: 10px;
+    color: #e5e7eb;
+}
+
+.configPage :global(.performance-tab-card) {
+    max-width: 1120px;
+    background: #3c3c3c;
+    border-color: #4d4d4d;
+    padding: 24px 26px;
+}
+
+.configPage :global(.performance-tab-copy h3),
+.configPage :global(.performance-tab-hotkey-block h3) {
+    margin: 0 0 8px;
+    color: #f8fafc;
+    font-size: 21px;
+}
+
+.configPage :global(.performance-tab-copy p) {
+    margin: 0 0 18px;
+    max-width: 850px;
+    color: #f5f5f5;
+    font-size: 20px;
+    line-height: 1.35;
+}
+
+.configPage :global(.performance-tab-check) {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+    color: #ffffff;
+    font-size: 18px;
+}
+
+.configPage :global(.performance-tab-position-btn) {
+    display: block;
+    margin-top: 18px;
+    min-width: 296px;
+    background: linear-gradient(180deg, #656565 0%, #4a4a4a 100%);
+    border: 1px solid #808080;
+}
+
+.configPage :global(.performance-tab-hotkey-block) {
+    margin-top: 92px;
+}
+
+.configPage :global(.performance-tab-hotkey-row) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px;
+}
+
+.configPage :global(.performance-tab-hotkey-row .input) {
+    min-width: 220px;
+    max-width: 300px;
+    background: #1a1a1a;
+}
+
+.configPage :global(.performance-tab-hotkey-row button) {
+    min-width: 148px;
+    background: linear-gradient(180deg, #656565 0%, #4a4a4a 100%);
+    border: 1px solid #808080;
+}
+
+.configPage :global(.performance-tab-processes) {
+    margin: 18px 0 0;
+    color: #d1d5db;
+    font-size: 14px;
+}
+
+.configPage :global(.performance-tab-process-block) {
+    margin-top: 28px;
+}
+
+.configPage :global(.performance-tab-process-copy) {
+    margin: 0 0 12px;
+    max-width: 720px;
+    color: #d1d5db;
+    font-size: 14px;
+    line-height: 1.45;
+}
+
+.configPage :global(.performance-tab-process-row) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 16px;
+}
+
+.configPage :global(.performance-tab-process-input) {
+    min-width: 280px;
+    max-width: 360px;
+    min-height: 92px;
+    font-family: "Courier New", monospace;
+    white-space: pre-wrap;
+}
+
+@media (max-width: 1500px) {
+    .configPage :global(.stats-units-layout) {
+        grid-template-columns: 360px minmax(0, 1fr);
+    }
+
+    .configPage :global(.stats-unit-table h3) {
+        font-size: 30px;
+    }
+}
+
+@media (max-width: 1200px) {
+    .configPage :global(.main-settings-top) {
+        grid-template-columns: 1fr;
+    }
+
+    .configPage :global(.main-settings-left-cols) {
+        grid-template-columns: 1fr;
+    }
+
+    .configPage :global(.main-fixed-select) {
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+        flex: 1 1 auto;
+    }
+
+    .configPage :global(.main-settings-bottom) {
+        grid-template-columns: 1fr;
+    }
+
+    .configPage :global(.stats-commander-bottom) {
+        grid-template-columns: 1fr;
+    }
+
+    .configPage :global(.stats-units-layout) {
+        grid-template-columns: 1fr;
+    }
+
+    .configPage :global(.stats-unit-table h3) {
+        font-size: 26px;
+    }
+
+    .configPage :global(.randomizer-controls) {
+        align-items: stretch;
+    }
+
+    .configPage :global(.randomizer-main-grid) {
+        grid-template-columns: 1fr;
+    }
+
+    .configPage :global(.randomizer-inline-field) {
+        width: 100%;
+    }
+
+    .configPage :global(.randomizer-select) {
+        min-width: 0;
+        width: 100%;
+        max-width: none;
+    }
+
+    .configPage :global(.performance-tab-hotkey-block) {
+        margin-top: 36px;
+    }
+
+    .configPage :global(.weeklies-layout) {
+        grid-template-columns: 1fr;
+    }
+
+    .configPage :global(.weeklies-detail-pane) {
+        position: static;
+        top: auto;
+    }
+
+    .configPage :global(.weeklies-detail-card) {
+        max-height: none;
+        overflow: visible;
+    }
+}
+
+@media (max-width: 720px) {
+    .configPage :global(.color-picker-popup) {
+        left: 0;
+        transform: none;
+    }
+
+    .configPage :global(.color-wheel-picker) {
+        width: min(72vw, 260px);
+    }
+
+    .configPage :global(.chat-modal-backdrop) {
+        padding: 12px;
+    }
+
+    .configPage :global(.chat-modal-header) {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .configPage :global(.chat-row) {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+}
+
+/* ThemeProvider-driven surface overrides */
+.configPage.configPage {
+    color: var(--config-page-text);
+}
+
+.configPage.configPage :global(.tabs) {
+    border-bottom-color: var(--config-border);
+}
+
+.configPage.configPage :global(.tab-btn) {
+    background: var(--config-tab-bg);
+    border-color: var(--config-border);
+    color: var(--config-tab-text);
+}
+
+.configPage.configPage :global(.tab-btn:hover) {
+    background: var(--config-tab-hover-bg);
+    color: var(--config-tab-hover-text);
+}
+
+.configPage.configPage :global(.tab-btn.is-active) {
+    background: var(--config-tab-active-bg);
+    color: var(--config-tab-active-text);
+    box-shadow: inset 0 1px 0 var(--config-accent-main);
+}
+
+.configPage.configPage :global(.subtle),
+.configPage.configPage :global(.note),
+.configPage.configPage :global(.games-mutator-empty),
+.configPage.configPage :global(.players-handle-count),
+.configPage.configPage :global(.chat-modal-meta),
+.configPage.configPage :global(.randomizer-result-empty),
+.configPage.configPage :global(.stats-right-note),
+.configPage.configPage :global(.main-path-value) {
+    color: var(--config-muted-text);
+}
+
+.configPage.configPage :global(.link-list a),
+.configPage.configPage :global(.section-title),
+.configPage.configPage :global(.weeklies-map),
+.configPage.configPage :global(.main-settings-group-title),
+.configPage.configPage :global(.main-paths-title),
+.configPage.configPage :global(.chat-time) {
+    color: var(--config-link-text);
+}
+
+.configPage.configPage :global(.link-list a:hover) {
+    color: var(--config-link-hover-text);
+}
+
+.configPage.configPage :global(.status) {
+    background: var(--config-surface);
+    border-color: var(--config-border);
+    color: var(--config-page-text);
+}
+
+.configPage.configPage :global(.card),
+.configPage.configPage :global(.main-settings-group),
+.configPage.configPage :global(.main-settings-box),
+.configPage.configPage :global(.weeklies-detail-card),
+.configPage.configPage :global(.weeklies-mutator-card),
+.configPage.configPage :global(.chat-row),
+.configPage.configPage :global(.chat-modal),
+.configPage.configPage :global(.performance-tab-card),
+.configPage.configPage :global(.games-panel),
+.configPage.configPage :global(.stats-root),
+.configPage.configPage :global(.randomizer-root) {
+    background: var(--config-surface);
+    border-color: var(--config-border);
+    box-shadow: var(--config-shadow);
+}
+
+.configPage.configPage :global(.field),
+.configPage.configPage :global(.chat-modal-header),
+.configPage.configPage :global(.stats-subtabs) {
+    border-bottom-color: var(--config-border);
+}
+
+.configPage.configPage :global(.field-label),
+.configPage.configPage :global(.games-filter-check),
+.configPage.configPage :global(.chat-player),
+.configPage.configPage :global(.chat-text),
+.configPage.configPage :global(.randomizer-toggle),
+.configPage.configPage :global(.color-row-label),
+.configPage.configPage :global(.main-row-label),
+.configPage.configPage :global(.performance-tab-check),
+.configPage.configPage :global(.performance-tab-copy p),
+.configPage.configPage :global(.performance-tab-processes),
+.configPage.configPage :global(.performance-tab-process-copy),
+.configPage.configPage :global(.stats-map-player-line span),
+.configPage.configPage :global(.stats-map-masteries),
+.configPage.configPage :global(.stats-map-player-empty),
+.configPage.configPage :global(.randomizer-result-foot),
+.configPage.configPage :global(.weeklies-detail-title),
+.configPage.configPage :global(.weeklies-mutator-name),
+.configPage.configPage :global(.stats-commander-meta),
+.configPage.configPage :global(.stats-commander-subheading),
+.configPage.configPage :global(.randomizer-result-head),
+.configPage.configPage :global(.performance-tab-copy h3),
+.configPage.configPage :global(.performance-tab-hotkey-block h3),
+.configPage.configPage :global(.stats-unit-table h3),
+.configPage.configPage :global(.main-setting-check span) {
+    color: var(--config-page-text);
+}
+
+.configPage.configPage :global(.input),
+.configPage.configPage :global(textarea.input),
+.configPage.configPage :global(.stats-block),
+.configPage.configPage :global(.color-row-input-button),
+.configPage.configPage :global(.performance-tab-hotkey-row .input) {
+    background: var(--config-input-bg);
+    border-color: var(--config-border-strong);
+    color: var(--config-page-text);
+}
+
+.configPage.configPage :global(.color-row-input-button:hover) {
+    background: var(--config-input-hover-bg);
+}
+
+.configPage.configPage :global(.data-table),
+.configPage.configPage :global(.data-table th),
+.configPage.configPage :global(.data-table td),
+.configPage.configPage :global(.randomizer-table-shell),
+.configPage.configPage :global(.games-icon-btn),
+.configPage.configPage :global(.games-row-btn),
+.configPage.configPage :global(.stats-pane-right),
+.configPage.configPage :global(.stats-commander-hero),
+.configPage.configPage :global(.randomizer-result-preview),
+.configPage.configPage :global([class$="-chip"]),
+.configPage.configPage :global([class$="-pill"]) {
+    border-color: var(--config-border);
+}
+
+.configPage.configPage :global(.data-table th) {
+    background: var(--config-table-header-bg);
+}
+
+.configPage.configPage :global(.table-pagination-summary),
+.configPage.configPage :global(.games-filter-label),
+.configPage.configPage :global(.chat-empty),
+.configPage.configPage :global(.stats-unit-column h4),
+.configPage.configPage :global(.weeklies-mutator-description) {
+    color: var(--config-subtle-strong);
+}
+
+.configPage.configPage :global(.stats-detail-empty),
+.configPage.configPage :global(.randomizer-result-empty) {
+    background: var(--config-empty-bg);
+    border: 1px solid var(--config-border);
+    color: var(--config-empty-text);
+}
+
+.configPage.configPage :global(.data-table tbody tr:hover),
+.configPage.configPage :global(.players-summary-row.is-expanded) {
+    background: var(--config-accent-soft);
+}
+
+.configPage.configPage :global(.data-table tr.selected-row) {
+    background: var(--config-accent-soft-strong);
+}
+
+.configPage.configPage :global(button) {
+    background: var(--config-button-bg);
+    color: var(--config-button-text);
+}
+
+.configPage.configPage :global(button:disabled) {
+    background: var(--config-button-disabled-bg);
+}
+
+.configPage.configPage
+    :global(
+        .data-table
+            button:not(.games-row-btn):not(.mini-btn):not(
+                .table-pagination-btn
+            ):not(.players-expander-btn)
+    ) {
+    background: transparent;
+    border: 0;
+    color: inherit;
+    box-shadow: none;
+}
+
+.configPage.configPage :global(.mini-btn),
+.configPage.configPage :global(.table-pagination-btn),
+.configPage.configPage :global(.games-icon-btn),
+.configPage.configPage :global(.games-row-btn),
+.configPage.configPage :global(.players-expander-btn),
+.configPage.configPage :global(.stats-subtab-btn),
+.configPage.configPage :global(.performance-tab-position-btn),
+.configPage.configPage :global(.performance-tab-hotkey-row button) {
+    background: var(--config-button-neutral-bg);
+    color: var(--config-button-neutral-text);
+    border: 1px solid var(--config-border);
+}
+
+.configPage.configPage :global(.mini-btn.is-active),
+.configPage.configPage :global(.stats-subtab-btn.is-active) {
+    background: var(--config-button-selected-bg);
+    color: var(--config-link-text);
+}
+
+.configPage.configPage :global(.selection-preview) {
+    background: var(--config-preview-bg);
+}
+
+.configPage.configPage :global(.chat-modal-backdrop) {
+    background: var(--config-modal-backdrop);
+}
+
+.configPage.configPage :global([class$="-chip"]),
+.configPage.configPage :global([class$="-pill"]) {
+    background: var(--config-chip-bg);
+    color: var(--config-chip-text);
+}
+
+.configPage.configPage :global(.weeklies-current-pill) {
+    background: var(--config-accent-soft);
+    border-color: var(--config-accent-border);
+    color: var(--config-link-text);
+}
+
+.configPage.configPage :global(.players-expander-btn) {
+    background: var(--config-chip-bg);
+}
+
+.configPage.configPage :global(.players-expander-btn:hover) {
+    background: var(--config-accent-soft);
+    border-color: var(--config-accent-border);
+}
+
+.configPage.configPage :global(.players-detail-cell),
+.configPage.configPage :global(.stats-pane-right),
+.configPage.configPage :global(.randomizer-table-shell),
+.configPage.configPage :global(.main-settings-group),
+.configPage.configPage :global(.main-settings-box) {
+    background: var(--config-surface-soft);
+}
+
+.configPage.configPage :global(.randomizer-choice-table td),
+.configPage.configPage :global(.randomizer-choice-table th) {
+    color: var(--config-page-text);
+    background: transparent;
+}
+
+.configPage.configPage :global(.randomizer-commander-toggle),
+.configPage.configPage :global(.randomizer-header-toggle) {
+    background: transparent;
+    border: 0;
+    color: var(--config-page-text);
+    box-shadow: none;
+}
+
+.configPage.configPage :global(.stats-commander-prestige-row td) {
+    color: var(--config-link-text);
+    background: var(--config-accent-selected-bg);
+}
+
+.configPage.configPage :global(.stats-commander-category-gap td) {
+    border-top-color: var(--config-accent-main);
+}
+
+.configPage.configPage :global(.stats-sum-row td) {
+    color: var(--config-page-text);
+}
+
+.configPage.configPage :global(.main-setting-check.is-disabled) {
+    opacity: 1;
+}
+
+.configPage.configPage :global(.main-setting-check.is-disabled span) {
+    color: var(--config-disabled-text);
+}

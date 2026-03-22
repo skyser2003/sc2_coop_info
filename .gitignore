@@ -1,0 +1,16 @@
+# Dev
+.vscode
+**/target/
+tauri-overlay/src-tauri/generated/
+tauri-overlay/dist/
+s2coop-analyzer/generated/
+**/node_modules/
+.env
+.envrc*
+
+# Per user data
+cache_overall_stats.json
+cache_overall_stats_pretty.json
+cache_overall_stats_temp
+Settings.json
+Logs.txt

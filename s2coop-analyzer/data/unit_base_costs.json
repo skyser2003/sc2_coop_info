@@ -1,0 +1,1036 @@
+{
+  "Abathur": {
+    "Brutalisk": [
+      0,
+      0,
+      100,
+      0
+    ],
+    "Devourer": [
+      75,
+      25,
+      175,
+      125
+    ],
+    "GuardianMP": [
+      25,
+      50,
+      125,
+      150
+    ],
+    "HotSLeviathan": [
+      0,
+      0,
+      100,
+      100
+    ],
+    "Mutalisk": [
+      100,
+      100
+    ],
+    "Queen": [
+      150,
+      50
+    ],
+    "RavagerAbathur": [
+      13,
+      38,
+      113,
+      38
+    ],
+    "RavagerAbathurCocoon": [
+      0,
+      0,
+      100,
+      0
+    ],
+    "Roach": [
+      100,
+      0
+    ],
+    "RoachVile": [
+      100,
+      0
+    ],
+    "SpineCrawler": [
+      150,
+      0
+    ],
+    "SporeCrawler": [
+      125,
+      0
+    ],
+    "SwarmHost": [
+      200,
+      100
+    ],
+    "Overseer": [
+      50,
+      50
+    ],
+    "Viper": [
+      100,
+      200
+    ]
+  },
+  "Alarak": {
+    "ColossusTaldarim": [
+      300,
+      200
+    ],
+    "HighTemplarTaldarim": [
+      50,
+      150
+    ],
+    "ImmortalTaldarim": [
+      250,
+      100
+    ],
+    "PhotonCannon": [
+      150,
+      0
+    ],
+    "SOAMothershipv4": [
+      0,
+      0
+    ],
+    "Stalker": [
+      125,
+      50
+    ],
+    "Supplicant": [
+      75,
+      0
+    ],
+    "VoidRayTaldarim": [
+      0,
+      0
+    ],
+    "WarpPrismTaldarim": [
+      200,
+      0
+    ],
+    "Monitor": [
+      50,
+      100
+    ]
+  },
+  "Artanis": {
+    "Archon": [
+      0,
+      0,
+      100,
+      300
+    ],
+    "Dragoon": [
+      125,
+      50
+    ],
+    "HighTemplar": [
+      50,
+      150
+    ],
+    "ImmortalAiur": [
+      250,
+      100
+    ],
+    "PhoenixAiur": [
+      150,
+      100
+    ],
+    "PhotonCannon": [
+      150,
+      0
+    ],
+    "Reaver": [
+      300,
+      200
+    ],
+    "Tempest": [
+      300,
+      200
+    ],
+    "Zealot": [
+      100,
+      0
+    ],
+    "Observer": [
+      25,
+      75
+    ],
+    "ZealotAiur": [
+      100,
+      0
+    ]
+  },
+  "Dehaka": {
+    "DehakaGuardian": [
+      0,
+      100,
+      150,
+      150
+    ],
+    "DehakaGuardianFightMorph": [
+      0,
+      100,
+      150,
+      150
+    ],
+    "DehakaHydraliskLevel2": [
+      100,
+      50
+    ],
+    "DehakaMutaliskLevel3": [
+      0,
+      25,
+      200,
+      125
+    ],
+    "DehakaMutaliskLevel3FightMorph": [
+      0,
+      25,
+      200,
+      125
+    ],
+    "DehakaMutaliskReviveEgg": [
+      0,
+      0,
+      200,
+      125
+    ],
+    "DehakaNydusDestroyer": [
+      300,
+      0
+    ],
+    "DehakaRavasaur": [
+      0,
+      0,
+      100,
+      0
+    ],
+    "DehakaRoachLevel2": [
+      75,
+      25
+    ],
+    "DehakaRoachLevel3": [
+      0,
+      0,
+      150,
+      50
+    ],
+    "DehakaUltraliskLevel2": [
+      300,
+      200
+    ],
+    "DehakaUltraliskLevel3": [
+      0,
+      0,
+      600,
+      400
+    ],
+    "DehakaSwarmHost": [
+      100,
+      75
+    ],
+    "DehakaPrimalSwarmHost": [
+      0,
+      0,
+      200,
+      150
+    ],
+    "DehakaZerglingLevel2": [
+      50,
+      0
+    ],
+    "ImpalerDehaka": [
+      0,
+      0,
+      200,
+      100
+    ]
+  },
+  "Fenix": {
+    "AdeptFenix": [
+      100,
+      40
+    ],
+    "ColossusPurifier": [
+      240,
+      160
+    ],
+    "Disruptor": [
+      120,
+      120
+    ],
+    "Immortal": [
+      200,
+      80
+    ],
+    "Interceptor": [
+      0,
+      0
+    ],
+    "PhotonCannon": [
+      150,
+      0
+    ],
+    "Observer": [
+      20,
+      60
+    ],
+    "Carrier": [
+      280,
+      200
+    ],
+    "Scout": [
+      180,
+      60
+    ],
+    "SentryFenix": [
+      40,
+      80
+    ],
+    "ZealotPurifier": [
+      160,
+      0
+    ],
+    "FenixTalisAdept": [
+      0,
+      0,
+      100,
+      40
+    ],
+    "FenixKaldalisZealot": [
+      0,
+      0,
+      160,
+      0
+    ],
+    "FenixWarbringerColossus": [
+      0,
+      0,
+      240,
+      160
+    ],
+    "FenixTaldarinImmortal": [
+      0,
+      0,
+      200,
+      80
+    ],
+    "FenixMojoScout": [
+      0,
+      0,
+      180,
+      60
+    ],
+    "FenixClolarionCarrier": [
+      0,
+      0,
+      280,
+      200
+    ]
+  },
+  "Horner": {
+    "HHBattlecruiser": [
+      1000,
+      800
+    ],
+    "HHBomberPlatform": [
+      100,
+      100
+    ],
+    "HHHellion": [
+      100,
+      0
+    ],
+    "HHHellionTank": [
+      100,
+      0
+    ],
+    "HHMercStarportUpgraded": [
+      0,
+      0,
+      150,
+      0
+    ],
+    "HHMercStarportNoArmy": [
+      150,
+      0
+    ],
+    "HHReaper": [
+      50,
+      0
+    ],
+    "HHReaperFlying": [
+      0,
+      0
+    ],
+    "HHVikingFighter": [
+      400,
+      250
+    ],
+    "HHWidowMine": [
+      100,
+      0
+    ],
+    "HHWraith": [
+      400,
+      200
+    ],
+    "HHRaven": [
+      100,
+      200
+    ],
+    "MissileTurret": [
+      100,
+      0
+    ]
+  },
+  "Karax": {
+    "ColossusPurifier": [
+      390,
+      260
+    ],
+    "Colossus": [
+      390,
+      260
+    ],
+    "ImmortalAiur": [
+      325,
+      130
+    ],
+    "Interceptor": [
+      0,
+      0
+    ],
+    "KhaydarinMonolith": [
+      300,
+      100
+    ],
+    "PhoenixPurifier": [
+      195,
+      130
+    ],
+    "PhotonCannon": [
+      150,
+      0
+    ],
+    "SentryPurifier": [
+      65,
+      130
+    ],
+    "ShieldBattery": [
+      100,
+      0
+    ],
+    "Observer": [
+      25,
+      75
+    ],
+    "Carrier": [
+      455,
+      325
+    ],
+    "CarrierAiur": [
+      455,
+      325
+    ],
+    "ZealotPurifier": [
+      130,
+      0
+    ]
+  },
+  "Kerrigan": {
+    "BroodLord": [
+      150,
+      150,
+      250,
+      250
+    ],
+    "HotSRaptor": [
+      25,
+      0
+    ],
+    "HotSTorrasque": [
+      300,
+      200
+    ],
+    "TorrasqueChrysalis": [
+      0,
+      0,
+      300,
+      200
+    ],
+    "HydraliskLurker": [
+      100,
+      50
+    ],
+    "Lurker": [
+      50,
+      100,
+      150,
+      150
+    ],
+    "MutaliskBroodlord": [
+      100,
+      100
+    ],
+    "QueenCoop": [
+      150,
+      0
+    ],
+    "SpineCrawler": [
+      150,
+      0
+    ],
+    "SporeCrawler": [
+      125,
+      0
+    ],
+    "Ultralisk": [
+      300,
+      200
+    ],
+    "Overseer": [
+      50,
+      50
+    ],
+    "Zergling": [
+      25,
+      0
+    ]
+  },
+  "Mengsk": {
+    "ArtilleryMengsk": [
+      150,
+      100
+    ],
+    "BattlecruiserMengsk": [
+      320,
+      720
+    ],
+    "GhostMengsk": [
+      160,
+      400
+    ],
+    "MarauderMengsk": [
+      100,
+      280
+    ],
+    "MissileTurretMengsk": [
+      100,
+      0
+    ],
+    "SiegeTankMengsk": [
+      120,
+      340
+    ],
+    "ThorMengsk": [
+      240,
+      480
+    ],
+    "TrooperMengsk": [
+      40,
+      0
+    ],
+    "TrooperMengskAA": [
+      160,
+      0,
+      200,
+      0
+    ],
+    "TrooperMengskFlamethrower": [
+      160,
+      0,
+      200,
+      0
+    ],
+    "TrooperMengskImproved": [
+      160,
+      0,
+      200,
+      0
+    ],
+    "VikingMengskFighter": [
+      120,
+      300
+    ],
+    "RavenMengsk": [
+      100,
+      100
+    ],
+    "MedivacMengsk": [
+      100,
+      50
+    ]
+  },
+  "Nova": {
+    "Banshee_BlackOps": [
+      350,
+      187.5
+    ],
+    "GhostFemale_BlackOps": [
+      500,
+      250
+    ],
+    "Ghost_BlackOps": [
+      500,
+      250
+    ],
+    "Goliath_BlackOps": [
+      375,
+      125
+    ],
+    "HellbatBlackOps": [
+      250,
+      0
+    ],
+    "HellionBlackOps": [
+      250,
+      0
+    ],
+    "LiberatorAG_BlackOps": [
+      375,
+      375
+    ],
+    "Liberator_BlackOps": [
+      375,
+      375
+    ],
+    "Marauder_BlackOps": [
+      250,
+      65
+    ],
+    "Marine_BlackOps": [
+      150,
+      0
+    ],
+    "MissileTurret": [
+      100,
+      0
+    ],
+    "NovaACLaserTurret": [
+      0,
+      0
+    ],
+    "Raven_BlackOps": [
+      100,
+      200
+    ],
+    "SiegeTankSieged_BlackOps": [
+      400,
+      300
+    ],
+    "SiegeTank_BlackOps": [
+      400,
+      300
+    ],
+    "SpiderMine": [
+      16.666,
+      0
+    ]
+  },
+  "Raynor": {
+    "Banshee": [
+      150,
+      80
+    ],
+    "Battlecruiser": [
+      400,
+      240
+    ],
+    "Bunker": [
+      100,
+      0
+    ],
+    "Firebat": [
+      100,
+      25
+    ],
+    "Marauder": [
+      100,
+      25
+    ],
+    "Marine": [
+      50,
+      0
+    ],
+    "MissileTurret": [
+      100,
+      0
+    ],
+    "SiegeTank": [
+      150,
+      100
+    ],
+    "SpiderMine": [
+      15,
+      0
+    ],
+    "VikingAssault": [
+      150,
+      60
+    ],
+    "Medic": [
+      75,
+      50
+    ],
+    "Vulture": [
+      75,
+      0
+    ]
+  },
+  "Stetmann": {
+    "BanelingStetmann": [
+      25,
+      15,
+      50,
+      15
+    ],
+    "BroodLordStetmann": [
+      300,
+      250,
+      450,
+      350
+    ],
+    "CorruptorStetmann": [
+      150,
+      100
+    ],
+    "HydraliskStetmann": [
+      100,
+      50
+    ],
+    "InfestorStetmann": [
+      100,
+      150
+    ],
+    "LurkerStetmann": [
+      50,
+      100,
+      150,
+      150
+    ],
+    "SpineCrawlerStetmann": [
+      150,
+      0
+    ],
+    "SporeCrawlerStetmann": [
+      125,
+      0
+    ],
+    "UltraliskStetmann": [
+      300,
+      200
+    ],
+    "OverseerStetmann": [
+      50,
+      50
+    ],
+    "ZerglingStetmann": [
+      25,
+      0
+    ],
+    "BroodLordStetmannCocoon": [
+      0,
+      0,
+      150,
+      100
+    ],
+    "BanelingStetmannCocoon": [
+      0,
+      0,
+      25,
+      0
+    ],
+    "LurkerStetmannCocoon": [
+      0,
+      0,
+      100,
+      50
+    ]
+  },
+  "Stukov": {
+    "SIInfestedBunker": [
+      400,
+      0
+    ],
+    "SIInfestedMarine": [
+      15,
+      0
+    ],
+    "SILiberator": [
+      150,
+      125
+    ],
+    "SIMissileTurret": [
+      100,
+      0
+    ],
+    "SIQueen": [
+      100,
+      100
+    ],
+    "Overseer": [
+      50,
+      50
+    ],
+    "StukovInfestedBanshee": [
+      150,
+      100
+    ],
+    "StukovInfestedDiamondBack": [
+      225,
+      75
+    ],
+    "StukovInfestedSiegeTank": [
+      200,
+      100
+    ]
+  },
+  "Swann": {
+    "Cyclone": [
+      150,
+      100
+    ],
+    "Goliath": [
+      150,
+      50
+    ],
+    "Hellion": [
+      100,
+      0
+    ],
+    "HellionTank": [
+      100,
+      0
+    ],
+    "Hercules": [
+      100,
+      50
+    ],
+    "KelMorianGrenadeTurret": [
+      150,
+      0
+    ],
+    "KelMorianMissileTurret": [
+      100,
+      0
+    ],
+    "PerditionTurret": [
+      75,
+      0
+    ],
+    "PerditionTurretUnderground": [
+      75,
+      0
+    ],
+    "ScienceVessel": [
+      100,
+      200
+    ],
+    "SiegeTank": [
+      150,
+      125
+    ],
+    "SiegeTankWreckage": [
+      0,
+      0,
+      150,
+      0
+    ],
+    "Thor": [
+      300,
+      200
+    ],
+    "ThorWreckageSwann": [
+      0,
+      0,
+      300,
+      0
+    ],
+    "Wraith": [
+      150,
+      50
+    ]
+  },
+  "Tychus": {
+    "TychusFirebat": [
+      1000,
+      200
+    ],
+    "TychusMedic": [
+      1000,
+      200
+    ],
+    "TychusGhost": [
+      1000,
+      200
+    ],
+    "TychusHERC": [
+      1000,
+      200
+    ],
+    "TychusMarauder": [
+      1000,
+      200
+    ],
+    "TychusReaper": [
+      1000,
+      200
+    ],
+    "TychusSCVAutoTurret": [
+      150,
+      0
+    ],
+    "TychusSpectre": [
+      1000,
+      200
+    ],
+    "TychusWarhound": [
+      1000,
+      200
+    ]
+  },
+  "Vorazun": {
+    "CorsairMP": [
+      150,
+      100
+    ],
+    "DarkArchon": [
+      175,
+      275
+    ],
+    "DarkTemplarShakuras": [
+      125,
+      75
+    ],
+    "Oracle": [
+      100,
+      75
+    ],
+    "PhotonCannon": [
+      150,
+      0
+    ],
+    "StalkerShakuras": [
+      125,
+      50
+    ],
+    "Stalker": [
+      125,
+      50
+    ],
+    "VoidRayShakuras": [
+      250,
+      150
+    ],
+    "VoidRay": [
+      250,
+      150
+    ],
+    "ZealotShakuras": [
+      100,
+      0
+    ]
+  },
+  "Zagara": {
+    "Baneling": [
+      22,
+      14,
+      36.666,
+      14
+    ],
+    "BanelingCocoon": [
+      0,
+      0,
+      14.666,
+      0
+    ],
+    "BileLauncherZagara": [
+      150,
+      100
+    ],
+    "HotSSplitterlingBig": [
+      22,
+      14,
+      36.666,
+      14
+    ],
+    "HotSSplitterlingMedium": [
+      0,
+      0
+    ],
+    "HotSSwarmling": [
+      14.666,
+      0
+    ],
+    "InfestedAbomination": [
+      180,
+      68
+    ],
+    "QueenCoop": [
+      150,
+      0
+    ],
+    "Scourge": [
+      11.5,
+      9
+    ],
+    "Overseer": [
+      50,
+      50
+    ],
+    "SpineCrawler": [
+      100,
+      0
+    ],
+    "SporeCrawler": [
+      125,
+      0
+    ],
+    "ZagaraCorruptor": [
+      135,
+      90
+    ],
+    "Zergling": [
+      25,
+      0
+    ]
+  },
+  "Zeratul": {
+    "ZeratulObserver": [
+      25,
+      75
+    ],
+    "ZeratulDarkTemplar": [
+      375,
+      225
+    ],
+    "ZeratulDisruptor": [
+      450,
+      450
+    ],
+    "ZeratulImmortal": [
+      750,
+      300
+    ],
+    "ZeratulPhotonCannon": [
+      300,
+      0
+    ],
+    "ZeratulSentry": [
+      75,
+      150
+    ],
+    "ZeratulStalker": [
+      300,
+      50
+    ],
+    "ZeratulWarpPrism": [
+      150,
+      0
+    ]
+  }
+}

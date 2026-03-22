@@ -1,0 +1,1718 @@
+{
+  "Train of the Dead": {
+    "map": "Oblivion Express",
+    "mutators": [
+      "Darkness",
+      "Outbreak",
+      "Walking Infested"
+    ],
+    "nameEn": "Train of the Dead",
+    "nameKo": "망자의 열차"
+  },
+  "First Strike": {
+    "map": "Chain of Ascension",
+    "mutators": [
+      "Laser Drill",
+      "Long Range",
+      "Shortsighted"
+    ],
+    "nameEn": "First Strike",
+    "nameKo": "선제 공격"
+  },
+  "Time Lock": {
+    "map": "Lock & Load",
+    "mutators": [
+      "Mag-nificent",
+      "Speed Freaks",
+      "Time Warp"
+    ],
+    "nameEn": "Time Lock",
+    "nameKo": "제한 시간"
+  },
+  "Bad Weather": {
+    "map": "Rifts to Korhal",
+    "mutators": [
+      "Twister",
+      "Void Rifts"
+    ],
+    "nameEn": "Bad Weather",
+    "nameKo": "궂은 날씨"
+  },
+  "Whiteout": {
+    "map": "Void Launch",
+    "mutators": [
+      "Blizzard",
+      "Slim Pickings"
+    ],
+    "nameEn": "White Out",
+    "nameKo": "하얀 세상"
+  },
+  "War is Hell": {
+    "map": "Void Thrashing",
+    "mutators": [
+      "Evasive Maneuvers",
+      "Lava Burst",
+      "Scorched Earth"
+    ],
+    "nameEn": "War Is Hell",
+    "nameKo": "전쟁은 지옥"
+  },
+  "Temple of Pain": {
+    "map": "Temple of the Past",
+    "mutators": [
+      "Avenger",
+      "Barrier",
+      "Mineral Shields"
+    ],
+    "nameEn": "Temple of Pain",
+    "nameKo": "고통의 사원"
+  },
+  "Spear of Your Doom": {
+    "map": "Lock & Load",
+    "mutators": [
+      "Orbital Strike",
+      "Purifier Beam",
+      "Temporal Field"
+    ],
+    "nameEn": "Spear of Your Doom",
+    "nameKo": "어둠의 창"
+  },
+  "Special Delivery": {
+    "map": "Void Launch",
+    "mutators": [
+      "Aggressive Deployment",
+      "Alien Incubation",
+      "Self Destruction"
+    ],
+    "nameEn": "Special Delivery",
+    "nameKo": "특별 배달"
+  },
+  "Urban Warfare": {
+    "map": "Rifts to Korhal",
+    "mutators": [
+      "Minesweeper",
+      "Photon Overload",
+      "We Move Unseen"
+    ],
+    "nameEn": "Urban Warfare",
+    "nameKo": "시가전"
+  },
+  "Wheel of Misfortune (Thrashers)": {
+    "map": "Void Thrashing",
+    "mutators": [
+      "Chaos Studios"
+    ],
+    "nameEn": "Wheel of Misfortune (Thrashers)",
+    "nameKo": "불운의 수레바퀴 (공허 분쇄)"
+  },
+  "Perfect Storm": {
+    "map": "Chain of Ascension",
+    "mutators": [
+      "Blizzard",
+      "Shortsighted",
+      "Twister"
+    ],
+    "nameEn": "Perfect Storm",
+    "nameKo": "완벽한 폭풍"
+  },
+  "Boom Town": {
+    "map": "Oblivion Express",
+    "mutators": [
+      "Fear",
+      "Going Nuclear",
+      "Self Destruction"
+    ],
+    "nameEn": "Boom Town",
+    "nameKo": "도시 폭발"
+  },
+  "Dark Ritual": {
+    "map": "Temple of the Past",
+    "mutators": [
+      "Power Overwhelming",
+      "Speed Freaks"
+    ],
+    "nameEn": "Dark Ritual",
+    "nameKo": "암흑의 의식"
+  },
+  "Out of Order": {
+    "map": "The Vermillion Problem",
+    "mutators": [
+      "Darkness",
+      "Micro Transactions",
+      "Time Warp"
+    ],
+    "nameEn": "Out of Order",
+    "nameKo": "고장"
+  },
+  "Burning Legion": {
+    "map": "Lock & Load",
+    "mutators": [
+      "Avenger",
+      "Scorched Earth",
+      "Void Rifts"
+    ],
+    "nameEn": "Burning Legion",
+    "nameKo": "불타는 군단"
+  },
+  "Triple Threat": {
+    "map": "Void Launch",
+    "mutators": [
+      "Laser Drill",
+      "Orbital Strike",
+      "Outbreak"
+    ],
+    "nameEn": "Triple Threat",
+    "nameKo": "삼중 위협"
+  },
+  "World on Fire": {
+    "map": "The Vermillion Problem",
+    "mutators": [
+      "Going Nuclear",
+      "Missile Command",
+      "Purifier Beam"
+    ],
+    "nameEn": "World on Fire",
+    "nameKo": "불타는 세계"
+  },
+  "Flipping Out": {
+    "map": "Chain of Ascension",
+    "mutators": [
+      "Evasive Maneuvers",
+      "Fear",
+      "Vertigo"
+    ],
+    "nameEn": "Flipping Out",
+    "nameKo": "혼란"
+  },
+  "Growing Threat": {
+    "map": "Mist Opportunities",
+    "mutators": [
+      "Alien Incubation",
+      "Mutually Assured Destruction",
+      "Transmutation"
+    ],
+    "nameEn": "Growing Threat",
+    "nameKo": "커져가는 위협"
+  },
+  "Miner Concerns": {
+    "map": "Rifts to Korhal",
+    "mutators": [
+      "Fear",
+      "Mag-nificent",
+      "Slim Pickings"
+    ],
+    "nameEn": "Miner Concerns",
+    "nameKo": "광부의 역경"
+  },
+  "Diplomatic Immunity": {
+    "map": "Oblivion Express",
+    "mutators": [
+      "Barrier",
+      "Evasive Maneuvers",
+      "Polarity"
+    ],
+    "nameEn": "Diplomatic Immunity",
+    "nameKo": "외교 면역"
+  },
+  "Wheel of Misfortune (Lock)": {
+    "map": "Lock & Load",
+    "mutators": [
+      "Chaos Studios"
+    ],
+    "nameEn": "Wheel of Misfortune (Lock)",
+    "nameKo": "불운의 수레바퀴 (천상의 쟁탈전)"
+  },
+  "Breath of Destruction": {
+    "map": "Mist Opportunities",
+    "mutators": [
+      "Aggressive Deployment",
+      "Avenger",
+      "Speed Freaks"
+    ],
+    "nameEn": "Breath Of Destruction",
+    "nameKo": "파괴의 숨결"
+  },
+  "Fright Night": {
+    "map": "Rifts to Korhal",
+    "mutators": [
+      "Afraid of the Dark",
+      "Trick or Treat"
+    ],
+    "nameEn": "Fright Night",
+    "nameKo": "두려운 밤"
+  },
+  "Conflagration": {
+    "map": "Temple of the Past",
+    "mutators": [
+      "Alien Incubation",
+      "Scorched Earth",
+      "Walking Infested"
+    ],
+    "nameEn": "Conflagration",
+    "nameKo": "대화재"
+  },
+  "Explosive Results": {
+    "map": "Void Thrashing",
+    "mutators": [
+      "Going Nuclear",
+      "Mutually Assured Destruction",
+      "Self Destruction"
+    ],
+    "nameEn": "Explosive Results",
+    "nameKo": "폭발성 결과물"
+  },
+  "Fowl Play": {
+    "map": "Oblivion Express",
+    "mutators": [
+      "Sharing Is Caring",
+      "Turkey Shoot"
+    ],
+    "nameEn": "Fowl Play",
+    "nameKo": "칠면조 대소동"
+  },
+  "Power Trip": {
+    "map": "The Vermillion Problem",
+    "mutators": [
+      "Long Range",
+      "Photon Overload",
+      "Power Overwhelming"
+    ],
+    "nameEn": "Power Trip",
+    "nameKo": "넘치는 위력"
+  },
+  "Shir Chaos": {
+    "map": "Chain of Ascension",
+    "mutators": [
+      "Just Die!",
+      "Outbreak",
+      "Speed Freaks"
+    ],
+    "nameEn": "Shir Chaos",
+    "nameKo": "혼돈의 광란"
+  },
+  "Survival of the Fittest": {
+    "map": "Void Thrashing",
+    "mutators": [
+      "Barrier",
+      "Transmutation"
+    ],
+    "nameEn": "Survival of the Fittest",
+    "nameKo": "적자생존"
+  },
+  "Violent Night": {
+    "map": "Void Launch",
+    "mutators": [
+      "Gift Exchange",
+      "Naughty List"
+    ],
+    "nameEn": "Violent Night",
+    "nameKo": "끔찍한 밤"
+  },
+  "Rumble in the Jungle": {
+    "map": "Mist Opportunities",
+    "mutators": [
+      "Aggressive Deployment",
+      "Temporal Field",
+      "We Move Unseen"
+    ],
+    "nameEn": "Rumble in the Jungle",
+    "nameKo": "밀림의 대난투"
+  },
+  "The Ultimate Price": {
+    "map": "Lock & Load",
+    "mutators": [
+      "Micro Transactions",
+      "Mineral Shields",
+      "Missile Command"
+    ],
+    "nameEn": "The Ultimate Price",
+    "nameKo": "극한의 값어치"
+  },
+  "Cremation": {
+    "map": "Miner Evacuation",
+    "mutators": [
+      "Scorched Earth",
+      "Void Reanimators"
+    ],
+    "nameEn": "Cremation",
+    "nameKo": "화장"
+  },
+  "Shields Up!": {
+    "map": "Void Launch",
+    "mutators": [
+      "Diffusion",
+      "Mineral Shields",
+      "Shortsighted"
+    ],
+    "nameEn": "Shield Up!",
+    "nameKo": "보호막 가동"
+  },
+  "Ulnar New Year": {
+    "map": "Lock & Load",
+    "mutators": [
+      "Fireworks",
+      "Lucky Envelopes"
+    ],
+    "nameEn": "Ulnar New Year",
+    "nameKo": "울나르 새해"
+  },
+  "Sick Micro": {
+    "map": "Mist Opportunities",
+    "mutators": [
+      "Black Death",
+      "Micro Transactions"
+    ],
+    "nameEn": "Sick Micro",
+    "nameKo": "질병 활동"
+  },
+  "Blast from the Past": {
+    "map": "Temple of the Past",
+    "mutators": [
+      "Eminent Domain",
+      "Mutually Assured Destruction"
+    ],
+    "nameEn": "Blast from the Past",
+    "nameKo": "과거의 역습"
+  },
+  "Portal Power": {
+    "map": "Void Thrashing",
+    "mutators": [
+      "Power Overwhelming",
+      "Void Rifts"
+    ],
+    "nameEn": "Portal Power",
+    "nameKo": "차원문의 힘"
+  },
+  "Wheel of Misfortune (Lava)": {
+    "map": "The Vermillion Problem",
+    "mutators": [
+      "Chaos Studios"
+    ],
+    "nameEn": "Wheel of Misfortune (Lava)",
+    "nameKo": "불운의 수레바퀴 (버밀리언의 특종)"
+  },
+  "Hostile Takeover": {
+    "map": "Rifts to Korhal",
+    "mutators": [
+      "Eminent Domain",
+      "Laser Drill",
+      "Missile Command"
+    ],
+    "nameEn": "Hostile Takeover",
+    "nameKo": "적대적 인수"
+  },
+  "Grave Danger": {
+    "map": "Temple of the Past",
+    "mutators": [
+      "Transmutation",
+      "Void Reanimators",
+      "Walking Infested"
+    ],
+    "nameEn": "Grave Danger",
+    "nameKo": "죽음의 위험"
+  },
+  "The Injustice League": {
+    "map": "Rifts to Korhal",
+    "mutators": [
+      "Hardened Will",
+      "Heroes from the Storm",
+      "Inspiration"
+    ],
+    "nameEn": "Injustice League",
+    "nameKo": "악당 연맹"
+  },
+  "No Money, More Problems": {
+    "map": "The Vermillion Problem",
+    "mutators": [
+      "Self Destruction",
+      "Slim Pickings",
+      "Twister"
+    ],
+    "nameEn": "No Money, More Problems",
+    "nameKo": "자린고비"
+  },
+  "Field of Screams": {
+    "map": "Mist Opportunities",
+    "mutators": [
+      "Minesweeper",
+      "Polarity"
+    ],
+    "nameEn": "Field of Screams",
+    "nameKo": "비명의 벌판"
+  },
+  "The Quick and the Dead": {
+    "map": "Dead of Night",
+    "mutators": [
+      "Black Death",
+      "Speed Freaks"
+    ],
+    "nameEn": "The Quick and the Dead",
+    "nameKo": "빠른 자와 죽은 자"
+  },
+  "Out of Sight": {
+    "map": "Miner Evacuation",
+    "mutators": [
+      "Purifier Beam",
+      "We Move Unseen"
+    ],
+    "nameEn": "Out of Sight",
+    "nameKo": "보이지 않는 적"
+  },
+  "Wheel of Misfortune (Trains)": {
+    "map": "Oblivion Express",
+    "mutators": [
+      "Chaos Studios"
+    ],
+    "nameEn": "Wheel of Misfortune (Trains)",
+    "nameKo": "불운의 수레바퀴 (망각행 고속열차)"
+  },
+  "Frostbite": {
+    "map": "Dead of Night",
+    "mutators": [
+      "Blizzard",
+      "Mag-nificent"
+    ],
+    "nameEn": "Frostbite",
+    "nameKo": "동상"
+  },
+  "Certain Demise": {
+    "map": "Chain of Ascension",
+    "mutators": [
+      "Avenger",
+      "Void Reanimators"
+    ],
+    "nameEn": "Certain Demise",
+    "nameKo": "확정된 파멸"
+  },
+  "Delivery Guaranteed": {
+    "map": "Void Launch",
+    "mutators": [
+      "Barrier",
+      "Going Nuclear",
+      "Just Die!"
+    ],
+    "nameEn": "Delivery Guaranteed",
+    "nameKo": "배송 보장"
+  },
+  "Dead Heat": {
+    "map": "The Vermillion Problem",
+    "mutators": [
+      "Fatal Attraction",
+      "Self Destruction",
+      "Walking Infested"
+    ],
+    "nameEn": "Dead Heat",
+    "nameKo": "죽음의 열기"
+  },
+  "Cold is the Void": {
+    "map": "Oblivion Express",
+    "mutators": [
+      "Blizzard",
+      "Void Reanimators",
+      "Void Rifts"
+    ],
+    "nameEn": "Cold Is The Void",
+    "nameKo": "차가운 공허"
+  },
+  "Futile Resistance": {
+    "map": "Lock & Load",
+    "mutators": [
+      "Concussive Attacks",
+      "Propagators",
+      "Temporal Field"
+    ],
+    "nameEn": "Futile Resistance",
+    "nameKo": "부질없는 저항"
+  },
+  "Hard Target": {
+    "map": "Void Thrashing",
+    "mutators": [
+      "Barrier",
+      "Hardened Will",
+      "Polarity"
+    ],
+    "nameEn": "Hard Target",
+    "nameKo": "완고한 상대"
+  },
+  "Charnel House": {
+    "map": "Miner Evacuation",
+    "mutators": [
+      "Black Death",
+      "Darkness",
+      "Photon Overload"
+    ],
+    "nameEn": "Charnel House",
+    "nameKo": "납골당"
+  },
+  "Slow and Steady": {
+    "map": "Mist Opportunities",
+    "mutators": [
+      "Concussive Attacks",
+      "Speed Freaks",
+      "Time Warp"
+    ],
+    "nameEn": "Slow and Steady",
+    "nameKo": "천천히 꾸준히"
+  },
+  "Instant Karma": {
+    "map": "Chain of Ascension",
+    "mutators": [
+      "Double-Edged",
+      "Mutually Assured Destruction",
+      "Self Destruction"
+    ],
+    "nameEn": "Instant Karma",
+    "nameKo": "환각"
+  },
+  "Worn Out Welcome": {
+    "map": "Temple of the Past",
+    "mutators": [
+      "Inspiration",
+      "Just Die!",
+      "Long Range"
+    ],
+    "nameEn": "Worn Out Welcome",
+    "nameKo": "고달픈 환영"
+  },
+  "Moths to the Flame": {
+    "map": "Rifts to Korhal",
+    "mutators": [
+      "Alien Incubation",
+      "Fatal Attraction",
+      "Purifier Beam"
+    ],
+    "nameEn": "Moths to the Flame",
+    "nameKo": "화염 속 나방"
+  },
+  "Fear and Lava": {
+    "map": "The Vermillion Problem",
+    "mutators": [
+      "Fear",
+      "Void Rifts"
+    ],
+    "nameEn": "Fear and Lava",
+    "nameKo": "공포와 용암"
+  },
+  "Wheel of Misfortune (Launch)": {
+    "map": "Void Launch",
+    "mutators": [
+      "Chaos Studios"
+    ],
+    "nameEn": "Wheel of Misfortune (Launch)",
+    "nameKo": "불운의 수레바퀴 (공허의 출격)"
+  },
+  "Kill Bot Wars": {
+    "map": "Mist Opportunities",
+    "mutators": [
+      "Kill Bots",
+      "Moment Of Silence"
+    ],
+    "nameEn": "Kill Bot Wars",
+    "nameKo": "처치 로봇 전쟁"
+  },
+  "Magnetic Attraction": {
+    "map": "Void Thrashing",
+    "mutators": [
+      "Fatal Attraction",
+      "Mag-nificent",
+      "We Move Unseen"
+    ],
+    "nameEn": "Magnetic Pull",
+    "nameKo": "자기 인력"
+  },
+  "Death from Below": {
+    "map": "Miner Evacuation",
+    "mutators": [
+      "Lava Burst",
+      "Minesweeper",
+      "Scorched Earth"
+    ],
+    "nameEn": "Death From Below",
+    "nameKo": "땅속에서 죽음이"
+  },
+  "Watch the Skies": {
+    "map": "Void Launch",
+    "mutators": [
+      "Aggressive Deployment",
+      "Missile Command",
+      "Orbital Strike"
+    ],
+    "nameEn": "Watch the Skies",
+    "nameKo": "하늘 경계"
+  },
+  "Think Fast": {
+    "map": "Rifts to Korhal",
+    "mutators": [
+      "Propagators",
+      "Speed Freaks"
+    ],
+    "nameEn": "Think Fast",
+    "nameKo": "빠른 결단"
+  },
+  "What Goes Around": {
+    "map": "Scythe of Amon",
+    "mutators": [
+      "Double-Edged",
+      "Mutually Assured Destruction"
+    ],
+    "nameEn": "What Goes Around",
+    "nameKo": "자업자득"
+  },
+  "Bannable Offense": {
+    "map": "Malwarfare",
+    "mutators": [
+      "Evasive Maneuvers",
+      "Power Overwhelming"
+    ],
+    "nameEn": "Bannable Offense",
+    "nameKo": "금지된 공격"
+  },
+  "Masters of Midnight": {
+    "map": "Part and Parcel",
+    "mutators": [
+      "Fear",
+      "Life Leech",
+      "Shortsighted"
+    ],
+    "nameEn": "Masters of Midnight",
+    "nameKo": "자정의 지배자"
+  },
+  "Night Drive": {
+    "map": "Cradle of Death",
+    "mutators": [
+      "Afraid of the Dark",
+      "Mag-nificent"
+    ],
+    "nameEn": "Night Drive",
+    "nameKo": "야간 주행"
+  },
+  "Get Out More": {
+    "map": "Dead of Night",
+    "mutators": [
+      "Eminent Domain",
+      "Mineral Shields",
+      "Self Destruction"
+    ],
+    "nameEn": "Get Out More",
+    "nameKo": "집 밖은 위험해"
+  },
+  "Quick Killers": {
+    "map": "Temple of the Past",
+    "mutators": [
+      "Inspiration",
+      "Kill Bots",
+      "Speed Freaks"
+    ],
+    "nameEn": "Quick Killers",
+    "nameKo": "빠른 학살자"
+  },
+  "Unstable Environment": {
+    "map": "Scythe of Amon",
+    "mutators": [
+      "Lava Burst",
+      "Time Warp",
+      "Twister"
+    ],
+    "nameEn": "Unstable Environment",
+    "nameKo": "불안정한 환경"
+  },
+  "Rest in Peace": {
+    "map": "Void Thrashing",
+    "mutators": [
+      "Moment Of Silence",
+      "Propagators"
+    ],
+    "nameEn": "Rest in Peace",
+    "nameKo": "평온한 안식"
+  },
+  "Endless Infection": {
+    "map": "Void Launch",
+    "mutators": [
+      "Alien Incubation",
+      "Black Death",
+      "Walking Infested"
+    ],
+    "nameEn": "Endless Infection",
+    "nameKo": "끝없는 전염"
+  },
+  "Battle Hardened": {
+    "map": "Chain of Ascension",
+    "mutators": [
+      "Hardened Will",
+      "Inspiration",
+      "Missile Command"
+    ],
+    "nameEn": "Battle Hardened",
+    "nameKo": "전투 단련"
+  },
+  "Wheel of Misfortune (Cradle)": {
+    "map": "Cradle of Death",
+    "mutators": [
+      "Chaos Studios"
+    ],
+    "nameEn": "Wheel of Misfortune (Cradle)",
+    "nameKo": "불운의 수레바퀴 (죽음의 요람)"
+  },
+  "Cold Adaptation": {
+    "map": "Miner Evacuation",
+    "mutators": [
+      "Blizzard",
+      "Transmutation"
+    ],
+    "nameEn": "Chilling Adaptation",
+    "nameKo": "으스스한 적응"
+  },
+  "Price of Progress": {
+    "map": "Malwarfare",
+    "mutators": [
+      "Kill Bots",
+      "Micro Transactions"
+    ],
+    "nameEn": "Price of Progress",
+    "nameKo": "진보의 대가"
+  },
+  "Negative Reinforcement": {
+    "map": "Part and Parcel",
+    "mutators": [
+      "Avenger",
+      "Fatal Attraction"
+    ],
+    "nameEn": "Negative Reinforcement",
+    "nameKo": "부정적인 증원"
+  },
+  "Retribution": {
+    "map": "Mist Opportunities",
+    "mutators": [
+      "Double-Edged",
+      "Void Rifts"
+    ],
+    "nameEn": "Retribution",
+    "nameKo": "응징"
+  },
+  "Rise from Ashes": {
+    "map": "Scythe of Amon",
+    "mutators": [
+      "Lava Burst",
+      "Self Destruction",
+      "Void Reanimators"
+    ],
+    "nameEn": "Rise From Ashes",
+    "nameKo": "재에서 일어나라"
+  },
+  "Warp Zone": {
+    "map": "Lock & Load",
+    "mutators": [
+      "Temporal Field",
+      "Time Warp",
+      "Twister"
+    ],
+    "nameEn": "Warp Zone",
+    "nameKo": "소환 지역"
+  },
+  "Well Trained": {
+    "map": "Oblivion Express",
+    "mutators": [
+      "Aggressive Deployment",
+      "Avenger",
+      "Inspiration"
+    ],
+    "nameEn": "Well Trained",
+    "nameKo": "적절한 훈련"
+  },
+  "Doomsday Report": {
+    "map": "The Vermillion Problem",
+    "mutators": [
+      "Going Nuclear",
+      "Orbital Strike",
+      "Propagators"
+    ],
+    "nameEn": "Doomsday Report",
+    "nameKo": "파멸의 날 보고서"
+  },
+  "Safety Violation": {
+    "map": "Miner Evacuation",
+    "mutators": [
+      "Laser Drill",
+      "Mag-nificent",
+      "Self Destruction"
+    ],
+    "nameEn": "Safety Violation",
+    "nameKo": "안전 규정 위반"
+  },
+  "Temple of Rebirth": {
+    "map": "Temple of the Past",
+    "mutators": [
+      "Barrier",
+      "Just Die!",
+      "Life Leech"
+    ],
+    "nameEn": "Temple of Rebirth",
+    "nameKo": "부활의 사원"
+  },
+  "Overclocked": {
+    "map": "Malwarfare",
+    "mutators": [
+      "Avenger",
+      "Photon Overload",
+      "Speed Freaks"
+    ],
+    "nameEn": "Overclocked",
+    "nameKo": "오버클럭"
+  },
+  "Attrition Warfare": {
+    "map": "Void Thrashing",
+    "mutators": [
+      "Diffusion",
+      "Minesweeper"
+    ],
+    "nameEn": "Attrition Warfare",
+    "nameKo": "소모전"
+  },
+  "Together Forever": {
+    "map": "Chain of Ascension",
+    "mutators": [
+      "Just Die!",
+      "Polarity"
+    ],
+    "nameEn": "Together Forever",
+    "nameKo": "그대와 영원히"
+  },
+  "Specter of Death": {
+    "map": "Part and Parcel",
+    "mutators": [
+      "Void Reanimators",
+      "We Move Unseen"
+    ],
+    "nameEn": "Specter of Death",
+    "nameKo": "죽음의 악령"
+  },
+  "Distant Threat": {
+    "map": "Dead of Night",
+    "mutators": [
+      "Long Range",
+      "Purifier Beam",
+      "Time Warp"
+    ],
+    "nameEn": "Distant Threat",
+    "nameKo": "머나먼 위협"
+  },
+  "Radiation Zone": {
+    "map": "Rifts to Korhal",
+    "mutators": [
+      "Black Death",
+      "Going Nuclear",
+      "Outbreak"
+    ],
+    "nameEn": "Radiation Zone",
+    "nameKo": "방사능 지역"
+  },
+  "Inner Power": {
+    "map": "Temple of the Past",
+    "mutators": [
+      "Alien Incubation",
+      "Power Overwhelming"
+    ],
+    "nameEn": "Inner Power",
+    "nameKo": "내면의 힘"
+  },
+  "Moving Fees": {
+    "map": "Cradle of Death",
+    "mutators": [
+      "Micro Transactions",
+      "Scorched Earth"
+    ],
+    "nameEn": "Moving Fees",
+    "nameKo": "이동 비용"
+  },
+  "Memorable Boss": {
+    "map": "Void Launch",
+    "mutators": [
+      "Heroes from the Storm",
+      "Moment Of Silence"
+    ],
+    "nameEn": "Memorable Boss",
+    "nameKo": "인상적인 우두머리"
+  },
+  "Flip My Base": {
+    "map": "Mist Opportunities",
+    "mutators": [
+      "Eminent Domain",
+      "Missile Command",
+      "Purifier Beam"
+    ],
+    "nameEn": "Flip My Base",
+    "nameKo": "기지 뒤집기"
+  },
+  "Firewall": {
+    "map": "Malwarfare",
+    "mutators": [
+      "Barrier",
+      "Lava Burst",
+      "Minesweeper"
+    ],
+    "nameEn": "Firewall",
+    "nameKo": "방화벽"
+  },
+  "Death and Taxes": {
+    "map": "Dead of Night",
+    "mutators": [
+      "Black Death",
+      "Micro Transactions",
+      "Slim Pickings"
+    ],
+    "nameEn": "Death and Taxes",
+    "nameKo": "죽음과 세금"
+  },
+  "Wheel of Misfortune (Evac)": {
+    "map": "Miner Evacuation",
+    "mutators": [
+      "Chaos Studios"
+    ],
+    "nameEn": "Wheel of Misfortune (Evac)",
+    "nameKo": "불운의 수레바퀴 (광부 대피)"
+  },
+  "Rubber and Glue": {
+    "map": "Void Launch",
+    "mutators": [
+      "Diffusion",
+      "Double-Edged",
+      "Temporal Field"
+    ],
+    "nameEn": "Rubber and Glue",
+    "nameKo": "고무와 접착제"
+  },
+  "Hell Train": {
+    "map": "Oblivion Express",
+    "mutators": [
+      "Just Die!",
+      "Scorched Earth"
+    ],
+    "nameEn": "Hell Train",
+    "nameKo": "지옥 열차"
+  },
+  "Infection Detected": {
+    "map": "Malwarfare",
+    "mutators": [
+      "Alien Incubation",
+      "Outbreak",
+      "Self Destruction"
+    ],
+    "nameEn": "Infection Detected",
+    "nameKo": "감염 감지"
+  },
+  "Opportunities Unleashed": {
+    "map": "Mist Opportunities",
+    "mutators": [
+      "Barrier",
+      "Power Overwhelming",
+      "Speed Freaks"
+    ],
+    "nameEn": "Opportunities Unleashed",
+    "nameKo": "기회 창출"
+  },
+  "One for All": {
+    "map": "Temple of the Past",
+    "mutators": [
+      "Hardened Will",
+      "Inspiration",
+      "Transmutation"
+    ],
+    "nameEn": "One For All",
+    "nameKo": "모두를 위한 하나"
+  },
+  "Experimental Artillery": {
+    "map": "Part and Parcel",
+    "mutators": [
+      "Laser Drill",
+      "Long Range",
+      "Photon Overload"
+    ],
+    "nameEn": "Experimental Artillery",
+    "nameKo": "실험용 대포"
+  },
+  "Nuclear Family": {
+    "map": "Chain of Ascension",
+    "mutators": [
+      "Hardened Will",
+      "Mutually Assured Destruction",
+      "Outbreak"
+    ],
+    "nameEn": "Nuclear Family",
+    "nameKo": "핵가족"
+  },
+  "Die Together": {
+    "map": "Scythe of Amon",
+    "mutators": [
+      "Just Die!",
+      "Polarity"
+    ],
+    "nameEn": "Die Together",
+    "nameKo": "같이 좀 죽어"
+  },
+  "Burning Evacuation": {
+    "map": "Miner Evacuation",
+    "mutators": [
+      "Avenger",
+      "Eminent Domain",
+      "Scorched Earth"
+    ],
+    "nameEn": "Burning Evacuation",
+    "nameKo": "불타는 탈출"
+  },
+  "Assembly of Vengeance": {
+    "map": "Temple of the Past",
+    "mutators": [
+      "Avenger",
+      "Heroes from the Storm"
+    ],
+    "nameEn": "Assembly of Vengeance",
+    "nameKo": "몰려드는 복수"
+  },
+  "Railroad Switch": {
+    "map": "Oblivion Express",
+    "mutators": [
+      "Just Die!",
+      "Polarity"
+    ],
+    "nameEn": "Railroad Switch",
+    "nameKo": "교대 작업"
+  },
+  "Hostile Territory": {
+    "map": "Dead of Night",
+    "mutators": [
+      "Barrier",
+      "Photon Overload",
+      "Power Overwhelming"
+    ],
+    "nameEn": "Hostile Territory",
+    "nameKo": "적대 구역"
+  },
+  "Media Blackout": {
+    "map": "The Vermillion Problem",
+    "mutators": [
+      "Darkness",
+      "Missile Command",
+      "We Move Unseen"
+    ],
+    "nameEn": "Media Blackout",
+    "nameKo": "전면 통제"
+  },
+  "Thunder Dome": {
+    "map": "Lock & Load",
+    "mutators": [
+      "Heroes from the Storm",
+      "Mag-nificent"
+    ],
+    "nameEn": "Thunder Dome",
+    "nameKo": "천둥의 전장"
+  },
+  "Dodge This": {
+    "map": "Scythe of Amon",
+    "mutators": [
+      "Darkness",
+      "Going Nuclear",
+      "Orbital Strike"
+    ],
+    "nameEn": "Dodge This",
+    "nameKo": "피할 테면 피해 봐"
+  },
+  "Binary Choice": {
+    "map": "Malwarfare",
+    "mutators": [
+      "Polarity",
+      "Void Reanimators"
+    ],
+    "nameEn": "Binary Choice",
+    "nameKo": "양자택일"
+  },
+  "The Ascended": {
+    "map": "Chain of Ascension",
+    "mutators": [
+      "Inspiration",
+      "Transmutation"
+    ],
+    "nameEn": "The Ascended",
+    "nameKo": "승천자"
+  },
+  "Enhanced Defenses": {
+    "map": "Cradle of Death",
+    "mutators": [
+      "Barrier",
+      "Going Nuclear",
+      "Photon Overload"
+    ],
+    "nameEn": "Enhanced Defenses",
+    "nameKo": "향상된 방어"
+  },
+  "Double Trouble": {
+    "map": "Void Launch",
+    "mutators": [
+      "Kill Bots",
+      "Propagators"
+    ],
+    "nameEn": "Double Trouble",
+    "nameKo": "이중고"
+  },
+  "And Drops and Rifts": {
+    "map": "Part and Parcel",
+    "mutators": [
+      "Aggressive Deployment",
+      "Void Rifts"
+    ],
+    "nameEn": "And Drops and Rifts",
+    "nameKo": "배치와 균열"
+  },
+  "Catch the Train": {
+    "map": "Oblivion Express",
+    "mutators": [
+      "Afraid of the Dark",
+      "Shortsighted",
+      "Speed Freaks"
+    ],
+    "nameEn": "Catch the Train",
+    "nameKo": "기차를 잡아라"
+  },
+  "Temple of Terror": {
+    "map": "Temple of the Past",
+    "mutators": [
+      "Afraid of the Dark",
+      "Alien Incubation",
+      "Fear"
+    ],
+    "nameEn": "Temple Of Terror",
+    "nameKo": "공포의 사원"
+  },
+  "Shining Bright": {
+    "map": "Mist Opportunities",
+    "mutators": [
+      "Concussive Attacks",
+      "Laser Drill",
+      "Purifier Beam"
+    ],
+    "nameEn": "Shining Bright",
+    "nameKo": "찬란한 광휘"
+  },
+  "Endless Sparkles": {
+    "map": "Miner Evacuation",
+    "mutators": [
+      "Alien Incubation",
+      "Self Destruction"
+    ],
+    "nameEn": "Endless Sparkles",
+    "nameKo": "끝없는 생기"
+  },
+  "Graveyard Shift": {
+    "map": "Dead of Night",
+    "mutators": [
+      "Afraid of the Dark",
+      "Purifier Beam"
+    ],
+    "nameEn": "Graveyard Shift",
+    "nameKo": "야간 근무"
+  },
+  "Robotic Revival": {
+    "map": "Part and Parcel",
+    "mutators": [
+      "Fear",
+      "Just Die!",
+      "Laser Drill"
+    ],
+    "nameEn": "Robotic Revival",
+    "nameKo": "로봇 부활"
+  },
+  "Secret Storm": {
+    "map": "Lock & Load",
+    "mutators": [
+      "Aggressive Deployment",
+      "Twister",
+      "We Move Unseen"
+    ],
+    "nameEn": "Secret Storm",
+    "nameKo": "비밀 폭풍"
+  },
+  "Undermined": {
+    "map": "Rifts to Korhal",
+    "mutators": [
+      "Minesweeper",
+      "Void Rifts"
+    ],
+    "nameEn": "Undermined",
+    "nameKo": "침식"
+  },
+  "Astigmatism": {
+    "map": "Malwarfare",
+    "mutators": [
+      "Long Range",
+      "Shortsighted",
+      "We Move Unseen"
+    ],
+    "nameEn": "Astigmatism",
+    "nameKo": "난시"
+  },
+  "Never Say Die": {
+    "map": "Mist Opportunities",
+    "mutators": [
+      "Barrier",
+      "Just Die!",
+      "Life Leech"
+    ],
+    "nameEn": "Never Say Die",
+    "nameKo": "불굴"
+  },
+  "Medieval Times": {
+    "map": "Scythe of Amon",
+    "mutators": [
+      "Black Death",
+      "Transmutation"
+    ],
+    "nameEn": "Medieval Times",
+    "nameKo": "중세 시대"
+  },
+  "Onslaught": {
+    "map": "Dead of Night",
+    "mutators": [
+      "Aggressive Deployment",
+      "Outbreak",
+      "Void Reanimators"
+    ],
+    "nameEn": "Onslaught",
+    "nameKo": "맹습"
+  },
+  "Equivalent Exchange": {
+    "map": "Void Thrashing",
+    "mutators": [
+      "Diffusion",
+      "Just Die!"
+    ],
+    "nameEn": "Equivalent Exchange",
+    "nameKo": "등가 교환"
+  },
+  "Encroaching Madness": {
+    "map": "Mist Opportunities",
+    "mutators": [
+      "Eminent Domain",
+      "Purifier Beam",
+      "Void Rifts"
+    ],
+    "nameEn": "Encroaching Madness",
+    "nameKo": "침범하는 광기"
+  },
+  "Season of Giving": {
+    "map": "Cradle of Death",
+    "mutators": [
+      "Blizzard",
+      "Gift Exchange",
+      "Naughty List"
+    ],
+    "nameEn": "Season of Giving",
+    "nameKo": "나눔의 계절"
+  },
+  "Choices Choices": {
+    "map": "Temple of the Past",
+    "mutators": [
+      "Hardened Will",
+      "Inspiration",
+      "Mutually Assured Destruction"
+    ],
+    "nameEn": "Choices Choices",
+    "nameKo": "선택 선택"
+  },
+  "Inordinate Response": {
+    "map": "Scythe of Amon",
+    "mutators": [
+      "Avenger",
+      "Power Overwhelming"
+    ],
+    "nameEn": "Inordinate Response",
+    "nameKo": "과도한 대응"
+  },
+  "By Fire Be Purged": {
+    "map": "Oblivion Express",
+    "mutators": [
+      "Going Nuclear",
+      "Lava Burst",
+      "Scorched Earth"
+    ],
+    "nameEn": "By Fire Be Purged",
+    "nameKo": "불의 세례"
+  },
+  "Timely Reinforcements": {
+    "map": "Miner Evacuation",
+    "mutators": [
+      "Temporal Field",
+      "Void Rifts"
+    ],
+    "nameEn": "Timely Reinforcements",
+    "nameKo": "적시의 보강"
+  },
+  "Blind Tribute": {
+    "map": "Chain of Ascension",
+    "mutators": [
+      "Kill Bots",
+      "Shortsighted"
+    ],
+    "nameEn": "Blind Tribute",
+    "nameKo": "눈 먼 공물"
+  },
+  "Barrier to Entry": {
+    "map": "Lock & Load",
+    "mutators": [
+      "Barrier",
+      "Just Die!",
+      "Mineral Shields"
+    ],
+    "nameEn": "Barrier to Entry",
+    "nameKo": "진입 방어막"
+  },
+  "Like Swatting Insects": {
+    "map": "Cradle of Death",
+    "mutators": [
+      "Alien Incubation",
+      "Missile Command",
+      "Outbreak"
+    ],
+    "nameEn": "Like Swatting Insects",
+    "nameKo": "파리 같은 놈들"
+  },
+  "Getting Along": {
+    "map": "The Vermillion Problem",
+    "mutators": [
+      "Polarity",
+      "Sharing Is Caring"
+    ],
+    "nameEn": "Getting Along",
+    "nameKo": "어울림"
+  },
+  "Knock Knock": {
+    "map": "Dead of Night",
+    "mutators": [
+      "Avenger",
+      "Propagators"
+    ],
+    "nameEn": "Knock Knock",
+    "nameKo": "똑똑"
+  },
+  "Dance Dance Evolution": {
+    "map": "Mist Opportunities",
+    "mutators": [
+      "Moment Of Silence",
+      "Speed Freaks",
+      "Transmutation"
+    ],
+    "nameEn": "Dance Dance Evolution",
+    "nameKo": "댄스 댄스 에볼루션"
+  },
+  "Train of Pain": {
+    "map": "Oblivion Express",
+    "mutators": [
+      "Double-Edged",
+      "Going Nuclear",
+      "Mutually Assured Destruction"
+    ],
+    "nameEn": "Train of Pain",
+    "nameKo": "고통의 열차"
+  },
+  "Resilient Rifts": {
+    "map": "Rifts to Korhal",
+    "mutators": [
+      "Just Die!",
+      "Void Rifts"
+    ],
+    "nameEn": "Resilient Rifts",
+    "nameKo": "끈질긴 균열"
+  },
+  "Chain Explosions": {
+    "map": "Chain of Ascension",
+    "mutators": [
+      "Lava Burst",
+      "Walking Infested"
+    ],
+    "nameEn": "Chain Explosion",
+    "nameKo": "연쇄 폭발"
+  },
+  "Call it a Comeback": {
+    "map": "Temple of the Past",
+    "mutators": [
+      "Avenger",
+      "Eminent Domain",
+      "Just Die!"
+    ],
+    "nameEn": "Call It A Comeback",
+    "nameKo": "과거로의 회귀"
+  },
+  "Explosive Hunt": {
+    "map": "Part and Parcel",
+    "mutators": [
+      "Minesweeper",
+      "Slim Pickings"
+    ],
+    "nameEn": "Explosive Hunt",
+    "nameKo": "폭발 사냥"
+  },
+  "Tax Day": {
+    "map": "Void Launch",
+    "mutators": [
+      "Fear",
+      "Micro Transactions"
+    ],
+    "nameEn": "Tax Day",
+    "nameKo": "납세일"
+  },
+  "Aggressive Recruitment": {
+    "map": "Malwarfare",
+    "mutators": [
+      "Propagators",
+      "Speed Freaks",
+      "We Move Unseen"
+    ],
+    "nameEn": "Aggressive Recruitment",
+    "nameKo": "공격적인 모집"
+  },
+  "Scary Scavengers": {
+    "map": "Dead of Night",
+    "mutators": [
+      "Outbreak",
+      "Slim Pickings"
+    ],
+    "nameEn": "Scary Scavengers",
+    "nameKo": "무서운 착취자"
+  },
+  "Call of the Void": {
+    "map": "Void Thrashing",
+    "mutators": [
+      "Void Reanimators",
+      "Void Rifts"
+    ],
+    "nameEn": "Call of the Void",
+    "nameKo": "공허의 부름"
+  },
+  "In the Name of Love": {
+    "map": "Cradle of Death",
+    "mutators": [
+      "Concussive Attacks",
+      "Purifier Beam",
+      "Time Warp"
+    ],
+    "nameEn": "In the Name of Love",
+    "nameKo": "사랑의 이름으로"
+  },
+  "Locked and Loaded": {
+    "map": "Lock & Load",
+    "mutators": [
+      "Kill Bots",
+      "Mineral Shields",
+      "Temporal Field"
+    ],
+    "nameEn": "Locked and Loaded",
+    "nameKo": "장전 완료"
+  },
+  "Of Mines and Miners": {
+    "map": "Miner Evacuation",
+    "mutators": [
+      "Mag-nificent",
+      "Minesweeper",
+      "Missile Command"
+    ],
+    "nameEn": "Of Mines and Miners",
+    "nameKo": "광부와 지뢰"
+  },
+  "The League of Vermillains": {
+    "map": "The Vermillion Problem",
+    "mutators": [
+      "Evasive Maneuvers",
+      "Heroes from the Storm"
+    ],
+    "nameEn": "The League Of Vermillans",
+    "nameKo": "리그 오브 버밀리언"
+  },
+  "Operation Cooperation": {
+    "map": "Lock & Load",
+    "mutators": [
+      "Polarity",
+      "Propagators"
+    ],
+    "nameEn": "Operation Cooperation",
+    "nameKo": "합동 작전"
+  },
+  "Hot 'n' Cold": {
+    "map": "Void Launch",
+    "mutators": [
+      "Blizzard",
+      "Lava Burst",
+      "Scorched Earth"
+    ],
+    "nameEn": "Hot 'n' Cold",
+    "nameKo": "뜨겁고 차가운"
+  },
+  "What We Do in the Shadows": {
+    "map": "Void Thrashing",
+    "mutators": [
+      "Darkness",
+      "Shortsighted",
+      "We Move Unseen"
+    ],
+    "nameEn": "What We Do in the Shadows",
+    "nameKo": "어둠 속에서"
+  },
+  "Hardware Malfunction": {
+    "map": "Malwarfare",
+    "mutators": [
+      "Kill Bots",
+      "Laser Drill",
+      "Minesweeper"
+    ],
+    "nameEn": "Hardware Malfunction",
+    "nameKo": "하드웨어 장애"
+  },
+  "Shared Pain": {
+    "map": "Part and Parcel",
+    "mutators": [
+      "Diffusion",
+      "Fatal Attraction"
+    ],
+    "nameEn": "Shared Pain",
+    "nameKo": "고통 분담"
+  },
+  "The Longest Night": {
+    "map": "Dead of Night",
+    "mutators": [
+      "Just Die!",
+      "Long Range",
+      "Photon Overload"
+    ],
+    "nameEn": "The Longest Night",
+    "nameKo": "기나긴 밤"
+  },
+  "The Quick and the Undead": {
+    "map": "Scythe of Amon",
+    "mutators": [
+      "Speed Freaks",
+      "Void Reanimators"
+    ],
+    "nameEn": "The Quick and the Undead",
+    "nameKo": "빠른 자와 죽지 않는 자"
+  },
+  "Decade of Decadence": {
+    "map": "Rifts to Korhal",
+    "mutators": [
+      "Fireworks",
+      "Gift Exchange",
+      "Lucky Envelopes"
+    ],
+    "nameEn": "Decade of Decadence",
+    "nameKo": "타락의 시기"
+  },
+  "Bubble Pop": {
+    "map": "Cradle of Death",
+    "mutators": [
+      "Barrier",
+      "Mineral Shields",
+      "Time Warp"
+    ],
+    "nameEn": "Bubble Pop",
+    "nameKo": "방울방울"
+  },
+  "Coordinated Defense": {
+    "map": "The Vermillion Problem",
+    "mutators": [
+      "Missile Command",
+      "Polarity"
+    ],
+    "nameEn": "Coordinated Defense",
+    "nameKo": "케르베로스 방어"
+  },
+  "Beggars Can't be Choosers": {
+    "map": "Lock & Load",
+    "mutators": [
+      "Mag-nificent",
+      "Minesweeper",
+      "Slim Pickings"
+    ],
+    "nameEn": "Beggars Can't Be Choosers",
+    "nameKo": "찬밥 더운밥 가릴 때가 아니다"
+  },
+  "My Bots!": {
+    "map": "Mist Opportunities",
+    "mutators": [
+      "Boom Bots",
+      "Kill Bots"
+    ],
+    "nameEn": "My Bots!",
+    "nameKo": "내 로봇!"
+  },
+  "Multitasking Trainer": {
+    "map": "Malwarfare",
+    "mutators": [
+      "Micro Transactions",
+      "Void Rifts"
+    ],
+    "nameEn": "Multitasking Trainer",
+    "nameKo": "멀티태스킹 트레이너"
+  },
+  "Hello My Old Friend": {
+    "map": "Scythe of Amon",
+    "mutators": [
+      "Black Death",
+      "Darkness",
+      "Moment Of Silence"
+    ],
+    "nameEn": "Hello My Old Friend",
+    "nameKo": "안녕 오랜 친구여"
+  },
+  "Of One Mind": {
+    "map": "Rifts to Korhal",
+    "mutators": [
+      "Boom Bots",
+      "Polarity",
+      "Sharing Is Caring"
+    ],
+    "nameEn": "Of One Mind",
+    "nameKo": "한 마음으로"
+  },
+  "Blasting Off Again": {
+    "map": "Void Launch",
+    "mutators": [
+      "Going Nuclear",
+      "Lava Burst",
+      "Power Overwhelming"
+    ],
+    "nameEn": "Blasting Off Again",
+    "nameKo": "다시 발사할 시간"
+  },
+  "Enter the Nexus": {
+    "map": "Cradle of Death",
+    "mutators": [
+      "Blizzard",
+      "Heroes from the Storm"
+    ],
+    "nameEn": "Enter the Nexus",
+    "nameKo": "시공의 폭풍 입장"
+  },
+  "Death is Fleeting": {
+    "map": "Dead of Night",
+    "mutators": [
+      "Just Die!",
+      "Void Reanimators"
+    ],
+    "nameEn": "Death is Fleeting",
+    "nameKo": "죽음은 잠깐이다"
+  },
+  "Mass Manufacturing": {
+    "map": "Part and Parcel",
+    "mutators": [
+      "Propagators",
+      "Void Rifts"
+    ],
+    "nameEn": "Mass Manufacturing",
+    "nameKo": "대량생산"
+  },
+  "Fire in the Hole": {
+    "map": "Miner Evacuation",
+    "mutators": [
+      "Boom Bots",
+      "Missile Command"
+    ],
+    "nameEn": "Fire in the Hole",
+    "nameKo": "폭발 대피"
+  }
+}

@@ -1,0 +1,326 @@
+{
+  "Abathur": {
+    "en": [
+      "Toxic Nest Damage",
+      "Mend Healing Duration",
+      "Symbiote Ability Improvement",
+      "Double Biomass Chance",
+      "Toxic Nest Maximum Charges and Cooldown",
+      "Structure Morph and Evolution Rate"
+    ],
+    "ko": [
+      "독성 둥지 공격력",
+      "치유 회복 지속 시간",
+      "공생체 능력 향상",
+      "생체 물질 확률 2배",
+      "독성 둥지 최대 충전 및 재사용 대기시간",
+      "구조물 변이 및 진화 속도"
+    ]
+  },
+  "Alarak": {
+    "en": [
+      "Alarak Attack Damage",
+      "Combat Unit Attack Speed",
+      "Empower Me Duration",
+      "Death Fleet Cooldown",
+      "Structure Overcharge Shield and Attack Speed",
+      "Chrono Boost Efficiency"
+    ],
+    "ko": [
+      "알라라크 공격력",
+      "전투 유닛 공격 속도",
+      "날 강화하라 지속 시간",
+      "죽음의 함대 재사용 대기시간",
+      "구조물 과충전 보호막 및 공격 속도",
+      "시간 증폭 효율"
+    ]
+  },
+  "Artanis": {
+    "en": [
+      "Shield Overcharge Duration and Damage Absorption",
+      "Guardian Shell Life and Shield Restoration",
+      "Energy Regeneration and Cooldown Reduction",
+      "Speed Increases for Warped In Units",
+      "Chrono Boost Efficiency",
+      "Initial and Maximum Spear of Adun Energy"
+    ],
+    "ko": [
+      "보호막 과충전 지속 시간 및 피해 흡수",
+      "수호 보호막 체력 및 보호막 회복",
+      "에너지 재생 증가 및 재사용 대기시간 감소",
+      "소환된 유닛 속도 향상",
+      "시간 증폭 효율",
+      "아둔의 창 초기 및 최대 에너지"
+    ]
+  },
+  "Dehaka": {
+    "en": [
+      "Devour Healing Increase",
+      "Devour Buff Duration",
+      "Greater Primal Wurm Cooldown",
+      "Pack Leaders Active Duration",
+      "Gene Mutation Chance",
+      "Dehaka Attack Speed"
+    ],
+    "ko": [
+      "섭취 치유량 증가",
+      "섭취 강화 효과 지속 시간",
+      "거대 원시 벌레 재사용 대기시간",
+      "무리 우두머리 활성화 지속 시간",
+      "유전자 돌연변이 확률",
+      "데하카 공격 속도"
+    ]
+  },
+  "Fenix": {
+    "en": [
+      "Fenix Suit Attack Speed",
+      "Fenix Suit Offline Energy Regeneration",
+      "Champion A.I. Attack Speed",
+      "Champion A.I. Life and Shields",
+      "Chrono Boost Efficiency",
+      "Extra Starting Supply"
+    ],
+    "ko": [
+      "피닉스 전투복 공격 속도",
+      "피닉스 전투복 오프라인 에너지 재생률",
+      "용사 인공지능 공격 속도",
+      "용사 인공지능 체력 및 보호막",
+      "시간 증폭 효율",
+      "추가 시작 보급품"
+    ]
+  },
+  "Horner": {
+    "en": [
+      "Strike Fighter Area of Effect",
+      "Stronger Death Chance",
+      "Significant Other Bonuses",
+      "Double Salvage Chance",
+      "Air Fleet Travel Distance",
+      "Mag Mine Charges, Cooldown, and Arming Time"
+    ],
+    "ko": [
+      "타격 전투기 범위 효과",
+      "죽음 확률 강화",
+      "소중한 사람 보너스",
+      "두 배의 회수 확률",
+      "공중 함대 이동 거리",
+      "자기 지뢰 충전 수 증가 및 재사용 대기시간 및 설치 시간"
+    ]
+  },
+  "Karax": {
+    "en": [
+      "Combat Unit Life and Shield",
+      "Structure Life and Shields",
+      "Repair Beam Healing Rate",
+      "Chrono Wave Energy Generation",
+      "Chrono Boost Efficiency",
+      "Initial and Maximum Spear of Adun Energy"
+    ],
+    "ko": [
+      "전투 유닛 체력 및 보호막",
+      "구조물 체력 및 보호막",
+      "재구축 광선 치료 속도",
+      "시간의 파도 에너지 재생",
+      "시간 증폭 효율",
+      "아둔의 창 초기 및 최대 에너지"
+    ]
+  },
+  "Kerrigan": {
+    "en": [
+      "Kerrigan Energy Regeneration",
+      "Kerrigan Attack Damage",
+      "Combat Unit Vespene Gas Cost",
+      "Augmented Immobilization Wave",
+      "Expeditious Evolutions",
+      "Primary Ability Damage and Attack Speed"
+    ],
+    "ko": [
+      "케리건 에너지 재생",
+      "케리건 공격력",
+      "전투 유닛 베스핀 가스 비용",
+      "강화된 구속의 파동",
+      "효율적 진화",
+      "주 능력 공격력 및 공격 속도"
+    ]
+  },
+  "Nova": {
+    "en": [
+      "Nuke and Holo Decoy Cooldown",
+      "Griffin Airstrike Cost",
+      "Nova Primary Ability Improvement",
+      "Combat Unit Attack Speed",
+      "Nova Energy Regeneration",
+      "Unit Life Regeneration"
+    ],
+    "ko": [
+      "핵/홀로그램 분신 재사용 대기시간",
+      "그리핀 공습 비용",
+      "노바 주 능력 향상",
+      "전투 유닛 공격 속도",
+      "노바 에너지 재생",
+      "유닛 체력 재생"
+    ]
+  },
+  "Raynor": {
+    "en": [
+      "Research Resource Cost",
+      "Speed Increases for Drop Pod Units",
+      "Hyperion Cooldown",
+      "Banshee Airstrike Cooldown",
+      "Medics Heal Additional Target",
+      "Mech Attack Speed"
+    ],
+    "ko": [
+      "연구 자원 비용",
+      "낙하기 유닛 속도 향상",
+      "히페리온 재사용 대기시간",
+      "밴시 공습 재사용 대기시간",
+      "의무관이 추가 대상 치료",
+      "기계 공격 속도"
+    ]
+  },
+  "Stetmann": {
+    "en": [
+      "Upgrade Resource Cost",
+      "Gary Ability Cooldown",
+      "Stetzone Bonuses",
+      "Maximum Egonergy Pool",
+      "Deploy Stetellite Cooldown",
+      "Structure Morph Rate"
+    ],
+    "ko": [
+      "업그레이드 자원 비용",
+      "개리 능력 재사용 대기시간",
+      "이곤지역 보너스",
+      "최대 이곤에너지 보유량",
+      "이곤위성 배치 재사용 대기시간",
+      "구조물 변형 속도"
+    ]
+  },
+  "Stukov": {
+    "en": [
+      "Volatile Infested Spawn Chance",
+      "Infest Structure Cooldown",
+      "Aleksander Cooldown",
+      "Apocalisk Cooldown",
+      "Infested Infantry Duration",
+      "Mech Attack Speed"
+    ],
+    "ko": [
+      "폭발성 감염체 생성 확률",
+      "구조물 감염 재사용 대기시간",
+      "알렉산더 재사용 대기시간",
+      "아포칼리스크 재사용 대기시간",
+      "감염된 보병 지속 시간",
+      "기계 공격 속도"
+    ]
+  },
+  "Swann": {
+    "en": [
+      "Concentrated Beam Width and Damage",
+      "Combat Drop Duration and Life",
+      "Immortality Protocol Cost and Build Time",
+      "Structure Health",
+      "Vespene Drone Cost",
+      "Laser Drill Build Time, Upgrade Time, and Upgrade Cost"
+    ],
+    "ko": [
+      "집중 광선 폭 및 공격력",
+      "전투 투하 지속 시간 및 체력",
+      "불멸 프로토콜 비용 및 생산 시간",
+      "구조물 체력",
+      "베스핀 채취기 비용",
+      "레이저 천공기 건설 시간, 업그레이드 시간, 업그레이드 비용"
+    ]
+  },
+  "Tychus": {
+    "en": [
+      "Tychus Attack Speed",
+      "Tychus Shredder Grenade Cooldown",
+      "Tri-Outlaw Research Improvement",
+      "Outlaw Availability",
+      "Medivac Pickup Cooldown",
+      "Odin Cooldown"
+    ],
+    "ko": [
+      "타이커스 공격 속도",
+      "타이커스 분쇄 수류탄 재사용 대기시간",
+      "삼중 무법자 연구 향상",
+      "무법자 이용 가능",
+      "의료선 탑승 재사용 대기시간",
+      "오딘 재사용 대기시간"
+    ]
+  },
+  "Vorazun": {
+    "en": [
+      "Dark Pylon Range",
+      "Black Hole Duration",
+      "Shadow Guard Duration",
+      "Time Stop Unit Speed Increase",
+      "Chrono Boost Efficiency",
+      "Initial and Maximum Spear of Adun Energy"
+    ],
+    "ko": [
+      "암흑 수정탑 범위",
+      "블랙홀 지속 시간",
+      "그림자 파수대 지속 시간",
+      "시간 정지 유닛 속도 향상",
+      "시간 증폭 효율",
+      "아둔의 창 초기 및 최대 에너지"
+    ]
+  },
+  "Zagara": {
+    "en": [
+      "Zagara and Queen Regen",
+      "Zagara Attack Damage",
+      "Intensified Frenzy",
+      "Zergling Evasion",
+      "Roach Damage and Life",
+      "Baneling Attack Damage"
+    ],
+    "ko": [
+      "자가라 및 여왕 재생",
+      "자가라 공격력",
+      "심화 광란",
+      "저글링 회피",
+      "바퀴 공격력 및 체력",
+      "맹독충 공격력"
+    ]
+  },
+  "Zeratul": {
+    "en": [
+      "Zeratul Attack Speed",
+      "Combat Unit Attack Speed",
+      "Artifact Fragment Spawn Rate",
+      "Support Calldown Cooldown Reduction",
+      "Legendary Legion Cost",
+      "Avatar Cooldown"
+    ],
+    "ko": [
+      "제라툴 공격 속도",
+      "전투 유닛 공격 속도",
+      "유물 조각 생성 속도",
+      "지원 소환 재사용 대기시간 감소",
+      "전설 군단 비용",
+      "화신 재사용 대기시간"
+    ]
+  },
+  "Mengsk": {
+    "en": [
+      "Laborer and Trooper Imperial Support",
+      "Royal Guard Support",
+      "Terrible Damage",
+      "Royal Guard Cost",
+      "Starting Imperial Mandate",
+      "Royal Guard Experience Gain Rate"
+    ],
+    "ko": [
+      "황제 지지: 인부 및 부대원",
+      "황제 지지: 근위대",
+      "끔찍한 피해",
+      "근위대 생산 비용",
+      "황제의 통치력 초기값",
+      "근위대 경험치 획득률"
+    ]
+  }
+}

@@ -1,0 +1,254 @@
+{
+  "Abathur": {
+    "en": [
+      "Evolution Master",
+      "Essence Hoarder",
+      "Tunneling Horror",
+      "The Limitless"
+    ],
+    "ko": [
+      "진화 군주",
+      "정수 축적가",
+      "땅굴 공포",
+      "무제한"
+    ]
+  },
+  "Alarak": {
+    "en": [
+      "Highlord of the Tal'darim",
+      "Artificer of Souls",
+      "Tyrant Ascendant",
+      "Shadow of Death"
+    ],
+    "ko": [
+      "탈다림의 군주",
+      "영혼 장인",
+      "폭군 승천자",
+      "죽음의 그림자"
+    ]
+  },
+  "Artanis": {
+    "en": [
+      "Hierarch of the Daelaam",
+      "Valorous Inspirator",
+      "Nexus Legate",
+      "Arkship Commandant"
+    ],
+    "ko": [
+      "댈람의 신관",
+      "용맹한 격려",
+      "연결체 특사",
+      "대함선 사령관"
+    ]
+  },
+  "Dehaka": {
+    "en": [
+      "Primal Pack Leader",
+      "Devouring One",
+      "Primal Contender",
+      "Broodbrother"
+    ],
+    "ko": [
+      "원시 무리 우두머리",
+      "포식자",
+      "원시 도전자",
+      "무리형제"
+    ]
+  },
+  "Fenix": {
+    "en": [
+      "Purifier Executor",
+      "Akhundelar",
+      "Network Administrator",
+      "Unconquered Spirit"
+    ],
+    "ko": [
+      "정화자 집행관",
+      "아쿤델라르",
+      "네트워크 관리자",
+      "굴하지 않는 정신"
+    ]
+  },
+  "Horner": {
+    "en": [
+      "Mercenary Leader and Dominion Admiral",
+      "Chaotic Power Couple",
+      "Wing Commanders",
+      "Galactic Gunrunners"
+    ],
+    "ko": [
+      "용병 지도자와 자치령 제독",
+      "혼돈의 최강 커플",
+      "공군 사령관",
+      "은하계 총기 밀수업자"
+    ]
+  },
+  "Karax": {
+    "en": [
+      "Khalai Phase-Smith",
+      "Architect of War",
+      "Templar Apparent",
+      "Solarite Celestial"
+    ],
+    "ko": [
+      "칼라이 차원장인",
+      "전쟁 설계자",
+      "명명백백한 기사",
+      "천상의 태양"
+    ]
+  },
+  "Kerrigan": {
+    "en": [
+      "Queen of Blades",
+      "Malevolent Matriarch",
+      "Folly of Man",
+      "Desolate Queen"
+    ],
+    "ko": [
+      "칼날 여왕",
+      "사악한 대모",
+      "인간의 어리석음",
+      "적막한 여왕"
+    ]
+  },
+  "Mengsk": {
+    "en": [
+      "Emperor of the Dominion",
+      "Toxic Tyrant",
+      "Principal Proletariat",
+      "Merchant of Death"
+    ],
+    "ko": [
+      "자치령 황제",
+      "독성 폭군",
+      "최고 프롤레타리아",
+      "죽음의 상인"
+    ]
+  },
+  "Nova": {
+    "en": [
+      "Dominion Ghost",
+      "Soldier of Fortune",
+      "Tactical Dispatcher",
+      "Infiltration Specialist"
+    ],
+    "ko": [
+      "자치령 유령",
+      "용병단",
+      "전술 운항사",
+      "침투 전문가"
+    ]
+  },
+  "Raynor": {
+    "en": [
+      "Renegade Commander",
+      "Backwater Marshal",
+      "Rough Rider",
+      "Rebel Raider"
+    ],
+    "ko": [
+      "반란군 사령관",
+      "변방 보안관",
+      "거친 라이더",
+      "반란군 특공대"
+    ]
+  },
+  "Stetmann": {
+    "en": [
+      "Hero Genius (Henius)",
+      "Signal Savant",
+      "Best Buddy",
+      "Oil Baron"
+    ],
+    "ko": [
+      "영웅적인 천재 (영재)",
+      "신호의 석학",
+      "절친한 친구",
+      "석유왕"
+    ]
+  },
+  "Stukov": {
+    "en": [
+      "Infested Admiral",
+      "Frightful Fleshwelder",
+      "Plague Warden",
+      "Lord of the Horde"
+    ],
+    "ko": [
+      "감염된 제독",
+      "공포의 살점 용접공",
+      "역병 감시자",
+      "무리의 군주"
+    ]
+  },
+  "Swann": {
+    "en": [
+      "Chief Engineer",
+      "Heavy Weapons Specialist",
+      "Grease Monkey",
+      "Payload Director"
+    ],
+    "ko": [
+      "수석 기술자",
+      "중화기 전문가",
+      "노련한 기계공",
+      "화물 감독"
+    ]
+  },
+  "Tychus": {
+    "en": [
+      "Legendary Outlaw",
+      "Technical Recruiter",
+      "Lone Wolf",
+      "Dutiful Dogwalker"
+    ],
+    "ko": [
+      "전설적인 무법자",
+      "기술 신병 모집관",
+      "고독한 늑대",
+      "책임감 있는 개 주인"
+    ]
+  },
+  "Vorazun": {
+    "en": [
+      "Matriarch of the Nerazim",
+      "Spirit of Respite",
+      "Withering Siphon",
+      "Keeper of Shadows"
+    ],
+    "ko": [
+      "네라짐의 대모",
+      "휴식의 혼",
+      "약화 흡입",
+      "그림자 관리자"
+    ]
+  },
+  "Zagara": {
+    "en": [
+      "Swarm Broodmother",
+      "Scourge Queen",
+      "Mother of Constructs",
+      "Apex Predator"
+    ],
+    "ko": [
+      "군단 무리어미",
+      "갈귀 여왕",
+      "피조물의 어머니",
+      "최상위 포식자"
+    ]
+  },
+  "Zeratul": {
+    "en": [
+      "Dark Prelate",
+      "Anakh Su'n",
+      "Knowledge Seeker",
+      "Herald of the Void"
+    ],
+    "ko": [
+      "암흑 정무관",
+      "아나크 순",
+      "지식을 추구하는 자",
+      "공허의 전조"
+    ]
+  }
+}
