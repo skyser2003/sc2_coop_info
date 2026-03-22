@@ -2316,6 +2316,66 @@ impl ReplayAnalysis {
         )
     }
 
+    pub fn load_all_analysis_replays_snapshot(
+        limit: usize,
+        main_names: &HashSet<String>,
+        main_handles: &HashSet<String>,
+    ) -> Vec<ReplayInfo> {
+        Self::load_all_analysis_replays_snapshot_from_path(
+            &detailed_analysis_cache_path(),
+            limit,
+            main_names,
+            main_handles,
+        )
+    }
+
+    pub(crate) fn load_all_analysis_replays_snapshot_from_path(
+        cache_path: &Path,
+        limit: usize,
+        main_names: &HashSet<String>,
+        main_handles: &HashSet<String>,
+    ) -> Vec<ReplayInfo> {
+        let payload = match std::fs::read(cache_path) {
+            Ok(payload) => payload,
+            Err(_) => return Vec::new(),
+        };
+        let entries = match serde_json::from_slice::<Vec<CacheReplayEntry>>(&payload) {
+            Ok(entries) => entries,
+            Err(error) => {
+                crate::sco_log!(
+                    "[SCO/cache] failed to parse unified cache '{}': {error}",
+                    cache_path.display()
+                );
+                return Vec::new();
+            }
+        };
+
+        let mut replays = entries
+            .into_iter()
+            .filter(|entry| Path::new(&entry.file).exists())
+            .map(|entry| {
+                orient_replay_for_main_names(
+                    replay_info_from_cache_entry(&entry).sanitized(),
+                    main_names,
+                    main_handles,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        replays.sort_by(|a, b| b.date.cmp(&a.date).then_with(|| b.file.cmp(&a.file)));
+        if limit > 0 && replays.len() > limit {
+            replays.truncate(limit);
+        }
+
+        crate::sco_log!(
+            "[SCO/cache] loaded {} replay(s) from unified cache '{}' (includes both simple and detailed)",
+            replays.len(),
+            cache_path.display()
+        );
+
+        replays
+    }
+
     pub(crate) fn merge_cached_detailed_replays_from_path(
         replays: &[ReplayInfo],
         cache_path: &Path,
@@ -2350,17 +2410,6 @@ impl ReplayAnalysis {
                     .unwrap_or_else(|| replay.clone())
             })
             .collect()
-    }
-
-    pub(crate) fn merge_cached_detailed_replays(replays: &[ReplayInfo]) -> Vec<ReplayInfo> {
-        let main_names = configured_main_names();
-        let main_handles = configured_main_handles();
-        Self::merge_cached_detailed_replays_from_path(
-            replays,
-            &detailed_analysis_cache_path(),
-            &main_names,
-            &main_handles,
-        )
     }
 
     pub fn modified_seconds(path: &Path) -> u64 {
@@ -2514,16 +2563,15 @@ impl ReplayAnalysis {
             Ok(_) => ScanInFlightGuard,
             Err(_) => {
                 scan_progress.set_stage("busy");
-                return Self::load_detailed_analysis_replays_snapshot(
-                    limit,
-                    &main_names,
-                    &main_handles,
-                );
+                // When busy, return all cached replays from unified cache
+                let replays =
+                    Self::load_all_analysis_replays_snapshot(limit, &main_names, &main_handles);
+                return replays;
             }
         };
 
         scan_progress.reset("starting");
-        scan_progress.set_status("Parsing");
+        scan_progress.set_status("Loading cache");
 
         let scan_started_at = Instant::now();
         crate::sco_log!("[SCO/replay] scan_replays start limit={limit}");
@@ -2537,33 +2585,76 @@ impl ReplayAnalysis {
         };
         crate::sco_log!("[SCO/replay] scan root: {}", root.display());
 
+        // Load existing cache (unified for both simple and detailed)
+        let existing_replays = Self::load_all_analysis_replays_snapshot(
+            UNLIMITED_REPLAY_LIMIT,
+            &main_names,
+            &main_handles,
+        );
+
+        // Create set of files that already have any analysis
+        let analyzed_files: HashSet<String> =
+            existing_replays.iter().map(|r| r.file.clone()).collect();
+
         let collect_started_at = Instant::now();
         scan_progress.set_stage("collecting_paths");
-        let paths = Self::collect_replay_paths(&root, limit);
-        let paths_len = paths.len();
+        let all_paths = Self::collect_replay_paths(&root, limit);
+        let all_paths_len = all_paths.len();
         scan_progress
             .total
-            .store(paths_len as u64, Ordering::Release);
-        crate::sco_log!(
-            "[SCO/replay] collected {} path(s) in {}ms",
-            paths_len,
-            collect_started_at.elapsed().as_millis()
+            .store(all_paths_len as u64, Ordering::Release);
+
+        // Filter paths to only those not in cache
+        let paths_to_parse: Vec<PathBuf> = all_paths
+            .into_iter()
+            .filter(|path| {
+                let path_str = path.to_string_lossy().to_string();
+                !analyzed_files.contains(&path_str)
+            })
+            .collect();
+
+        let paths_to_parse_len = paths_to_parse.len();
+        scan_progress
+            .to_parse
+            .store(paths_to_parse_len as u64, Ordering::Release);
+        scan_progress.cache_hits.store(
+            (all_paths_len - paths_to_parse_len) as u64,
+            Ordering::Release,
         );
-        if paths_len == 0 {
+
+        crate::sco_log!(
+            "[SCO/replay] collected {} path(s) in {}ms, {} already cached, parsing {}",
+            all_paths_len,
+            collect_started_at.elapsed().as_millis(),
+            all_paths_len - paths_to_parse_len,
+            paths_to_parse_len
+        );
+
+        if paths_to_parse.is_empty() {
             scan_progress.set_status("Completed");
-            scan_progress.set_stage("no_paths_found");
-            return Vec::new();
+            scan_progress.set_stage("cache_only");
+            // Return cached results (already sorted and limited by load_all_analysis_replays_snapshot)
+            let mut replays = existing_replays;
+            if limit > 0 && replays.len() > limit {
+                replays.truncate(limit);
+            }
+            crate::sco_log!(
+                "[SCO/replay] scan_replays finished from cache in {}ms (total={})",
+                scan_started_at.elapsed().as_millis(),
+                replays.len()
+            );
+            return replays;
         }
 
         struct ParseResult {
-            index: usize,
             replay: ReplayInfo,
+            cache_entry: Option<CacheReplayEntry>,
         }
 
         scan_progress.cache_hits.store(0, Ordering::Release);
         scan_progress
             .to_parse
-            .store(paths_len as u64, Ordering::Release);
+            .store(paths_to_parse_len as u64, Ordering::Release);
 
         let parse_started_at = Instant::now();
         scan_progress.set_stage("parsing_replays");
@@ -2576,15 +2667,17 @@ impl ReplayAnalysis {
             .build()
             .unwrap()
             .install(|| {
-                paths
+                paths_to_parse
                     .into_par_iter()
                     .enumerate()
-                    .map(|(index, path)| {
+                    .map(|(_index, path)| {
                         let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            Self::summarize_replay_lightweight(&path).sanitized()
+                            let replay = Self::summarize_replay_lightweight(&path);
+                            let cache_entry = parse_basic_cache_entry(&path);
+                            (replay, cache_entry)
                         }));
-                        let parsed = match parsed {
-                            Ok(parsed) => parsed,
+                        let (replay, cache_entry) = match parsed {
+                            Ok((replay, cache_entry)) => (replay, cache_entry),
                             Err(_) => {
                                 progress.completed.fetch_add(1, Ordering::AcqRel);
                                 progress.failed.fetch_add(1, Ordering::AcqRel);
@@ -2592,12 +2685,12 @@ impl ReplayAnalysis {
                             }
                         };
                         let oriented =
-                            orient_replay_for_main_names(parsed, &main_names, &main_handles);
+                            orient_replay_for_main_names(replay, &main_names, &main_handles);
                         progress.completed.fetch_add(1, Ordering::AcqRel);
                         progress.newly_parsed.fetch_add(1, Ordering::AcqRel);
                         Ok(ParseResult {
-                            index,
                             replay: oriented,
+                            cache_entry,
                         })
                     })
                     .collect()
@@ -2633,41 +2726,46 @@ impl ReplayAnalysis {
         );
 
         scan_progress.set_stage("finalizing_results");
-        let mut replays = vec![None; paths_len];
+
+        // Combine results - start with existing cached replays
+        let mut all_replays = existing_replays;
+        let mut all_cache_entries = Vec::new();
+
+        // Add newly parsed replays (these are simple analysis)
         for result in successful_results {
-            replays[result.index] = Some(result.replay);
-        }
-        let mut replays: Vec<ReplayInfo> = replays.into_iter().flatten().collect();
-
-        if replays.len() != paths_len {
-            crate::sco_log!(
-                "[SCO/replay] warning: replay result length {} does not match path count {}",
-                replays.len(),
-                paths_len
-            );
+            all_replays.push(result.replay);
+            if let Some(entry) = result.cache_entry {
+                all_cache_entries.push(entry);
+            }
         }
 
-        replays.sort_by(|a, b| b.date.cmp(&a.date).then_with(|| b.file.cmp(&a.file)));
+        all_replays.sort_by(|a, b| b.date.cmp(&a.date).then_with(|| b.file.cmp(&a.file)));
+        if limit > 0 && all_replays.len() > limit {
+            all_replays.truncate(limit);
+        }
+
+        // Save simple cache
+        if !all_cache_entries.is_empty() {
+            if let Err(error) = crate::persist_simple_analysis_cache(&all_cache_entries) {
+                crate::sco_log!("[SCO/cache] failed to save simple analysis cache: {error}");
+            }
+        }
 
         scan_progress.set_stage("completed");
         scan_progress.set_status("Completed");
-        let unparsed_count = replays
+        let unparsed_count = all_replays
             .iter()
             .filter(|replay| replay.result == "Unparsed")
             .count();
         crate::sco_log!(
-            "[SCO/replay] scan_replays finished in {}ms (parsed={}, unparsed={})",
+            "[SCO/replay] scan_replays finished in {}ms (parsed={}, unparsed={}, cached={})",
             scan_started_at.elapsed().as_millis(),
-            replays.len() - unparsed_count,
-            unparsed_count
+            all_replays.len() - unparsed_count,
+            unparsed_count,
+            all_paths_len - paths_to_parse_len
         );
 
-        crate::sco_log!(
-            "[SCO/cache] using detailed-analysis cache only; parsed {} replay(s) directly",
-            replays.len()
-        );
-
-        replays
+        all_replays
     }
 
     pub fn replay_date_seconds_for_filter(replay: &ReplayInfo) -> u64 {

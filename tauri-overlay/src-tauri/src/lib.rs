@@ -1907,7 +1907,7 @@ fn detailed_analysis_cache_path() -> PathBuf {
         .join(DETAILED_ANALYSIS_CACHE_FILE);
 }
 
-fn clear_detailed_analysis_cache_files() {
+fn clear_analysis_cache_files() {
     let cache_path = detailed_analysis_cache_path();
     let temp_path = PathBuf::from(format!("{}_temp", cache_path.display()));
 
@@ -1915,7 +1915,7 @@ fn clear_detailed_analysis_cache_files() {
         if let Err(error) = std::fs::remove_file(&path) {
             if error.kind() != std::io::ErrorKind::NotFound {
                 crate::sco_log!(
-                    "[SCO/cache] failed to delete detailed-analysis cache file '{}': {error}",
+                    "[SCO/cache] failed to delete analysis cache file '{}': {error}",
                     path.display()
                 );
             }
@@ -2395,7 +2395,7 @@ fn spawn_analysis_task(
                 from_detailed_analysis
             }
         } else {
-            ReplayAnalysis::merge_cached_detailed_replays(&scan_replays(limit))
+            scan_replays(limit)
         };
         crate::sco_log!(
             "[SCO/stats] {} scanned {} replay(s) in {}ms",
@@ -2998,6 +2998,60 @@ fn persist_detailed_cache_entry_to_path(
 
 fn persist_detailed_cache_entry(entry: &CacheReplayEntry) -> Result<(), String> {
     persist_detailed_cache_entry_to_path(&detailed_analysis_cache_path(), entry)
+}
+
+pub(crate) fn persist_simple_analysis_cache(entries: &[CacheReplayEntry]) -> Result<(), String> {
+    let cache_path = detailed_analysis_cache_path();
+    if let Some(parent) = cache_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "Failed to create cache directory '{}': {error}",
+                parent.display()
+            )
+        })?;
+    }
+
+    let mut all_entries = match std::fs::read(&cache_path) {
+        Ok(payload) => {
+            serde_json::from_slice::<Vec<CacheReplayEntry>>(&payload).map_err(|error| {
+                format!(
+                    "Failed to parse existing cache '{}': {error}",
+                    cache_path.display()
+                )
+            })?
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => {
+            return Err(format!(
+                "Failed to read existing cache '{}': {error}",
+                cache_path.display()
+            ))
+        }
+    };
+
+    // Remove existing simple analysis entries (detailed_analysis = false)
+    all_entries.retain(|existing| existing.detailed_analysis);
+
+    // Add new simple analysis entries
+    all_entries.extend_from_slice(entries);
+
+    all_entries.sort_by(|left, right| {
+        right
+            .date
+            .cmp(&left.date)
+            .then_with(|| right.file.cmp(&left.file))
+    });
+
+    let payload = serialize_cache_entries(&all_entries)
+        .map_err(|error| format!("Failed to serialize cache: {error}"))?;
+    std::fs::write(&cache_path, payload)
+        .map_err(|error| format!("Failed to write cache '{}': {error}", cache_path.display()))?;
+    crate::sco_log!(
+        "[SCO/cache] saved {} simple-analysis entries to '{}'",
+        entries.len(),
+        cache_path.display()
+    );
+    Ok(())
 }
 
 fn collect_sc2_replay_files(root: &Path) -> Vec<PathBuf> {
@@ -4365,7 +4419,7 @@ async fn config_request(
                     state
                         .overlay_replay_data_active
                         .store(false, Ordering::Release);
-                    clear_detailed_analysis_cache_files();
+                    clear_analysis_cache_files();
                     crate::sco_log!(
                         "[SCO/stats] delete_parsed_data completed in {}ms",
                         request_started_at.elapsed().as_millis()
