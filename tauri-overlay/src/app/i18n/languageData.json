@@ -156,6 +156,14 @@
         "en": "Create desktop shortcut",
         "ko": "바탕 화면 바로가기 만들기"
     },
+    "ui_settings_check_for_update": {
+        "en": "Check for update",
+        "ko": "최신 버전 체크"
+    },
+    "ui_update_confirm_question": {
+        "en": "A new version exists.  Do you wish to update?",
+        "ko": "새 버전이 존재합니다.  업데이트 하시겠습니까?"
+    },
     "ui_settings_reset": {
         "en": "Revert",
         "ko": "되돌리기"

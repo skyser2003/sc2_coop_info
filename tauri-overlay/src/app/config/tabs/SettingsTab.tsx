@@ -1,6 +1,7 @@
 import * as React from "react";
 import type { LanguageManager } from "../../i18n/languageManager";
 import { Grid } from "@mui/material";
+import { check, Update } from "@tauri-apps/plugin-updater";
 
 type SettingsActions = {
     isBusy: boolean;
@@ -809,6 +810,49 @@ export default function SettingsTab({
         );
     };
 
+    const checkUpdate = (event) => {
+        (async () => {
+            const update = await check();
+
+            if (update) {
+                const version = update.version;
+                const confirmText = `${t("ui_update_confirm_question")} (v${version})`;
+                const confirmed = confirm(confirmText);
+
+                if (confirmed) {
+                    await performUpdate(update);
+                }
+            }
+        })();
+    };
+
+    const performUpdate = async (update: Update) => {
+        let downloaded = 0;
+        let contentLength = 0;
+
+        await update.downloadAndInstall((event) => {
+            switch (event.event) {
+                case "Started":
+                    contentLength = event.data.contentLength;
+                    console.log(
+                        `started downloading ${event.data.contentLength} bytes`,
+                    );
+                    break;
+                case "Progress":
+                    downloaded += event.data.chunkLength;
+                    console.log(
+                        `downloaded ${downloaded} from ${contentLength}`,
+                    );
+                    break;
+                case "Finished":
+                    console.log("download finished");
+                    break;
+            }
+        });
+
+        console.log("update installed");
+    };
+
     return (
         <div className="tab-content main-settings-content">
             <Grid container className="card">
@@ -1241,6 +1285,9 @@ export default function SettingsTab({
                                 disabled={actions.isBusy}
                             >
                                 {t("ui_settings_create_desktop_shortcut")}
+                            </button>
+                            <button type="button" onClick={checkUpdate}>
+                                {t("ui_settings_check_for_update")}
                             </button>
                         </div>
                         <div className="main-settings-box main-bottom-right">
