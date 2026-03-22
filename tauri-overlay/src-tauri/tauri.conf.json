@@ -86,7 +86,10 @@
     "bundle": {
         "active": true,
         "icon": ["icons/icon.ico", "icons/icon.png"],
-        "createUpdaterArtifacts": true
+        "createUpdaterArtifacts": true,
+        "resources": {
+            "../../s2coop-analyzer/data": "data/"
+        }
     },
     "plugins": {
         "updater": {
