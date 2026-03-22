@@ -1894,9 +1894,17 @@ fn replay_watch_root_from_settings() -> Option<PathBuf> {
 }
 
 fn detailed_analysis_cache_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    if let Ok(abs) = std::env::current_exe() {
+        if let Some(parent) = abs.parent() {
+            return parent
+                .join(DETAILED_ANALYSIS_OUTPUT_DIR)
+                .join(DETAILED_ANALYSIS_CACHE_FILE);
+        }
+    }
+
+    return PathBuf::from("./")
         .join(DETAILED_ANALYSIS_OUTPUT_DIR)
-        .join(DETAILED_ANALYSIS_CACHE_FILE)
+        .join(DETAILED_ANALYSIS_CACHE_FILE);
 }
 
 fn clear_detailed_analysis_cache_files() {

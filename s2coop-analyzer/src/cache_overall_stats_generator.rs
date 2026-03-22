@@ -15,6 +15,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::io;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicUsize, Ordering as AtomicOrdering},
@@ -214,9 +215,13 @@ struct GenerateCacheProgressReporter<'a> {
     logger: Option<&'a (dyn Fn(String) + Send + Sync + 'a)>,
     total_files: usize,
     report_interval: usize,
+    temp_save_interval: usize,
     start_time: Instant,
     processed_files: AtomicUsize,
     next_report_target: AtomicUsize,
+    next_temp_save_target: AtomicUsize,
+    temp_file_path: PathBuf,
+    temp_entries: std::sync::Mutex<Vec<CacheReplayEntry>>,
 }
 
 impl<'a> GenerateCacheProgressReporter<'a> {
@@ -224,13 +229,16 @@ impl<'a> GenerateCacheProgressReporter<'a> {
         total_files: usize,
         initial_processed_files: usize,
         logger: Option<&'a (dyn Fn(String) + Send + Sync + 'a)>,
+        temp_file_path: PathBuf,
     ) -> Self {
         let report_interval = if total_files <= 10 { 1 } else { 10 };
+        let temp_save_interval = 100;
         let initial_processed_files = initial_processed_files.min(total_files);
         Self {
             logger,
             total_files,
             report_interval,
+            temp_save_interval,
             start_time: Instant::now(),
             processed_files: AtomicUsize::new(initial_processed_files),
             next_report_target: AtomicUsize::new(next_progress_target(
@@ -238,6 +246,13 @@ impl<'a> GenerateCacheProgressReporter<'a> {
                 report_interval,
                 initial_processed_files,
             )),
+            next_temp_save_target: AtomicUsize::new(next_progress_target(
+                total_files,
+                temp_save_interval,
+                initial_processed_files,
+            )),
+            temp_file_path,
+            temp_entries: std::sync::Mutex::new(Vec::new()),
         }
     }
 
@@ -260,9 +275,12 @@ impl<'a> GenerateCacheProgressReporter<'a> {
 
         if processed == self.total_files {
             self.emit(self.progress_message(processed));
+            // Save any remaining temp entries
+            let _ = self.save_temp_entries();
             return;
         }
 
+        // Check for progress reporting
         let mut target = self.next_report_target.load(AtomicOrdering::Relaxed);
         while processed >= target {
             let next_target = target.saturating_add(self.report_interval);
@@ -274,10 +292,32 @@ impl<'a> GenerateCacheProgressReporter<'a> {
             ) {
                 Ok(_) => {
                     self.emit(self.progress_message(processed));
-                    return;
+                    break;
                 }
                 Err(current) => {
                     target = current;
+                }
+            }
+        }
+
+        // Check for temp saving
+        let mut temp_target = self.next_temp_save_target.load(AtomicOrdering::Relaxed);
+        while processed >= temp_target {
+            let next_temp_target = temp_target.saturating_add(self.temp_save_interval);
+            match self.next_temp_save_target.compare_exchange(
+                temp_target,
+                next_temp_target,
+                AtomicOrdering::SeqCst,
+                AtomicOrdering::SeqCst,
+            ) {
+                Ok(_) => {
+                    if let Err(error) = self.save_temp_entries() {
+                        self.emit(format!("Warning: failed to save temp entries: {error}"));
+                    }
+                    break;
+                }
+                Err(current) => {
+                    temp_target = current;
                 }
             }
         }
@@ -292,6 +332,44 @@ impl<'a> GenerateCacheProgressReporter<'a> {
             "Detailed analysis completed in {:.0} seconds!",
             self.start_time.elapsed().as_secs_f64()
         ));
+    }
+
+    fn add_temp_entry(&self, entry: CacheReplayEntry) {
+        if let Ok(mut temp_entries) = self.temp_entries.lock() {
+            temp_entries.push(entry);
+        }
+    }
+
+    fn save_temp_entries(&self) -> Result<(), std::io::Error> {
+        let entries = match self.temp_entries.lock() {
+            Ok(mut temp_entries) => {
+                let entries = temp_entries.drain(..).collect::<Vec<_>>();
+                entries
+            }
+            Err(_) => return Ok(()), // Skip saving if lock is poisoned
+        };
+
+        if entries.is_empty() {
+            return Ok(());
+        }
+
+        let mut content = String::new();
+        for entry in entries {
+            if let Ok(json) = serde_json::to_string(&entry) {
+                content.push_str(&json);
+                content.push('\n');
+            }
+        }
+
+        if !content.is_empty() {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&self.temp_file_path)?
+                .write_all(content.as_bytes())?;
+        }
+
+        Ok(())
     }
 
     fn emit(&self, message: String) {
@@ -534,10 +612,16 @@ fn generate_cache_overall_stats_impl(
         .map_err(|error| GenerateCacheError::DetailedAnalysisConfig(error.to_string()))?;
     let cache_data = dictionary_data::cache_generation_data()
         .map_err(|error| GenerateCacheError::DetailedAnalysisConfig(error.to_string()))?;
-    let existing_detailed_analysis_entries =
+
+    // Load existing detailed analysis entries from both complete cache and temp file
+    let mut existing_detailed_analysis_entries =
         load_existing_detailed_analysis_cache(&config.output_file, logger);
-    let mut entries = if replay_files.is_empty() {
-        let progress = GenerateCacheProgressReporter::new(0, 0, logger);
+    let temp_file_path = config.output_file.with_extension("temp.jsonl");
+    let temp_entries = load_temp_detailed_analysis_cache(&temp_file_path, logger);
+    existing_detailed_analysis_entries.extend(temp_entries);
+    let entries = if replay_files.is_empty() {
+        let temp_file_path = config.output_file.with_extension("temp.jsonl");
+        let progress = GenerateCacheProgressReporter::new(0, 0, logger, temp_file_path);
         progress.log_completion();
         Vec::new()
     } else {
@@ -555,10 +639,12 @@ fn generate_cache_overall_stats_impl(
         let total_candidates = candidate_replays.len();
         let (mut reused_entries, pending_candidates) =
             partition_cached_candidates(candidate_replays, &existing_detailed_analysis_entries);
+        let temp_file_path = config.output_file.with_extension("temp.jsonl");
         let progress = Arc::new(GenerateCacheProgressReporter::new(
             total_candidates,
             reused_entries.len(),
             logger,
+            temp_file_path,
         ));
 
         if total_candidates == 0 {
@@ -579,6 +665,10 @@ fn generate_cache_overall_stats_impl(
                                 &main_handles,
                                 &hidden_created_lost,
                             );
+                            // Add to temp entries for periodic saving
+                            if entry.detailed_analysis {
+                                progress_for_workers.add_temp_entry(entry.clone());
+                            }
                             progress_for_workers.record_processed_file();
                             entry
                         })
@@ -590,9 +680,16 @@ fn generate_cache_overall_stats_impl(
             reused_entries
         }
     };
-    entries.sort_by(cache_entry_compare);
 
-    let payload = serialize_cache_entries(&entries).map_err(GenerateCacheError::SerializeFailed)?;
+    // Collect all entries: existing from cache/temp + newly analyzed
+    let mut all_entries = Vec::new();
+    all_entries.extend(existing_detailed_analysis_entries.into_values());
+    all_entries.extend(entries);
+
+    all_entries.sort_by(cache_entry_compare);
+
+    let payload =
+        serialize_cache_entries(&all_entries).map_err(GenerateCacheError::SerializeFailed)?;
     let temp_file = PathBuf::from(format!("{}_temp", config.output_file.display()));
     fs::write(&temp_file, payload)
         .map_err(|error| GenerateCacheError::TempWriteFailed(temp_file.clone(), error))?;
@@ -606,8 +703,14 @@ fn generate_cache_overall_stats_impl(
     })?;
     let _ = write_pretty_cache_file(&config.output_file, None)?;
 
+    // Remove temp file after successful completion
+    let temp_file_path = config.output_file.with_extension("temp.jsonl");
+    if temp_file_path.exists() {
+        let _ = fs::remove_file(&temp_file_path);
+    }
+
     Ok(GenerateCacheSummary {
-        scanned_replays: entries.len(),
+        scanned_replays: all_entries.len(),
         output_file: config.output_file.clone(),
     })
 }
@@ -682,6 +785,50 @@ fn load_existing_detailed_analysis_cache(
         .filter(|entry| entry.detailed_analysis && !entry.hash.is_empty())
         .map(|entry| (entry.hash.clone(), entry))
         .collect()
+}
+
+fn load_temp_detailed_analysis_cache(
+    temp_path: &Path,
+    logger: Option<&(dyn Fn(String) + Send + Sync + '_)>,
+) -> HashMap<String, CacheReplayEntry> {
+    let content = match fs::read_to_string(temp_path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return HashMap::new(),
+        Err(error) => {
+            emit_optional_logger(
+                logger,
+                format!(
+                    "Ignoring existing temp cache '{}': failed to read: {error}",
+                    temp_path.display()
+                ),
+            );
+            return HashMap::new();
+        }
+    };
+
+    let mut entries = HashMap::new();
+    for line in content.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<CacheReplayEntry>(line) {
+            Ok(entry) => {
+                if entry.detailed_analysis && !entry.hash.is_empty() {
+                    entries.insert(entry.hash.clone(), entry);
+                }
+            }
+            Err(error) => {
+                emit_optional_logger(
+                    logger,
+                    format!(
+                        "Ignoring invalid temp cache entry in '{}': {error}",
+                        temp_path.display()
+                    ),
+                );
+            }
+        }
+    }
+    entries
 }
 
 fn partition_cached_candidates(

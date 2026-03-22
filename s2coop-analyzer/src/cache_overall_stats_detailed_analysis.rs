@@ -221,9 +221,16 @@ fn repo_root() -> PathBuf {
 }
 
 fn default_generated_output() -> PathBuf {
-    crate_root()
-        .join("generated")
-        .join("cache_overall_stats.json")
+    if let Ok(abs) = std::env::current_exe() {
+        if let Some(parent) = abs.parent() {
+            println!("Here1");
+            return parent.join("cache_overall_stats.json");
+        }
+    }
+
+    println!("Here2");
+
+    return repo_root().join("cache_overall_stats.json");
 }
 
 fn default_original_output() -> PathBuf {
