@@ -1,8 +1,8 @@
 use notify::{Config as NotifyConfig, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use rfd::FileDialog;
 use s2coop_analyzer::cache_overall_stats_generator::{
-    generate_cache_overall_stats_with_logger, pretty_output_path, serialize_cache_entries,
-    write_pretty_cache_file, CacheReplayEntry, GenerateCacheConfig,
+    generate_cache_overall_stats_with_logger, serialize_cache_entries, CacheReplayEntry,
+    GenerateCacheConfig,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{self, json, Map, Value};
@@ -1909,10 +1909,9 @@ fn detailed_analysis_cache_path() -> PathBuf {
 
 fn clear_detailed_analysis_cache_files() {
     let cache_path = detailed_analysis_cache_path();
-    let pretty_path = pretty_output_path(&cache_path);
     let temp_path = PathBuf::from(format!("{}_temp", cache_path.display()));
 
-    for path in [cache_path, pretty_path, temp_path] {
+    for path in [cache_path, temp_path] {
         if let Err(error) = std::fs::remove_file(&path) {
             if error.kind() != std::io::ErrorKind::NotFound {
                 crate::sco_log!(
@@ -2994,8 +2993,6 @@ fn persist_detailed_cache_entry_to_path(
             cache_path.display()
         )
     })?;
-    write_pretty_cache_file(cache_path, Some(&pretty_output_path(cache_path)))
-        .map_err(|error| format!("Failed to write pretty detailed-analysis cache: {error}"))?;
     Ok(())
 }
 

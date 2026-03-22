@@ -1,6 +1,6 @@
 use super::*;
 use s2coop_analyzer::cache_overall_stats_generator::{
-    CacheNumericValue, CacheReplayEntry, ProtocolBuildValue, ReplayBuildInfo,
+    pretty_output_path, CacheNumericValue, CacheReplayEntry, ProtocolBuildValue, ReplayBuildInfo,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -248,9 +248,8 @@ fn persist_detailed_cache_entry_to_path_writes_and_replaces_entry() {
     assert_eq!(persisted_entries[0].hash, "same-hash");
     assert_eq!(persisted_entries[0].date, "2026-01-01 00:00:00");
     assert_eq!(persisted_entries[0].result, "Victory");
-    assert!(pretty_path.exists());
+    assert!(!pretty_path.exists());
 
-    let _ = std::fs::remove_file(&pretty_path);
     let _ = std::fs::remove_file(&cache_path);
     let _ = std::fs::remove_dir_all(&root);
 }
