@@ -5,6 +5,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+use crate::cache_overall_stats_detailed_analysis::repo_root;
+
 fn read_env_file_value(env_file: &Path, key: &str) -> Option<String> {
     let content = fs::read_to_string(env_file).ok()?;
     for line in content.lines() {
@@ -41,10 +43,7 @@ fn resolve_account_dir() -> Option<PathBuf> {
         }
     }
 
-    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()?
-        .to_path_buf();
-    let env_path = repo_root.join(".env");
+    let env_path = repo_root().join(".env");
     for key in [
         "SC2_ACCOUNT_PATH",
         "SC2_ACCOUNT_PATH_WINDOWS",

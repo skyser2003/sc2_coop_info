@@ -209,28 +209,32 @@ impl TestCacheOverallStatsDetailedAnalysisError {
     }
 }
 
-fn crate_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+pub(crate) fn runtime_root() -> PathBuf {
+    let manifest_dir_str = std::env::var("CARGO_MANIFEST_DIR");
+
+    match manifest_dir_str {
+        Ok(manifest_dir_str) => PathBuf::from(manifest_dir_str),
+        Err(_) => {
+            if let Ok(abs) = std::env::current_exe() {
+                if let Some(parent) = abs.parent() {
+                    return parent.to_path_buf();
+                }
+            }
+
+            return PathBuf::from("./");
+        }
+    }
 }
 
-fn repo_root() -> PathBuf {
-    crate_root()
+pub(crate) fn repo_root() -> PathBuf {
+    runtime_root()
         .parent()
         .expect("crate manifest directory should have repo root parent")
         .to_path_buf()
 }
 
 fn default_generated_output() -> PathBuf {
-    if let Ok(abs) = std::env::current_exe() {
-        if let Some(parent) = abs.parent() {
-            println!("Here1");
-            return parent.join("cache_overall_stats.json");
-        }
-    }
-
-    println!("Here2");
-
-    return repo_root().join("cache_overall_stats.json");
+    return runtime_root().join("cache_overall_stats.json");
 }
 
 fn default_original_output() -> PathBuf {

@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use crate::cache_overall_stats_detailed_analysis::runtime_root;
+
 const SC2_DICTIONARY_DATA_DIRS: [&str; 2] = ["data", "s2coop-analyzer/data"];
 
 fn add_candidate(candidates: &mut Vec<PathBuf>, seen: &mut HashSet<PathBuf>, candidate: PathBuf) {
@@ -35,11 +37,7 @@ pub(crate) fn resolve_sc2_dictionary_data_dir(required_files: &[&str]) -> Result
     let mut candidates = Vec::<PathBuf>::new();
     let mut seen = HashSet::<PathBuf>::new();
 
-    add_candidate(
-        &mut candidates,
-        &mut seen,
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("data"),
-    );
+    add_candidate(&mut candidates, &mut seen, runtime_root().join("data"));
     add_ancestor_candidates(&mut candidates, &mut seen, cwd.as_path());
 
     if let Ok(current_exe) = std::env::current_exe() {
