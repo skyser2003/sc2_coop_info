@@ -183,8 +183,15 @@ fn write_saved_settings_file(value: &Value) -> Result<Value, String> {
 }
 
 fn write_settings_file(value: &Value) -> Result<(), String> {
+    let previous_start_with_windows = start_with_windows_enabled(&read_settings_file());
     let sanitized = write_saved_settings_file(value)?;
     replace_active_settings(&sanitized);
+    let new_start_with_windows = start_with_windows_enabled(&sanitized);
+    if previous_start_with_windows != new_start_with_windows {
+        if let Err(error) = sync_start_with_windows_setting(&sanitized) {
+            crate::sco_log!("[SCO/settings] Failed to sync start_with_windows: {error}");
+        }
+    }
     Ok(())
 }
 
@@ -358,14 +365,6 @@ fn apply_runtime_settings(
         &next_settings,
         &PERFORMANCE_RUNTIME_SETTING_KEYS,
     );
-    let start_with_windows_changed =
-        setting_value_changed(previous_settings, &next_settings, "start_with_windows");
-
-    if start_with_windows_changed {
-        if let Err(error) = sync_start_with_windows_setting(&next_settings) {
-            crate::sco_log!("[SCO/settings] Failed to sync start_with_windows: {error}");
-        }
-    }
 
     if overlay_runtime_changed {
         overlay_info::sync_overlay_runtime_settings(app);
