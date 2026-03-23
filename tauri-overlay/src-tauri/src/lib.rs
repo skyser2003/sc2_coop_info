@@ -3316,6 +3316,61 @@ fn process_new_replay_path(
     ReplayProcessOutcome::Processed
 }
 
+fn process_replay_detailed(
+    state: &BackendState,
+    path: &Path,
+) -> (ReplayProcessOutcome, Option<ReplayInfo>) {
+    if !path_is_sc2_replay(path) {
+        return (ReplayProcessOutcome::Ignored, None);
+    }
+
+    if !path.exists() {
+        crate::sco_log!(
+            "[SCO/show] skip path='{}' reason=missing",
+            path.to_string_lossy()
+        );
+        return (ReplayProcessOutcome::RetryLater, None);
+    }
+
+    let file = path.to_string_lossy().to_string();
+
+    if file.is_empty() {
+        return (ReplayProcessOutcome::Ignored, None);
+    }
+
+    crate::sco_log!("[SCO/show] processing existing replay file='{}'", file);
+
+    let Some((parsed, cache_entry)) = parse_new_replay_with_retries(path) else {
+        crate::sco_log!("[SCO/show] failed to parse existing replay '{}'", file);
+        return (ReplayProcessOutcome::RetryLater, None);
+    };
+
+    let main_names = configured_main_names();
+    let main_handles = configured_main_handles();
+    let replay = orient_replay_for_main_names(parsed, &main_names, &main_handles);
+
+    crate::sco_log!(
+        "[SCO/show] replay accepted file='{}' date={} result='{}' main='{}' ally='{}' main_comm='{}' ally_comm='{}'",
+        replay.file,
+        replay.date,
+        replay.result,
+        replay.p1,
+        replay.p2,
+        replay.main_commander,
+        replay.ally_commander
+    );
+
+    upsert_replay_in_memory_cache(&state, &replay);
+    if let Err(error) = persist_detailed_cache_entry(&cache_entry) {
+        crate::sco_log!(
+            "[SCO/show] failed to persist detailed cache entry for '{}': {error}",
+            replay.file
+        );
+    }
+
+    (ReplayProcessOutcome::Processed, Some(replay))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ReplayProcessOutcome {
     Processed,

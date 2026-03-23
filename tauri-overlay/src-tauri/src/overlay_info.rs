@@ -16,7 +16,6 @@ use tauri::{
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
-use crate::dictionary_data;
 use crate::randomizer;
 use crate::replay_analysis::ReplayAnalysis;
 use crate::shared_types::{
@@ -29,6 +28,7 @@ use crate::{
     replay_should_swap_main_and_ally, sanitize_replay_text, sync_replay_cache, BackendState,
     UNLIMITED_REPLAY_LIMIT,
 };
+use crate::{dictionary_data, process_replay_detailed};
 
 pub(crate) const MENU_ITEM_SHOW_CONFIG: &str = "show_config";
 pub(crate) const MENU_ITEM_SHOW_OVERLAY: &str = "show_overlay";
@@ -1063,10 +1063,12 @@ pub(crate) fn replay_move_window(
             .filter(|replays| !replays.is_empty())
             .map(|replays| replays.clone())
     };
+
     let replays = match cached {
         Some(replays) => replays,
         None => sync_replay_cache(state, UNLIMITED_REPLAY_LIMIT),
     };
+
     if replays.is_empty() {
         return json!({
             "status": "ok",
@@ -1092,9 +1094,15 @@ pub(crate) fn replay_move_window(
     }
 
     let replay = &replays[index];
+
+    let replay = (!replay.is_detailed)
+        .then(|| process_replay_detailed(state, &PathBuf::from(&replay.file)).1)
+        .flatten()
+        .unwrap_or_else(|| replay.clone());
+
     let file = replay.file.clone();
 
-    emit_replay_to_overlay_from_replay(app, replay, false);
+    emit_replay_to_overlay_from_replay(app, &replay, false);
     state
         .overlay_replay_data_active
         .store(true, Ordering::Release);
