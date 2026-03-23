@@ -168,6 +168,10 @@
         "en": "A new version exists.  Do you wish to update?",
         "ko": "새 버전이 존재합니다.  업데이트 하시겠습니까?"
     },
+    "ui_update_no_update_exists": {
+        "en": "This is the newest version.",
+        "ko": "현재 버전이 최신 버전입니다."
+    },
     "ui_settings_reset": {
         "en": "Revert",
         "ko": "되돌리기"

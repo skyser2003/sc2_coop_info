@@ -2,6 +2,7 @@ import * as React from "react";
 import type { LanguageManager } from "../../i18n/languageManager";
 import { Grid } from "@mui/material";
 import { check, Update } from "@tauri-apps/plugin-updater";
+import { app } from "@tauri-apps/api";
 
 type SettingsActions = {
     isBusy: boolean;
@@ -824,6 +825,18 @@ export default function SettingsTab({
                 if (confirmed) {
                     await performUpdate(update);
                 }
+            } else {
+                let appVersion = "vUnknown";
+
+                app.getVersion()
+                    .then((version) => {
+                        appVersion = version;
+                    })
+                    .finally(() => {
+                        alert(
+                            `${t("ui_update_no_update_exists")} (v${appVersion})`,
+                        );
+                    });
             }
         })();
     };
