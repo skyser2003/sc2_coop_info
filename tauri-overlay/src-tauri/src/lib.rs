@@ -2983,60 +2983,6 @@ fn persist_detailed_cache_entry(entry: &CacheReplayEntry) -> Result<(), String> 
     persist_detailed_cache_entry_to_path(&get_cache_path(), entry)
 }
 
-pub(crate) fn persist_simple_analysis_cache(entries: &[CacheReplayEntry]) -> Result<(), String> {
-    let cache_path = get_cache_path();
-    if let Some(parent) = cache_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "Failed to create cache directory '{}': {error}",
-                parent.display()
-            )
-        })?;
-    }
-
-    let mut all_entries = match std::fs::read(&cache_path) {
-        Ok(payload) => {
-            serde_json::from_slice::<Vec<CacheReplayEntry>>(&payload).map_err(|error| {
-                format!(
-                    "Failed to parse existing cache '{}': {error}",
-                    cache_path.display()
-                )
-            })?
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-        Err(error) => {
-            return Err(format!(
-                "Failed to read existing cache '{}': {error}",
-                cache_path.display()
-            ))
-        }
-    };
-
-    // Remove existing simple analysis entries (detailed_analysis = false)
-    all_entries.retain(|existing| existing.detailed_analysis);
-
-    // Add new simple analysis entries
-    all_entries.extend_from_slice(entries);
-
-    all_entries.sort_by(|left, right| {
-        right
-            .date
-            .cmp(&left.date)
-            .then_with(|| right.file.cmp(&left.file))
-    });
-
-    let payload = serialize_cache_entries(&all_entries)
-        .map_err(|error| format!("Failed to serialize cache: {error}"))?;
-    std::fs::write(&cache_path, payload)
-        .map_err(|error| format!("Failed to write cache '{}': {error}", cache_path.display()))?;
-    crate::sco_log!(
-        "[SCO/cache] saved {} simple-analysis entries to '{}'",
-        entries.len(),
-        cache_path.display()
-    );
-    Ok(())
-}
-
 fn collect_sc2_replay_files(root: &Path) -> Vec<PathBuf> {
     if !root.is_dir() {
         return Vec::new();

@@ -2329,6 +2329,54 @@ fn cache_entry_compare(left: &CacheReplayEntry, right: &CacheReplayEntry) -> Ord
     }
 }
 
+pub fn persist_simple_analysis_cache(
+    entries: &[CacheReplayEntry],
+    cache_path: &Path,
+) -> Result<(), String> {
+    if let Some(parent) = cache_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "Failed to create cache directory '{}': {error}",
+                parent.display()
+            )
+        })?;
+    }
+
+    let mut all_entries = match std::fs::read(cache_path) {
+        Ok(payload) => {
+            serde_json::from_slice::<Vec<CacheReplayEntry>>(&payload).map_err(|error| {
+                format!(
+                    "Failed to parse existing cache '{}': {error}",
+                    cache_path.display()
+                )
+            })?
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => {
+            return Err(format!(
+                "Failed to read existing cache '{}': {error}",
+                cache_path.display()
+            ))
+        }
+    };
+
+    all_entries.retain(|existing| existing.detailed_analysis);
+    all_entries.extend_from_slice(entries);
+
+    all_entries.sort_by(|left, right| {
+        right
+            .date
+            .cmp(&left.date)
+            .then_with(|| right.file.cmp(&left.file))
+    });
+
+    let payload = serialize_cache_entries(&all_entries)
+        .map_err(|error| format!("Failed to serialize cache: {error}"))?;
+    std::fs::write(cache_path, payload)
+        .map_err(|error| format!("Failed to write cache '{}': {error}", cache_path.display()))?;
+    Ok(())
+}
+
 fn cache_progress_percent(processed: usize, total: usize) -> usize {
     if total == 0 {
         return 100;

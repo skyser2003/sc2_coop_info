@@ -2710,7 +2710,12 @@ impl ReplayAnalysis {
 
         // Save simple cache
         if !all_cache_entries.is_empty() {
-            if let Err(error) = crate::persist_simple_analysis_cache(&all_cache_entries) {
+            if let Err(error) =
+                s2coop_analyzer::cache_overall_stats_generator::persist_simple_analysis_cache(
+                    &all_cache_entries,
+                    &crate::path_manager::get_cache_path(),
+                )
+            {
                 crate::sco_log!("[SCO/cache] failed to save simple analysis cache: {error}");
             }
         }
