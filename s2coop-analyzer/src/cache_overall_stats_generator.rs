@@ -623,7 +623,7 @@ fn generate_cache_overall_stats_impl(
     let entries = if replay_files.is_empty() {
         let progress = GenerateCacheProgressReporter::new(0, 0, logger, temp_file_path.clone());
         progress.log_completion();
-        Vec::new()
+        HashMap::new()
     } else {
         let worker_count = resolve_worker_count(replay_files.len());
         let thread_pool = ThreadPoolBuilder::new()
@@ -648,17 +648,18 @@ fn generate_cache_overall_stats_impl(
 
         if total_candidates == 0 {
             progress.log_completion();
-            Vec::new()
+            HashMap::new()
         } else {
             progress.log_start();
             let analyzed_entries = if pending_candidates.is_empty() {
-                Vec::new()
+                HashMap::new()
             } else {
                 let progress_for_workers = Arc::clone(&progress);
+
                 thread_pool.install(|| {
                     pending_candidates
                         .into_par_iter()
-                        .map(|candidate| {
+                        .map(|(_, candidate)| {
                             let entry = analyze_candidate_entry(
                                 candidate,
                                 &main_handles,
@@ -669,11 +670,12 @@ fn generate_cache_overall_stats_impl(
                                 progress_for_workers.add_temp_entry(entry.clone());
                             }
                             progress_for_workers.record_processed_file();
-                            entry
+                            (entry.hash.clone(), entry)
                         })
-                        .collect::<Vec<CacheReplayEntry>>()
+                        .collect::<HashMap<_, _>>()
                 })
             };
+
             reused_entries.extend(analyzed_entries);
             progress.log_completion();
             reused_entries
@@ -681,9 +683,11 @@ fn generate_cache_overall_stats_impl(
     };
 
     // Collect all entries: existing from cache/temp + newly analyzed
-    let mut all_entries = Vec::new();
-    all_entries.extend(existing_detailed_analysis_entries.into_values());
+    let mut all_entries = HashMap::new();
+    all_entries.extend(existing_detailed_analysis_entries);
     all_entries.extend(entries);
+
+    let mut all_entries = all_entries.into_values().collect::<Vec<_>>();
 
     all_entries.sort_by(cache_entry_compare);
 
@@ -834,19 +838,22 @@ fn load_temp_detailed_analysis_cache(
 fn partition_cached_candidates(
     candidates: Vec<CandidateReplay>,
     existing_detailed_analysis_entries: &HashMap<String, CacheReplayEntry>,
-) -> (Vec<CacheReplayEntry>, Vec<CandidateReplay>) {
-    let mut reused_entries = Vec::new();
-    let mut pending_candidates = Vec::new();
+) -> (
+    HashMap<String, CacheReplayEntry>,
+    HashMap<String, CandidateReplay>,
+) {
+    let mut reused_entries = HashMap::new();
+    let mut pending_candidates = HashMap::new();
 
     for candidate in candidates {
         if let Some(existing_entry) = existing_detailed_analysis_entries.get(&candidate.basic.hash)
         {
-            reused_entries.push(reuse_cached_detailed_analysis_entry(
-                &candidate.basic,
-                existing_entry,
-            ));
+            let reused_entry =
+                reuse_cached_detailed_analysis_entry(&candidate.basic, existing_entry);
+
+            reused_entries.insert(reused_entry.hash.clone(), reused_entry);
         } else {
-            pending_candidates.push(candidate);
+            pending_candidates.insert(candidate.basic.hash.clone(), candidate);
         }
     }
 
