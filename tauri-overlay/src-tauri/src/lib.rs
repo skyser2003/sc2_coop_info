@@ -4064,12 +4064,15 @@ async fn config_request(
         ("post", "/config") => {
             if let Some(payload) = body {
                 if let Some(settings) = payload.get("settings") {
-                    let next_settings = sanitize_settings_value(settings.clone());
+                    let mut next_settings = sanitize_settings_value(settings.clone());
                     let previous_settings = read_settings_file();
                     let persist = payload
                         .get("persist")
                         .and_then(Value::as_bool)
                         .unwrap_or(true);
+
+                    next_settings["performance_geometry"] =
+                        previous_settings["performance_geometry"].clone();
 
                     if persist {
                         write_settings_file(&next_settings)?;
