@@ -435,7 +435,7 @@ fn next_progress_target(
 pub fn pretty_output_path(path: &Path) -> PathBuf {
     let extension = path.extension();
     let file_name = path
-        .file_name()
+        .file_stem()
         .and_then(|name| name.to_str())
         .unwrap_or("cache_overall_stats");
 
