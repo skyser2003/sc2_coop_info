@@ -2220,6 +2220,71 @@ fn update_analysis_replay_cache_slots(
     }
 }
 
+fn load_existing_cache_by_hash() -> HashMap<String, CacheReplayEntry> {
+    let cache_path = get_cache_path();
+    let payload = match std::fs::read(&cache_path) {
+        Ok(payload) => payload,
+        Err(_) => return HashMap::new(),
+    };
+    let entries = match serde_json::from_slice::<Vec<CacheReplayEntry>>(&payload) {
+        Ok(entries) => entries,
+        Err(error) => {
+            crate::sco_log!("[SCO/cache] failed to load existing cache for merging: {error}");
+            return HashMap::new();
+        }
+    };
+
+    entries
+        .into_iter()
+        .filter(|entry| !entry.hash.is_empty())
+        .map(|entry| (entry.hash.clone(), entry))
+        .collect()
+}
+
+fn merge_cache_entries(
+    existing_by_hash: &HashMap<String, CacheReplayEntry>,
+    mut new_entries: Vec<CacheReplayEntry>,
+) -> Vec<CacheReplayEntry> {
+    // First, add all existing entries
+    let mut merged = existing_by_hash.clone();
+
+    // Then, add new entries, but detailed > simple
+    for entry in new_entries.drain(..) {
+        let hash = entry.hash.clone();
+        if hash.is_empty() {
+            continue;
+        }
+
+        match merged.get(&hash) {
+            Some(existing) => {
+                // Keep detailed over simple
+                if !existing.detailed_analysis && entry.detailed_analysis {
+                    merged.insert(hash, entry);
+                } else if existing.detailed_analysis && !entry.detailed_analysis {
+                    // Keep existing detailed, ignore new simple
+                } else {
+                    // Both same type, use newest by date
+                    if entry.date > existing.date {
+                        merged.insert(hash, entry);
+                    }
+                }
+            }
+            None => {
+                merged.insert(hash, entry);
+            }
+        }
+    }
+
+    let mut result: Vec<CacheReplayEntry> = merged.into_values().collect();
+    result.sort_by(|a, b| {
+        b.date
+            .cmp(&a.date)
+            .then_with(|| b.file.cmp(&a.file))
+            .then_with(|| b.hash.cmp(&a.hash))
+    });
+    result
+}
+
 fn spawn_analysis_task(
     app: AppHandle<Wry>,
     stats: Arc<Mutex<StatsState>>,
@@ -2321,7 +2386,14 @@ fn spawn_analysis_task(
             emit_replay_scan_progress(&app_for_progress_updates);
         });
 
+        // Load existing cache at start for merging and hash checking
+        let existing_cache_by_hash = load_existing_cache_by_hash();
+        let mut all_new_cache_entries = Vec::new();
+        let mut all_replays = Vec::new();
+
+        // Run analysis based on mode
         if include_detailed {
+            // Generate detailed analysis, which produces detailed cache entries
             let generation_started_at = Instant::now();
             match generate_detailed_analysis_cache(&app_for_progress, &analysis_state) {
                 Ok(scanned_replays) => {
@@ -2345,6 +2417,32 @@ fn spawn_analysis_task(
                             if scanned_replays == 1 { "y" } else { "ies" }
                         );
                     }
+
+                    // Load the generated detailed cache
+                    let cache_path = get_cache_path();
+                    let payload = match std::fs::read(&cache_path) {
+                        Ok(p) => p,
+                        Err(error) => {
+                            crate::sco_log!(
+                                "[SCO/stats] failed to read generated detailed cache: {error}"
+                            );
+                            vec![]
+                        }
+                    };
+
+                    if let Ok(entries) = serde_json::from_slice::<Vec<CacheReplayEntry>>(&payload) {
+                        all_new_cache_entries.extend(entries);
+                    }
+
+                    // Load detailed replays from generated cache
+                    let main_names = configured_main_names();
+                    let main_handles = configured_main_handles();
+                    let detailed_replays = ReplayAnalysis::load_detailed_analysis_replays_snapshot(
+                        limit,
+                        &main_names,
+                        &main_handles,
+                    );
+                    all_replays = detailed_replays;
                 }
                 Err(message) => {
                     crate::sco_log!("[SCO/stats] {} failed: {message}", mode.display());
@@ -2361,40 +2459,58 @@ fn spawn_analysis_task(
                     return;
                 }
             }
+        } else {
+            // Simple analysis mode - run scan_replays
+            let scan_started_at = Instant::now();
+            let scanned_replays = scan_replays(limit);
+            crate::sco_log!(
+                "[SCO/stats] {} scanned {} replay(s) in {}ms",
+                mode.display(),
+                scanned_replays.len(),
+                scan_started_at.elapsed().as_millis()
+            );
+            all_replays = scanned_replays;
+
+            // scan_replays already saves simple cache entries directly via persist_simple_analysis_cache
+            // No need to save again here
         }
 
-        let scan_started_at = Instant::now();
-        let replays = if include_detailed {
-            let main_names = configured_main_names();
-            let main_handles = configured_main_handles();
-            let from_detailed_analysis = ReplayAnalysis::load_detailed_analysis_replays_snapshot(
-                limit,
-                &main_names,
-                &main_handles,
-            );
-            if from_detailed_analysis.is_empty() {
-                scan_replays(limit)
-            } else {
-                from_detailed_analysis
-            }
-        } else {
-            scan_replays(limit)
-        };
-        crate::sco_log!(
-            "[SCO/stats] {} scanned {} replay(s) in {}ms",
-            mode.display(),
-            replays.len(),
-            scan_started_at.elapsed().as_millis()
-        );
         let current_replay_files = current_replay_files_snapshot(UNLIMITED_REPLAY_LIMIT);
-        update_analysis_replay_cache_slots(&replays, &shared_replay_cache_slot, &replay_cache_slot);
+        update_analysis_replay_cache_slots(
+            &all_replays,
+            &shared_replay_cache_slot,
+            &replay_cache_slot,
+        );
         if let Ok(mut current_files) = current_replay_files_slot.lock() {
             *current_files = current_replay_files;
         } else {
             crate::sco_log!("[SCO/stats] failed to update current replay file set after scan");
         }
+
+        // Load cache and merge entries for both modes
+        let final_cache_entries = if include_detailed {
+            merge_cache_entries(&existing_cache_by_hash, all_new_cache_entries)
+        } else {
+            // For simple mode, scan_replays already saved its entries
+            // Just load them
+            load_existing_cache_by_hash().into_values().collect()
+        };
+
+        // Save final detailed cache (simple mode already saved during scan_replays)
+        if include_detailed {
+            let cache_path = get_cache_path();
+            if let Err(error) =
+                s2coop_analyzer::cache_overall_stats_generator::persist_simple_analysis_cache(
+                    &final_cache_entries,
+                    &cache_path,
+                )
+            {
+                crate::sco_log!("[SCO/stats] failed to persist final merged cache: {error}");
+            }
+        }
+
         replay_scan_progress().set_stage("building_statistics");
-        let snapshot = ReplayAnalysis::build_rebuild_snapshot(&replays, include_detailed);
+        let snapshot = ReplayAnalysis::build_rebuild_snapshot(&all_replays, include_detailed);
 
         let mut guard = match analysis_state.lock() {
             Ok(guard) => guard,
@@ -2416,7 +2532,7 @@ fn spawn_analysis_task(
 
         apply_rebuild_snapshot(&mut guard, snapshot, mode);
         if !include_detailed {
-            sync_detailed_analysis_status_from_replays(&mut guard, &replays);
+            sync_detailed_analysis_status_from_replays(&mut guard, &all_replays);
         }
         replay_scan_progress().set_stage("analysis_ready");
         replay_scan_progress().set_status("Completed");
@@ -2426,7 +2542,7 @@ fn spawn_analysis_task(
             "[SCO/stats] {} completed in {}ms for {} replay(s)",
             mode.display(),
             started_at.elapsed().as_millis(),
-            replays.len()
+            all_replays.len()
         );
 
         should_stop.store(true, Ordering::Release);
