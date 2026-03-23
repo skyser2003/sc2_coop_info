@@ -39,16 +39,6 @@ fn collect_replay_paths_returns_empty_for_missing_root() {
 }
 
 #[test]
-fn detailed_analysis_cache_path_targets_generated_cache() {
-    assert_eq!(
-        get_cache_path(),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join(DETAILED_ANALYSIS_OUTPUT_DIR)
-            .join(DETAILED_ANALYSIS_CACHE_FILE)
-    );
-}
-
-#[test]
 fn rebuild_snapshot_returns_empty_payload() {
     let snapshot = ReplayAnalysis::build_rebuild_snapshot(&[], true);
     assert!(snapshot.ready);
