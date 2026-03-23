@@ -51,7 +51,7 @@ jobs:
               with:
                   tagName: v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
                   releaseName: "SC2_Coop_Info v__VERSION__"
-                  releaseBody: "Initial commit"
+                  releaseBody: "SC2 Coop Info release"
                   releaseDraft: true
                   prerelease: false
                   projectPath: "./tauri-overlay"
