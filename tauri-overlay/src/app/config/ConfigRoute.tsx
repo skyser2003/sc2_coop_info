@@ -1988,6 +1988,7 @@ function SettingsEditor({ onThemeModeChange }) {
                 isBusy,
                 settingsActions: {
                     isBusy,
+                    ready: tabData.statistics?.ready,
                     hasPendingChanges: dirty,
                     promptPath,
                     openFolderPath,
@@ -1999,6 +2000,7 @@ function SettingsEditor({ onThemeModeChange }) {
                     parseReplayPrompt,
                     overlayScreenshot,
                     runDetailedAnalysis,
+                    startSimpleAnalysis,
                     pauseDetailedAnalysis,
                     deleteParsedData: async () => {
                         await deleteParsedData();

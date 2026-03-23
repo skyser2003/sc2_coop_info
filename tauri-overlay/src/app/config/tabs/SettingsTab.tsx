@@ -5,6 +5,7 @@ import { check, Update } from "@tauri-apps/plugin-updater";
 
 type SettingsActions = {
     isBusy: boolean;
+    ready: boolean;
     hasPendingChanges: boolean;
     promptPath: (path: string[], title: string) => void;
     openFolderPath: (path: string) => Promise<unknown> | void;
@@ -16,6 +17,7 @@ type SettingsActions = {
     parseReplayPrompt: () => Promise<unknown> | void;
     overlayScreenshot: () => Promise<unknown> | void;
     runDetailedAnalysis: () => Promise<unknown> | void;
+    startSimpleAnalysis: () => Promise<unknown> | void;
     pauseDetailedAnalysis: () => Promise<unknown> | void;
     deleteParsedData: () => Promise<unknown> | void;
     applyMainSettings: () => Promise<unknown> | void;
@@ -959,13 +961,32 @@ export default function SettingsTab({
                                             }
                                             disabled={
                                                 actions.isBusy ||
-                                                detailedAnalysisRunning
+                                                detailedAnalysisRunning ||
+                                                simpleAnalysisRunning
                                             }
                                         >
                                             {detailedAnalysisRunning
                                                 ? t("ui_stats_detailed_running")
                                                 : t(
                                                       "ui_stats_run_detailed_analysis",
+                                                  )}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={
+                                                actions.startSimpleAnalysis
+                                            }
+                                            disabled={
+                                                actions.isBusy ||
+                                                actions.ready ||
+                                                detailedAnalysisRunning ||
+                                                simpleAnalysisRunning
+                                            }
+                                        >
+                                            {simpleAnalysisRunning
+                                                ? t("ui_stats_simple_running")
+                                                : t(
+                                                      "ui_stats_run_simple_analysis",
                                                   )}
                                         </button>
                                         <button
