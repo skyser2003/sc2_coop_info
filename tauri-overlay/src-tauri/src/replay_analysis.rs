@@ -2309,7 +2309,7 @@ impl ReplayAnalysis {
         main_handles: &HashSet<String>,
     ) -> Vec<ReplayInfo> {
         Self::load_detailed_analysis_replays_snapshot_from_path(
-            &detailed_analysis_cache_path(),
+            &get_cache_path(),
             limit,
             main_names,
             main_handles,
@@ -2322,7 +2322,7 @@ impl ReplayAnalysis {
         main_handles: &HashSet<String>,
     ) -> Vec<ReplayInfo> {
         Self::load_all_analysis_replays_snapshot_from_path(
-            &detailed_analysis_cache_path(),
+            &get_cache_path(),
             limit,
             main_names,
             main_handles,
@@ -3036,7 +3036,7 @@ impl ReplayAnalysis {
         Self::stats_replays_for_response_from_path(
             include_detailed,
             cached_replays,
-            &detailed_analysis_cache_path(),
+            &get_cache_path(),
             &main_names,
             &main_handles,
         )

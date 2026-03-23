@@ -143,7 +143,7 @@ cargo tauri build
 
 - The app expects access to your StarCraft II account folder to analyze replays.
 - The config window applies many settings live to the running overlay backend.
-- `Settings.json` is updated when you explicitly save settings.
+- `settings.json` is updated when you explicitly save settings.
 - For the in-game overlay experience, StarCraft II should be run in borderless/windowed-fullscreen mode.
 
 ## Windows Notes

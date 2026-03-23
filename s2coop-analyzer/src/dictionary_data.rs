@@ -1,4 +1,3 @@
-use crate::sc2_dictionary_data::resolve_sc2_dictionary_data_dir;
 use chrono::NaiveDate;
 use indexmap::IndexMap;
 use serde::de::DeserializeOwned;
@@ -9,37 +8,6 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use thiserror::Error;
-
-const REQUIRED_DATA_FILES: [&str; 28] = [
-    "unit_names.json",
-    "unit_add_kills_to.json",
-    "commander_mastery.json",
-    "co_mastery_upgrades.json",
-    "prestige_names.json",
-    "map_names.json",
-    "bonus_objectives.json",
-    "mc_units.json",
-    "units_in_waves.json",
-    "hfts_units.json",
-    "tus_units.json",
-    "mutators.json",
-    "mutators_exclude_ids.json",
-    "units_to_stats.json",
-    "amon_player_ids.json",
-    "prestige_upgrades.json",
-    "unit_comp_dict.json",
-    "unit_base_costs.json",
-    "mutator_ids.json",
-    "cached_mutators.json",
-    "weekly_mutations.json",
-    "weekly_mutation_date.json",
-    "royal_guards.json",
-    "horners_units.json",
-    "tychus_base_upgrades.json",
-    "tychus_ultimate_upgrades.json",
-    "outlaws.json",
-    "replay_analysis_data.json",
-];
 
 const MUTATOR_CUSTOM_FORBIDDEN: [&str; 15] = [
     "Nap Time",
@@ -332,12 +300,6 @@ impl Sc2DictionaryData {
     }
 }
 
-fn resolve_data_dir() -> Result<PathBuf, DictionaryDataError> {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    resolve_sc2_dictionary_data_dir(&REQUIRED_DATA_FILES)
-        .map_err(|_| DictionaryDataError::DictionaryDirNotFound(cwd))
-}
-
 fn read_dictionary_text(
     base_dir: &Path,
     file_name: &'static str,
@@ -575,9 +537,9 @@ fn parse_weekly_mutations(data: &WeeklyMutationsJson) -> HashMap<String, WeeklyM
         .collect()
 }
 
-fn load_shared_dictionary_data_impl() -> Result<Sc2DictionaryData, DictionaryDataError> {
-    let data_dir = resolve_data_dir()?;
-
+fn load_shared_dictionary_data_impl(
+    data_dir: &PathBuf,
+) -> Result<Sc2DictionaryData, DictionaryDataError> {
     let commander_mastery =
         load_dictionary_json::<CommanderMasteryJson>(&data_dir, "commander_mastery.json")?;
     let prestige_names_json =
@@ -718,24 +680,31 @@ fn load_shared_dictionary_data_impl() -> Result<Sc2DictionaryData, DictionaryDat
     })
 }
 
-pub fn shared_dictionary_data() -> Result<&'static Sc2DictionaryData, DictionaryDataError> {
+pub fn shared_dictionary_data(
+    data_dir: Option<PathBuf>,
+) -> Result<&'static Sc2DictionaryData, DictionaryDataError> {
     static DATA: OnceLock<Result<Sc2DictionaryData, DictionaryDataError>> = OnceLock::new();
-    DATA.get_or_init(load_shared_dictionary_data_impl)
-        .as_ref()
-        .map_err(Clone::clone)
+
+    if DATA.get().is_none() {
+        let data = load_shared_dictionary_data_impl(&data_dir.unwrap());
+        let _ = DATA.set(data);
+    }
+
+    DATA.get().unwrap().as_ref().map_err(Clone::clone)
 }
 
 pub fn cache_generation_data() -> Result<CacheGenerationData<'static>, DictionaryDataError> {
-    Ok(shared_dictionary_data()?.cache_generation_data())
+    Ok(shared_dictionary_data(None)?.cache_generation_data())
 }
 
 pub fn tauri_ui_data() -> Result<TauriUiData<'static>, DictionaryDataError> {
-    Ok(shared_dictionary_data()?.tauri_ui_data())
+    Ok(shared_dictionary_data(None)?.tauri_ui_data())
 }
 
 fn shared_dictionary_data_or_default() -> &'static Sc2DictionaryData {
     static FALLBACK: OnceLock<Sc2DictionaryData> = OnceLock::new();
-    shared_dictionary_data().unwrap_or_else(|_| FALLBACK.get_or_init(Sc2DictionaryData::default))
+    shared_dictionary_data(None)
+        .unwrap_or_else(|_| FALLBACK.get_or_init(Sc2DictionaryData::default))
 }
 
 fn cache_generation_data_or_default() -> CacheGenerationData<'static> {

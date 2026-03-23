@@ -9,7 +9,7 @@ fn unique_temp_settings_path() -> std::path::PathBuf {
         .as_nanos();
     std::env::temp_dir()
         .join(format!("sco-overlay-settings-{unique}"))
-        .join("Settings.json")
+        .join("settings.json")
 }
 
 #[test]

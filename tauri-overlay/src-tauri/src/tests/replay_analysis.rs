@@ -3,8 +3,8 @@ use serde_json::json;
 use std::collections::HashSet;
 
 fn replay_analysis_fixture_paths() -> Option<(PathBuf, Value)> {
-    let current_cache = detailed_analysis_cache_path();
-    let settings_path = PathBuf::from("../Settings.json");
+    let current_cache = get_cache_path();
+    let settings_path = PathBuf::from("../settings.json");
     if !current_cache.is_file() || !settings_path.is_file() {
         return None;
     }
@@ -41,7 +41,7 @@ fn collect_replay_paths_returns_empty_for_missing_root() {
 #[test]
 fn detailed_analysis_cache_path_targets_generated_cache() {
     assert_eq!(
-        detailed_analysis_cache_path(),
+        get_cache_path(),
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join(DETAILED_ANALYSIS_OUTPUT_DIR)
             .join(DETAILED_ANALYSIS_CACHE_FILE)

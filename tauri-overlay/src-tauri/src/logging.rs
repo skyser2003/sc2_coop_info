@@ -1,8 +1,10 @@
 use serde_json::Value;
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+use crate::path_manager;
 
 static FILE_LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
 
@@ -13,13 +15,9 @@ pub(crate) fn refresh_from_settings(settings: &Value) {
     );
 }
 
-pub(crate) fn logs_file_path_from_settings_path(settings_path: &Path) -> PathBuf {
-    settings_path.with_file_name("Logs.txt")
-}
-
 fn logs_file_path() -> Option<PathBuf> {
-    let settings_path = crate::overlay_info::locate_settings_file()?;
-    Some(logs_file_path_from_settings_path(&settings_path))
+    let path = path_manager::get_log_path();
+    Some(path)
 }
 
 fn append_line(message: &str) -> Result<(), String> {

@@ -112,7 +112,7 @@ export default function ConfigPage({ onThemeModeChange }: ConfigPageProps) {
             </Typography>
             <Typography variant="body2" color="text.secondary">
                 Editing settings applies changes immediately to the running
-                overlay backend. Settings.json is updated only when you press
+                overlay backend. settings.json is updated only when you press
                 Save.
             </Typography>
 

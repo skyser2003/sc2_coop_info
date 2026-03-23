@@ -272,44 +272,6 @@ fn default_runtime_flags() -> RuntimeFlags {
     }
 }
 
-pub(crate) fn locate_settings_file() -> Option<PathBuf> {
-    let candidates = [
-        PathBuf::from("Settings.json"),
-        PathBuf::from("../Settings.json"),
-        PathBuf::from("../../Settings.json"),
-        PathBuf::from("../tauri-overlay/Settings.json"),
-        PathBuf::from("..\\Settings.json"),
-        PathBuf::from("..\\..\\Settings.json"),
-        PathBuf::from("..\\..\\tauri-overlay\\Settings.json"),
-    ];
-
-    for candidate in candidates {
-        if candidate.exists() {
-            return Some(candidate);
-        }
-        if let Ok(abs) = std::env::current_exe() {
-            if let Some(parent) = abs.parent() {
-                let root = Path::new(parent).join(&candidate);
-                if root.exists() {
-                    return Some(root);
-                }
-            }
-        }
-    }
-
-    if Path::new("tauri.conf.json").is_file() && Path::new("../package.json").is_file() {
-        return Some(PathBuf::from("../Settings.json"));
-    }
-
-    if let Ok(abs) = std::env::current_exe() {
-        if let Some(parent) = abs.parent() {
-            return Some(parent.join("Settings.json"));
-        }
-    }
-
-    Some(PathBuf::from("Settings.json"))
-}
-
 fn overlay_placement_from_settings(settings: &Value) -> OverlayPlacement {
     let defaults = default_overlay_placement();
     let placement = match settings {

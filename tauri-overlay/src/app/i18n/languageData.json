@@ -1320,7 +1320,7 @@
         "ko": "대상 실행 파일"
     },
     "ui_performance_targets_description": {
-        "en": "This is a list of exact process names from performance_processes in Settings.json, one executable per line.",
-        "ko": "Settings.json의 performance_processes에 들어가는 정확한 프로세스 이름 목록이며, 한 줄에 실행 파일 하나씩 입력합니다."
+        "en": "This is a list of exact process names from performance_processes in settings.json, one executable per line.",
+        "ko": "settings.json의 performance_processes에 들어가는 정확한 프로세스 이름 목록이며, 한 줄에 실행 파일 하나씩 입력합니다."
     }
 }

@@ -31,6 +31,7 @@ use winreg::RegKey;
 mod dictionary_data;
 mod logging;
 mod overlay_info;
+mod path_manager;
 mod performance_overlay;
 mod randomizer;
 mod replay_analysis;
@@ -43,10 +44,9 @@ macro_rules! sco_log {
     }};
 }
 
+use crate::path_manager::{get_cache_path, get_json_data_dir};
 use crate::replay_analysis::ReplayAnalysis;
 
-const DETAILED_ANALYSIS_CACHE_FILE: &str = "cache_overall_stats.json";
-const DETAILED_ANALYSIS_OUTPUT_DIR: &str = "generated";
 const UNLIMITED_REPLAY_LIMIT: usize = 0;
 const SCO_REPLAY_SCAN_PROGRESS_EVENT: &str = "sco://replay-scan-progress";
 const WINDOWS_STARTUP_RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
@@ -135,9 +135,7 @@ fn read_saved_settings_file_from_path(path: &Path, create_if_missing: bool) -> V
 }
 
 pub(crate) fn read_saved_settings_file() -> Value {
-    let Some(path) = overlay_info::locate_settings_file() else {
-        return default_settings_value();
-    };
+    let path = path_manager::get_settings_path();
 
     read_saved_settings_file_from_path(&path, !cfg!(test))
 }
@@ -177,9 +175,7 @@ fn write_saved_settings_file_to_path(path: &Path, value: &Value) -> Result<Value
 }
 
 fn write_saved_settings_file(value: &Value) -> Result<Value, String> {
-    let Some(path) = overlay_info::locate_settings_file() else {
-        return Err("Failed to locate Settings.json".to_string());
-    };
+    let path = path_manager::get_settings_path();
 
     write_saved_settings_file_to_path(&path, value)
 }
@@ -1894,22 +1890,8 @@ fn replay_watch_root_from_settings() -> Option<PathBuf> {
         .find(|candidate| candidate.is_dir())
 }
 
-fn detailed_analysis_cache_path() -> PathBuf {
-    if let Ok(abs) = std::env::current_exe() {
-        if let Some(parent) = abs.parent() {
-            return parent
-                .join(DETAILED_ANALYSIS_OUTPUT_DIR)
-                .join(DETAILED_ANALYSIS_CACHE_FILE);
-        }
-    }
-
-    return PathBuf::from("./")
-        .join(DETAILED_ANALYSIS_OUTPUT_DIR)
-        .join(DETAILED_ANALYSIS_CACHE_FILE);
-}
-
 fn clear_analysis_cache_files() {
-    let cache_path = detailed_analysis_cache_path();
+    let cache_path = get_cache_path();
     let temp_path = PathBuf::from(format!("{}_temp", cache_path.display()));
 
     for path in [cache_path, temp_path] {
@@ -1931,7 +1913,7 @@ fn generate_detailed_analysis_cache(
     let Some(account_dir) = resolve_replay_root() else {
         return Err("Replay root is not configured for detailed analysis.".to_string());
     };
-    let output_file = detailed_analysis_cache_path();
+    let output_file = get_cache_path();
     let logger = {
         let app = app.clone();
         let stats = Arc::clone(stats);
@@ -2346,7 +2328,7 @@ fn spawn_analysis_task(
                     crate::sco_log!(
                         "[SCO/stats] {} generated '{}' with {} replay(s) in {}ms",
                         mode.display(),
-                        detailed_analysis_cache_path().display(),
+                        get_cache_path().display(),
                         scanned_replays,
                         generation_started_at.elapsed().as_millis()
                     );
@@ -2358,7 +2340,7 @@ fn spawn_analysis_task(
                         );
                         guard.message = format!(
                             "Generated '{}' with {} replay entr{}.",
-                            detailed_analysis_cache_path().display(),
+                            get_cache_path().display(),
                             scanned_replays,
                             if scanned_replays == 1 { "y" } else { "ies" }
                         );
@@ -2998,11 +2980,11 @@ fn persist_detailed_cache_entry_to_path(
 }
 
 fn persist_detailed_cache_entry(entry: &CacheReplayEntry) -> Result<(), String> {
-    persist_detailed_cache_entry_to_path(&detailed_analysis_cache_path(), entry)
+    persist_detailed_cache_entry_to_path(&get_cache_path(), entry)
 }
 
 pub(crate) fn persist_simple_analysis_cache(entries: &[CacheReplayEntry]) -> Result<(), String> {
-    let cache_path = detailed_analysis_cache_path();
+    let cache_path = get_cache_path();
     if let Some(parent) = cache_path.parent() {
         std::fs::create_dir_all(parent).map_err(|error| {
             format!(
@@ -4531,6 +4513,9 @@ async fn auto_update(handle: tauri::AppHandle) -> tauri_plugin_updater::Result<(
 pub fn run() {
     let settings = read_settings_file();
     logging::refresh_from_settings(&settings);
+
+    let data_dir = get_json_data_dir();
+    let _ = s2coop_analyzer::dictionary_data::shared_dictionary_data(Some(data_dir));
 
     let state = BackendState {
         tray_icon: Arc::new(Mutex::new(None)),

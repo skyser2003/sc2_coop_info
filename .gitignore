@@ -12,5 +12,5 @@ s2coop-analyzer/generated/
 cache_overall_stats.json
 cache_overall_stats_pretty.json
 cache_overall_stats_temp
-Settings.json
-Logs.txt
+settings.json
+logs.txt

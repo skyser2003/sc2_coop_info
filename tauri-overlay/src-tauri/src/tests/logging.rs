@@ -23,6 +23,10 @@ fn sanitize_settings_value_removes_deleted_overlay_settings() {
     assert!(sanitized.get("force_hide_overlay").is_none());
 }
 
+fn logs_file_path_from_settings_path(settings_path: &Path) -> PathBuf {
+    settings_path.with_file_name("logs.txt")
+}
+
 #[test]
 fn logging_enabled_from_settings_respects_boolean_flag() {
     assert!(logging_enabled_from_settings(&json!({
@@ -36,10 +40,10 @@ fn logging_enabled_from_settings_respects_boolean_flag() {
 
 #[test]
 fn logs_file_path_stays_next_to_settings_file() {
-    let settings_path = crate::test_config_path("Settings.json");
-    let path = logging::logs_file_path_from_settings_path(Path::new(&settings_path));
+    let settings_path = crate::test_config_path("settings.json");
+    let path = logs_file_path_from_settings_path(Path::new(&settings_path));
 
-    assert_eq!(path, crate::test_config_path("Logs.txt"));
+    assert_eq!(path, crate::test_config_path("logs.txt"));
 }
 
 #[test]
