@@ -619,9 +619,9 @@ fn generate_cache_overall_stats_impl(
     let temp_file_path = config.output_file.with_extension("temp.jsonl");
     let temp_entries = load_temp_detailed_analysis_cache(&temp_file_path, logger);
     existing_detailed_analysis_entries.extend(temp_entries);
+
     let entries = if replay_files.is_empty() {
-        let temp_file_path = config.output_file.with_extension("temp.jsonl");
-        let progress = GenerateCacheProgressReporter::new(0, 0, logger, temp_file_path);
+        let progress = GenerateCacheProgressReporter::new(0, 0, logger, temp_file_path.clone());
         progress.log_completion();
         Vec::new()
     } else {
@@ -639,12 +639,11 @@ fn generate_cache_overall_stats_impl(
         let total_candidates = candidate_replays.len();
         let (mut reused_entries, pending_candidates) =
             partition_cached_candidates(candidate_replays, &existing_detailed_analysis_entries);
-        let temp_file_path = config.output_file.with_extension("temp.jsonl");
         let progress = Arc::new(GenerateCacheProgressReporter::new(
             total_candidates,
             reused_entries.len(),
             logger,
-            temp_file_path,
+            temp_file_path.clone(),
         ));
 
         if total_candidates == 0 {
@@ -698,13 +697,14 @@ fn generate_cache_overall_stats_impl(
             GenerateCacheError::TempMoveFailed(temp_file.clone(), config.output_file.clone(), error)
         })?;
     }
+
     fs::rename(&temp_file, &config.output_file).map_err(|error| {
         GenerateCacheError::TempMoveFailed(temp_file, config.output_file.clone(), error)
     })?;
+
     let _ = write_pretty_cache_file(&config.output_file, None)?;
 
     // Remove temp file after successful completion
-    let temp_file_path = config.output_file.with_extension("temp.jsonl");
     if temp_file_path.exists() {
         let _ = fs::remove_file(&temp_file_path);
     }
