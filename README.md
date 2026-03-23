@@ -43,9 +43,7 @@ The current app is centered around the `tauri-overlay` desktop application and R
   - replay/statistics analysis logic
   - cache generation
 - `s2protocol-port`
-  - Rust replay protocol parsing support
-
-The active direction of the project is to remove Python-era dependencies and keep replay analysis in Rust.
+  - SC2 replay protocol parsing support
 
 ## Main Features
 
@@ -54,7 +52,6 @@ The active direction of the project is to remove Python-era dependencies and kee
 - Shows replay summary information after games
 - Supports hotkeys for show/hide and replay navigation
 - Supports player-info display at game start
-- Keeps overlay placement configurable per monitor
 - Supports chart visibility and color customization
 
 ### Config App
@@ -89,31 +86,31 @@ The config window currently includes these tabs:
 
 **Config window**
 
-![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image1.kr.png)
+![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image1.en.png)
 
 **Replay list**
 
-![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image2.kr.png)
+![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image2.en.png)
 
 **Player list**
 
-![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image3.kr.png)
+![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image3.en.png)
 
 **Weeklies list**
 
-![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image4.kr.png)
+![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image4.en.png)
 
 **Various statistics**
 
-![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image5.kr.png)
+![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image5.en.png)
 
 **Commander randomizer**
 
-![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image6.kr.png)
+![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image6.en.png)
 
 **Performance overlay**
 
-![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image7.kr.png)
+![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image7.en.png)
 
 ## Running The App For Development
 
@@ -144,7 +141,7 @@ cargo tauri build
 - The app expects access to your StarCraft II account folder to analyze replays.
 - The config window applies many settings live to the running overlay backend.
 - `settings.json` is updated when you explicitly save settings.
-- For the in-game overlay experience, StarCraft II should be run in borderless/windowed-fullscreen mode.
+- For the in-game overlay experience, StarCraft II should be run in windowed or borderless fullscreen mode.
 
 ## Windows Notes
 
@@ -154,15 +151,14 @@ cargo tauri build
 ## Development Notes
 
 - Frontend: React, Vite, Material UI, Tauri API
-- Backend: Rust, Tauri, `sysinfo`, `notify`, `rayon`
-- Analysis: `s2coop-analyzer` and `s2protocol-port`
+- Backend: Rust, Tauri
 
 ## Repository Status
 
-This repository is an in-progress Rust/Tauri implementation of the original SC2 Coop Overlay functionality. Some behavior is intentionally being aligned with the original project while older implementation details are being removed or rewritten.
+This repository is an in-progress Rust/Tauri implementation of the original SC2 Coop Overlay functionality. Some behavior is intentionally being aligned with the original project while some older implementation details are being removed or rewritten.
 
 ## Feedback
 
-For bugs, feedback, and suggestions, the original community Discord link from the upstream project is still relevant:
+For bugs, feedback, and suggestions, please open an issue or send an email to below address.
 
 - mailto:sc2coopinfo@gmail.com

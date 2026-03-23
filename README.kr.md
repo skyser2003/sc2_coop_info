@@ -1,65 +1,62 @@
 # SC2 Coop Info
 
-Rust/Tauri desktop overlay and replay-analysis tool for **StarCraft II Co-op**.
+**스타크래프트 II 협동전**을 위한 Rust/Tauri 기반 데스크톱 오버레이 및 리플레이 분석 도구입니다.
 
-This repository is a modernized continuation of the original **SC2 Coop Overlay** project by **FluffyMaguro**. The goal here is to preserve the original overlay's usefulness and feature set while moving the implementation to a Rust-first stack with a Tauri desktop shell.
+이 저장소는 **FluffyMaguro**가 만들었던 **SC2 Coop Overlay**를 현대적인 기술 스택으로 다시 구현하고 발전시키기 위한 프로젝트입니다. 원작이 제공하던 기능성과 사용 흐름은 최대한 유지하면서, Rust 중심 구조와 Tauri 데스크톱 셸 기반으로 옮기는 것을 목표로 하고 있습니다.
 
-Original project:
+원본 프로젝트:
 - https://github.com/FluffyMaguro/SC2_Coop_Overlay
 
-Release page for this repository:
+이 저장소의 릴리스 페이지:
 - https://github.com/skyser2003/sc2_coop_info/releases
 
-## Respect To The Original Project
+## 원본 프로젝트에 대해
 
-This project exists because the original SC2 Coop Overlay was genuinely useful to the co-op community. The UI concepts, workflow, and overall product direction come from that original work. This repository focuses on maintaining and improving that experience while replacing older implementation pieces with Rust-based equivalents.
+이 프로젝트는 기존 SC2 Coop Overlay가 협동전 커뮤니티에서 오랫동안 유용하게 쓰여 왔기 때문에 시작되었습니다. UI 구성, 사용 흐름, 전반적인 방향성은 원작에서 많은 영향을 받았으며, 이 저장소는 그 경험을 유지한 채 오래된 구현을 Rust 기반으로 재구성하고 개선하는 데 중점을 두고 있습니다.
 
-## What This Project Currently Provides
+## 현재 제공하는 기능
 
-- Transparent in-game overlay window
-- Config window with live settings editing
-- Replay history view
-- Player history view with persistent notes
-- Weekly mutation tracking
-- Statistics views for maps, commanders, allies, regions, difficulties, and units
-- Detailed-analysis cache generation for deeper statistics
-- Commander randomizer
-- Performance overlay with process monitoring
-- Global hotkeys for overlay controls
-- System tray integration
-- Native folder picker and Windows startup integration
-- Rust-based replay parsing and analysis
-- English and Korean support
+- 투명한 인게임 오버레이 창
+- 실시간으로 설정을 수정할 수 있는 설정 창
+- 리플레이 기록 조회
+- 플레이어에 대한 메모 기능
+- 주간 돌연변이 정보 추적
+- 맵, 사령관, 동맹, 지역, 난이도, 유닛 관련 통계 조회
+- 더 자세한 통계를 위한 상세 분석 캐시 생성
+- 사령관 랜덤 선택기
+- 프로세스 모니터링 기능이 포함된 성능 오버레이
+- 오버레이 제어를 위한 전역 단축키
+- 시스템 트레이 연동
+- 네이티브 폴더 선택기 및 Windows 시작 프로그램 등록 지원
+- Rust 기반 리플레이 파싱 및 분석
+- 영어/한국어 지원
 
-## Current Architecture
+## 아키텍처
 
-The current app is centered around the `tauri-overlay` desktop application and Rust analysis crates:
+현재 앱은 `tauri-overlay` 데스크톱 애플리케이션과 여러 Rust crate들을 중심으로 구성되어 있습니다.
 
 - `tauri-overlay`
-  - Tauri desktop shell
-  - React + Vite frontend
-  - Rust backend commands and window management
+  - Tauri 데스크톱 셸
+  - React + Vite 프론트엔드
+  - Rust 백엔드 명령 처리 및 창 관리
 - `s2coop-analyzer`
-  - replay/statistics analysis logic
-  - cache generation
+  - 리플레이 및 통계 분석 로직
+  - 캐시 생성
 - `s2protocol-port`
-  - Rust replay protocol parsing support
+  - SC2 리플레이 프로토콜 파싱 지원
 
-The active direction of the project is to remove Python-era dependencies and keep replay analysis in Rust.
+## 주요 기능
 
-## Main Features
+### 오버레이
 
-### Overlay
+- 게임 종료 후 리플레이 요약 정보 표시
+- 표시/숨김 및 리플레이 탐색용 단축키 지원
+- 게임 시작 시 플레이어 정보 표시 지원
+- 차트 표시 여부 및 색상 사용자 지정 지원
 
-- Shows replay summary information after games
-- Supports hotkeys for show/hide and replay navigation
-- Supports player-info display at game start
-- Keeps overlay placement configurable per monitor
-- Supports chart visibility and color customization
+### 설정 앱
 
-### Config App
-
-The config window currently includes these tabs:
+현재 설정 창에는 다음 탭이 포함되어 있습니다.
 
 - `Settings`
 - `Games`
@@ -70,68 +67,68 @@ The config window currently includes these tabs:
 - `Performance`
 - `Links`
 
-### Replay Analysis
+### 리플레이 분석
 
-- Reads replay data from your StarCraft II account folder
-- Builds replay lists and summary tables
-- Tracks players, commanders, maps, difficulties, and regions
-- Supports simple analysis and detailed analysis
-- Stores generated detailed-analysis cache output for richer statistics
-- Includes replay chat viewing and file reveal actions
+- 스타크래프트 II 계정 폴더에서 리플레이 데이터 읽기
+- 리플레이 목록 및 요약 테이블 생성
+- 플레이어, 사령관, 맵, 난이도, 지역 정보 추적
+- 단순 분석 및 상세 분석 지원
+- 더 풍부한 통계를 위한 상세 분석 캐시 출력 저장
+- 리플레이 채팅 보기 및 파일 위치 열기 기능 제공
 
-### Performance Overlay
+### 성능 오버레이
 
-- Separate transparent performance window
-- Tracks selected processes
-- Supports its own hotkey and saved geometry
+- 별도의 투명한 성능 창
+- 선택한 프로세스 추적
+- 전용 단축키 및 저장된 창 위치/크기 지원
 
-## Screenshots
+## 스크린샷
 
-**Config window**
+**설정 창**
 
-![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image1.en.png)
+![스크린샷](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image1.kr.png)
 
-**Replay list**
+**리플레이 목록**
 
-![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image2.en.png)
+![스크린샷](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image2.kr.png)
 
-**Player list**
+**플레이어 목록**
 
-![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image3.en.png)
+![스크린샷](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image3.kr.png)
 
-**Weeklies list**
+**주간 돌연변이 목록**
 
-![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image4.en.png)
+![스크린샷](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image4.kr.png)
 
-**Various statistics**
+**각종 통계**
 
-![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image5.en.png)
+![스크린샷](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image5.kr.png)
 
-**Commander randomizer**
+**사령관 랜덤 선택기**
 
-![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image6.en.png)
+![스크린샷](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image6.kr.png)
 
-**Performance overlay**
+**성능 오버레이**
 
-![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image7.en.png)
+![스크린샷](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image7.kr.png)
 
-## Running The App For Development
+## 개발 환경에서 실행하기
 
-### Prerequisites
+### 사전 요구 사항
 
-- Rust toolchain
-- Node.js and npm
-- Windows is the primary target environment
+- Rust 툴체인
+- Node.js 및 npm
+- Windows 환경 권장
 
-### Frontend + Tauri dev run
+### 프론트엔드 + Tauri 개발 실행
 
 ```powershell
 cd tauri-overlay
 npm install
-npm run tauri dev
+npm run tauri dev # or cargo tauri dev
 ```
 
-## Building
+## 빌드
 
 ```powershell
 cd tauri-overlay
@@ -139,30 +136,29 @@ npm install
 cargo tauri build
 ```
 
-## Notes About Settings And Usage
+## 설정 및 사용 시 참고 사항
 
-- The app expects access to your StarCraft II account folder to analyze replays.
-- The config window applies many settings live to the running overlay backend.
-- `settings.json` is updated when you explicitly save settings.
-- For the in-game overlay experience, StarCraft II should be run in borderless/windowed-fullscreen mode.
+- 리플레이를 분석하려면 스타크래프트 II 계정 폴더에 접근할 수 있어야 합니다.
+- 설정 창의 많은 옵션은 실행 중인 오버레이 백엔드에 실시간으로 반영됩니다.
+- `settings.json`은 사용자가 명시적으로 저장했을 때 업데이트됩니다.
+- 인게임 오버레이를 제대로 사용하려면 스타크래프트 II를 창 모드/전체 창 모드로 실행해야 합니다.
 
-## Windows Notes
+## Windows 관련 참고 사항
 
-- Windows is the main supported desktop target.
-- The app includes tray behavior, global shortcuts, startup registration, and overlay window placement logic tailored for Windows use.
+- Windows가 주요 지원 플랫폼입니다.
+- 이 앱은 Windows 환경에 맞춘 트레이 동작, 전역 단축키, 시작 프로그램 등록, 오버레이 창 배치 로직을 포함하고 있습니다.
 
-## Development Notes
+## 개발 스택
 
-- Frontend: React, Vite, Material UI, Tauri API
-- Backend: Rust, Tauri, `sysinfo`, `notify`, `rayon`
-- Analysis: `s2coop-analyzer` and `s2protocol-port`
+- 프론트엔드: React, Vite, Material UI, Tauri API
+- 백엔드: Rust, Tauri
 
-## Repository Status
+## 저장소 상태
 
-This repository is an in-progress Rust/Tauri implementation of the original SC2 Coop Overlay functionality. Some behavior is intentionally being aligned with the original project while older implementation details are being removed or rewritten.
+이 저장소는 기존 SC2 Coop Overlay의 기능을 Rust/Tauri 기반으로 옮기는 작업이 진행 중인 프로젝트입니다. 일부 동작은 원본 프로젝트와의 일관성을 유지하도록 설계되어 있으며, 일부 오래된 사항은 제거되거나 새롭게 작성되고 있습니다.
 
-## Feedback
+## 피드백
 
-For bugs, feedback, and suggestions, the original community Discord link from the upstream project is still relevant:
+버그 제보, 피드백, 제안은 이슈를 남겨주시거나 아래 주소로 보내주시면 됩니다.
 
 - mailto:sc2coopinfo@gmail.com
