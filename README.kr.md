@@ -89,31 +89,31 @@ The config window currently includes these tabs:
 
 **Config window**
 
-![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image1.png)
+![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image1.en.png)
 
 **Replay list**
 
-![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image2.png)
+![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image2.en.png)
 
 **Player list**
 
-![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image3.png)
+![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image3.en.png)
 
 **Weeklies list**
 
-![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image4.png)
+![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image4.en.png)
 
 **Various statistics**
 
-![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image5.png)
+![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image5.en.png)
 
 **Commander randomizer**
 
-![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image6.png)
+![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image6.en.png)
 
 **Performance overlay**
 
-![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image7.png)
+![Screenshot](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image7.en.png)
 
 ## Running The App For Development
 
