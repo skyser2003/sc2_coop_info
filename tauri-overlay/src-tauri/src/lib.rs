@@ -16,6 +16,7 @@ use std::sync::OnceLock;
 use std::sync::{Arc, Mutex, TryLockError};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use tauri_plugin_updater::UpdaterExt;
 
 use tauri::{
     tray::{TrayIcon, TrayIconBuilder},
@@ -85,6 +86,7 @@ fn default_settings_value() -> Value {
         "start_with_windows": false,
         "minimize_to_tray": true,
         "start_minimized": false,
+        "auto_update": true,
         "duration": 30,
         "show_player_winrates": true,
         "show_replay_info_after_game": true,
@@ -4496,6 +4498,32 @@ async fn config_request(
     }
 }
 
+async fn auto_update(handle: tauri::AppHandle) -> tauri_plugin_updater::Result<()> {
+    if let Some(update) = handle.updater()?.check().await? {
+        crate::sco_log!("Auto update begin");
+
+        let mut downloaded = 0;
+
+        // alternatively we could also call update.download() and update.install() separately
+        update
+            .download_and_install(
+                |chunk_length, content_length| {
+                    downloaded += chunk_length;
+                    crate::sco_log!("downloaded {downloaded} from {content_length:?}");
+                },
+                || {
+                    crate::sco_log!("download finished");
+                },
+            )
+            .await?;
+
+        crate::sco_log!("update installed");
+        handle.restart();
+    }
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let settings = read_settings_file();
@@ -4566,8 +4594,30 @@ pub fn run() {
         .setup(|app| {
             spawn_protocol_store_warmup();
 
+            let flags = overlay_info::parse_runtime_flags();
+
+            if flags.auto_update {
+                let handle = app.handle().clone();
+
+                tauri::async_runtime::spawn(async move {
+                    let result = auto_update(handle).await;
+
+                    if result.is_err() {
+                        crate::sco_log!("Auto update failed: {}", result.unwrap_err());
+                    }
+                });
+            }
+
             // Always start with overlay hidden; user can show it via hotkey/tray/actions.
             overlay_info::hide_overlay_window(&app.app_handle());
+
+            if flags.start_minimized {
+                if let Some(config_window) = app.get_webview_window("config") {
+                    let _ = config_window.hide();
+                }
+            } else {
+                overlay_info::show_config_window(&app.app_handle());
+            }
 
             let _ = app
                 .get_webview_window("overlay")
@@ -4623,18 +4673,11 @@ pub fn run() {
                 }
             }
 
-            let flags = overlay_info::parse_runtime_flags();
             let startup_settings = read_settings_file();
             if let Err(error) = sync_start_with_windows_setting(&startup_settings) {
                 crate::sco_log!("[SCO/settings] Failed to initialize start_with_windows: {error}");
             }
-            if flags.start_minimized {
-                if let Some(config_window) = app.get_webview_window("config") {
-                    let _ = config_window.hide();
-                }
-            } else {
-                overlay_info::show_config_window(&app.app_handle());
-            }
+
             overlay_info::sync_overlay_runtime_settings(&app.app_handle());
             performance_overlay::apply_settings(&app.app_handle());
 

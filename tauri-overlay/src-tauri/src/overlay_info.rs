@@ -126,6 +126,7 @@ pub(crate) struct OverlayPlacement {
 pub(crate) struct RuntimeFlags {
     pub(crate) start_minimized: bool,
     pub(crate) minimize_to_tray: bool,
+    pub(crate) auto_update: bool,
 }
 
 #[derive(Serialize)]
@@ -267,6 +268,7 @@ fn default_runtime_flags() -> RuntimeFlags {
     RuntimeFlags {
         start_minimized: false,
         minimize_to_tray: true,
+        auto_update: true,
     }
 }
 
@@ -411,9 +413,16 @@ pub(crate) fn parse_runtime_flags() -> RuntimeFlags {
         } else {
             false
         };
+
+        let auto_update = map
+            .get("auto_update")
+            .and_then(Value::as_bool)
+            .unwrap_or(defaults.auto_update);
+
         return RuntimeFlags {
             start_minimized,
             minimize_to_tray,
+            auto_update,
         };
     }
 

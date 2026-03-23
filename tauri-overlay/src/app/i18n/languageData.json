@@ -12,6 +12,10 @@
         "en": "Start minimized",
         "ko": "최소화된 상태로 시작"
     },
+    "ui_settings_auto_update": {
+        "en": "Audo update on launch",
+        "ko": "시작 시 자동 업데이트"
+    },
     "ui_settings_minimize_to_tray": {
         "en": "Minimize to tray",
         "ko": "트레이로 최소화"

@@ -877,6 +877,11 @@ export default function SettingsTab({
                                         ["start_minimized"],
                                         false,
                                         !minimizeToTrayEnabled,
+                                    )}{" "}
+                                    {boolField(
+                                        t("ui_settings_auto_update"),
+                                        ["auto_update"],
+                                        true,
                                     )}
                                 </div>
                             </section>
