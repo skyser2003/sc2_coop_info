@@ -1,4 +1,6 @@
 # SC2 Coop Info
+- [English](README.md)
+- [한국어](README.ko.md)
 
 Rust/Tauri desktop overlay and replay-analysis tool for **StarCraft II Co-op**.
 

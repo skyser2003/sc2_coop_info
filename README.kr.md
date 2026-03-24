@@ -1,4 +1,6 @@
 # SC2 Coop Info
+- [English](README.md)
+- [한국어](README.ko.md)
 
 **스타크래프트 II 협동전**을 위한 Rust/Tauri 기반 데스크톱 오버레이 및 리플레이 분석 도구입니다.
 
