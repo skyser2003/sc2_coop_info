@@ -88,31 +88,31 @@
 
 **설정 창**
 
-![스크린샷](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image1.kr.png)
+![스크린샷](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image1.ko.png)
 
 **리플레이 목록**
 
-![스크린샷](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image2.kr.png)
+![스크린샷](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image2.ko.png)
 
 **플레이어 목록**
 
-![스크린샷](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image3.kr.png)
+![스크린샷](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image3.ko.png)
 
 **주간 돌연변이 목록**
 
-![스크린샷](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image4.kr.png)
+![스크린샷](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image4.ko.png)
 
 **각종 통계**
 
-![스크린샷](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image5.kr.png)
+![스크린샷](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image5.ko.png)
 
 **사령관 랜덤 선택기**
 
-![스크린샷](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image6.kr.png)
+![스크린샷](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image6.ko.png)
 
 **성능 오버레이**
 
-![스크린샷](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image7.kr.png)
+![스크린샷](https://raw.githubusercontent.com/skyser2003/sc2_coop_info/main/readme_images/image7.ko.png)
 
 ## 개발 환경에서 실행하기
 
