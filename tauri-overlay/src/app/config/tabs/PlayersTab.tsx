@@ -274,7 +274,12 @@ export default function PlayersTab({
                         </button>
                     </div>
                 </div>
-                <div className="table-wrap">
+                <TablePagination
+                    currentPage={currentPage}
+                    onPageChange={setCurrentPage}
+                    totalRows={sorted.length}
+                />
+                <div className="table-wrap" style={{ marginTop: "20px" }}>
                     <table className="data-table games-table">
                         <thead>
                             <tr>

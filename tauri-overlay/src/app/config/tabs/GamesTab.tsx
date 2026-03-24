@@ -646,7 +646,13 @@ export default function GamesTab({
                         </label>
                     </div>
                 </div>
-                <div className="table-wrap">
+                <TablePagination
+                    currentPage={currentPage}
+                    onPageChange={handlePageChange}
+                    totalRows={totalRowsForPagination}
+                    hideWhenSinglePage={false}
+                />
+                <div className="table-wrap" style={{ marginTop: "20px" }}>
                     <table className="data-table games-table">
                         <thead>
                             <tr>
