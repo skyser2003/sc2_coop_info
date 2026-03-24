@@ -943,6 +943,12 @@ pub(crate) fn emit_replay_to_overlay_from_replay(
     mark_new_replay: bool,
 ) {
     let state = app.state::<BackendState>();
+
+    let replay = (!replay.is_detailed)
+        .then(|| process_replay_detailed(&state, &PathBuf::from(&replay.file)).1)
+        .flatten()
+        .unwrap_or_else(|| replay.clone());
+
     let settings = crate::read_settings_file();
     let show_session = settings
         .get("show_session")
@@ -950,7 +956,7 @@ pub(crate) fn emit_replay_to_overlay_from_replay(
         .unwrap_or(false);
     let (session_victories, session_defeats) = crate::session_counts(&state);
     let payload = overlay_payload_from_replay(
-        replay,
+        &replay,
         mark_new_replay,
         show_session,
         session_victories,
@@ -1094,15 +1100,9 @@ pub(crate) fn replay_move_window(
     }
 
     let replay = &replays[index];
-
-    let replay = (!replay.is_detailed)
-        .then(|| process_replay_detailed(state, &PathBuf::from(&replay.file)).1)
-        .flatten()
-        .unwrap_or_else(|| replay.clone());
-
     let file = replay.file.clone();
 
-    emit_replay_to_overlay_from_replay(app, &replay, false);
+    emit_replay_to_overlay_from_replay(app, replay, false);
     state
         .overlay_replay_data_active
         .store(true, Ordering::Release);
