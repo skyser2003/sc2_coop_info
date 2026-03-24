@@ -1324,11 +1324,11 @@ fn build_overlay_player_info_payload(state: &BackendState) -> OverlayPlayerInfoP
 
     let main_names = configured_main_names();
     let main_handles = configured_main_handles();
-    let player_name = select_other_player_from_replay(&selected, &main_names, &main_handles)
+    let player_info = select_other_player_from_replay(&selected, &main_names, &main_handles)
         .or_else(|| {
             let ally = selected.p2.trim();
             if !ally.is_empty() {
-                Some(ally.to_string())
+                Some((selected.p2_handle.to_string(), ally.to_string()))
             } else {
                 None
             }
@@ -1336,29 +1336,33 @@ fn build_overlay_player_info_payload(state: &BackendState) -> OverlayPlayerInfoP
         .or_else(|| {
             let main = selected.p1.trim();
             if !main.is_empty() {
-                Some(main.to_string())
+                Some((selected.p1_handle.to_string(), main.to_string()))
             } else {
                 None
             }
         });
 
-    let Some(player_name) = player_name else {
+    let Some((player_handle, player_name)) = player_info else {
         return OverlayPlayerInfoPayload::default();
     };
 
-    build_overlay_player_info_payload_for_player(state, &player_name)
+    build_overlay_player_info_payload_for_player(state, &player_handle, &player_name)
 }
 
 fn select_other_player_from_replay(
     replay: &crate::ReplayInfo,
     main_names: &HashSet<String>,
     main_handles: &HashSet<String>,
-) -> Option<String> {
+) -> Option<(String, String)> {
     let p1 = replay.p1.trim();
     let p2 = replay.p2.trim();
+
     if p1.is_empty() && p2.is_empty() {
         return None;
     }
+
+    let p1_handle = replay.p1_handle.to_string();
+    let p2_handle = replay.p2_handle.to_string();
 
     let p1_is_main = ReplayAnalysis::is_main_player_identity(
         &replay.p1,
@@ -1374,13 +1378,13 @@ fn select_other_player_from_replay(
     );
 
     match (p1_is_main, p2_is_main) {
-        (true, false) => (!p2.is_empty()).then_some(p2.to_string()),
-        (false, true) => (!p1.is_empty()).then_some(p1.to_string()),
+        (true, false) => (!p2.is_empty()).then_some((p2_handle, p2.to_string())),
+        (false, true) => (!p1.is_empty()).then_some((p1_handle, p1.to_string())),
         _ => {
             if !p2.is_empty() {
-                Some(p2.to_string())
+                Some((p2_handle, p2.to_string()))
             } else if !p1.is_empty() {
-                Some(p1.to_string())
+                Some((p1_handle, p1.to_string()))
             } else {
                 None
             }
@@ -1407,33 +1411,21 @@ fn lookup_player_stats_row(
     })
 }
 
-fn player_note_from_settings_value(settings: &Value, player_name: &str) -> Option<String> {
+fn player_note_from_settings_value(settings: &Value, player_handle: &str) -> Option<String> {
     let notes = settings.get("player_notes").and_then(Value::as_object)?;
 
     let direct = notes
-        .get(player_name)
+        .get(player_handle)
         .and_then(Value::as_str)
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
-    if direct.is_some() {
-        return direct;
-    }
 
-    let player_key = ReplayAnalysis::normalized_player_key(player_name);
-    notes.iter().find_map(|(name, value)| {
-        if ReplayAnalysis::normalized_player_key(name) != player_key {
-            return None;
-        }
-        value
-            .as_str()
-            .map(|entry| entry.trim().to_string())
-            .filter(|entry| !entry.is_empty())
-    })
+    direct
 }
 
-fn player_note_from_settings(player_name: &str) -> Option<String> {
+fn player_note_from_settings(player_handle: &str) -> Option<String> {
     let settings = crate::read_settings_file();
-    player_note_from_settings_value(&settings, player_name)
+    player_note_from_settings_value(&settings, player_handle)
 }
 
 fn relative_last_seen_text(last_seen: u64) -> String {
@@ -1473,6 +1465,7 @@ fn relative_last_seen_text(last_seen: u64) -> String {
 
 fn build_overlay_player_info_payload_for_player(
     state: &BackendState,
+    player_handle: &str,
     player_name: &str,
 ) -> OverlayPlayerInfoPayload {
     let player_data = state
@@ -1516,7 +1509,7 @@ fn build_overlay_player_info_payload_for_player(
         let last_seen = row.get("last_seen").and_then(Value::as_u64).unwrap_or(0);
         let relative_last_seen = relative_last_seen_text(last_seen);
 
-        let note = player_note_from_settings(&sanitize_replay_text(&resolved_name));
+        let note = player_note_from_settings(player_handle);
         (
             sanitize_replay_text(&resolved_name),
             OverlayPlayerInfoRow::Stats {
@@ -1543,13 +1536,14 @@ fn build_overlay_player_info_payload_for_player(
 pub(crate) fn show_player_winrate_for_name(
     app: &tauri::AppHandle<Wry>,
     state: &BackendState,
+    player_handle: &str,
     player_name: &str,
 ) -> bool {
     if player_name.trim().is_empty() {
         return false;
     }
 
-    let payload = build_overlay_player_info_payload_for_player(state, player_name);
+    let payload = build_overlay_player_info_payload_for_player(state, player_handle, player_name);
     let _ = app.emit(OVERLAY_HIDESTATS_EVENT, json!({}));
     let _ = app.emit(OVERLAY_PLAYER_WINRATE_EVENT, payload);
     show_overlay_window(app);

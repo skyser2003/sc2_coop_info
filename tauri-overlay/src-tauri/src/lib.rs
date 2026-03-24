@@ -3617,11 +3617,11 @@ fn extract_live_game_players(payload: &Value) -> Vec<LiveGamePlayer> {
         .collect()
 }
 
-fn choose_other_coop_player_name(
+fn choose_other_coop_player_info(
     players: &[LiveGamePlayer],
     main_names: &HashSet<String>,
     main_handles: &HashSet<String>,
-) -> Option<String> {
+) -> Option<(String, String)> {
     let coop_players: Vec<&LiveGamePlayer> = players
         .iter()
         .filter(|player| player.id == 1 || player.id == 2)
@@ -3649,9 +3649,12 @@ fn choose_other_coop_player_name(
 
     if main_marked_count > 0 && !other_candidates.is_empty() {
         other_candidates.sort_by_key(|player| player.id);
+
         return other_candidates.into_iter().find_map(|player| {
             let name = player.name.trim();
-            (!name.is_empty()).then_some(name.to_string())
+            let handle = player.handle.to_string();
+
+            Some((handle, name.to_string()))
         });
     }
 
@@ -3791,8 +3794,8 @@ fn spawn_game_launch_winrate_task(app: tauri::AppHandle<Wry>) {
             }
 
             let (main_names, main_handles) = build_launch_main_identity(&state);
-            let Some(other_player_name) =
-                choose_other_coop_player_name(&players, &main_names, &main_handles)
+            let Some((other_player_handle, other_player_name)) =
+                choose_other_coop_player_info(&players, &main_names, &main_handles)
             else {
                 continue;
             };
@@ -3805,7 +3808,12 @@ fn spawn_game_launch_winrate_task(app: tauri::AppHandle<Wry>) {
                 invalidation_generation
             );
 
-            if overlay_info::show_player_winrate_for_name(&app, &state, &other_player_name) {
+            if overlay_info::show_player_winrate_for_name(
+                &app,
+                &state,
+                &other_player_handle,
+                &other_player_name,
+            ) {
                 last_replay_amount = replay_count;
             }
         }
