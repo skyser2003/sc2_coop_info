@@ -51,8 +51,8 @@ jobs:
               with:
                   tagName: v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
                   releaseName: "SC2_Coop_Info v__VERSION__"
-                  releaseBody: "SC2 Coop Info release"
-                  releaseDraft: true
+                  releaseBody: "Feature: default language is now fetched from system"
+                  releaseDraft: false
                   prerelease: false
                   projectPath: "./tauri-overlay"
                   args: ${{ matrix.args }}
