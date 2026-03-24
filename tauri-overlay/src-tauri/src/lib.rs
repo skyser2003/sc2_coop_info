@@ -44,7 +44,7 @@ macro_rules! sco_log {
     }};
 }
 
-use crate::path_manager::{get_cache_path, get_json_data_dir};
+use crate::path_manager::{get_cache_path, get_json_data_dir, is_dev_env};
 use crate::replay_analysis::ReplayAnalysis;
 
 const UNLIMITED_REPLAY_LIMIT: usize = 0;
@@ -4164,6 +4164,11 @@ async fn pick_folder(title: String, directory: Option<String>) -> Result<Option<
 }
 
 #[tauri::command]
+fn is_dev() -> bool {
+    is_dev_env()
+}
+
+#[tauri::command]
 fn save_overlay_screenshot(path: String, png_bytes: Vec<u8>) -> Result<(), String> {
     overlay_info::save_overlay_screenshot(Path::new(&path), &png_bytes)
 }
@@ -4855,6 +4860,7 @@ pub fn run() {
             config_request,
             pick_folder,
             performance_start_drag,
+            is_dev,
             save_overlay_screenshot,
             open_folder_path
         ])

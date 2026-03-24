@@ -3,7 +3,7 @@ use std::{
     path::PathBuf,
 };
 
-fn is_dev_env() -> bool {
+pub fn is_dev_env() -> bool {
     !is_prod_env()
 }
 

@@ -4,6 +4,7 @@ import ConfigRoute from "./ConfigRoute";
 import styles from "./page.module.css";
 import { app } from "@tauri-apps/api";
 import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 
 type ConfigPageProps = {
     onThemeModeChange: (darkThemeEnabled: boolean) => void;
@@ -11,10 +12,15 @@ type ConfigPageProps = {
 
 export default function ConfigPage({ onThemeModeChange }: ConfigPageProps) {
     const [appVersion, setAppVersion] = useState<string>("v0.0.0");
+    const [isDev, setIsDev] = useState<boolean>(false);
 
     useEffect(() => {
         app.getVersion().then((version) => {
             setAppVersion(`${version}`);
+        });
+
+        invoke<boolean>("is_dev").then((isDevInvoke) => {
+            setIsDev(isDevInvoke);
         });
     });
 
@@ -109,6 +115,7 @@ export default function ConfigPage({ onThemeModeChange }: ConfigPageProps) {
         >
             <Typography variant="h4" component="h1" gutterBottom>
                 SC2 Coop Info v{appVersion}
+                {isDev ? " Dev" : ""}
             </Typography>
             <Typography variant="body2" color="text.secondary">
                 Editing settings applies changes immediately to the running
