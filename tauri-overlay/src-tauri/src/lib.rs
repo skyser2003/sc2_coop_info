@@ -81,6 +81,31 @@ fn sanitize_settings_value(value: Value) -> Value {
     }
 }
 
+fn get_system_language() -> String {
+    let default = "en";
+    let locale = sys_locale::get_locale();
+
+    let language = if let Some(locale) = locale.as_ref() {
+        let language = locale.split("-").nth(0);
+
+        if language.is_none() {
+            default
+        } else {
+            let language = language.unwrap();
+
+            if language.len() == 0 {
+                default
+            } else {
+                language
+            }
+        }
+    } else {
+        "en"
+    };
+
+    language.to_string()
+}
+
 fn default_settings_value() -> Value {
     json!({
         "start_with_windows": false,
@@ -103,6 +128,7 @@ fn default_settings_value() -> Value {
         "hotkey_winrates": "Ctrl+Alt+-",
         "enable_logging": true,
         "dark_theme": true,
+        "language": get_system_language(),
     })
 }
 

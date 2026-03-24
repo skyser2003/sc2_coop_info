@@ -24,6 +24,7 @@ fastrand = "2.3.0"
 sysinfo = "0.33"
 rfd = "0.15"
 tauri-plugin-opener = "2"
+sys-locale = "0.3.2"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
