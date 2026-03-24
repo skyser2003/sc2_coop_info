@@ -149,7 +149,12 @@ const STATS_DEFAULT_FILTERS = {
         Normal: true,
         Hard: true,
         Brutal: true,
-        BrutalPlus: true,
+        BrutalPlus1: true,
+        BrutalPlus2: true,
+        BrutalPlus3: true,
+        BrutalPlus4: true,
+        BrutalPlus5: true,
+        BrutalPlus6: true,
     },
     regions: {
         NA: true,
@@ -448,8 +453,23 @@ function statsFiltersToQuery(filters) {
     if (!filters.difficulties.Normal) difficultyFilter.push("Normal");
     if (!filters.difficulties.Hard) difficultyFilter.push("Hard");
     if (!filters.difficulties.Brutal) difficultyFilter.push("Brutal");
-    if (!filters.difficulties.BrutalPlus) {
-        difficultyFilter.push("1", "2", "3", "4", "5", "6");
+    if (!filters.difficulties.BrutalPlus1) {
+        difficultyFilter.push("1");
+    }
+    if (!filters.difficulties.BrutalPlus2) {
+        difficultyFilter.push("2");
+    }
+    if (!filters.difficulties.BrutalPlus3) {
+        difficultyFilter.push("3");
+    }
+    if (!filters.difficulties.BrutalPlus4) {
+        difficultyFilter.push("4");
+    }
+    if (!filters.difficulties.BrutalPlus5) {
+        difficultyFilter.push("5");
+    }
+    if (!filters.difficulties.BrutalPlus6) {
+        difficultyFilter.push("6");
     }
 
     const regionFilter = [];

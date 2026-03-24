@@ -13,6 +13,7 @@ import {
     rowsForPage,
     TablePagination,
 } from "./tablePagination";
+import { DifficultyFilterKey, DifficultyFilters } from "../types";
 
 type GamesTabRow = {
     map?: string | null;
@@ -82,15 +83,6 @@ type GamesTabProps = {
     formatDurationSeconds: (value: unknown) => string;
     languageManager: LanguageManager;
 };
-
-type DifficultyFilterKey =
-    | "Casual"
-    | "Normal"
-    | "Hard"
-    | "Brutal"
-    | "BrutalPlus";
-
-type DifficultyFilters = Record<DifficultyFilterKey, boolean>;
 
 function asTableValueCompat(value: unknown) {
     if (value === null || value === undefined) {
@@ -164,7 +156,32 @@ function localizedMutatorDescription(
 function difficultyFilterKeyForRow(row: GamesTabRow): DifficultyFilterKey {
     const brutalPlus = Number(row.brutal_plus ?? 0);
     if (Number.isFinite(brutalPlus) && brutalPlus > 0) {
-        return "BrutalPlus";
+        switch (brutalPlus) {
+            case 1: {
+                return "BrutalPlus1";
+            }
+            case 2: {
+                return "BrutalPlus2";
+            }
+            case 3: {
+                return "BrutalPlus3";
+            }
+            case 4: {
+                return "BrutalPlus4";
+            }
+            case 5: {
+                return "BrutalPlus5";
+            }
+            case 6: {
+                return "BrutalPlus6";
+            }
+            default: {
+                console.error(
+                    `Brutal plus should be in range 1~6, but is ${brutalPlus}`,
+                );
+                return "Brutal";
+            }
+        }
     }
 
     const difficulty = String(row.difficulty || "")
@@ -229,7 +246,12 @@ export default function GamesTab({
             Normal: true,
             Hard: true,
             Brutal: true,
-            BrutalPlus: true,
+            BrutalPlus1: true,
+            BrutalPlus2: true,
+            BrutalPlus3: true,
+            BrutalPlus4: true,
+            BrutalPlus5: true,
+            BrutalPlus6: true,
         });
     const [includeNormalGames, setIncludeNormalGames] =
         React.useState<boolean>(true);
@@ -359,6 +381,7 @@ export default function GamesTab({
         () =>
             data.filter((row) => {
                 const difficultyKey = difficultyFilterKeyForRow(row);
+
                 if (!difficultyFilters[difficultyKey]) {
                     return false;
                 }
@@ -572,7 +595,12 @@ export default function GamesTab({
                                 ["Normal", "difficulty_normal"],
                                 ["Hard", "difficulty_hard"],
                                 ["Brutal", "difficulty_brutal"],
-                                ["BrutalPlus", "difficulty_brutal_plus"],
+                                ["BrutalPlus1", "difficulty_brutal_plus_1"],
+                                ["BrutalPlus2", "difficulty_brutal_plus_2"],
+                                ["BrutalPlus3", "difficulty_brutal_plus_3"],
+                                ["BrutalPlus4", "difficulty_brutal_plus_4"],
+                                ["BrutalPlus5", "difficulty_brutal_plus_5"],
+                                ["BrutalPlus6", "difficulty_brutal_plus_6"],
                             ] as const
                         ).map(([key, labelId]) => (
                             <label key={key} className="games-filter-check">

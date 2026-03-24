@@ -2093,9 +2093,34 @@ export default function StatisticsTab({
                                 () => actions.toggleDifficulty("Brutal"),
                             )}
                             {filterCheckbox(
-                                languageManager.localize("Brutal+"),
-                                statsState.filters.difficulties.BrutalPlus,
-                                () => actions.toggleDifficulty("BrutalPlus"),
+                                languageManager.localize("Brutal+1"),
+                                statsState.filters.difficulties.BrutalPlus1,
+                                () => actions.toggleDifficulty("BrutalPlus1"),
+                            )}
+                            {filterCheckbox(
+                                languageManager.localize("Brutal+2"),
+                                statsState.filters.difficulties.BrutalPlus2,
+                                () => actions.toggleDifficulty("BrutalPlus2"),
+                            )}
+                            {filterCheckbox(
+                                languageManager.localize("Brutal+3"),
+                                statsState.filters.difficulties.BrutalPlus3,
+                                () => actions.toggleDifficulty("BrutalPlus3"),
+                            )}
+                            {filterCheckbox(
+                                languageManager.localize("Brutal+4"),
+                                statsState.filters.difficulties.BrutalPlus4,
+                                () => actions.toggleDifficulty("BrutalPlus4"),
+                            )}
+                            {filterCheckbox(
+                                languageManager.localize("Brutal+5"),
+                                statsState.filters.difficulties.BrutalPlus5,
+                                () => actions.toggleDifficulty("BrutalPlus5"),
+                            )}
+                            {filterCheckbox(
+                                languageManager.localize("Brutal+6"),
+                                statsState.filters.difficulties.BrutalPlus6,
+                                () => actions.toggleDifficulty("BrutalPlus6"),
                             )}
                         </div>
                         <div className="stats-col">
