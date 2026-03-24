@@ -354,6 +354,10 @@
         "en": "No player data available",
         "ko": "플레이어 데이터가 없습니다"
     },
+    "ui_overlay_note": {
+        "en": "Player note",
+        "ko": "플레이어 메모"
+    },
     "race_terran": {
         "en": "Terran",
         "ko": "테란",

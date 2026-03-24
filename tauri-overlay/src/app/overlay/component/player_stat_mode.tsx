@@ -8,6 +8,7 @@ import type {
 function renderPlayerStatRow(
     playerName: string,
     row: OverlayPlayerInfoRow,
+    overlayLanguageManager: LanguageManager,
 ): ReactNode {
     if (row.kind === "no_games") {
         return (
@@ -17,7 +18,9 @@ function renderPlayerStatRow(
                 {row.note != null && row.note !== "" ? (
                     <>
                         <br />
-                        {row.note}
+                        {overlayLanguageManager.translate(
+                            "ui_overlay_note",
+                        )}: {row.note}
                     </>
                 ) : null}
             </>
@@ -39,6 +42,7 @@ function renderPlayerStatRow(
             {row.note != null && row.note !== "" ? (
                 <>
                     <br />
+                    {overlayLanguageManager.translate("ui_overlay_note")}:{" "}
                     {row.note}
                 </>
             ) : null}
@@ -74,7 +78,11 @@ export default function PlayerStatMode({
             {rowEntries.length > 0
                 ? rowEntries.map(([playerName, row]) => (
                       <Fragment key={playerName}>
-                          {renderPlayerStatRow(playerName, row)}
+                          {renderPlayerStatRow(
+                              playerName,
+                              row,
+                              overlayLanguageManager,
+                          )}
                           <br />
                       </Fragment>
                   ))
