@@ -895,6 +895,21 @@ struct ReplayInfo {
     is_detailed: bool,
 }
 
+struct ReplayPlayerInfo {
+    name: String,
+    handle: String,
+    apm: u64,
+    kills: u64,
+    commander: String,
+    commander_level: u64,
+    mastery_level: u64,
+    prestige: u64,
+    masteries: Vec<u64>,
+    units: Value,
+    icons: Value,
+    stats: Value,
+}
+
 impl ReplayInfo {
     fn as_games_row(&self) -> Value {
         let sanitized = self.sanitized_for_client();
