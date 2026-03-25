@@ -279,7 +279,7 @@ fn file_date_string(file: &Path) -> Result<String, DetailedReplayAnalysisError> 
     Ok(datetime.format("%Y:%m:%d:%H:%M:%S").to_string())
 }
 
-fn calculate_replay_hash(path: &Path) -> String {
+pub fn calculate_replay_hash(path: &Path) -> String {
     match fs::read(path) {
         Ok(bytes) => format!("{:x}", md5::compute(bytes)),
         Err(_) => format!("{:x}", md5::compute(path.to_string_lossy().as_bytes())),

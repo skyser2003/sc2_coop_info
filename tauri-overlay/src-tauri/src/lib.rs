@@ -4,6 +4,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     generate_cache_overall_stats_with_logger, serialize_cache_entries, CacheReplayEntry,
     GenerateCacheConfig,
 };
+use s2coop_analyzer::detailed_replay_analysis::calculate_replay_hash;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, json, Map, Value};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -2430,7 +2431,7 @@ fn spawn_analysis_task(
         // Load existing cache at start for merging and hash checking
         let existing_cache_by_hash = load_existing_cache_by_hash();
         let mut all_new_cache_entries = Vec::new();
-        let mut all_replays = Vec::new();
+        let all_replays;
 
         // Run analysis based on mode
         if include_detailed {
@@ -2515,6 +2516,24 @@ fn spawn_analysis_task(
             // scan_replays already saves simple cache entries directly via persist_simple_analysis_cache
             // No need to save again here
         }
+
+        let mut hashes = HashMap::new();
+
+        let all_replays = all_replays
+            .into_iter()
+            .filter(|replay| {
+                let hash = calculate_replay_hash(&PathBuf::from(&replay.file));
+
+                let is_detailed = hashes.get(&hash);
+
+                if is_detailed.is_some() && (*is_detailed.unwrap() || !replay.is_detailed) {
+                    false
+                } else {
+                    hashes.insert(hash, replay.is_detailed);
+                    true
+                }
+            })
+            .collect::<Vec<_>>();
 
         let current_replay_files = current_replay_files_snapshot(UNLIMITED_REPLAY_LIMIT);
         update_analysis_replay_cache_slots(

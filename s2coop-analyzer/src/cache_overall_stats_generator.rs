@@ -1,4 +1,6 @@
-use crate::detailed_replay_analysis::{analyze_replay_file, cache_hidden_created_lost_units};
+use crate::detailed_replay_analysis::{
+    analyze_replay_file, cache_hidden_created_lost_units, calculate_replay_hash,
+};
 use crate::dictionary_data::{self, CacheGenerationData, CachedMutatorsJson, MutatorIdsJson};
 use crate::tauri_replay_analysis_impl::{ParsedReplayPlayer, ReplayReport};
 use chrono::{DateTime, Local};
@@ -1707,13 +1709,6 @@ fn file_date_string(file: &Path) -> Result<String, io::Error> {
     let modified = fs::metadata(file)?.modified()?;
     let datetime: DateTime<Local> = DateTime::from(modified);
     Ok(datetime.format("%Y:%m:%d:%H:%M:%S").to_string())
-}
-
-fn calculate_replay_hash(path: &Path) -> String {
-    match fs::read(path) {
-        Ok(bytes) => format!("{:x}", md5::compute(bytes)),
-        Err(_) => format!("{:x}", md5::compute(path.to_string_lossy().as_bytes())),
-    }
 }
 
 fn normalized_path_string(path: &Path) -> String {
