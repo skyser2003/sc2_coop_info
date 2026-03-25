@@ -211,6 +211,10 @@ pub enum GenerateCacheError {
     TempMoveFailed(PathBuf, PathBuf, #[source] io::Error),
     #[error(transparent)]
     PrettyCache(#[from] PrettyCacheError),
+    #[error("failed to read existing cache file '{0}': {1}")]
+    ReadExistingCache(PathBuf, #[source] io::Error),
+    #[error("failed to parse existing cache file '{0}': {1}")]
+    ParseExistingCache(PathBuf, #[source] serde_json::Error),
 }
 
 struct GenerateCacheProgressReporter<'a> {
@@ -445,6 +449,30 @@ pub fn pretty_output_path(path: &Path) -> PathBuf {
         "{file_name}_pretty.{}",
         extension.and_then(|s| s.to_str()).unwrap_or("json")
     ))
+}
+
+pub fn write_cache_file(
+    replays: &Vec<CacheReplayEntry>,
+    path: &Path,
+) -> Result<(), GenerateCacheError> {
+    let path = path.to_path_buf();
+    let payload = serialize_cache_entries(&replays).map_err(GenerateCacheError::SerializeFailed)?;
+
+    let temp_file = PathBuf::from(format!("{}.temp", path.display()));
+
+    fs::write(&temp_file, payload)
+        .map_err(|error| GenerateCacheError::TempWriteFailed(temp_file.clone(), error))?;
+
+    if path.exists() {
+        fs::remove_file(&path).map_err(|error| {
+            GenerateCacheError::TempMoveFailed(temp_file.clone(), path.clone(), error)
+        })?;
+    }
+
+    fs::rename(&temp_file, &path)
+        .map_err(|error| GenerateCacheError::TempMoveFailed(temp_file, path.clone(), error))?;
+
+    Ok(())
 }
 
 pub fn write_pretty_cache_file(
@@ -693,22 +721,8 @@ fn generate_cache_overall_stats_impl(
 
     all_entries.sort_by(cache_entry_compare);
 
-    let payload =
-        serialize_cache_entries(&all_entries).map_err(GenerateCacheError::SerializeFailed)?;
-    let temp_file = PathBuf::from(format!("{}_temp", config.output_file.display()));
-    fs::write(&temp_file, payload)
-        .map_err(|error| GenerateCacheError::TempWriteFailed(temp_file.clone(), error))?;
-    if config.output_file.exists() {
-        fs::remove_file(&config.output_file).map_err(|error| {
-            GenerateCacheError::TempMoveFailed(temp_file.clone(), config.output_file.clone(), error)
-        })?;
-    }
-
-    fs::rename(&temp_file, &config.output_file).map_err(|error| {
-        GenerateCacheError::TempMoveFailed(temp_file, config.output_file.clone(), error)
-    })?;
-
-    let _ = write_pretty_cache_file(&config.output_file, None)?;
+    write_cache_file(&all_entries, &config.output_file)?;
+    write_pretty_cache_file(&config.output_file, None)?;
 
     // Remove temp file after successful completion
     if temp_file_path.exists() {
@@ -2327,30 +2341,24 @@ fn cache_entry_compare(left: &CacheReplayEntry, right: &CacheReplayEntry) -> Ord
 pub fn persist_simple_analysis_cache(
     entries: &[CacheReplayEntry],
     cache_path: &Path,
-) -> Result<(), String> {
+) -> Result<(), GenerateCacheError> {
     if let Some(parent) = cache_path.parent() {
         std::fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "Failed to create cache directory '{}': {error}",
-                parent.display()
-            )
+            GenerateCacheError::OutputDirectoryCreateFailed(parent.to_path_buf(), error)
         })?;
     }
 
     let mut all_entries = match std::fs::read(cache_path) {
         Ok(payload) => {
             serde_json::from_slice::<Vec<CacheReplayEntry>>(&payload).map_err(|error| {
-                format!(
-                    "Failed to parse existing cache '{}': {error}",
-                    cache_path.display()
-                )
+                GenerateCacheError::ParseExistingCache(cache_path.to_path_buf(), error)
             })?
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
         Err(error) => {
-            return Err(format!(
-                "Failed to read existing cache '{}': {error}",
-                cache_path.display()
+            return Err(GenerateCacheError::ReadExistingCache(
+                cache_path.to_path_buf(),
+                error,
             ))
         }
     };
@@ -2365,11 +2373,7 @@ pub fn persist_simple_analysis_cache(
             .then_with(|| right.file.cmp(&left.file))
     });
 
-    let payload = serialize_cache_entries(&all_entries)
-        .map_err(|error| format!("Failed to serialize cache: {error}"))?;
-    std::fs::write(cache_path, payload)
-        .map_err(|error| format!("Failed to write cache '{}': {error}", cache_path.display()))?;
-    Ok(())
+    write_cache_file(&all_entries, cache_path)
 }
 
 fn cache_progress_percent(processed: usize, total: usize) -> usize {

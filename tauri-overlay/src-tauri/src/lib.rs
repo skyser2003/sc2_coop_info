@@ -1,7 +1,7 @@
 use notify::{Config as NotifyConfig, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use rfd::FileDialog;
 use s2coop_analyzer::cache_overall_stats_generator::{
-    generate_cache_overall_stats_with_logger, serialize_cache_entries, CacheReplayEntry,
+    generate_cache_overall_stats_with_logger, write_cache_file, CacheReplayEntry,
     GenerateCacheConfig,
 };
 use s2coop_analyzer::detailed_replay_analysis::calculate_replay_hash;
@@ -3144,15 +3144,7 @@ fn persist_detailed_cache_entry_to_path(
             .then_with(|| right.file.cmp(&left.file))
     });
 
-    let payload = serialize_cache_entries(&entries)
-        .map_err(|error| format!("Failed to serialize detailed-analysis cache: {error}"))?;
-    std::fs::write(cache_path, payload).map_err(|error| {
-        format!(
-            "Failed to write detailed-analysis cache '{}': {error}",
-            cache_path.display()
-        )
-    })?;
-    Ok(())
+    write_cache_file(&entries, cache_path).map_err(|err| err.to_string())
 }
 
 fn persist_detailed_cache_entry(entry: &CacheReplayEntry) -> Result<(), String> {
