@@ -23,13 +23,13 @@ import type {
 
 const OVERLAY_STYLE_PATHS = ["/overlay/main.css"];
 const overlayHideFadeMs = 1000;
-const replayDisplayDurationMs = 60000;
-const playerWinrateHideMs = 12000;
+const playerStatsHideMs = 12000;
+const gameStatsHideMs = 60000;
 
 enum DisplayMode {
     None,
-    WinRate,
-    Stats,
+    PlayerStats,
+    GameStats,
 }
 
 type OverlayEventName =
@@ -313,7 +313,7 @@ export default function OverlayPage() {
         const nextPlayerPayload = options?.playerPayload ?? null;
 
         setPlayerStatPayload(
-            mode === DisplayMode.WinRate ? nextPlayerPayload : null,
+            mode === DisplayMode.PlayerStats ? nextPlayerPayload : null,
         );
         setDisplayMode({
             mode,
@@ -321,29 +321,31 @@ export default function OverlayPage() {
         });
     }
 
-    function toggleStatsDisplay(): void {
+    function toggleGameStatsDisplay(): void {
         setPlayerStatPayload(null);
         setDisplayMode((previousDisplayMode) => ({
             mode:
                 previousDisplayMode.mode === DisplayMode.None
-                    ? DisplayMode.Stats
+                    ? DisplayMode.GameStats
                     : DisplayMode.None,
             immediate: false,
         }));
     }
 
-    function toggleWinRateDisplay(
+    function togglePlayerStatsDisplay(
         payload: OverlayPlayerInfoPayload,
         immediate = true,
     ): void {
         setDisplayMode((previousDisplayMode) => {
-            const showingWinRate =
-                previousDisplayMode.mode === DisplayMode.WinRate;
+            const showingPlayerStats =
+                previousDisplayMode.mode === DisplayMode.PlayerStats;
 
-            setPlayerStatPayload(showingWinRate ? null : payload);
+            setPlayerStatPayload(showingPlayerStats ? null : payload);
 
             return {
-                mode: showingWinRate ? DisplayMode.None : DisplayMode.WinRate,
+                mode: showingPlayerStats
+                    ? DisplayMode.None
+                    : DisplayMode.PlayerStats,
                 immediate,
             };
         });
@@ -450,7 +452,7 @@ export default function OverlayPage() {
         }, 1000);
     }
 
-    function showPlayerWinrate(immediate = false): void {
+    function showPlayerStats(immediate = false): void {
         hideStatsPanel(immediate);
         setOverlayBackgroundVisible(false, true);
         setChartVisibility({
@@ -492,21 +494,21 @@ export default function OverlayPage() {
         setSessionDefeatCount(Number(payload.Defeat ?? 0));
     }
 
-    function showHidePlayerWinrateEventHandler({
+    function togglePlayerStatsEventHandler({
         payload,
     }: {
         payload: OverlayPlayerInfoPayload;
     }): void {
-        toggleWinRateDisplay(payload, true);
+        togglePlayerStatsDisplay(payload, true);
     }
 
-    function playerWinRateEventHandler({
+    function playerStatsOnGameStartEventHandler({
         payload,
     }: {
         payload: OverlayPlayerInfoPayload;
     }): void {
         setGameStatPayload(null);
-        requestDisplayTransition(DisplayMode.WinRate, {
+        requestDisplayTransition(DisplayMode.PlayerStats, {
             immediate: true,
             playerPayload: payload,
         });
@@ -530,16 +532,16 @@ export default function OverlayPage() {
         );
     }
 
-    function showStatsEventHandler(): void {
-        requestDisplayTransition(DisplayMode.Stats);
+    function showGameStatsEventHandler(): void {
+        requestDisplayTransition(DisplayMode.GameStats);
     }
 
-    function hideStatsEventHandler(): void {
+    function hideGameStatsEventHandler(): void {
         requestDisplayTransition(DisplayMode.None);
     }
 
-    function showHideEventHandler(): void {
-        toggleStatsDisplay();
+    function toggleOverlayEventHandler(): void {
+        toggleGameStatsDisplay();
     }
 
     function setShowChartsFromConfigEventHandler({
@@ -658,7 +660,7 @@ export default function OverlayPage() {
             }),
             listen<OverlayPlayerInfoPayload>(
                 OVERLAY_SHOW_HIDE_PLAYER_WINRATE_EVENT,
-                showHidePlayerWinrateEventHandler,
+                togglePlayerStatsEventHandler,
             ).then((unlisten) => {
                 tauriUnlistens[OVERLAY_SHOW_HIDE_PLAYER_WINRATE_EVENT]?.();
                 tauriUnlistens[OVERLAY_SHOW_HIDE_PLAYER_WINRATE_EVENT] =
@@ -666,7 +668,7 @@ export default function OverlayPage() {
             }),
             listen<OverlayPlayerInfoPayload>(
                 OVERLAY_PLAYER_WINRATE_EVENT,
-                playerWinRateEventHandler,
+                playerStatsOnGameStartEventHandler,
             ).then((unlisten) => {
                 tauriUnlistens[OVERLAY_PLAYER_WINRATE_EVENT]?.();
                 tauriUnlistens[OVERLAY_PLAYER_WINRATE_EVENT] = unlisten;
@@ -678,19 +680,19 @@ export default function OverlayPage() {
                 tauriUnlistens[OVERLAY_INIT_COLORS_DURATION_EVENT]?.();
                 tauriUnlistens[OVERLAY_INIT_COLORS_DURATION_EVENT] = unlisten;
             }),
-            listen(OVERLAY_SHOWSTATS_EVENT, showStatsEventHandler).then(
+            listen(OVERLAY_SHOWSTATS_EVENT, showGameStatsEventHandler).then(
                 (unlisten) => {
                     tauriUnlistens[OVERLAY_SHOWSTATS_EVENT]?.();
                     tauriUnlistens[OVERLAY_SHOWSTATS_EVENT] = unlisten;
                 },
             ),
-            listen(OVERLAY_HIDESTATS_EVENT, hideStatsEventHandler).then(
+            listen(OVERLAY_HIDESTATS_EVENT, hideGameStatsEventHandler).then(
                 (unlisten) => {
                     tauriUnlistens[OVERLAY_HIDESTATS_EVENT]?.();
                     tauriUnlistens[OVERLAY_HIDESTATS_EVENT] = unlisten;
                 },
             ),
-            listen(OVERLAY_SHOWHIDE_EVENT, showHideEventHandler).then(
+            listen(OVERLAY_SHOWHIDE_EVENT, toggleOverlayEventHandler).then(
                 (unlisten) => {
                     tauriUnlistens[OVERLAY_SHOWHIDE_EVENT]?.();
                     tauriUnlistens[OVERLAY_SHOWHIDE_EVENT] = unlisten;
@@ -773,10 +775,10 @@ export default function OverlayPage() {
             case DisplayMode.None:
                 hideOverlay(displayMode.immediate);
                 break;
-            case DisplayMode.WinRate:
-                showPlayerWinrate(displayMode.immediate);
+            case DisplayMode.PlayerStats:
+                showPlayerStats(displayMode.immediate);
                 break;
-            case DisplayMode.Stats:
+            case DisplayMode.GameStats:
                 showOverlay(displayMode.immediate);
                 break;
         }
@@ -789,7 +791,7 @@ export default function OverlayPage() {
         }
 
         const showTimer = setTimeout(() => {
-            requestDisplayTransition(DisplayMode.Stats);
+            requestDisplayTransition(DisplayMode.GameStats);
         }, 10);
 
         if (gameStatPayload.newReplay == null) {
@@ -810,7 +812,7 @@ export default function OverlayPage() {
 
                 setReplayDisplayClearTimer(clearTimer);
             },
-            Math.max(replayDisplayDurationMs - overlayHideFadeMs, 0),
+            Math.max(gameStatsHideMs - overlayHideFadeMs, 0),
         );
 
         setReplayExpiryTimer(expireTimer);
@@ -824,7 +826,7 @@ export default function OverlayPage() {
 
     useEffect(() => {
         if (
-            displayMode.mode !== DisplayMode.WinRate ||
+            displayMode.mode !== DisplayMode.PlayerStats ||
             playerStatPayload == null
         ) {
             return;
@@ -836,7 +838,7 @@ export default function OverlayPage() {
             });
 
             setPlayerStatPayload(null);
-        }, playerWinrateHideMs);
+        }, playerStatsHideMs);
 
         return () => {
             clearTimeout(hideTimer);
@@ -851,7 +853,7 @@ export default function OverlayPage() {
             <GameStatMode
                 payload={gameStatPayload}
                 chartVisibility={chartVisibility}
-                replayModeVisible={displayMode.mode === DisplayMode.Stats}
+                replayModeVisible={displayMode.mode === DisplayMode.GameStats}
                 showSessionStats={showSessionStats}
                 sessionVictoryCount={sessionVictoryCount}
                 sessionDefeatCount={sessionDefeatCount}
@@ -868,7 +870,7 @@ export default function OverlayPage() {
             />
             <PlayerStatMode
                 payload={playerStatPayload}
-                visible={displayMode.mode === DisplayMode.WinRate}
+                visible={displayMode.mode === DisplayMode.PlayerStats}
                 immediate={displayMode.immediate}
                 language={language}
                 overlayLanguageManager={overlayLanguageManager}
