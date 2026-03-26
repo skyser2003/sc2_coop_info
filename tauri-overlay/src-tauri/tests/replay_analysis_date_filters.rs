@@ -5,7 +5,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
 use sco_tauri_overlay::replay_analysis::{
     parse_replay_timestamp_seconds, replay_info_from_cache_entry, ReplayAnalysis,
 };
-use sco_tauri_overlay::{canonicalize_coop_map_id, ReplayInfo};
+use sco_tauri_overlay::ReplayInfo;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
