@@ -2242,7 +2242,7 @@
 .configPage.configPage :global(.mini-btn.is-active),
 .configPage.configPage :global(.stats-subtab-btn.is-active) {
     background: var(--config-button-selected-bg);
-    color: var(--config-link-text);
+    color: var(--config-button-selected-text);
 }
 
 .configPage.configPage :global(.selection-preview) {

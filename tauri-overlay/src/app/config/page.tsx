@@ -86,7 +86,9 @@ export default function ConfigPage({ onThemeModeChange }: ConfigPageProps) {
                     "--config-tab-active-bg": isDark ? "#111827" : "#ffffff",
                     "--config-tab-text": isDark ? "#9fb2c7" : "#526277",
                     "--config-tab-hover-text": isDark ? "#e5e7eb" : "#0f172a",
-                    "--config-tab-active-text": isDark ? "#dbeafe" : "#1d4ed8",
+                    "--config-tab-active-text": isDark
+                        ? theme.palette.primary.light
+                        : theme.palette.primary.dark,
                     "--config-chip-bg": isDark
                         ? "rgba(30, 41, 59, 0.9)"
                         : "#edf3fa",
@@ -107,6 +109,9 @@ export default function ConfigPage({ onThemeModeChange }: ConfigPageProps) {
                     "--config-button-selected-bg": isDark
                         ? theme.palette.primary.main
                         : "#dbeafe",
+                    "--config-button-selected-text": isDark
+                        ? theme.palette.primary.contrastText
+                        : theme.palette.primary.dark,
                     "--config-modal-backdrop": isDark
                         ? "rgb(2 6 23 / 72%)"
                         : "rgb(226 232 240 / 72%)",
