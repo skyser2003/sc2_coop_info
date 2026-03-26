@@ -5,7 +5,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     GenerateCacheConfig,
 };
 use s2coop_analyzer::detailed_replay_analysis::calculate_replay_hash;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{self, json, Map, Value};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io::{Read, Write};
@@ -828,14 +828,14 @@ pub fn orient_replay_for_main_names(
 }
 
 #[allow(dead_code)]
-#[derive(Clone, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Clone, Serialize, Default, PartialEq)]
 pub struct ReplayChatMessage {
     pub player: u8,
     pub text: String,
     pub time: f64,
 }
 
-#[derive(Clone, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Clone, Serialize, Default, PartialEq)]
 pub struct ReplayChatPayload {
     pub file: String,
     pub date: u64,
@@ -847,8 +847,7 @@ pub struct ReplayChatPayload {
 }
 
 #[allow(dead_code)]
-#[derive(Clone, Serialize, Deserialize, Default)]
-#[serde(default)]
+#[derive(Clone, Default)]
 pub struct ReplayInfo {
     pub file: String,
     pub date: u64,

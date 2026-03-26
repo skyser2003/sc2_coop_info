@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use ts_rs::TS;
@@ -7,21 +7,21 @@ fn as_u32(value: u64) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct LocalizedLabels {
     pub ko: Vec<String>,
     pub en: Vec<String>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct OverlayRandomizerCatalog {
     pub commander_mastery: BTreeMap<String, LocalizedLabels>,
     pub prestige_names: BTreeMap<String, LocalizedLabels>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct ReplayPlayerSeries {
     pub name: String,
@@ -31,7 +31,7 @@ pub struct ReplayPlayerSeries {
     pub mining: Vec<f64>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(untagged)]
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
 #[ts(untagged)]
@@ -45,7 +45,7 @@ pub type UnitStatsMap = BTreeMap<String, UnitStatsTuple>;
 pub type OverlayIconPayload = BTreeMap<String, OverlayIconValue>;
 pub type ReplayDataRecord = BTreeMap<String, ReplayPlayerSeries>;
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct OverlayReplayPayload {
     pub file: String,
@@ -119,7 +119,7 @@ pub struct OverlayReplayPayload {
     pub comp: String,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
 #[ts(tag = "kind", rename_all = "snake_case")]
@@ -141,7 +141,7 @@ pub enum OverlayPlayerInfoRow {
     },
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct OverlayPlayerInfoPayload {
     pub data: BTreeMap<String, OverlayPlayerInfoRow>,
