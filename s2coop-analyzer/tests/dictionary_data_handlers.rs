@@ -2,7 +2,7 @@ use s2coop_analyzer::dictionary_data;
 
 #[test]
 fn shared_dictionary_handlers_load_expected_dictionary_entries() {
-    let shared = dictionary_data::shared_dictionary_data()
+    let shared = dictionary_data::shared_dictionary_data(None)
         .expect("shared dictionary data should load from analyzer data");
     assert_eq!(
         shared

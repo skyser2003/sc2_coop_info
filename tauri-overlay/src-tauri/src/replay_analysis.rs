@@ -187,7 +187,7 @@ fn hidden_unit_stats_names() -> &'static HashSet<String> {
     HIDDEN_UNITS.get_or_init(|| cache_hidden_created_lost_units().unwrap_or_default())
 }
 
-fn sanitize_hidden_unit_stats(mut units: Value) -> Value {
+pub fn sanitize_hidden_unit_stats(mut units: Value) -> Value {
     let hidden_units = hidden_unit_stats_names();
     let Some(map) = units.as_object_mut() else {
         return units;
@@ -212,7 +212,7 @@ fn sanitize_hidden_unit_stats(mut units: Value) -> Value {
     units
 }
 
-fn collect_main_identity_lists<R>(
+pub fn collect_main_identity_lists<R>(
     replays: &[R],
     main_names: &HashSet<String>,
     main_handles: &HashSet<String>,
@@ -372,7 +372,7 @@ fn unix_seconds_from_ymdhms(
     u64::try_from(seconds_since_epoch).ok()
 }
 
-fn parse_replay_timestamp_seconds(value: &str) -> Option<u64> {
+pub fn parse_replay_timestamp_seconds(value: &str) -> Option<u64> {
     let parts = value
         .split(|ch: char| !ch.is_ascii_digit())
         .filter(|part| !part.is_empty())
@@ -500,7 +500,7 @@ fn bonus_objective_total_for_canonical_map(map_name: &str) -> Option<u64> {
     dictionary_data::bonus_objectives().get(map_name).copied()
 }
 
-fn bonus_objective_total_for_map_id(map_id: &str) -> Option<u64> {
+pub fn bonus_objective_total_for_map_id(map_id: &str) -> Option<u64> {
     coop_map_id_to_english(map_id)
         .as_ref()
         .and_then(|name| bonus_objective_total_for_canonical_map(name))
@@ -641,7 +641,7 @@ fn apply_replay_unit_count(target: &mut i64, hidden: &mut bool, value: ReplayUni
     }
 }
 
-fn append_units_to_rollup(
+pub fn append_units_to_rollup(
     side_rollup: &mut std::collections::BTreeMap<String, CommanderUnitRollup>,
     commander_name: &str,
     units_payload: &Value,
@@ -710,7 +710,7 @@ fn append_units_to_rollup(
     }
 }
 
-fn append_player_units_to_rollups(
+pub fn append_player_units_to_rollups(
     main_rollup: &mut std::collections::BTreeMap<String, CommanderUnitRollup>,
     ally_rollup: &mut std::collections::BTreeMap<String, CommanderUnitRollup>,
     commander_name: &str,
@@ -726,7 +726,7 @@ fn append_player_units_to_rollups(
     }
 }
 
-fn replay_info_from_cache_entry(entry: &CacheReplayEntry) -> ReplayInfo {
+pub fn replay_info_from_cache_entry(entry: &CacheReplayEntry) -> ReplayInfo {
     let player_one = cache_player(entry, 1);
     let player_two = cache_player(entry, 2);
     let slot1_name = cache_player_text(player_one, |player| player.name.as_ref());
@@ -989,11 +989,11 @@ fn unparsed_replay(path: &Path) -> ReplayInfo {
 pub struct ReplayAnalysis;
 
 impl ReplayAnalysis {
-    pub(crate) fn normalized_player_key(name: &str) -> String {
+    pub fn normalized_player_key(name: &str) -> String {
         sanitize_replay_text(name).trim().to_ascii_lowercase()
     }
 
-    pub(crate) fn normalized_handle_key(handle: &str) -> String {
+    pub fn normalized_handle_key(handle: &str) -> String {
         let normalized = sanitize_replay_text(handle).trim().to_ascii_lowercase();
         if normalized.contains("-s2-") {
             normalized
@@ -1939,7 +1939,7 @@ impl ReplayAnalysis {
         Self::rebuild_weeklies_rows_for_date(replays, Local::now().date_naive())
     }
 
-    fn rebuild_weeklies_rows_for_date(
+    pub fn rebuild_weeklies_rows_for_date(
         replays: &[ReplayInfo],
         current_date: NaiveDate,
     ) -> Vec<Value> {
@@ -2257,7 +2257,7 @@ impl ReplayAnalysis {
         }
     }
 
-    pub(crate) fn load_detailed_analysis_replays_snapshot_from_path(
+    pub fn load_detailed_analysis_replays_snapshot_from_path(
         cache_path: &Path,
         limit: usize,
         main_names: &HashSet<String>,
@@ -2881,7 +2881,6 @@ impl ReplayAnalysis {
             .collect()
     }
 
-    #[cfg(test)]
     pub fn filter_replays_for_stats(path: &str, replays: &[ReplayInfo]) -> Vec<ReplayInfo> {
         replays
             .iter()
@@ -2905,7 +2904,7 @@ impl ReplayAnalysis {
                 .is_some_and(|units| !units.is_empty())
     }
 
-    fn detailed_stats_counts(filtered_replays: &[&ReplayInfo]) -> (u64, u64) {
+    pub fn detailed_stats_counts(filtered_replays: &[&ReplayInfo]) -> (u64, u64) {
         let total_valid_files = filtered_replays.len() as u64;
         let detailed_parsed_count = filtered_replays
             .iter()
@@ -2914,7 +2913,7 @@ impl ReplayAnalysis {
         (detailed_parsed_count, total_valid_files)
     }
 
-    pub(crate) fn should_include_detailed_stats_response(
+    pub fn should_include_detailed_stats_response(
         response: &Value,
         cached_replays: &[ReplayInfo],
     ) -> bool {
@@ -3028,7 +3027,7 @@ impl ReplayAnalysis {
         }))
     }
 
-    fn stats_replays_for_response<'a>(
+    pub fn stats_replays_for_response<'a>(
         include_detailed: bool,
         cached_replays: &'a [ReplayInfo],
     ) -> Cow<'a, [ReplayInfo]> {
@@ -3047,7 +3046,7 @@ impl ReplayAnalysis {
         )
     }
 
-    fn stats_replays_for_response_from_path<'a>(
+    pub fn stats_replays_for_response_from_path<'a>(
         include_detailed: bool,
         cached_replays: &'a [ReplayInfo],
         cache_path: &Path,
@@ -3071,7 +3070,7 @@ impl ReplayAnalysis {
         }
     }
 
-    fn stats_source_replays_for_response<'a>(
+    pub fn stats_source_replays_for_response<'a>(
         path: &str,
         replays: &'a [ReplayInfo],
         current_replay_files: &HashSet<String>,
@@ -3135,47 +3134,3 @@ fn resolve_weekly_mutation_name(map_name: &str, mutators: &[String]) -> Option<S
 
     None
 }
-
-#[cfg(test)]
-#[path = "tests/replay_analysis.rs"]
-mod tests;
-
-#[cfg(test)]
-#[path = "tests/replay_analysis_detailed_cache.rs"]
-mod full_cache_tests;
-
-#[cfg(test)]
-#[path = "tests/replay_analysis_stats_source.rs"]
-mod stats_source_tests;
-
-#[cfg(test)]
-#[path = "tests/replay_analysis_date_filters.rs"]
-mod date_filter_tests;
-
-#[cfg(test)]
-#[path = "tests/replay_analysis_query_filters.rs"]
-mod query_filter_tests;
-
-#[cfg(test)]
-#[path = "tests/replay_analysis_difficulty_counts.rs"]
-mod difficulty_count_tests;
-
-#[cfg(test)]
-#[path = "tests/replay_analysis_unit_routing.rs"]
-mod unit_routing_tests;
-
-#[cfg(test)]
-#[path = "tests/replay_analysis_unit_casting.rs"]
-mod unit_casting_tests;
-
-#[cfg(test)]
-#[path = "tests/replay_analysis_stats_sanitization.rs"]
-mod stats_sanitization_tests;
-
-#[cfg(test)]
-#[path = "tests/replay_analysis_ally_sum.rs"]
-mod ally_sum_tests;
-
-#[cfg(test)]
-#[path = "tests/replay_analysis_weeklies.rs"]
-mod weeklies_tests;

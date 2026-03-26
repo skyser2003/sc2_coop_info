@@ -686,7 +686,8 @@ pub fn shared_dictionary_data(
     static DATA: OnceLock<Result<Sc2DictionaryData, DictionaryDataError>> = OnceLock::new();
 
     if DATA.get().is_none() {
-        let data = load_shared_dictionary_data_impl(&data_dir.unwrap());
+        let resolved_data_dir = data_dir.unwrap_or_else(|| PathBuf::from("./").join("data"));
+        let data = load_shared_dictionary_data_impl(&resolved_data_dir);
         let _ = DATA.set(data);
     }
 

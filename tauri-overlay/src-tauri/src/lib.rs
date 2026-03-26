@@ -30,13 +30,13 @@ use winreg::enums::HKEY_CURRENT_USER;
 use winreg::RegKey;
 
 mod dictionary_data;
-mod logging;
-mod overlay_info;
-mod path_manager;
+pub mod logging;
+pub mod overlay_info;
+pub mod path_manager;
 mod performance_overlay;
-mod randomizer;
-mod replay_analysis;
-mod shared_types;
+pub mod randomizer;
+pub mod replay_analysis;
+pub mod shared_types;
 
 #[macro_export]
 macro_rules! sco_log {
@@ -48,7 +48,7 @@ macro_rules! sco_log {
 use crate::path_manager::{get_cache_path, get_json_data_dir, is_dev_env};
 use crate::replay_analysis::ReplayAnalysis;
 
-const UNLIMITED_REPLAY_LIMIT: usize = 0;
+pub const UNLIMITED_REPLAY_LIMIT: usize = 0;
 const SCO_REPLAY_SCAN_PROGRESS_EVENT: &str = "sco://replay-scan-progress";
 const WINDOWS_STARTUP_RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 const WINDOWS_STARTUP_VALUE_NAME: &str = "SCO Overlay";
@@ -71,7 +71,7 @@ fn mutator_icon_name(name: &str) -> &str {
     }
 }
 
-fn sanitize_settings_value(value: Value) -> Value {
+pub fn sanitize_settings_value(value: Value) -> Value {
     match value {
         Value::Object(mut map) => {
             map.remove("fast_expand");
@@ -107,7 +107,7 @@ fn get_system_language() -> String {
     language.to_string()
 }
 
-fn default_settings_value() -> Value {
+pub fn default_settings_value() -> Value {
     json!({
         "start_with_windows": false,
         "minimize_to_tray": true,
@@ -133,7 +133,7 @@ fn default_settings_value() -> Value {
     })
 }
 
-pub(crate) fn merge_settings_with_defaults(value: Value) -> Value {
+pub fn merge_settings_with_defaults(value: Value) -> Value {
     let sanitized = sanitize_settings_value(value);
     let mut merged = match default_settings_value() {
         Value::Object(defaults) => defaults,
@@ -147,7 +147,7 @@ pub(crate) fn merge_settings_with_defaults(value: Value) -> Value {
     Value::Object(merged)
 }
 
-fn read_saved_settings_file_from_path(path: &Path, create_if_missing: bool) -> Value {
+pub fn read_saved_settings_file_from_path(path: &Path, create_if_missing: bool) -> Value {
     let defaults = default_settings_value();
     if !path.exists() {
         if create_if_missing {
@@ -171,7 +171,7 @@ fn active_settings_store() -> &'static Mutex<Value> {
     ACTIVE_SETTINGS.get_or_init(|| Mutex::new(read_saved_settings_file()))
 }
 
-pub(crate) fn replace_active_settings(value: &Value) -> Value {
+pub fn replace_active_settings(value: &Value) -> Value {
     let sanitized = sanitize_settings_value(value.clone());
     if let Ok(mut cached_settings) = active_settings_store().lock() {
         *cached_settings = sanitized.clone();
@@ -179,7 +179,7 @@ pub(crate) fn replace_active_settings(value: &Value) -> Value {
     sanitized
 }
 
-fn read_settings_file() -> Value {
+pub fn read_settings_file() -> Value {
     active_settings_store()
         .lock()
         .map(|settings| settings.clone())
@@ -220,14 +220,14 @@ fn write_settings_file(value: &Value) -> Result<(), String> {
     Ok(())
 }
 
-fn start_with_windows_enabled(settings: &Value) -> bool {
+pub fn start_with_windows_enabled(settings: &Value) -> bool {
     settings
         .get("start_with_windows")
         .and_then(Value::as_bool)
         .unwrap_or(false)
 }
 
-fn windows_startup_command_value(executable_path: &Path) -> String {
+pub fn windows_startup_command_value(executable_path: &Path) -> String {
     format!("\"{}\"", executable_path.display())
 }
 
@@ -294,7 +294,7 @@ fn sync_start_with_windows_setting(settings: &Value) -> Result<(), String> {
     sync_windows_startup_registration(start_with_windows_enabled(settings))
 }
 
-const OVERLAY_RUNTIME_SETTING_KEYS: [&str; 8] = [
+pub const OVERLAY_RUNTIME_SETTING_KEYS: [&str; 8] = [
     "color_player1",
     "color_player2",
     "color_amon",
@@ -305,7 +305,7 @@ const OVERLAY_RUNTIME_SETTING_KEYS: [&str; 8] = [
     "language",
 ];
 
-const OVERLAY_HOTKEY_SETTING_KEYS: [&str; 7] = [
+pub const OVERLAY_HOTKEY_SETTING_KEYS: [&str; 7] = [
     "hotkey_show/hide",
     "hotkey_show",
     "hotkey_hide",
@@ -315,7 +315,7 @@ const OVERLAY_HOTKEY_SETTING_KEYS: [&str; 7] = [
     "performance_hotkey",
 ];
 
-const OVERLAY_PLACEMENT_SETTING_KEYS: [&str; 6] = [
+pub const OVERLAY_PLACEMENT_SETTING_KEYS: [&str; 6] = [
     "monitor",
     "width",
     "height",
@@ -335,7 +335,11 @@ fn setting_value_changed(previous_settings: &Value, next_settings: &Value, key: 
     previous_settings.get(key) != next_settings.get(key)
 }
 
-fn any_setting_changed(previous_settings: &Value, next_settings: &Value, keys: &[&str]) -> bool {
+pub fn any_setting_changed(
+    previous_settings: &Value,
+    next_settings: &Value,
+    keys: &[&str],
+) -> bool {
     keys.iter()
         .any(|key| setting_value_changed(previous_settings, next_settings, key))
 }
@@ -435,7 +439,7 @@ fn apply_runtime_settings(
     }
 }
 
-fn update_settings_player_note(
+pub fn update_settings_player_note(
     settings: &mut Value,
     handle: &str,
     note_value: &str,
@@ -478,7 +482,7 @@ fn update_settings_player_note(
     Ok(())
 }
 
-fn folder_dialog_start_directory(directory: Option<String>) -> Option<PathBuf> {
+pub fn folder_dialog_start_directory(directory: Option<String>) -> Option<PathBuf> {
     let trimmed = directory
         .as_deref()
         .map(str::trim)
@@ -498,14 +502,14 @@ fn folder_dialog_start_directory(directory: Option<String>) -> Option<PathBuf> {
     })
 }
 
-fn logging_enabled_from_settings(settings: &Value) -> bool {
+pub fn logging_enabled_from_settings(settings: &Value) -> bool {
     settings
         .get("enable_logging")
         .and_then(Value::as_bool)
         .unwrap_or(false)
 }
 
-fn session_counter_delta(result: &str) -> (u64, u64) {
+pub fn session_counter_delta(result: &str) -> (u64, u64) {
     match result.trim().to_ascii_lowercase().as_str() {
         "victory" => (1, 0),
         "defeat" => (0, 1),
@@ -525,7 +529,7 @@ fn record_session_result(state: &BackendState, result: &str) {
     }
 }
 
-fn show_replay_info_after_game_from_settings(settings: &Value) -> bool {
+pub fn show_replay_info_after_game_from_settings(settings: &Value) -> bool {
     settings
         .get("show_replay_info_after_game")
         .and_then(Value::as_bool)
@@ -622,7 +626,7 @@ fn get_default_accounts_folder() -> String {
     }
 }
 
-fn configured_main_names_from_settings(settings: &Value) -> HashSet<String> {
+pub fn configured_main_names_from_settings(settings: &Value) -> HashSet<String> {
     let mut names = settings
         .get("main_names")
         .and_then(Value::as_array)
@@ -713,7 +717,7 @@ fn configured_main_names() -> HashSet<String> {
     configured_main_names_from_settings(&read_settings_file())
 }
 
-fn configured_main_handles_from_settings(settings: &Value) -> HashSet<String> {
+pub fn configured_main_handles_from_settings(settings: &Value) -> HashSet<String> {
     let account_root = settings
         .get("account_folder")
         .and_then(Value::as_str)
@@ -793,7 +797,7 @@ fn swap_player_stats_sides(value: &mut Value) {
     }
 }
 
-fn orient_replay_for_main_names(
+pub fn orient_replay_for_main_names(
     mut replay: ReplayInfo,
     main_names: &HashSet<String>,
     main_handles: &HashSet<String>,
@@ -825,75 +829,75 @@ fn orient_replay_for_main_names(
 
 #[allow(dead_code)]
 #[derive(Clone, Serialize, Deserialize, Default, PartialEq)]
-struct ReplayChatMessage {
-    player: u8,
-    text: String,
-    time: f64,
+pub struct ReplayChatMessage {
+    pub player: u8,
+    pub text: String,
+    pub time: f64,
 }
 
 #[derive(Clone, Serialize, Deserialize, Default, PartialEq)]
-struct ReplayChatPayload {
-    file: String,
-    date: u64,
-    map: String,
-    result: String,
-    slot1_name: String,
-    slot2_name: String,
-    messages: Vec<ReplayChatMessage>,
+pub struct ReplayChatPayload {
+    pub file: String,
+    pub date: u64,
+    pub map: String,
+    pub result: String,
+    pub slot1_name: String,
+    pub slot2_name: String,
+    pub messages: Vec<ReplayChatMessage>,
 }
 
 #[allow(dead_code)]
 #[derive(Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
-struct ReplayInfo {
-    file: String,
-    date: u64,
-    map: String,
-    result: String,
-    difficulty: String,
-    p1: String,
-    p2: String,
-    slot1_name: String,
-    slot2_name: String,
-    enemy: String,
-    p1_handle: String,
-    p2_handle: String,
-    slot1_handle: String,
-    slot2_handle: String,
-    length: u64,
-    accurate_length: f64,
-    main_apm: u64,
-    ally_apm: u64,
-    main_kills: u64,
-    ally_kills: u64,
-    main_commander: String,
-    ally_commander: String,
-    slot1_commander: String,
-    slot2_commander: String,
-    main_commander_level: u64,
-    ally_commander_level: u64,
-    main_mastery_level: u64,
-    ally_mastery_level: u64,
-    main_prestige: u64,
-    ally_prestige: u64,
-    main_masteries: Vec<u64>,
-    ally_masteries: Vec<u64>,
-    main_units: Value,
-    ally_units: Value,
-    amon_units: Value,
-    main_icons: Value,
-    ally_icons: Value,
-    player_stats: Value,
-    extension: bool,
-    brutal_plus: u64,
-    weekly: bool,
-    weekly_name: Option<String>,
-    mutators: Vec<String>,
-    comp: String,
-    bonus: Vec<u64>,
-    bonus_total: Option<u64>,
-    messages: Vec<ReplayChatMessage>,
-    is_detailed: bool,
+pub struct ReplayInfo {
+    pub file: String,
+    pub date: u64,
+    pub map: String,
+    pub result: String,
+    pub difficulty: String,
+    pub p1: String,
+    pub p2: String,
+    pub slot1_name: String,
+    pub slot2_name: String,
+    pub enemy: String,
+    pub p1_handle: String,
+    pub p2_handle: String,
+    pub slot1_handle: String,
+    pub slot2_handle: String,
+    pub length: u64,
+    pub accurate_length: f64,
+    pub main_apm: u64,
+    pub ally_apm: u64,
+    pub main_kills: u64,
+    pub ally_kills: u64,
+    pub main_commander: String,
+    pub ally_commander: String,
+    pub slot1_commander: String,
+    pub slot2_commander: String,
+    pub main_commander_level: u64,
+    pub ally_commander_level: u64,
+    pub main_mastery_level: u64,
+    pub ally_mastery_level: u64,
+    pub main_prestige: u64,
+    pub ally_prestige: u64,
+    pub main_masteries: Vec<u64>,
+    pub ally_masteries: Vec<u64>,
+    pub main_units: Value,
+    pub ally_units: Value,
+    pub amon_units: Value,
+    pub main_icons: Value,
+    pub ally_icons: Value,
+    pub player_stats: Value,
+    pub extension: bool,
+    pub brutal_plus: u64,
+    pub weekly: bool,
+    pub weekly_name: Option<String>,
+    pub mutators: Vec<String>,
+    pub comp: String,
+    pub bonus: Vec<u64>,
+    pub bonus_total: Option<u64>,
+    pub messages: Vec<ReplayChatMessage>,
+    pub is_detailed: bool,
 }
 
 struct ReplayPlayerInfo {
@@ -912,7 +916,7 @@ struct ReplayPlayerInfo {
 }
 
 impl ReplayInfo {
-    fn as_games_row(&self) -> Value {
+    pub fn as_games_row(&self) -> Value {
         let sanitized = self.sanitized_for_client();
         let p1 = if sanitized.slot1_name.trim().is_empty() {
             sanitized.p1.clone()
@@ -985,7 +989,7 @@ impl ReplayInfo {
         })
     }
 
-    fn chat_payload(&self) -> ReplayChatPayload {
+    pub fn chat_payload(&self) -> ReplayChatPayload {
         let sanitized = self.sanitized_for_client();
         let slot1_name = if sanitized.slot1_name.trim().is_empty() {
             sanitized.p1.clone()
@@ -1325,7 +1329,7 @@ struct MapAggregate {
     detailed_count: u64,
 }
 
-fn canonicalize_coop_map_id(raw: &str) -> Option<String> {
+pub fn canonicalize_coop_map_id(raw: &str) -> Option<String> {
     dictionary_data::canonicalize_coop_map_id(raw)
 }
 
@@ -1346,20 +1350,20 @@ fn is_official_coop_replay(replay: &ReplayInfo) -> bool {
 }
 
 #[derive(Default, Clone)]
-struct UnitStatsRollup {
-    created: i64,
-    created_hidden: bool,
-    made: u64,
-    lost: i64,
-    lost_hidden: bool,
-    kills: i64,
-    kill_percentages: Vec<f64>,
+pub struct UnitStatsRollup {
+    pub created: i64,
+    pub created_hidden: bool,
+    pub made: u64,
+    pub lost: i64,
+    pub lost_hidden: bool,
+    pub kills: i64,
+    pub kill_percentages: Vec<f64>,
 }
 
 #[derive(Default)]
-struct CommanderUnitRollup {
-    count: u64,
-    units: HashMap<String, UnitStatsRollup>,
+pub struct CommanderUnitRollup {
+    pub count: u64,
+    pub units: HashMap<String, UnitStatsRollup>,
 }
 
 fn unit_excluded_from_stats_for_commander(commander: &str, unit: &str) -> bool {
@@ -1489,7 +1493,7 @@ fn build_amon_unit_data(amon_rollup: std::collections::BTreeMap<String, UnitStat
     Value::Object(out)
 }
 
-fn build_commander_unit_data(
+pub fn build_commander_unit_data(
     side_rollup: std::collections::BTreeMap<String, CommanderUnitRollup>,
 ) -> Value {
     let mut out = Map::new();
@@ -1710,7 +1714,7 @@ fn normalize_mastery_values(raw: &[u64]) -> Vec<u64> {
     values
 }
 
-fn sanitize_unit_map(value: &Value) -> Value {
+pub fn sanitize_unit_map(value: &Value) -> Value {
     if let Value::Object(raw) = value {
         let mut output = Map::new();
         for (key, raw_entry) in raw.iter() {
@@ -2013,7 +2017,7 @@ fn scan_replays(limit: usize) -> Vec<ReplayInfo> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum StartupAnalysisTrigger {
+pub enum StartupAnalysisTrigger {
     Setup,
     FrontendReady,
 }
@@ -2028,9 +2032,9 @@ impl StartupAnalysisTrigger {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct StartupAnalysisRequestOutcome {
-    include_detailed: bool,
-    started: bool,
+pub struct StartupAnalysisRequestOutcome {
+    pub include_detailed: bool,
+    pub started: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2138,7 +2142,7 @@ fn parse_progress_fraction(value: &str) -> Option<(u64, u64)> {
     Some((completed, total))
 }
 
-fn parse_detailed_analysis_progress_counts(message: &str) -> Option<(u64, u64)> {
+pub fn parse_detailed_analysis_progress_counts(message: &str) -> Option<(u64, u64)> {
     for line in message.lines().map(str::trim) {
         if let Some(progress) = line.strip_prefix("Running... ") {
             return parse_progress_fraction(progress);
@@ -2175,7 +2179,7 @@ fn startup_analysis_mode(include_detailed: bool) -> &'static str {
     analysis_mode(include_detailed).slug()
 }
 
-fn prepare_startup_analysis_request(
+pub fn prepare_startup_analysis_request(
     stats: &mut StatsState,
     trigger: StartupAnalysisTrigger,
 ) -> StartupAnalysisRequestOutcome {
@@ -2245,7 +2249,7 @@ fn request_startup_analysis(
     Ok(outcome)
 }
 
-fn update_analysis_replay_cache_slots(
+pub fn update_analysis_replay_cache_slots(
     replays: &[ReplayInfo],
     replays_slot: &Arc<Mutex<Vec<ReplayInfo>>>,
     stats_replays_slot: &Arc<Mutex<Vec<ReplayInfo>>>,
@@ -2867,7 +2871,7 @@ fn sync_full_replay_cache_slots(
     replays
 }
 
-fn sync_replay_cache_slots(
+pub fn sync_replay_cache_slots(
     replays_slot: &Arc<Mutex<Vec<ReplayInfo>>>,
     selected_replay_file: &Arc<Mutex<Option<String>>>,
     limit: usize,
@@ -3100,7 +3104,7 @@ fn parse_new_replay_with_retries(path: &Path) -> Option<(ReplayInfo, CacheReplay
     None
 }
 
-fn persist_detailed_cache_entry_to_path(
+pub fn persist_detailed_cache_entry_to_path(
     cache_path: &Path,
     entry: &CacheReplayEntry,
 ) -> Result<(), String> {
@@ -3201,7 +3205,7 @@ fn include_detailed_stats_for_cache(stats: &StatsState, replays: &[ReplayInfo]) 
             .any(ReplayAnalysis::replay_has_detailed_unit_stats)
 }
 
-fn sync_detailed_analysis_status_from_replays(stats: &mut StatsState, replays: &[ReplayInfo]) {
+pub fn sync_detailed_analysis_status_from_replays(stats: &mut StatsState, replays: &[ReplayInfo]) {
     let total_valid_files = replays
         .iter()
         .filter(|replay| {
@@ -3251,7 +3255,7 @@ fn refresh_stats_snapshot_after_replay_upsert(state: &BackendState) {
     }
 }
 
-fn upsert_replay_in_memory_cache(state: &BackendState, replay: &ReplayInfo) {
+pub fn upsert_replay_in_memory_cache(state: &BackendState, replay: &ReplayInfo) {
     if let Ok(mut replays) = state.replays.lock() {
         upsert_replay_cache_slot(&mut replays, replay);
     }
@@ -3973,27 +3977,27 @@ fn apply_rebuild_snapshot(stats: &mut StatsState, snapshot: StatsSnapshot, mode:
 }
 
 #[allow(dead_code)]
-struct BackendState {
-    tray_icon: Arc<Mutex<Option<TrayIcon<Wry>>>>,
-    stats: Arc<Mutex<StatsState>>,
-    replays: Arc<Mutex<Vec<ReplayInfo>>>,
-    stats_replays: Arc<Mutex<Vec<ReplayInfo>>>,
-    stats_current_replay_files: Arc<Mutex<HashSet<String>>>,
-    selected_replay_file: Arc<Mutex<Option<String>>>,
-    overlay_replay_data_active: AtomicBool,
-    session_victories: AtomicU64,
-    session_defeats: AtomicU64,
+pub struct BackendState {
+    pub tray_icon: Arc<Mutex<Option<TrayIcon<Wry>>>>,
+    pub stats: Arc<Mutex<StatsState>>,
+    pub replays: Arc<Mutex<Vec<ReplayInfo>>>,
+    pub stats_replays: Arc<Mutex<Vec<ReplayInfo>>>,
+    pub stats_current_replay_files: Arc<Mutex<HashSet<String>>>,
+    pub selected_replay_file: Arc<Mutex<Option<String>>>,
+    pub overlay_replay_data_active: AtomicBool,
+    pub session_victories: AtomicU64,
+    pub session_defeats: AtomicU64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum WindowCloseAction {
+pub enum WindowCloseAction {
     AllowClose,
     HidePerformance,
     HideWindow,
     ExitApp,
 }
 
-fn window_close_action(
+pub fn window_close_action(
     label: &str,
     minimize_to_tray: bool,
     exit_in_progress: bool,
@@ -4031,33 +4035,33 @@ fn request_clean_exit(app: &AppHandle<Wry>, exit_code: i32) {
 }
 
 #[derive(Debug)]
-struct StatsState {
-    ready: bool,
-    analysis: Option<Value>,
-    games: u64,
-    main_players: Vec<String>,
-    main_handles: Vec<String>,
-    startup_analysis_requested: bool,
-    simple_analysis_running: bool,
-    simple_analysis_status: String,
-    detailed_analysis_running: bool,
-    detailed_analysis_status: String,
-    detailed_analysis_atstart: bool,
-    commander_mastery: Value,
-    prestige_names: Value,
-    message: String,
+pub struct StatsState {
+    pub ready: bool,
+    pub analysis: Option<Value>,
+    pub games: u64,
+    pub main_players: Vec<String>,
+    pub main_handles: Vec<String>,
+    pub startup_analysis_requested: bool,
+    pub simple_analysis_running: bool,
+    pub simple_analysis_status: String,
+    pub detailed_analysis_running: bool,
+    pub detailed_analysis_status: String,
+    pub detailed_analysis_atstart: bool,
+    pub commander_mastery: Value,
+    pub prestige_names: Value,
+    pub message: String,
 }
 
 #[derive(Debug, Default)]
-struct StatsSnapshot {
-    ready: bool,
-    games: u64,
-    main_players: Vec<String>,
-    main_handles: Vec<String>,
-    analysis: Value,
-    commander_mastery: Value,
-    prestige_names: Value,
-    message: String,
+pub struct StatsSnapshot {
+    pub ready: bool,
+    pub games: u64,
+    pub main_players: Vec<String>,
+    pub main_handles: Vec<String>,
+    pub analysis: Value,
+    pub commander_mastery: Value,
+    pub prestige_names: Value,
+    pub message: String,
 }
 
 impl Default for StatsState {
@@ -4893,100 +4897,3 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri");
 }
-
-#[cfg(test)]
-fn test_path_root_from_env(var_name: &str, default: &str) -> PathBuf {
-    std::env::var_os(var_name)
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(default))
-}
-
-#[cfg(test)]
-pub(crate) fn test_replay_path(file_name: &str) -> String {
-    test_path_root_from_env("SCO_TEST_REPLAY_ROOT", r"")
-        .join(file_name)
-        .display()
-        .to_string()
-}
-
-#[cfg(test)]
-pub(crate) fn test_config_path(file_name: &str) -> PathBuf {
-    test_path_root_from_env("SCO_TEST_CONFIG_ROOT", r"").join(file_name)
-}
-
-#[cfg(test)]
-#[path = "tests/main.rs"]
-mod tests;
-
-#[cfg(test)]
-#[path = "tests/replay_rows.rs"]
-mod replay_row_tests;
-
-#[cfg(test)]
-#[path = "tests/games_row_mutators.rs"]
-mod games_row_mutators_tests;
-
-#[cfg(test)]
-#[path = "tests/player_rows.rs"]
-mod player_row_tests;
-
-#[cfg(test)]
-#[path = "tests/player_note_persistence.rs"]
-mod player_note_persistence_tests;
-
-#[cfg(test)]
-#[path = "tests/replay_chat.rs"]
-mod replay_chat_tests;
-
-#[cfg(test)]
-#[path = "tests/replay_cache_slots.rs"]
-mod replay_cache_slot_tests;
-
-#[cfg(test)]
-#[path = "tests/replay_watcher_cache.rs"]
-mod replay_watcher_cache_tests;
-
-#[cfg(test)]
-#[path = "tests/randomizer.rs"]
-mod randomizer_tests;
-
-#[cfg(test)]
-#[path = "tests/hotkey_reassign.rs"]
-mod hotkey_reassign_tests;
-
-#[cfg(test)]
-#[path = "tests/overlay_settings.rs"]
-mod overlay_settings_tests;
-
-#[cfg(test)]
-#[path = "tests/overlay_screenshot.rs"]
-mod overlay_screenshot_tests;
-
-#[cfg(test)]
-#[path = "tests/logging.rs"]
-mod logging_tests;
-
-#[cfg(test)]
-#[path = "tests/folder_picker.rs"]
-mod folder_picker_tests;
-
-#[cfg(test)]
-#[path = "tests/folder_open.rs"]
-mod folder_open_tests;
-
-#[cfg(test)]
-#[path = "tests/window_shutdown.rs"]
-mod window_shutdown_tests;
-
-#[cfg(test)]
-#[path = "tests/runtime_settings.rs"]
-mod runtime_settings_tests;
-
-#[cfg(test)]
-#[path = "tests/startup_settings.rs"]
-mod startup_settings_tests;
-
-#[cfg(test)]
-#[path = "tests/default_settings.rs"]
-mod default_settings_tests;

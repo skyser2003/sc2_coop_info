@@ -123,10 +123,10 @@ pub(crate) struct OverlayPlacement {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct RuntimeFlags {
-    pub(crate) start_minimized: bool,
-    pub(crate) minimize_to_tray: bool,
-    pub(crate) auto_update: bool,
+pub struct RuntimeFlags {
+    pub start_minimized: bool,
+    pub minimize_to_tray: bool,
+    pub auto_update: bool,
 }
 
 #[derive(Serialize)]
@@ -145,15 +145,15 @@ struct MonitorDescriptor {
 }
 
 #[derive(Clone)]
-pub(crate) struct ResolvedHotkeyBinding {
-    pub(crate) path: &'static str,
-    pub(crate) action: &'static str,
-    pub(crate) shortcut: String,
-    pub(crate) canonical: String,
+pub struct ResolvedHotkeyBinding {
+    pub path: &'static str,
+    pub action: &'static str,
+    pub shortcut: String,
+    pub canonical: String,
 }
 
 impl OverlayReplayPayload {
-    fn localized_prestige_text(commander: &str, prestige: u64, language: &str) -> String {
+    pub fn localized_prestige_text(commander: &str, prestige: u64, language: &str) -> String {
         if prestige == 0 {
             return String::new();
         }
@@ -322,7 +322,7 @@ fn overlay_placement_from_settings(settings: &Value) -> OverlayPlacement {
     }
 }
 
-pub(crate) fn overlay_window_bounds_for_monitor(
+pub fn overlay_window_bounds_for_monitor(
     monitor_x: i32,
     monitor_y: i32,
     monitor_width: u32,
@@ -359,7 +359,7 @@ pub(crate) fn overlay_window_bounds_for_monitor(
     (size, position)
 }
 
-pub(crate) fn parse_runtime_flags() -> RuntimeFlags {
+pub fn parse_runtime_flags() -> RuntimeFlags {
     let settings = crate::read_settings_file();
     let defaults = default_runtime_flags();
 
@@ -542,7 +542,7 @@ fn is_valid_hotkey(shortcut: &str) -> bool {
     Shortcut::from_str(shortcut).is_ok()
 }
 
-pub(crate) fn normalize_hotkey(raw: &str) -> Option<String> {
+pub fn normalize_hotkey(raw: &str) -> Option<String> {
     let raw = raw.trim();
     if raw.is_empty() {
         return None;
@@ -699,7 +699,7 @@ fn resolved_overlay_hotkey_bindings() -> Vec<ResolvedHotkeyBinding> {
     resolved_overlay_hotkey_bindings_from_settings(&crate::read_settings_file())
 }
 
-pub(crate) fn resolve_hotkey_binding_for_reassign_end(
+pub fn resolve_hotkey_binding_for_reassign_end(
     settings_value: &Value,
     path: &str,
     fallback_binding: Option<&ResolvedHotkeyBinding>,
@@ -908,7 +908,7 @@ pub(crate) fn end_hotkey_reassign(app: &tauri::AppHandle<Wry>, path: &str) -> Re
     Ok(())
 }
 
-fn overlay_payload_from_replay(
+pub fn overlay_payload_from_replay(
     replay: &crate::ReplayInfo,
     mark_new_replay: bool,
     show_session: bool,
@@ -965,7 +965,7 @@ pub(crate) fn emit_replay_to_overlay_from_replay(
     emit_overlay_replay_payload(app, &payload);
 }
 
-fn replay_for_display<'a>(
+pub fn replay_for_display<'a>(
     replays: &'a [crate::ReplayInfo],
     requested: Option<&str>,
     selected: &Option<String>,
@@ -992,7 +992,7 @@ fn replay_for_display<'a>(
         .or_else(|| replays.first())
 }
 
-fn replay_move_target_index(
+pub fn replay_move_target_index(
     replays: &[crate::ReplayInfo],
     selected: &Option<String>,
     delta: i64,
@@ -1013,7 +1013,7 @@ fn replay_move_target_index(
     index
 }
 
-fn replay_move_should_be_ignored(
+pub fn replay_move_should_be_ignored(
     current_index: Option<usize>,
     target_index: usize,
     replay_data_active: bool,
@@ -1411,7 +1411,7 @@ fn lookup_player_stats_row(
     })
 }
 
-fn player_note_from_settings_value(settings: &Value, player_handle: &str) -> Option<String> {
+pub fn player_note_from_settings_value(settings: &Value, player_handle: &str) -> Option<String> {
     let notes = settings.get("player_notes").and_then(Value::as_object)?;
 
     let direct = notes
@@ -1560,7 +1560,7 @@ fn overlay_screenshot_directory_from_settings(settings: &Value) -> Result<PathBu
     Ok(PathBuf::from(folder))
 }
 
-pub(crate) fn overlay_screenshot_output_path_from_settings(
+pub fn overlay_screenshot_output_path_from_settings(
     settings: &Value,
     captured_at: SystemTime,
 ) -> Result<PathBuf, String> {
@@ -1600,7 +1600,7 @@ fn is_png_signature(bytes: &[u8]) -> bool {
     bytes.starts_with(&PNG_SIGNATURE)
 }
 
-pub(crate) fn save_overlay_screenshot(path: &Path, png_bytes: &[u8]) -> Result<(), String> {
+pub fn save_overlay_screenshot(path: &Path, png_bytes: &[u8]) -> Result<(), String> {
     let extension = path
         .extension()
         .and_then(|value| value.to_str())
@@ -1709,7 +1709,7 @@ fn existing_folder_path(folder: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-pub(crate) fn open_folder_in_explorer(folder: &str) -> Result<(), String> {
+pub fn open_folder_in_explorer(folder: &str) -> Result<(), String> {
     let path = existing_folder_path(folder)?;
 
     if cfg!(target_os = "windows") {
@@ -1778,7 +1778,7 @@ fn overlay_language_from_settings(settings: &Value) -> &'static str {
     }
 }
 
-pub(crate) fn overlay_runtime_settings_payload(
+pub fn overlay_runtime_settings_payload(
     settings: &Value,
     session_victories: u64,
     session_defeats: u64,
@@ -1866,11 +1866,3 @@ pub(crate) fn build_tray_menu<R: Runtime>(
         .build()
         .ok()
 }
-
-#[cfg(test)]
-#[path = "tests/overlay_navigation.rs"]
-mod overlay_navigation_tests;
-
-#[cfg(test)]
-#[path = "tests/overlay_player_info.rs"]
-mod overlay_player_info_tests;

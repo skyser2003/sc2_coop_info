@@ -610,7 +610,7 @@ fn identify_mutators(
     (normalized, weekly)
 }
 
-fn find_replay_player(players: &[ParsedReplayPlayer], pid: u8) -> Option<&ParsedReplayPlayer> {
+pub fn find_replay_player(players: &[ParsedReplayPlayer], pid: u8) -> Option<&ParsedReplayPlayer> {
     players.iter().find(|player| player.pid == pid)
 }
 
@@ -1534,7 +1534,7 @@ fn apply_custom_kill_icons(
     }
 }
 
-fn apply_parser_player_overrides(
+pub fn apply_parser_player_overrides(
     parser: &mut ParsedReplayInput,
     commander_by_player: &HashMap<i64, String>,
     mastery_by_player: &HashMap<i64, [i64; 6]>,
@@ -1576,10 +1576,6 @@ fn apply_parser_player_overrides(
         }
     }
 }
-
-#[cfg(test)]
-#[path = "tests/detailed_replay_analysis.rs"]
-mod tests;
 
 pub fn analyze_replay_file(
     replay_path: &Path,

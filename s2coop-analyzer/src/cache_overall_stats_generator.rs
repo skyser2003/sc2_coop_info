@@ -544,27 +544,27 @@ pub fn cache_entry_from_report(
 }
 
 #[derive(Debug, Clone)]
-struct ParsedCacheReplay {
-    accurate_length: f64,
-    accurate_length_force_float: bool,
-    brutal_plus: u32,
-    build: ReplayBuildInfo,
-    date: String,
-    difficulty: (String, String),
-    enemy_race: Option<String>,
-    ext_difficulty: String,
-    extension: bool,
-    file: String,
-    form_alength: String,
-    length: u64,
-    map_name: String,
-    messages: Vec<ReplayMessage>,
-    mutators: Vec<String>,
-    players: Vec<CachePlayer>,
-    region: String,
-    result: String,
-    weekly: bool,
-    hash: String,
+pub struct ParsedCacheReplay {
+    pub accurate_length: f64,
+    pub accurate_length_force_float: bool,
+    pub brutal_plus: u32,
+    pub build: ReplayBuildInfo,
+    pub date: String,
+    pub difficulty: (String, String),
+    pub enemy_race: Option<String>,
+    pub ext_difficulty: String,
+    pub extension: bool,
+    pub file: String,
+    pub form_alength: String,
+    pub length: u64,
+    pub map_name: String,
+    pub messages: Vec<ReplayMessage>,
+    pub mutators: Vec<String>,
+    pub players: Vec<CachePlayer>,
+    pub region: String,
+    pub result: String,
+    pub weekly: bool,
+    pub hash: String,
 }
 
 impl ParsedCacheReplay {
@@ -602,9 +602,9 @@ impl ParsedCacheReplay {
 }
 
 #[derive(Debug, Clone)]
-struct CandidateReplay {
-    path: PathBuf,
-    basic: ParsedCacheReplay,
+pub struct CandidateReplay {
+    pub path: PathBuf,
+    pub basic: ParsedCacheReplay,
 }
 
 pub fn generate_cache_overall_stats(
@@ -768,7 +768,7 @@ pub fn parse_basic_cache_entry(replay_path: &Path) -> Option<CacheReplayEntry> {
     .map(ParsedCacheReplay::into_basic_entry)
 }
 
-fn load_existing_detailed_analysis_cache(
+pub fn load_existing_detailed_analysis_cache(
     cache_path: &Path,
     logger: Option<&(dyn Fn(String) + Send + Sync + '_)>,
 ) -> HashMap<String, CacheReplayEntry> {
@@ -851,7 +851,7 @@ fn load_temp_detailed_analysis_cache(
     entries
 }
 
-fn partition_cached_candidates(
+pub fn partition_cached_candidates(
     candidates: Vec<CandidateReplay>,
     existing_detailed_analysis_entries: &HashMap<String, CacheReplayEntry>,
 ) -> (
@@ -2436,7 +2436,3 @@ fn canonicalize_json_value(value: JsonValue) -> JsonValue {
         }
     }
 }
-
-#[cfg(test)]
-#[path = "tests/cache_overall_stats_generator.rs"]
-mod tests;

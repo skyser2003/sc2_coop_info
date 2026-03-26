@@ -209,7 +209,7 @@ impl TestCacheOverallStatsDetailedAnalysisError {
     }
 }
 
-pub(crate) fn runtime_root() -> PathBuf {
+pub fn runtime_root() -> PathBuf {
     let manifest_dir_str = std::env::var("CARGO_MANIFEST_DIR");
 
     match manifest_dir_str {
@@ -226,7 +226,7 @@ pub(crate) fn runtime_root() -> PathBuf {
     }
 }
 
-pub(crate) fn repo_root() -> PathBuf {
+pub fn repo_root() -> PathBuf {
     runtime_root()
         .parent()
         .expect("crate manifest directory should have repo root parent")

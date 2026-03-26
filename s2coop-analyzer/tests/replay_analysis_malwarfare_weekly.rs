@@ -5,7 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-use crate::cache_overall_stats_detailed_analysis::repo_root;
+use s2coop_analyzer::cache_overall_stats_detailed_analysis::repo_root;
 
 fn read_env_file_value(env_file: &Path, key: &str) -> Option<String> {
     let content = fs::read_to_string(env_file).ok()?;

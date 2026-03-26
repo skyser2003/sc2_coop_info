@@ -1,0 +1,77 @@
+use sco_tauri_overlay::{overlay_info, *};
+use serde_json::json;
+
+#[test]
+fn runtime_setting_diff_ignores_color_updates_for_hotkeys_and_placement() {
+    let previous = json!({
+        "color_player1": "#0080F8",
+        "hotkey_show/hide": "Ctrl+Shift+*",
+        "width": 0.7,
+    });
+    let next = json!({
+        "color_player1": "#FF0000",
+        "hotkey_show/hide": "Ctrl+Shift+*",
+        "width": 0.7,
+    });
+
+    assert!(any_setting_changed(
+        &previous,
+        &next,
+        &OVERLAY_RUNTIME_SETTING_KEYS,
+    ));
+    assert!(!any_setting_changed(
+        &previous,
+        &next,
+        &OVERLAY_HOTKEY_SETTING_KEYS,
+    ));
+    assert!(!any_setting_changed(
+        &previous,
+        &next,
+        &OVERLAY_PLACEMENT_SETTING_KEYS,
+    ));
+}
+
+#[test]
+fn runtime_setting_diff_detects_hotkey_and_placement_changes() {
+    let previous = json!({
+        "hotkey_show/hide": "Ctrl+Shift+*",
+        "width": 0.7,
+    });
+    let next = json!({
+        "hotkey_show/hide": "Ctrl+Shift+P",
+        "width": 0.9,
+    });
+
+    assert!(any_setting_changed(
+        &previous,
+        &next,
+        &OVERLAY_HOTKEY_SETTING_KEYS,
+    ));
+    assert!(any_setting_changed(
+        &previous,
+        &next,
+        &OVERLAY_PLACEMENT_SETTING_KEYS,
+    ));
+}
+
+#[test]
+fn overlay_window_bounds_use_target_size_for_right_alignment() {
+    let (size, position) =
+        overlay_info::overlay_window_bounds_for_monitor(100, 200, 1920, 1080, 0.7, 1.0, 12, -24, 1);
+
+    assert_eq!(size.width, 1344);
+    assert_eq!(size.height, 1079);
+    assert_eq!(position.x, 652);
+    assert_eq!(position.y, 212);
+}
+
+#[test]
+fn overlay_window_bounds_clamp_to_monitor_dimensions() {
+    let (size, position) =
+        overlay_info::overlay_window_bounds_for_monitor(-1920, 0, 1920, 1080, 2.0, 2.0, 0, 0, -500);
+
+    assert_eq!(size.width, 1920);
+    assert_eq!(size.height, 1080);
+    assert_eq!(position.x, -1920);
+    assert_eq!(position.y, 0);
+}

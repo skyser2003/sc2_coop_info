@@ -64,7 +64,7 @@ pub(crate) fn get_settings_path() -> PathBuf {
     write_data_dir().join(filename)
 }
 
-pub(crate) fn get_cache_path() -> PathBuf {
+pub fn get_cache_path() -> PathBuf {
     let filename = "cache_overall_stats.json";
     write_data_dir().join("generated").join(filename)
 }

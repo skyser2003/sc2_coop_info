@@ -17,33 +17,33 @@ fn default_true() -> bool {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub(crate) struct RandomizerRequest {
+pub struct RandomizerRequest {
     #[serde(default)]
-    pub(crate) rng_choices: Value,
+    pub rng_choices: Value,
     #[serde(default = "default_mastery_mode")]
-    pub(crate) mastery_mode: String,
+    pub mastery_mode: String,
     #[serde(default = "default_true")]
-    pub(crate) include_map: bool,
+    pub include_map: bool,
     #[serde(default = "default_true")]
-    pub(crate) include_race: bool,
+    pub include_race: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub(crate) struct RandomizerMasteryRow {
-    pub(crate) points: u64,
-    pub(crate) label: String,
+pub struct RandomizerMasteryRow {
+    pub points: u64,
+    pub label: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub(crate) struct RandomizerResult {
-    pub(crate) commander: String,
-    pub(crate) prestige: u64,
-    pub(crate) prestige_name: String,
-    pub(crate) mastery: Vec<RandomizerMasteryRow>,
-    pub(crate) map_race: String,
+pub struct RandomizerResult {
+    pub commander: String,
+    pub prestige: u64,
+    pub prestige_name: String,
+    pub mastery: Vec<RandomizerMasteryRow>,
+    pub map_race: String,
 }
 
-pub(crate) fn catalog_payload() -> OverlayRandomizerCatalog {
+pub fn catalog_payload() -> OverlayRandomizerCatalog {
     match dictionary_data::tauri_ui_data() {
         Ok(data) => OverlayRandomizerCatalog {
             commander_mastery: data
@@ -94,7 +94,7 @@ pub(crate) fn generate_from_body(body: Option<&Value>) -> Result<RandomizerResul
     generate_with_rng(&request, &mut rng)
 }
 
-pub(crate) fn generate_with_rng(
+pub fn generate_with_rng(
     request: &RandomizerRequest,
     rng: &mut Rng,
 ) -> Result<RandomizerResult, String> {
