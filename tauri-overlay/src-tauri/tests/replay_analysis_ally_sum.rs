@@ -1,4 +1,4 @@
-use sco_tauri_overlay::replay_analysis::*;
+use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
 use sco_tauri_overlay::{canonicalize_coop_map_id, ReplayInfo};
 use serde_json::json;
 use serde_json::Value;

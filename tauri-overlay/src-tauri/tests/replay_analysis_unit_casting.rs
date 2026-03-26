@@ -1,4 +1,4 @@
-use sco_tauri_overlay::replay_analysis::*;
+use sco_tauri_overlay::replay_analysis::append_units_to_rollup;
 use sco_tauri_overlay::{build_commander_unit_data, CommanderUnitRollup};
 use serde_json::json;
 use std::collections::BTreeMap;

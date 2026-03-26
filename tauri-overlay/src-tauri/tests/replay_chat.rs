@@ -1,7 +1,7 @@
 mod common;
 
 use common::test_replay_path;
-use sco_tauri_overlay::*;
+use sco_tauri_overlay::{ReplayChatMessage, ReplayInfo};
 
 #[test]
 fn replay_chat_payload_uses_slot_names_and_sanitizes_messages() {

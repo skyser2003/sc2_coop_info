@@ -1,5 +1,5 @@
 use chrono::{Local, NaiveDate};
-use rayon::prelude::*;
+use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use s2coop_analyzer::cache_overall_stats_generator::{
     cache_entry_from_report, parse_basic_cache_entry, CacheIconValue, CacheNumericValue,
     CachePlayer, CacheReplayEntry, CacheUnitStats, ReplayMessage,
@@ -14,10 +14,26 @@ use s2coop_analyzer::weekly_mutation_manager::{WeeklyMutationManager, WeeklyMuta
 use serde_json::{json, Map, Value};
 use std::borrow::{Borrow, Cow};
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering;
 use std::sync::OnceLock;
-use std::time::Instant;
+use std::sync::{Arc, Mutex, TryLockError};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use super::*;
+use crate::dictionary_data;
+use crate::path_manager::get_cache_path;
+use crate::{
+    build_amon_unit_data, build_commander_unit_data, canonicalize_coop_map_id,
+    commander_mind_control_unit, configured_main_handles, configured_main_names,
+    coop_map_id_to_english, empty_stats_payload, format_date_from_system_time,
+    infer_region_from_handle, is_official_coop_replay, kill_fraction, map_display_name, median_f64,
+    median_u64, normalize_mastery_values, normalized_commander_name, orient_replay_for_main_names,
+    parse_query_bool, parse_query_csv, parse_query_i64, parse_query_value, ratio,
+    replay_scan_progress, resolve_replay_root, result_is_victory, sanitize_replay_text,
+    ymd_from_unix_seconds, Aggregate, CommanderAggregate, CommanderUnitRollup, MapAggregate,
+    PlayerAggregate, RegionAggregate, ReplayChatMessage, ReplayInfo, ScanInFlightGuard,
+    StatsSnapshot, StatsState, UnitStatsRollup, REPLAY_SCAN_IN_FLIGHT, UNLIMITED_REPLAY_LIMIT,
+};
 
 const PRESTIGE_TRACKING_START_YMD: u32 = 20200726;
 

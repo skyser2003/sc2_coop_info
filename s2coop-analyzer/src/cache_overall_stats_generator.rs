@@ -5,7 +5,7 @@ use crate::dictionary_data::{self, CacheGenerationData, CachedMutatorsJson, Muta
 use crate::tauri_replay_analysis_impl::{ParsedReplayPlayer, ReplayReport};
 use chrono::{DateTime, Local};
 use indexmap::IndexMap;
-use rayon::prelude::*;
+use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use rayon::ThreadPoolBuilder;
 use s2protocol_port::{
     build_protocol_store, parse_file_with_store_detailed, parse_file_with_store_simple,

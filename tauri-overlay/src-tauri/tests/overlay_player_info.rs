@@ -1,7 +1,9 @@
 mod common;
 
 use common::test_replay_path;
-use sco_tauri_overlay::overlay_info::*;
+use sco_tauri_overlay::overlay_info::{
+    overlay_payload_from_replay, player_note_from_settings_value,
+};
 use sco_tauri_overlay::shared_types::OverlayReplayPayload;
 use sco_tauri_overlay::ReplayInfo;
 use serde_json::json;

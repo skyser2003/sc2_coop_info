@@ -3,7 +3,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     ProtocolBuildValue, ReplayBuildInfo,
 };
 use sco_tauri_overlay::canonicalize_coop_map_id;
-use sco_tauri_overlay::replay_analysis::*;
+use sco_tauri_overlay::replay_analysis::{bonus_objective_total_for_map_id, ReplayAnalysis};
 use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};

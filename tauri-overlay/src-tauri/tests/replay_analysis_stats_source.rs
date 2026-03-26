@@ -2,7 +2,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     CacheCountValue, CacheNumericValue, CachePlayer, CacheReplayEntry, CacheUnitStats,
     ProtocolBuildValue, ReplayBuildInfo,
 };
-use sco_tauri_overlay::replay_analysis::*;
+use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
 use sco_tauri_overlay::{canonicalize_coop_map_id, ReplayInfo, UNLIMITED_REPLAY_LIMIT};
 use serde_json::json;
 use std::collections::{BTreeMap, HashMap, HashSet};

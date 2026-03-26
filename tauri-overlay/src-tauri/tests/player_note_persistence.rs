@@ -1,4 +1,4 @@
-use sco_tauri_overlay::*;
+use sco_tauri_overlay::update_settings_player_note;
 use serde_json::json;
 
 #[test]

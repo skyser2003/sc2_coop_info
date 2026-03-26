@@ -1,7 +1,9 @@
 mod common;
 
 use common::test_config_path;
-use sco_tauri_overlay::*;
+use sco_tauri_overlay::{
+    logging_enabled_from_settings, sanitize_settings_value, session_counter_delta,
+};
 use serde_json::json;
 use serde_json::Value;
 use std::path::{Path, PathBuf};

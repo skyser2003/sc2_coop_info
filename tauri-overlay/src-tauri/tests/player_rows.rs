@@ -1,5 +1,5 @@
 use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
-use sco_tauri_overlay::*;
+use sco_tauri_overlay::ReplayInfo;
 use serde_json::json;
 
 fn replay_for_player_rows(

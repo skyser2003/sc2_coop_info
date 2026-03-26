@@ -1,4 +1,7 @@
-use sco_tauri_overlay::{overlay_info, *};
+use sco_tauri_overlay::{
+    any_setting_changed, overlay_info, OVERLAY_HOTKEY_SETTING_KEYS, OVERLAY_PLACEMENT_SETTING_KEYS,
+    OVERLAY_RUNTIME_SETTING_KEYS,
+};
 use serde_json::json;
 
 #[test]

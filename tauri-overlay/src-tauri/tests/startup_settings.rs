@@ -1,4 +1,4 @@
-use sco_tauri_overlay::*;
+use sco_tauri_overlay::{start_with_windows_enabled, windows_startup_command_value};
 use serde_json::json;
 use std::path::Path;
 

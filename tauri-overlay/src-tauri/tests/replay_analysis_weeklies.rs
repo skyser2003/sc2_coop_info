@@ -1,6 +1,6 @@
 use chrono::NaiveDate;
 use s2coop_analyzer::dictionary_data;
-use sco_tauri_overlay::replay_analysis::*;
+use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
 use sco_tauri_overlay::ReplayInfo;
 use serde_json::json;
 
