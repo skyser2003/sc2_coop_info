@@ -1760,7 +1760,7 @@ function renderStatsUnits(
                                     <td className="stats-unit-col-name">
                                         {name === "sum"
                                             ? `Σ (${formatNumber(games)} ${languageManager.translate("ui_stats_games_suffix")})`
-                                            : languageManager.localize(name)}
+                                            : name}
                                     </td>
                                     <td className="stats-unit-col-num">
                                         {formatNumber(row.created || 0)}
@@ -1913,7 +1913,7 @@ function renderStatsAmon(
                                         ? languageManager.translate(
                                               "ui_common_total",
                                           )
-                                        : languageManager.localize(name)}
+                                        : name}
                                 </td>
                                 <td>{formatNumber(row.created || 0)}</td>
                                 <td>{formatNumber(row.lost || 0)}</td>
