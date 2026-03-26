@@ -143,6 +143,7 @@ function buildUnitRows(
     unitMap: UnitStatsMap,
     commanderKey: string,
     totalKills: number,
+    localizeUnitName: (value: LocalizableValue) => string,
 ): UnitRow[] {
     const sortedRows = Object.entries(unitMap).sort((left, right) => {
         const leftKills = readNumber(left[1]?.[2]);
@@ -193,7 +194,7 @@ function buildUnitRows(
             totalKills > 0 ? (50 * kills) / totalKills : (35 * percent) / 100;
 
         nextRows.push({
-            key: displayName,
+            key: localizeUnitName(displayName),
             percent,
             kills,
             created,
@@ -582,6 +583,9 @@ export default function GameStatText({
                     statsPayload.mainUnits,
                     mainCommanderKey,
                     totalKills,
+                    overlayLanguageManager.localizeUnitName.bind(
+                        overlayLanguageManager,
+                    ),
                 ),
                 unitColor: p1Color ?? "#666",
             },
@@ -603,6 +607,9 @@ export default function GameStatText({
                     statsPayload.allyUnits,
                     allyCommanderKey,
                     totalKills,
+                    overlayLanguageManager.localizeUnitName.bind(
+                        overlayLanguageManager,
+                    ),
                 ),
                 unitColor: p2Color ?? "#444",
             },
@@ -618,6 +625,9 @@ export default function GameStatText({
                     statsPayload.amon_units,
                     "",
                     totalKills,
+                    overlayLanguageManager.localizeUnitName.bind(
+                        overlayLanguageManager,
+                    ),
                 ),
                 unitColor: "red",
             },

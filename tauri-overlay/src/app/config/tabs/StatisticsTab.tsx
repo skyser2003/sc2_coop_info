@@ -1556,8 +1556,14 @@ function renderStatsUnits(
         if (sortBy === defaultUnitSort) {
             sorted.sort((a, b) =>
                 sortReverse
-                    ? b[0].localeCompare(a[0])
-                    : a[0].localeCompare(b[0]),
+                    ? languageManager
+                          .localizeUnitName(b[0])
+                          .localeCompare(languageManager.localizeUnitName(a[0]))
+                    : languageManager
+                          .localizeUnitName(a[0])
+                          .localeCompare(
+                              languageManager.localizeUnitName(b[0]),
+                          ),
             );
             return sorted;
         }
@@ -1760,7 +1766,9 @@ function renderStatsUnits(
                                     <td className="stats-unit-col-name">
                                         {name === "sum"
                                             ? `Σ (${formatNumber(games)} ${languageManager.translate("ui_stats_games_suffix")})`
-                                            : name}
+                                            : languageManager.localizeUnitName(
+                                                  name,
+                                              )}
                                     </td>
                                     <td className="stats-unit-col-num">
                                         {formatNumber(row.created || 0)}
@@ -1836,7 +1844,9 @@ function renderStatsAmon(
         const createdDelta =
             Number(b[1].created || 0) - Number(a[1].created || 0);
         if (createdDelta !== 0) return createdDelta;
-        return String(a[0]).localeCompare(String(b[0]));
+        return languageManager
+            .localizeUnitName(String(a[0]))
+            .localeCompare(languageManager.localizeUnitName(String(b[0])));
     });
     const sumRow = rowsBase.find(([name]) => name === "sum") || null;
     const detailRowsBase = rowsBase.filter(([name]) => name !== "sum");
@@ -1844,7 +1854,7 @@ function renderStatsAmon(
         detailRowsBase,
         amonSort,
         ([name, row], key) => {
-            if (key === "name") return name;
+            if (key === "name") return languageManager.localizeUnitName(name);
             if (key === "created") return Number(row.created || 0);
             if (key === "lost") return Number(row.lost || 0);
             if (key === "kills") return Number(row.kills || 0);
@@ -1913,7 +1923,9 @@ function renderStatsAmon(
                                         ? languageManager.translate(
                                               "ui_common_total",
                                           )
-                                        : name}
+                                        : languageManager.localizeUnitName(
+                                              name,
+                                          )}
                                 </td>
                                 <td>{formatNumber(row.created || 0)}</td>
                                 <td>{formatNumber(row.lost || 0)}</td>

@@ -1,4 +1,5 @@
 import languageData from "./languageData.json";
+import unitTranslationData from "../../../../s2coop-analyzer/data/unit_translation_data.json";
 
 export type AppLanguage = "en" | "ko";
 type LocalizableValue = string | number | boolean | null | undefined;
@@ -11,10 +12,17 @@ type LanguageEntry = {
 };
 
 type LanguageData = Record<string, LanguageEntry>;
+type UnitTranslationEntry = {
+    en: string;
+    ko: string;
+};
+type UnitTranslationData = Record<string, UnitTranslationEntry>;
 
 const DEFAULT_LANGUAGE: AppLanguage = "en";
 const ENGLISH_LANGUAGE: AppLanguage = "en";
 const entries: LanguageData = languageData as LanguageData;
+const unitEntries: UnitTranslationData =
+    unitTranslationData as UnitTranslationData;
 
 function normalizeAliasKey(value: string): string {
     return value
@@ -32,10 +40,12 @@ function isAppLanguage(value: string): value is AppLanguage {
 export class LanguageManager {
     private language: AppLanguage;
     private readonly aliasToId: Map<string, string>;
+    private readonly unitAliasToKey: Map<string, string>;
 
     constructor(language: string) {
         this.language = isAppLanguage(language) ? language : DEFAULT_LANGUAGE;
         this.aliasToId = new Map<string, string>();
+        this.unitAliasToKey = new Map<string, string>();
 
         for (const [id, entry] of Object.entries(entries)) {
             this.aliasToId.set(normalizeAliasKey(id), id);
@@ -47,6 +57,12 @@ export class LanguageManager {
                     this.aliasToId.set(normalizeAliasKey(alias), id);
                 }
             }
+        }
+
+        for (const [key, entry] of Object.entries(unitEntries)) {
+            this.unitAliasToKey.set(normalizeAliasKey(key), key);
+            this.unitAliasToKey.set(normalizeAliasKey(entry.en), key);
+            this.unitAliasToKey.set(normalizeAliasKey(entry.ko), key);
         }
     }
 
@@ -101,6 +117,39 @@ export class LanguageManager {
         }
 
         return this.translate(id);
+    }
+
+    localizeUnitName(value: LocalizableValue): string {
+        if (value === null || value === undefined) {
+            return "";
+        }
+
+        if (typeof value !== "string") {
+            return String(value);
+        }
+
+        const trimmed = value.trim();
+        if (trimmed === "") {
+            return "";
+        }
+
+        const key = this.unitAliasToKey.get(normalizeAliasKey(trimmed));
+        if (!key) {
+            return trimmed;
+        }
+
+        const entry = unitEntries[key];
+        if (!entry) {
+            return trimmed;
+        }
+
+        const localizedName = entry[this.language];
+
+        if (localizedName && localizedName.length !== 0) {
+            return localizedName;
+        } else {
+            return entry[ENGLISH_LANGUAGE] || trimmed;
+        }
     }
 
     englishLabel(value: LocalizableValue): string {
