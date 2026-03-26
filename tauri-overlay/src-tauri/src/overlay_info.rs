@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use display_info::DisplayInfo;
 use serde::Serialize;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value};
 use tauri::{
     menu::{MenuBuilder, MenuItem},
     Emitter, Manager, Runtime, Wry,
@@ -20,8 +20,9 @@ use crate::randomizer;
 use crate::replay_analysis::ReplayAnalysis;
 use crate::shared_types::{
     overlay_icon_payload_from_value, replay_data_record_from_value, swap_replay_data_record_sides,
-    unit_stats_map_from_value, OverlayPlayerInfoPayload, OverlayPlayerInfoRow,
-    OverlayReplayPayload,
+    unit_stats_map_from_value, EmptyPayload, MonitorOption, OverlayInitColorsDurationPayload,
+    OverlayPlayerInfoPayload, OverlayPlayerInfoRow, OverlayReplayPayload,
+    OverlayScreenshotRequestPayload,
 };
 use crate::{
     configured_main_handles, configured_main_names, replay_index_by_file,
@@ -127,12 +128,6 @@ pub struct RuntimeFlags {
     pub start_minimized: bool,
     pub minimize_to_tray: bool,
     pub auto_update: bool,
-}
-
-#[derive(Serialize)]
-pub(crate) struct MonitorOption {
-    index: usize,
-    label: String,
 }
 
 #[derive(Clone)]
@@ -1033,11 +1028,8 @@ pub(crate) fn replay_show_for_window(
         .ok()
         .and_then(|current| current.clone());
     let Some(replay) = replay_for_display(&replays, requested, &selected) else {
-        return json!({
-            "status": "ok",
-            "result": { "ok": false },
-            "message": "No replay selected",
-        });
+        return serde_json::to_value(crate::OverlayActionResponse::failure("No replay selected"))
+            .unwrap_or_else(|_| Value::Object(Default::default()));
     };
     let file = replay.file.clone();
 
@@ -1049,11 +1041,8 @@ pub(crate) fn replay_show_for_window(
         *selected_replay_file = Some(file);
     }
 
-    json!({
-        "status": "ok",
-        "result": { "ok": true },
-        "message": "Replay shown",
-    })
+    serde_json::to_value(crate::OverlayActionResponse::success("Replay shown"))
+        .unwrap_or_else(|_| Value::Object(Default::default()))
 }
 
 pub(crate) fn replay_move_window(
@@ -1076,11 +1065,10 @@ pub(crate) fn replay_move_window(
     };
 
     if replays.is_empty() {
-        return json!({
-            "status": "ok",
-            "result": { "ok": false },
-            "message": "No replays available",
-        });
+        return serde_json::to_value(crate::OverlayActionResponse::failure(
+            "No replays available",
+        ))
+        .unwrap_or_else(|_| Value::Object(Default::default()));
     }
 
     let selected = state
@@ -1092,11 +1080,8 @@ pub(crate) fn replay_move_window(
     let current_index = replay_index_by_file(&replays, &selected);
     let index = replay_move_target_index(&replays, &selected, delta, replay_data_active);
     if replay_move_should_be_ignored(current_index, index, replay_data_active) {
-        return json!({
-            "status": "ok",
-            "result": { "ok": true },
-            "message": "Replay move ignored",
-        });
+        return serde_json::to_value(crate::OverlayActionResponse::success("Replay move ignored"))
+            .unwrap_or_else(|_| Value::Object(Default::default()));
     }
 
     let replay = &replays[index];
@@ -1110,11 +1095,8 @@ pub(crate) fn replay_move_window(
         *selected_replay_file = Some(file);
     }
 
-    json!({
-        "status": "ok",
-        "result": { "ok": true },
-        "message": "Replay moved",
-    })
+    serde_json::to_value(crate::OverlayActionResponse::success("Replay moved"))
+        .unwrap_or_else(|_| Value::Object(Default::default()))
 }
 
 pub(crate) fn perform_overlay_action(
@@ -1130,34 +1112,33 @@ pub(crate) fn perform_overlay_action(
                 .and_then(|window| window.is_visible().ok())
                 .unwrap_or(false);
             if overlay_visible {
-                let _ = app.emit(OVERLAY_SHOWHIDE_EVENT, json!({}));
+                let _ = app.emit(OVERLAY_SHOWHIDE_EVENT, EmptyPayload::default());
             } else {
                 show_overlay_window(app);
-                let _ = app.emit(OVERLAY_SHOWSTATS_EVENT, json!({}));
+                let _ = app.emit(OVERLAY_SHOWSTATS_EVENT, EmptyPayload::default());
             }
-            Some(json!({
-                "status": "ok",
-                "result": { "ok": true },
-                "message": "Overlay visibility toggled",
-            }))
+            Some(
+                serde_json::to_value(crate::OverlayActionResponse::success(
+                    "Overlay visibility toggled",
+                ))
+                .unwrap_or_else(|_| Value::Object(Default::default())),
+            )
         }
         "overlay_show" => {
             show_overlay_window(app);
-            let _ = app.emit(OVERLAY_SHOWSTATS_EVENT, json!({}));
-            Some(json!({
-                "status": "ok",
-                "result": { "ok": true },
-                "message": "Overlay shown",
-            }))
+            let _ = app.emit(OVERLAY_SHOWSTATS_EVENT, EmptyPayload::default());
+            Some(
+                serde_json::to_value(crate::OverlayActionResponse::success("Overlay shown"))
+                    .unwrap_or_else(|_| Value::Object(Default::default())),
+            )
         }
         "overlay_hide" => {
             hide_overlay_window(app);
-            let _ = app.emit(OVERLAY_HIDESTATS_EVENT, json!({}));
-            Some(json!({
-                "status": "ok",
-                "result": { "ok": true },
-                "message": "Overlay hidden",
-            }))
+            let _ = app.emit(OVERLAY_HIDESTATS_EVENT, EmptyPayload::default());
+            Some(
+                serde_json::to_value(crate::OverlayActionResponse::success("Overlay hidden"))
+                    .unwrap_or_else(|_| Value::Object(Default::default())),
+            )
         }
         "overlay_replay_data_state" => {
             let active = body
@@ -1172,15 +1153,14 @@ pub(crate) fn perform_overlay_action(
                     *selected_replay_file = None;
                 }
             }
-            Some(json!({
-                "status": "ok",
-                "result": { "ok": true },
-                "message": if active {
+            Some(
+                serde_json::to_value(crate::OverlayActionResponse::success(if active {
                     "Overlay replay data marked active"
                 } else {
                     "Overlay replay data cleared"
-                },
-            }))
+                }))
+                .unwrap_or_else(|_| Value::Object(Default::default())),
+            )
         }
         "overlay_newer" => Some(replay_move_window(app, state, 1)),
         "overlay_older" => Some(replay_move_window(app, state, -1)),
@@ -1189,11 +1169,12 @@ pub(crate) fn perform_overlay_action(
             let _ = app.emit(OVERLAY_SHOW_HIDE_PLAYER_WINRATE_EVENT, payload);
             show_overlay_window(app);
 
-            Some(json!({
-                "status": "ok",
-                "result": { "ok": true },
-                "message": "Overlay player info toggled",
-            }))
+            Some(
+                serde_json::to_value(crate::OverlayActionResponse::success(
+                    "Overlay player info toggled",
+                ))
+                .unwrap_or_else(|_| Value::Object(Default::default())),
+            )
         }
         "performance_show_hide" => {
             let performance_visible = app
@@ -1202,33 +1183,30 @@ pub(crate) fn perform_overlay_action(
                 .unwrap_or(false);
             let next_visible = !performance_visible;
             match crate::performance_overlay::set_visibility(app, next_visible, true) {
-                Ok(()) => Some(json!({
-                    "status": "ok",
-                    "result": { "ok": true },
-                    "message": if next_visible {
+                Ok(()) => Some(
+                    serde_json::to_value(crate::OverlayActionResponse::success(if next_visible {
                         "Performance overlay shown"
                     } else {
                         "Performance overlay hidden"
-                    },
-                })),
-                Err(error) => Some(json!({
-                    "status": "ok",
-                    "result": { "ok": false },
-                    "message": error,
-                })),
+                    }))
+                    .unwrap_or_else(|_| Value::Object(Default::default())),
+                ),
+                Err(error) => Some(
+                    serde_json::to_value(crate::OverlayActionResponse::failure(error))
+                        .unwrap_or_else(|_| Value::Object(Default::default())),
+                ),
             }
         }
         "performance_toggle_reposition" => {
             let enabled = crate::performance_overlay::toggle_edit_mode(app);
-            Some(json!({
-                "status": "ok",
-                "result": { "ok": true },
-                "message": if enabled {
+            Some(
+                serde_json::to_value(crate::OverlayActionResponse::success(if enabled {
                     "Performance overlay reposition mode enabled"
                 } else {
                     "Performance overlay reposition mode disabled"
-                },
-            }))
+                }))
+                .unwrap_or_else(|_| Value::Object(Default::default())),
+            )
         }
         "hotkey_reassign_begin" => {
             let path = body
@@ -1236,16 +1214,20 @@ pub(crate) fn perform_overlay_action(
                 .and_then(Value::as_str)
                 .unwrap_or("");
             match begin_hotkey_reassign(app, path) {
-                Ok(()) => Some(json!({
-                    "status": "ok",
-                    "result": { "ok": true, "path": path },
-                    "message": format!("Removed hotkey trigger for {path}"),
-                })),
-                Err(error) => Some(json!({
-                    "status": "ok",
-                    "result": { "ok": false, "path": path },
-                    "message": error,
-                })),
+                Ok(()) => Some(
+                    serde_json::to_value(crate::OverlayActionResponse::success_with_path(
+                        format!("Removed hotkey trigger for {path}"),
+                        path.to_string(),
+                    ))
+                    .unwrap_or_else(|_| Value::Object(Default::default())),
+                ),
+                Err(error) => Some(
+                    serde_json::to_value(crate::OverlayActionResponse::failure_with_path(
+                        error,
+                        path.to_string(),
+                    ))
+                    .unwrap_or_else(|_| Value::Object(Default::default())),
+                ),
             }
         }
         "hotkey_reassign_end" => {
@@ -1254,16 +1236,20 @@ pub(crate) fn perform_overlay_action(
                 .and_then(Value::as_str)
                 .unwrap_or("");
             match end_hotkey_reassign(app, path) {
-                Ok(()) => Some(json!({
-                    "status": "ok",
-                    "result": { "ok": true, "path": path },
-                    "message": format!("Recreated hotkey trigger for {path}"),
-                })),
-                Err(error) => Some(json!({
-                    "status": "ok",
-                    "result": { "ok": false, "path": path },
-                    "message": error,
-                })),
+                Ok(()) => Some(
+                    serde_json::to_value(crate::OverlayActionResponse::success_with_path(
+                        format!("Recreated hotkey trigger for {path}"),
+                        path.to_string(),
+                    ))
+                    .unwrap_or_else(|_| Value::Object(Default::default())),
+                ),
+                Err(error) => Some(
+                    serde_json::to_value(crate::OverlayActionResponse::failure_with_path(
+                        error,
+                        path.to_string(),
+                    ))
+                    .unwrap_or_else(|_| Value::Object(Default::default())),
+                ),
             }
         }
         "parse_replay" => {
@@ -1272,36 +1258,56 @@ pub(crate) fn perform_overlay_action(
                 .and_then(Value::as_str);
             Some(replay_show_for_window(app, state, requested))
         }
-        "overlay_screenshot" => Some(match request_overlay_screenshot(app) {
-            Ok(path) => json!({
-                "status": "ok",
-                "result": { "ok": true, "path": path },
-                "message": format!("Overlay screenshot requested for {path}"),
-            }),
-            Err(error) => json!({
-                "status": "ok",
-                "result": { "ok": false },
-                "message": error,
-            }),
-        }),
-        "create_desktop_shortcut" => Some(json!({
-            "status": "ok",
-            "result": { "ok": true },
-            "message": "Create desktop shortcut is not available in this build",
-        })),
-        "randomizer_generate" => Some(match randomizer::generate_from_body(body) {
-            Ok(result) => json!({
-                "status": "ok",
-                "result": { "ok": true },
-                "message": "Generated random commander",
-                "randomizer": result,
-            }),
-            Err(error) => json!({
-                "status": "ok",
-                "result": { "ok": false },
-                "message": error,
-            }),
-        }),
+        "overlay_screenshot" => Some(
+            match request_overlay_screenshot(app) {
+                Ok(path) => serde_json::to_value(crate::OverlayActionResponse::success_with_path(
+                    format!("Overlay screenshot requested for {path}"),
+                    path,
+                )),
+                Err(error) => serde_json::to_value(crate::OverlayActionResponse::failure(error)),
+            }
+            .unwrap_or_else(|_| Value::Object(Default::default())),
+        ),
+        "create_desktop_shortcut" => Some(
+            serde_json::to_value(crate::OverlayActionResponse::success(
+                "Create desktop shortcut is not available in this build",
+            ))
+            .unwrap_or_else(|_| Value::Object(Default::default())),
+        ),
+        "randomizer_generate" => {
+            #[derive(Serialize)]
+            struct RandomizerGenerateResponse {
+                status: &'static str,
+                result: crate::OverlayActionResult,
+                message: String,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                randomizer: Option<randomizer::RandomizerResult>,
+            }
+
+            Some(
+                serde_json::to_value(match randomizer::generate_from_body(body) {
+                    Ok(result) => RandomizerGenerateResponse {
+                        status: "ok",
+                        result: crate::OverlayActionResult {
+                            ok: true,
+                            path: None,
+                        },
+                        message: "Generated random commander".to_string(),
+                        randomizer: Some(result),
+                    },
+                    Err(error) => RandomizerGenerateResponse {
+                        status: "ok",
+                        result: crate::OverlayActionResult {
+                            ok: false,
+                            path: None,
+                        },
+                        message: error,
+                        randomizer: None,
+                    },
+                })
+                .unwrap_or_else(|_| Value::Object(Default::default())),
+            )
+        }
         _ => None,
     }
 }
@@ -1544,7 +1550,7 @@ pub(crate) fn show_player_winrate_for_name(
     }
 
     let payload = build_overlay_player_info_payload_for_player(state, player_handle, player_name);
-    let _ = app.emit(OVERLAY_HIDESTATS_EVENT, json!({}));
+    let _ = app.emit(OVERLAY_HIDESTATS_EVENT, EmptyPayload::default());
     let _ = app.emit(OVERLAY_PLAYER_WINRATE_EVENT, payload);
     show_overlay_window(app);
     true
@@ -1589,7 +1595,9 @@ fn request_overlay_screenshot(app: &tauri::AppHandle<Wry>) -> Result<String, Str
         .map_err(|error| format!("Failed to create screenshot folder: {error}"))?;
     app.emit(
         OVERLAY_SCREENSHOT_REQUEST_EVENT,
-        json!({ "path": path.display().to_string() }),
+        OverlayScreenshotRequestPayload {
+            path: path.display().to_string(),
+        },
     )
     .map_err(|error| format!("Failed to request overlay screenshot: {error}"))?;
     Ok(path.display().to_string())
@@ -1739,21 +1747,21 @@ pub fn open_folder_in_explorer(folder: &str) -> Result<(), String> {
     Err("Folder opening is not supported on this platform".to_string())
 }
 
-fn overlay_setting_string(settings: &Value, key: &str) -> Value {
+fn overlay_setting_string(settings: &Value, key: &str) -> Option<String> {
     settings
         .get(key)
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(|value| Value::String(value.to_string()))
-        .unwrap_or(Value::Null)
+        .map(ToString::to_string)
 }
 
-fn overlay_duration_from_settings(settings: &Value) -> u64 {
+fn overlay_duration_from_settings(settings: &Value) -> u32 {
     settings
         .get("duration")
         .and_then(Value::as_u64)
         .filter(|value| *value > 0)
+        .and_then(|value| u32::try_from(value).ok())
         .unwrap_or(30)
 }
 
@@ -1783,20 +1791,21 @@ pub fn overlay_runtime_settings_payload(
     session_victories: u64,
     session_defeats: u64,
 ) -> Value {
-    json!({
-        "colors": [
+    serde_json::to_value(OverlayInitColorsDurationPayload {
+        colors: [
             overlay_setting_string(settings, "color_player1"),
             overlay_setting_string(settings, "color_player2"),
             overlay_setting_string(settings, "color_amon"),
             overlay_setting_string(settings, "color_mastery"),
         ],
-        "duration": overlay_duration_from_settings(settings),
-        "show_charts": overlay_show_charts_from_settings(settings),
-        "show_session": overlay_show_session_from_settings(settings),
-        "session_victory": as_u32(session_victories),
-        "session_defeat": as_u32(session_defeats),
-        "language": overlay_language_from_settings(settings),
+        duration: overlay_duration_from_settings(settings),
+        show_charts: overlay_show_charts_from_settings(settings),
+        show_session: overlay_show_session_from_settings(settings),
+        session_victory: as_u32(session_victories),
+        session_defeat: as_u32(session_defeats),
+        language: overlay_language_from_settings(settings).to_string(),
     })
+    .unwrap_or_else(|_| Value::Object(Default::default()))
 }
 
 pub(crate) fn sync_overlay_runtime_settings<R: Runtime>(app: &tauri::AppHandle<R>) {

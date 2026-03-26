@@ -19,6 +19,8 @@ import type {
     OverlayPlayerInfoPayload,
     OverlayRandomizerCatalog,
     OverlayReplayPayload,
+    OverlayScreenshotRequestPayload,
+    OverlayScreenshotResultPayload,
 } from "../../bindings/overlay";
 
 const OVERLAY_STYLE_PATHS = ["/overlay/main.css"];
@@ -51,14 +53,6 @@ type OverlayCommanderMasteryCatalog =
 type OverlayPrestigeNameCatalog = OverlayRandomizerCatalog["prestige_names"];
 type OverlayConfigResponse = {
     randomizer_catalog: OverlayRandomizerCatalog;
-};
-type OverlayScreenshotRequestPayload = {
-    path: string;
-};
-type OverlayScreenshotResultPayload = {
-    ok: boolean;
-    path: string;
-    message: string;
 };
 
 function formatOverlayScreenshotError(error: unknown): string {

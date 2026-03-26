@@ -2,6 +2,7 @@ use fastrand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
+use ts_rs::TS;
 
 use crate::dictionary_data;
 use crate::shared_types::{LocalizedLabels, OverlayRandomizerCatalog};
@@ -28,13 +29,15 @@ pub struct RandomizerRequest {
     pub include_race: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct RandomizerMasteryRow {
     pub points: u64,
     pub label: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct RandomizerResult {
     pub commander: String,
     pub prestige: u64,

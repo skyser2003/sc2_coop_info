@@ -3,3 +3,5 @@ node_modules
 src-tauri/target
 test-results
 target
+src-tauri/src/bindings/
+src-tauri/gen/schemas/

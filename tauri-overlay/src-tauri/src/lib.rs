@@ -6,7 +6,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
 };
 use s2coop_analyzer::detailed_replay_analysis::calculate_replay_hash;
 use serde::Serialize;
-use serde_json::{self, json, Map, Value};
+use serde_json::{self, Map, Value};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -53,6 +53,121 @@ const SCO_REPLAY_SCAN_PROGRESS_EVENT: &str = "sco://replay-scan-progress";
 const WINDOWS_STARTUP_RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 const WINDOWS_STARTUP_VALUE_NAME: &str = "SCO Overlay";
 static ACTIVE_SETTINGS: OnceLock<Mutex<Value>> = OnceLock::new();
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub(crate) struct OverlayActionResult {
+    ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct OverlayActionResponse {
+    status: &'static str,
+    result: OverlayActionResult,
+    message: String,
+}
+
+impl OverlayActionResponse {
+    fn success(message: impl Into<String>) -> Self {
+        Self {
+            status: "ok",
+            result: OverlayActionResult {
+                ok: true,
+                path: None,
+            },
+            message: message.into(),
+        }
+    }
+
+    fn success_with_path(message: impl Into<String>, path: String) -> Self {
+        Self {
+            status: "ok",
+            result: OverlayActionResult {
+                ok: true,
+                path: Some(path),
+            },
+            message: message.into(),
+        }
+    }
+
+    fn failure(message: impl Into<String>) -> Self {
+        Self {
+            status: "ok",
+            result: OverlayActionResult {
+                ok: false,
+                path: None,
+            },
+            message: message.into(),
+        }
+    }
+
+    fn failure_with_path(message: impl Into<String>, path: String) -> Self {
+        Self {
+            status: "ok",
+            result: OverlayActionResult {
+                ok: false,
+                path: Some(path),
+            },
+            message: message.into(),
+        }
+    }
+}
+
+fn to_json_value<T: Serialize>(value: T) -> Value {
+    serde_json::to_value(value).unwrap_or_else(|_| Value::Object(Default::default()))
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct ConfigPayload {
+    status: &'static str,
+    settings: Value,
+    active_settings: Value,
+    randomizer_catalog: shared_types::OverlayRandomizerCatalog,
+    monitor_catalog: Vec<shared_types::MonitorOption>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct ConfigReplaysPayload {
+    status: &'static str,
+    replays: Vec<Value>,
+    total_replays: usize,
+    selected_replay_file: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct ConfigPlayersPayload {
+    status: &'static str,
+    players: Vec<Value>,
+    loading: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct ConfigWeekliesPayload {
+    status: &'static str,
+    weeklies: Vec<Value>,
+}
+
+#[derive(Clone, Serialize)]
+struct ConfigChatPayload {
+    status: &'static str,
+    chat: ReplayChatPayload,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct StatsActionPayload {
+    status: &'static str,
+    result: OverlayActionResult,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stats: Option<Value>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct UnsupportedEndpointPayload {
+    status: &'static str,
+    message: &'static str,
+}
 
 fn decode_html_entities(value: &str) -> String {
     value
@@ -108,28 +223,54 @@ fn get_system_language() -> String {
 }
 
 pub fn default_settings_value() -> Value {
-    json!({
-        "start_with_windows": false,
-        "minimize_to_tray": true,
-        "start_minimized": false,
-        "auto_update": true,
-        "duration": 30,
-        "show_player_winrates": true,
-        "show_replay_info_after_game": true,
-        "show_session": true,
-        "show_charts": true,
-        "account_folder": get_default_accounts_folder(),
-        "color_player1": "#0080F8",
-        "color_player2": "#00D532",
-        "color_amon": "#FF0000",
-        "color_mastery": "#FFDC87",
-        "hotkey_show/hide": "Ctrl+Shift+8",
-        "hotkey_newer": "Ctrl+Alt+/",
-        "hotkey_older": "Ctrl+Alt+8",
-        "hotkey_winrates": "Ctrl+Alt+-",
-        "enable_logging": true,
-        "dark_theme": true,
-        "language": get_system_language(),
+    #[derive(Serialize)]
+    struct DefaultSettings {
+        start_with_windows: bool,
+        minimize_to_tray: bool,
+        start_minimized: bool,
+        auto_update: bool,
+        duration: u32,
+        show_player_winrates: bool,
+        show_replay_info_after_game: bool,
+        show_session: bool,
+        show_charts: bool,
+        account_folder: String,
+        color_player1: &'static str,
+        color_player2: &'static str,
+        color_amon: &'static str,
+        color_mastery: &'static str,
+        #[serde(rename = "hotkey_show/hide")]
+        hotkey_show_hide: &'static str,
+        hotkey_newer: &'static str,
+        hotkey_older: &'static str,
+        hotkey_winrates: &'static str,
+        enable_logging: bool,
+        dark_theme: bool,
+        language: String,
+    }
+
+    to_json_value(DefaultSettings {
+        start_with_windows: false,
+        minimize_to_tray: true,
+        start_minimized: false,
+        auto_update: true,
+        duration: 30,
+        show_player_winrates: true,
+        show_replay_info_after_game: true,
+        show_session: true,
+        show_charts: true,
+        account_folder: get_default_accounts_folder(),
+        color_player1: "#0080F8",
+        color_player2: "#00D532",
+        color_amon: "#FF0000",
+        color_mastery: "#FFDC87",
+        hotkey_show_hide: "Ctrl+Shift+8",
+        hotkey_newer: "Ctrl+Alt+/",
+        hotkey_older: "Ctrl+Alt+8",
+        hotkey_winrates: "Ctrl+Alt+-",
+        enable_logging: true,
+        dark_theme: true,
+        language: get_system_language(),
     })
 }
 
@@ -410,7 +551,7 @@ fn apply_runtime_settings(
     if show_charts != previous_show_charts {
         let _ = app.emit(
             overlay_info::OVERLAY_SET_SHOW_CHARTS_FROM_CONFIG_EVENT,
-            json!(show_charts),
+            show_charts,
         );
     }
     if overlay_hotkeys_changed {
@@ -937,6 +1078,46 @@ impl ReplayInfo {
         } else {
             sanitized.slot2_commander.clone()
         };
+        #[derive(Serialize)]
+        struct GamesRowMutator {
+            name: String,
+            #[serde(rename = "nameEn")]
+            name_en: String,
+            #[serde(rename = "nameKo")]
+            name_ko: String,
+            #[serde(rename = "iconName")]
+            icon_name: String,
+            #[serde(rename = "descriptionEn")]
+            description_en: String,
+            #[serde(rename = "descriptionKo")]
+            description_ko: String,
+        }
+
+        #[derive(Serialize)]
+        struct GamesRowPayload {
+            file: String,
+            date: u64,
+            map: String,
+            result: String,
+            difficulty: String,
+            p1: String,
+            p2: String,
+            enemy: String,
+            main_commander: String,
+            ally_commander: String,
+            length: u64,
+            main_apm: u64,
+            ally_apm: u64,
+            main_kills: u64,
+            ally_kills: u64,
+            extension: bool,
+            brutal_plus: u64,
+            weekly: bool,
+            weekly_name: Option<String>,
+            mutators: Vec<GamesRowMutator>,
+            is_mutation: bool,
+        }
+
         let mutators = sanitized
             .mutators
             .iter()
@@ -953,38 +1134,42 @@ impl ReplayInfo {
                             )
                         })
                         .unwrap_or_default();
-                json!({
-                    "name": mutator_name,
-                    "nameEn": if name_en.is_empty() { mutator_name.to_string() } else { name_en },
-                    "nameKo": name_ko,
-                    "iconName": mutator_icon_name(mutator_name),
-                    "descriptionEn": description_en,
-                    "descriptionKo": description_ko,
-                })
+                GamesRowMutator {
+                    name: mutator_name.to_string(),
+                    name_en: if name_en.is_empty() {
+                        mutator_name.to_string()
+                    } else {
+                        name_en
+                    },
+                    name_ko,
+                    icon_name: mutator_icon_name(mutator_name).to_string(),
+                    description_en,
+                    description_ko,
+                }
             })
             .collect::<Vec<_>>();
-        json!({
-            "file": sanitized.file,
-            "date": sanitized.date,
-            "map": sanitized.map,
-            "result": sanitized.result,
-            "difficulty": sanitized.difficulty,
-            "p1": p1,
-            "p2": p2,
-            "enemy": sanitized.enemy,
-            "main_commander": p1_commander,
-            "ally_commander": p2_commander,
-            "length": sanitized.length,
-            "main_apm": sanitized.main_apm,
-            "ally_apm": sanitized.ally_apm,
-            "main_kills": sanitized.main_kills,
-            "ally_kills": sanitized.ally_kills,
-            "extension": sanitized.extension,
-            "brutal_plus": sanitized.brutal_plus,
-            "weekly": sanitized.weekly,
-            "weekly_name": sanitized.weekly_name,
-            "mutators": mutators,
-            "is_mutation": sanitized.weekly || !sanitized.mutators.is_empty(),
+        to_json_value(GamesRowPayload {
+            file: sanitized.file,
+            date: sanitized.date,
+            map: sanitized.map,
+            result: sanitized.result,
+            difficulty: sanitized.difficulty,
+            p1,
+            p2,
+            enemy: sanitized.enemy,
+            main_commander: p1_commander,
+            ally_commander: p2_commander,
+            length: sanitized.length,
+            main_apm: sanitized.main_apm,
+            ally_apm: sanitized.ally_apm,
+            main_kills: sanitized.main_kills,
+            ally_kills: sanitized.ally_kills,
+            extension: sanitized.extension,
+            brutal_plus: sanitized.brutal_plus,
+            weekly: sanitized.weekly,
+            weekly_name: sanitized.weekly_name,
+            mutators,
+            is_mutation: sanitized.weekly || !sanitized.mutators.is_empty(),
         })
     }
 
@@ -1216,24 +1401,45 @@ impl ReplayScanProgress {
         } else {
             cache_hits.saturating_add(to_parse)
         };
-        json!({
-            "stage": stage,
-            "status": status,
-            "parsing_status": status,
-            "total": effective_total,
-            "total_replay_files": effective_total,
-            "cache_hits": cache_hits,
-            "files_already_cached": cache_hits,
-            "to_parse": to_parse,
-            "completed": completed,
-            "newly_parsed": newly_parsed,
-            "newly_parsed_files": newly_parsed,
-            "failed": failed,
-            "parse_failed_files": failed,
-            "parse_skipped": parse_skipped,
-            "parse_skipped_files": parse_skipped,
-            "elapsed_ms": elapsed_ms,
-            "total_time_taken_ms": elapsed_ms,
+        #[derive(Serialize)]
+        struct ReplayScanProgressPayload {
+            stage: String,
+            status: String,
+            parsing_status: String,
+            total: u64,
+            total_replay_files: u64,
+            cache_hits: u64,
+            files_already_cached: u64,
+            to_parse: u64,
+            completed: u64,
+            newly_parsed: u64,
+            newly_parsed_files: u64,
+            failed: u64,
+            parse_failed_files: u64,
+            parse_skipped: u64,
+            parse_skipped_files: u64,
+            elapsed_ms: u64,
+            total_time_taken_ms: u64,
+        }
+
+        to_json_value(ReplayScanProgressPayload {
+            stage,
+            status: status.clone(),
+            parsing_status: status,
+            total: effective_total,
+            total_replay_files: effective_total,
+            cache_hits,
+            files_already_cached: cache_hits,
+            to_parse,
+            completed,
+            newly_parsed,
+            newly_parsed_files: newly_parsed,
+            failed,
+            parse_failed_files: failed,
+            parse_skipped,
+            parse_skipped_files: parse_skipped,
+            elapsed_ms,
+            total_time_taken_ms: elapsed_ms,
         })
     }
 }
@@ -1400,11 +1606,20 @@ fn unit_rollup_count_value(value: i64, hidden: bool) -> Value {
     if hidden {
         Value::String("-".to_string())
     } else {
-        json!(value)
+        Value::from(value)
     }
 }
 
 fn build_amon_unit_data(amon_rollup: std::collections::BTreeMap<String, UnitStatsRollup>) -> Value {
+    #[derive(Serialize)]
+    struct AmonUnitRow {
+        created: i64,
+        lost: i64,
+        kills: i64,
+        #[serde(rename = "KD")]
+        kd: Value,
+    }
+
     const AMON_KD_MUTATORS: [&str; 4] = [
         "Twister",
         "Purifier Beam",
@@ -1447,25 +1662,25 @@ fn build_amon_unit_data(amon_rollup: std::collections::BTreeMap<String, UnitStat
             row.lost = 0;
             out.insert(
                 unit,
-                json!({
-                    "created": row.created,
-                    "lost": row.lost,
-                    "kills": row.kills,
-                    "KD": "-",
+                to_json_value(AmonUnitRow {
+                    created: row.created,
+                    lost: row.lost,
+                    kills: row.kills,
+                    kd: Value::String("-".to_string()),
                 }),
             );
         } else {
             out.insert(
                 unit,
-                json!({
-                    "created": row.created,
-                    "lost": row.lost,
-                    "kills": row.kills,
-                    "KD": if row.lost <= 0 {
+                to_json_value(AmonUnitRow {
+                    created: row.created,
+                    lost: row.lost,
+                    kills: row.kills,
+                    kd: Value::from(if row.lost <= 0 {
                         0.0
                     } else {
                         row.kills as f64 / row.lost as f64
-                    },
+                    }),
                 }),
             );
         }
@@ -1477,15 +1692,15 @@ fn build_amon_unit_data(amon_rollup: std::collections::BTreeMap<String, UnitStat
 
     out.insert(
         "sum".to_string(),
-        json!({
-            "created": total.created,
-            "lost": total.lost,
-            "kills": total.kills,
-            "KD": if total.lost <= 0 {
+        to_json_value(AmonUnitRow {
+            created: total.created,
+            lost: total.lost,
+            kills: total.kills,
+            kd: Value::from(if total.lost <= 0 {
                 0.0
             } else {
                 total.kills as f64 / total.lost as f64
-            },
+            }),
         }),
     );
 
@@ -1495,6 +1710,18 @@ fn build_amon_unit_data(amon_rollup: std::collections::BTreeMap<String, UnitStat
 pub fn build_commander_unit_data(
     side_rollup: std::collections::BTreeMap<String, CommanderUnitRollup>,
 ) -> Value {
+    #[derive(Serialize)]
+    struct CommanderUnitRow {
+        created: Value,
+        made: f64,
+        lost: Value,
+        lost_percent: Option<f64>,
+        kills: i64,
+        #[serde(rename = "KD")]
+        kd: Option<f64>,
+        kill_percentage: f64,
+    }
+
     let mut out = Map::new();
 
     for (commander, entry) in side_rollup {
@@ -1557,14 +1784,14 @@ pub fn build_commander_unit_data(
 
             rows.insert(
                 unit,
-                json!({
-                    "created": unit_rollup_count_value(unit_row.created, unit_row.created_hidden),
-                    "made": made,
-                    "lost": unit_rollup_count_value(unit_row.lost, unit_row.lost_hidden),
-                    "lost_percent": lost_percent,
-                    "kills": unit_row.kills,
-                    "KD": kd,
-                    "kill_percentage": kill_percentage,
+                to_json_value(CommanderUnitRow {
+                    created: unit_rollup_count_value(unit_row.created, unit_row.created_hidden),
+                    made,
+                    lost: unit_rollup_count_value(unit_row.lost, unit_row.lost_hidden),
+                    lost_percent,
+                    kills: unit_row.kills,
+                    kd,
+                    kill_percentage,
                 }),
             );
         }
@@ -1585,17 +1812,17 @@ pub fn build_commander_unit_data(
         };
         rows.insert(
             "sum".to_string(),
-            json!({
-                "created": totals.created,
-                "made": 1.0,
-                "lost": totals.lost,
-                "lost_percent": total_lost_percent,
-                "kills": totals.kills,
-                "KD": total_kd,
-                "kill_percentage": 1.0,
+            to_json_value(CommanderUnitRow {
+                created: Value::from(totals.created),
+                made: 1.0,
+                lost: Value::from(totals.lost),
+                lost_percent: Some(total_lost_percent),
+                kills: totals.kills,
+                kd: Some(total_kd),
+                kill_percentage: 1.0,
             }),
         );
-        rows.insert("count".to_string(), json!(entry.count));
+        rows.insert("count".to_string(), Value::from(entry.count));
         out.insert(commander, Value::Object(rows));
     }
 
@@ -1721,33 +1948,38 @@ pub fn sanitize_unit_map(value: &Value) -> Value {
                 continue;
             }
             if let Some(arr) = raw_entry.as_array() {
-                let mut values: [Value; 4] = [json!(0), json!(0), json!(0), json!(0.0)];
+                let mut values: [Value; 4] = [
+                    Value::from(0),
+                    Value::from(0),
+                    Value::from(0),
+                    Value::from(0.0),
+                ];
                 for (idx, item) in arr.iter().take(4).enumerate() {
                     if idx < 3 {
                         if let Some(number) = item.as_f64() {
                             values[idx] = if number.is_finite() {
-                                json!(number.round() as i64)
+                                Value::from(number.round() as i64)
                             } else {
-                                json!(0)
+                                Value::from(0)
                             };
                         } else if item.is_string() {
                             values[idx] = item.clone();
                         }
                     } else if let Some(number) = item.as_f64() {
                         values[idx] = if number.is_finite() {
-                            json!(number.max(0.0))
+                            Value::from(number.max(0.0))
                         } else {
-                            json!(0.0)
+                            Value::from(0.0)
                         };
                     }
                 }
                 output.insert(
                     sanitize_replay_text(key),
-                    json!([
+                    Value::Array(vec![
                         values[0].clone(),
                         values[1].clone(),
                         values[2].clone(),
-                        values[3].clone()
+                        values[3].clone(),
                     ]),
                 );
             }
@@ -1784,7 +2016,7 @@ fn sanitize_icon_map(value: &Value) -> Value {
             }
 
             if let Some(count) = raw_value.as_u64() {
-                output.insert(key.clone(), json!(count));
+                output.insert(key.clone(), Value::from(count));
             }
         }
     }
@@ -1819,12 +2051,12 @@ fn sanitize_player_stats_payload(value: &Value) -> Value {
                     .to_string();
                 output.insert(
                     key.clone(),
-                    json!({
-                        "name": sanitize_replay_text(&name),
-                        "killed": kills,
-                        "army": army,
-                        "supply": supply,
-                        "mining": mining,
+                    to_json_value(crate::shared_types::ReplayPlayerSeries {
+                        name: sanitize_replay_text(&name),
+                        killed: kills,
+                        army,
+                        supply,
+                        mining,
                     }),
                 );
             }
@@ -3950,15 +4182,35 @@ fn normalized_commander_name(commander: &str, _fallback: &str) -> String {
 }
 
 fn empty_stats_payload() -> Value {
-    json!({
-        "MapData": {},
-        "CommanderData": {},
-        "AllyCommanderData": {},
-        "DifficultyData": {},
-        "RegionData": {},
-        "UnitData": Value::Null,
-        "AmonData": {},
-        "PlayerData": {},
+    #[derive(Serialize)]
+    struct EmptyStatsPayload {
+        #[serde(rename = "MapData")]
+        map_data: Map<String, Value>,
+        #[serde(rename = "CommanderData")]
+        commander_data: Map<String, Value>,
+        #[serde(rename = "AllyCommanderData")]
+        ally_commander_data: Map<String, Value>,
+        #[serde(rename = "DifficultyData")]
+        difficulty_data: Map<String, Value>,
+        #[serde(rename = "RegionData")]
+        region_data: Map<String, Value>,
+        #[serde(rename = "UnitData")]
+        unit_data: Value,
+        #[serde(rename = "AmonData")]
+        amon_data: Map<String, Value>,
+        #[serde(rename = "PlayerData")]
+        player_data: Map<String, Value>,
+    }
+
+    to_json_value(EmptyStatsPayload {
+        map_data: Map::new(),
+        commander_data: Map::new(),
+        ally_commander_data: Map::new(),
+        difficulty_data: Map::new(),
+        region_data: Map::new(),
+        unit_data: Value::Null,
+        amon_data: Map::new(),
+        player_data: Map::new(),
     })
 }
 
@@ -4135,23 +4387,43 @@ impl StatsState {
             )
         };
 
-        json!({
-            "ready": self.ready,
-            "games": games,
-            "detailed_parsed_count": 0,
-            "total_valid_files": 0,
-            "analysis": analysis,
-            "main_players": main_players,
-            "main_handles": main_handles,
-            "simple_analysis_running": self.simple_analysis_running,
-            "simple_analysis_status": self.simple_analysis_status,
-            "detailed_analysis_running": self.detailed_analysis_running,
-            "detailed_analysis_status": self.detailed_analysis_status,
-            "detailed_analysis_atstart": self.detailed_analysis_atstart,
-            "commander_mastery": commander_mastery,
-            "prestige_names": prestige_names,
-            "message": message,
-            "scan_progress": scan_progress,
+        #[derive(Serialize)]
+        struct StatsStatePayload {
+            ready: bool,
+            games: u64,
+            detailed_parsed_count: u64,
+            total_valid_files: u64,
+            analysis: Option<Value>,
+            main_players: Vec<String>,
+            main_handles: Vec<String>,
+            simple_analysis_running: bool,
+            simple_analysis_status: String,
+            detailed_analysis_running: bool,
+            detailed_analysis_status: String,
+            detailed_analysis_atstart: bool,
+            commander_mastery: Value,
+            prestige_names: Value,
+            message: String,
+            scan_progress: Value,
+        }
+
+        to_json_value(StatsStatePayload {
+            ready: self.ready,
+            games,
+            detailed_parsed_count: 0,
+            total_valid_files: 0,
+            analysis,
+            main_players,
+            main_handles,
+            simple_analysis_running: self.simple_analysis_running,
+            simple_analysis_status: self.simple_analysis_status.clone(),
+            detailed_analysis_running: self.detailed_analysis_running,
+            detailed_analysis_status: self.detailed_analysis_status.clone(),
+            detailed_analysis_atstart: self.detailed_analysis_atstart,
+            commander_mastery,
+            prestige_names,
+            message,
+            scan_progress,
         })
     }
 }
@@ -4221,12 +4493,12 @@ async fn config_request(
     log_request(&method, &path, &body);
 
     match (method.as_str(), route) {
-        ("get", "/config") => Ok(json!({
-            "status": "ok",
-            "settings": read_saved_settings_file(),
-            "active_settings": read_settings_file(),
-            "randomizer_catalog": randomizer::catalog_payload(),
-            "monitor_catalog": overlay_info::available_monitor_catalog(&app),
+        ("get", "/config") => Ok(to_json_value(ConfigPayload {
+            status: "ok",
+            settings: read_saved_settings_file(),
+            active_settings: read_settings_file(),
+            randomizer_catalog: randomizer::catalog_payload(),
+            monitor_catalog: overlay_info::available_monitor_catalog(&app),
         })),
         ("post", "/config") => {
             if let Some(payload) = body {
@@ -4246,12 +4518,12 @@ async fn config_request(
                     }
                     apply_runtime_settings(&app, &previous_settings, &next_settings);
                 }
-                Ok(json!({
-                    "status": "ok",
-                    "settings": read_saved_settings_file(),
-                    "active_settings": read_settings_file(),
-                    "randomizer_catalog": randomizer::catalog_payload(),
-                    "monitor_catalog": overlay_info::available_monitor_catalog(&app),
+                Ok(to_json_value(ConfigPayload {
+                    status: "ok",
+                    settings: read_saved_settings_file(),
+                    active_settings: read_settings_file(),
+                    randomizer_catalog: randomizer::catalog_payload(),
+                    monitor_catalog: overlay_info::available_monitor_catalog(&app),
                 }))
             } else {
                 Err("Missing payload".to_string())
@@ -4277,11 +4549,14 @@ async fn config_request(
                 })
                 .await
                 .map_err(|error| format!("Failed to load /config/replays: {error}"))?;
-            Ok(json!({
-                "status": "ok",
-                "replays": replays.into_iter().map(|replay| replay.as_games_row()).collect::<Vec<_>>(),
-                "total_replays": total_replays,
-                "selected_replay_file": selected_replay_file,
+            Ok(to_json_value(ConfigReplaysPayload {
+                status: "ok",
+                replays: replays
+                    .into_iter()
+                    .map(|replay| replay.as_games_row())
+                    .collect(),
+                total_replays,
+                selected_replay_file,
             }))
         }
         ("get", "/config/players") => {
@@ -4316,10 +4591,10 @@ async fn config_request(
                     }
                 },
             };
-            Ok(json!({
-                "status": "ok",
-                "players": ReplayAnalysis::rebuild_player_rows_fast(&replays),
-                "loading": replays.is_empty(),
+            Ok(to_json_value(ConfigPlayersPayload {
+                status: "ok",
+                players: ReplayAnalysis::rebuild_player_rows_fast(&replays),
+                loading: replays.is_empty(),
             }))
         }
         ("get", "/config/weeklies") => {
@@ -4330,9 +4605,9 @@ async fn config_request(
             })
             .await
             .map_err(|error| format!("Failed to load /config/weeklies: {error}"))?;
-            Ok(json!({
-                "status": "ok",
-                "weeklies": ReplayAnalysis::rebuild_weeklies_rows(&replays),
+            Ok(to_json_value(ConfigWeekliesPayload {
+                status: "ok",
+                weeklies: ReplayAnalysis::rebuild_weeklies_rows(&replays),
             }))
         }
         ("get", "/config/stats") => {
@@ -4377,10 +4652,7 @@ async fn config_request(
             .await
             .map_err(|error| format!("Failed to load /config/replays/chat: {error}"))?
             .map_err(|error| error)?;
-            Ok(json!({
-                "status": "ok",
-                "chat": chat,
-            }))
+            Ok(to_json_value(ConfigChatPayload { status: "ok", chat }))
         }
         ("post", "/config/replays/move") => {
             let delta = body
@@ -4418,15 +4690,13 @@ async fn config_request(
                     update_settings_player_note(&mut active_settings, player_name, note_value)?;
                     replace_active_settings(&active_settings);
 
-                    Ok(json!({
-                        "status": "ok",
-                        "result": { "ok": true },
-                        "message": if note_value.trim().is_empty() {
+                    Ok(to_json_value(OverlayActionResponse::success(
+                        if note_value.trim().is_empty() {
                             "Player note cleared."
                         } else {
                             "Player note saved."
                         },
-                    }))
+                    )))
                 }
                 _ => {
                     if let Some(response) =
@@ -4434,11 +4704,9 @@ async fn config_request(
                     {
                         Ok(response)
                     } else {
-                        Ok(json!({
-                            "status": "ok",
-                            "result": { "ok": false },
-                            "message": format!("Unsupported action: {action}"),
-                        }))
+                        Ok(to_json_value(OverlayActionResponse::failure(format!(
+                            "Unsupported action: {action}"
+                        ))))
                     }
                 }
             }
@@ -4475,11 +4743,14 @@ async fn config_request(
                         "[SCO/stats] frontend_ready completed in {}ms",
                         request_started_at.elapsed().as_millis()
                     );
-                    return Ok(json!({
-                        "status": "ok",
-                        "result": { "ok": true },
-                        "message": stats.message.clone(),
-                        "stats": stats.as_payload(),
+                    return Ok(to_json_value(StatsActionPayload {
+                        status: "ok",
+                        result: OverlayActionResult {
+                            ok: true,
+                            path: None,
+                        },
+                        message: stats.message.clone(),
+                        stats: Some(stats.as_payload()),
                     }));
                 }
                 "start_simple_analysis" | "run_detailed_analysis" => {
@@ -4511,10 +4782,14 @@ async fn config_request(
                             }
                         })
                         .unwrap_or_else(|| analysis_started_message(mode));
-                    return Ok(json!({
-                        "status": "ok",
-                        "result": { "ok": true },
-                        "message": status,
+                    return Ok(to_json_value(StatsActionPayload {
+                        status: "ok",
+                        result: OverlayActionResult {
+                            ok: true,
+                            path: None,
+                        },
+                        message: status,
+                        stats: None,
                     }));
                 }
                 _ => {}
@@ -4537,9 +4812,15 @@ async fn config_request(
                 }
                 "dump_data" => {
                     let dump_path = PathBuf::from("SCO_analysis_dump.json");
-                    let payload = json!({
-                        "timestamp": format_date_from_system_time(SystemTime::now()),
-                        "stats": stats.as_payload(),
+                    #[derive(Serialize)]
+                    struct DumpPayload {
+                        timestamp: u64,
+                        stats: Value,
+                    }
+
+                    let payload = to_json_value(DumpPayload {
+                        timestamp: format_date_from_system_time(SystemTime::now()),
+                        stats: stats.as_payload(),
                     });
                     match serde_json::to_string_pretty(&payload) {
                         Ok(contents) => match std::fs::write(&dump_path, contents) {
@@ -4640,11 +4921,14 @@ async fn config_request(
                 }
                 _ => {
                     crate::sco_log!("[SCO/stats] unsupported action: {action}");
-                    return Ok(json!({
-                        "status": "ok",
-                        "result": { "ok": false },
-                        "message": format!("Unsupported action: {action}"),
-                        "stats": stats.as_payload(),
+                    return Ok(to_json_value(StatsActionPayload {
+                        status: "ok",
+                        result: OverlayActionResult {
+                            ok: false,
+                            path: None,
+                        },
+                        message: format!("Unsupported action: {action}"),
+                        stats: Some(stats.as_payload()),
                     }));
                 }
             }
@@ -4654,16 +4938,19 @@ async fn config_request(
                 action,
                 request_started_at.elapsed().as_millis()
             );
-            Ok(json!({
-                "status": "ok",
-                "result": { "ok": true },
-                "message": "Action processed",
-                "stats": stats.as_payload(),
+            Ok(to_json_value(StatsActionPayload {
+                status: "ok",
+                result: OverlayActionResult {
+                    ok: true,
+                    path: None,
+                },
+                message: "Action processed".to_string(),
+                stats: Some(stats.as_payload()),
             }))
         }
-        _ => Ok(json!({
-            "status": "ok",
-            "message": "unsupported endpoint"
+        _ => Ok(to_json_value(UnsupportedEndpointPayload {
+            status: "ok",
+            message: "unsupported endpoint",
         })),
     }
 }
@@ -4725,7 +5012,10 @@ pub fn run() {
             }
             id if id == overlay_info::MENU_ITEM_SHOW_OVERLAY => {
                 overlay_info::show_overlay_window(app);
-                let _ = app.emit(overlay_info::OVERLAY_SHOWSTATS_EVENT, json!({}));
+                let _ = app.emit(
+                    overlay_info::OVERLAY_SHOWSTATS_EVENT,
+                    shared_types::EmptyPayload::default(),
+                );
             }
             id if id == overlay_info::MENU_ITEM_QUIT => request_clean_exit(app, 0),
             _ => {}

@@ -1,7 +1,15 @@
-// @ts-nocheck
 import * as React from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
+import type {
+    MonitorOption,
+    OverlayColorPreviewPayload,
+    OverlayLanguagePreviewPayload,
+    OverlayRandomizerCatalog,
+    OverlayScreenshotResultPayload,
+    PerformanceVisibilityPayload,
+    RandomizerResult,
+} from "../../bindings/overlay";
 
 import { createLanguageManager } from "../i18n/languageManager";
 import GamesTab from "./tabs/GamesTab";
@@ -14,6 +22,55 @@ import StatisticsTab from "./tabs/StatisticsTab";
 import WeekliesTab from "./tabs/WeekliesTab";
 
 const { useEffect, useMemo, useRef, useState } = React;
+
+type JsonObject = Record<string, unknown>;
+type JsonArray = Array<unknown>;
+type SettingsPayload = JsonObject;
+type StatsPayload = JsonObject;
+type GamesPayload = {
+    rows: JsonArray;
+    totalRows: number;
+};
+type TabDataState = {
+    games: GamesPayload | null;
+    players: JsonArray | null;
+    weeklies: JsonArray | null;
+    statistics: StatsPayload | null;
+};
+type RequestOptions = {
+    method?: string;
+    body?: unknown;
+};
+type LoadTabOptions = {
+    gamesLimit?: number;
+};
+type ConfigResponsePayload = {
+    status: string;
+    error?: string;
+    message?: string;
+    settings?: SettingsPayload;
+    active_settings?: SettingsPayload;
+    randomizer_catalog?: OverlayRandomizerCatalog | null;
+    monitor_catalog?: Array<MonitorOption>;
+    replays?: JsonArray;
+    total_replays?: number;
+    selected_replay_file?: string | null;
+    players?: JsonArray;
+    weeklies?: JsonArray;
+    stats?: StatsPayload | null;
+    chat?: unknown;
+    result?: {
+        ok?: boolean;
+        path?: string;
+    };
+    randomizer?: RandomizerResult;
+};
+
+declare global {
+    interface Window {
+        __scoSetPerformanceVisibility?: (visible: boolean) => void;
+    }
+}
 
 const TABS = [
     {
@@ -176,20 +233,27 @@ const STATS_DEFAULT_FILTERS = {
     player: "",
 };
 
-function cloneJson(value) {
-    return JSON.parse(JSON.stringify(value));
+function cloneJson<T>(value: T): T {
+    return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function getAtPath(source, path) {
+function getAtPath(source: JsonObject | null, path: Array<string>): unknown {
     return path.reduce(
-        (acc, key) => (acc == null ? undefined : acc[key]),
+        (acc: unknown, key) =>
+            acc != null && typeof acc === "object"
+                ? (acc as JsonObject)[key]
+                : undefined,
         source,
     );
 }
 
-function setAtPath(source, path, value) {
+function setAtPath(
+    source: JsonObject,
+    path: Array<string>,
+    value: unknown,
+): JsonObject {
     const clone = cloneJson(source);
-    let cursor = clone;
+    let cursor: JsonObject = clone;
     for (let i = 0; i < path.length - 1; i += 1) {
         const key = path[i];
         if (
@@ -199,13 +263,15 @@ function setAtPath(source, path, value) {
         ) {
             cursor[key] = {};
         }
-        cursor = cursor[key];
+        cursor = cursor[key] as JsonObject;
     }
     cursor[path[path.length - 1]] = value;
     return clone;
 }
 
-function performanceVisibilityFromPayload(payload) {
+function performanceVisibilityFromPayload(
+    payload: PerformanceVisibilityPayload | null | undefined,
+): boolean | null {
     if (!payload || typeof payload !== "object") {
         return null;
     }
@@ -215,7 +281,9 @@ function performanceVisibilityFromPayload(payload) {
     return Boolean(payload.visible);
 }
 
-function performanceVisibilityFromSettings(payload) {
+function performanceVisibilityFromSettings(
+    payload: JsonObject | null | undefined,
+): boolean | null {
     if (!payload || typeof payload !== "object") {
         return null;
     }
@@ -594,12 +662,15 @@ function isHotkeyModifierKey(key) {
     );
 }
 
-async function requestJson(path, init = {}) {
+async function requestJson(
+    path: string,
+    init: RequestOptions = {},
+): Promise<ConfigResponsePayload> {
     const method = init.method || "GET";
     const body = init.body !== undefined ? init.body : null;
 
     try {
-        const payload = await invoke("config_request", {
+        const payload = await invoke<ConfigResponsePayload>("config_request", {
             path,
             method,
             body,
@@ -818,12 +889,12 @@ function renderTabContent(tab, draft, settings, onChange, extraState) {
 }
 
 function SettingsEditor({ onThemeModeChange }) {
-    const [settings, setSettings] = useState(null);
-    const [draft, setDraft] = useState(null);
+    const [settings, setSettings] = useState<SettingsPayload | null>(null);
+    const [draft, setDraft] = useState<SettingsPayload | null>(null);
     const [status, setStatus] = useState("Loading settings...");
     const [isBusy, setIsBusy] = useState(false);
     const [activeTab, setActiveTab] = useState("settings");
-    const [tabData, setTabData] = useState({
+    const [tabData, setTabData] = useState<TabDataState>({
         games: null,
         players: null,
         weeklies: null,
@@ -836,8 +907,11 @@ function SettingsEditor({ onThemeModeChange }) {
         useState(false);
     const activeHotkeyPathRef = useRef("");
     const hotkeyTransitionRef = useRef(Promise.resolve());
-    const [randomizerCatalog, setRandomizerCatalog] = useState(null);
-    const [monitorCatalog, setMonitorCatalog] = useState([]);
+    const [randomizerCatalog, setRandomizerCatalog] =
+        useState<OverlayRandomizerCatalog | null>(null);
+    const [monitorCatalog, setMonitorCatalog] = useState<Array<MonitorOption>>(
+        [],
+    );
     const [statsState, setStatsState] = useState({
         filters: cloneJson(STATS_DEFAULT_FILTERS),
         activeSubtab: "maps",
@@ -882,7 +956,10 @@ function SettingsEditor({ onThemeModeChange }) {
         return JSON.stringify(settings) !== JSON.stringify(draft);
     }, [settings, draft]);
     const languageManager = useMemo(
-        () => createLanguageManager(draft?.language || settings?.language),
+        () =>
+            createLanguageManager(
+                String(draft?.language || settings?.language || "en"),
+            ),
         [draft, settings],
     );
 
@@ -1010,12 +1087,48 @@ function SettingsEditor({ onThemeModeChange }) {
     function emitOverlayColorPreview(nextSettings) {
         void (async () => {
             try {
-                await emit(SCO_OVERLAY_COLOR_PREVIEW_EVENT, {
-                    color_player1: getAtPath(nextSettings, ["color_player1"]),
-                    color_player2: getAtPath(nextSettings, ["color_player2"]),
-                    color_amon: getAtPath(nextSettings, ["color_amon"]),
-                    color_mastery: getAtPath(nextSettings, ["color_mastery"]),
-                });
+                await emit<OverlayColorPreviewPayload>(
+                    SCO_OVERLAY_COLOR_PREVIEW_EVENT,
+                    {
+                        color_player1:
+                            typeof getAtPath(nextSettings, [
+                                "color_player1",
+                            ]) === "string"
+                                ? String(
+                                      getAtPath(nextSettings, [
+                                          "color_player1",
+                                      ]),
+                                  )
+                                : undefined,
+                        color_player2:
+                            typeof getAtPath(nextSettings, [
+                                "color_player2",
+                            ]) === "string"
+                                ? String(
+                                      getAtPath(nextSettings, [
+                                          "color_player2",
+                                      ]),
+                                  )
+                                : undefined,
+                        color_amon:
+                            typeof getAtPath(nextSettings, ["color_amon"]) ===
+                            "string"
+                                ? String(
+                                      getAtPath(nextSettings, ["color_amon"]),
+                                  )
+                                : undefined,
+                        color_mastery:
+                            typeof getAtPath(nextSettings, [
+                                "color_mastery",
+                            ]) === "string"
+                                ? String(
+                                      getAtPath(nextSettings, [
+                                          "color_mastery",
+                                      ]),
+                                  )
+                                : undefined,
+                    },
+                );
             } catch (error) {
                 console.warn("Failed to emit overlay color preview", error);
             }
@@ -1024,14 +1137,15 @@ function SettingsEditor({ onThemeModeChange }) {
 
     function emitOverlayLanguagePreview(nextSettings) {
         void (async () => {
-            const emit = await getTauriEmit();
-            if (!emit) {
-                return;
-            }
             try {
-                await emit(SCO_OVERLAY_LANGUAGE_PREVIEW_EVENT, {
-                    language: getAtPath(nextSettings, ["language"]),
-                });
+                await emit<OverlayLanguagePreviewPayload>(
+                    SCO_OVERLAY_LANGUAGE_PREVIEW_EVENT,
+                    {
+                        language: String(
+                            getAtPath(nextSettings, ["language"]) || "",
+                        ),
+                    },
+                );
             } catch (error) {
                 console.warn("Failed to emit overlay language preview", error);
             }
@@ -1196,7 +1310,7 @@ function SettingsEditor({ onThemeModeChange }) {
             }
 
             try {
-                unlisten = await listen(
+                unlisten = await listen<PerformanceVisibilityPayload>(
                     SCO_PERFORMANCE_VISIBILITY_EVENT,
                     (event) => {
                         if (!isMounted) {
@@ -1272,7 +1386,11 @@ function SettingsEditor({ onThemeModeChange }) {
         return null;
     }
 
-    async function loadTabData(tabId, force = false, options = {}) {
+    async function loadTabData(
+        tabId,
+        force = false,
+        options: LoadTabOptions = {},
+    ) {
         if (!["games", "players", "weeklies"].includes(tabId)) {
             return;
         }
@@ -1891,7 +2009,8 @@ function SettingsEditor({ onThemeModeChange }) {
             return;
         }
 
-        const mapData = tabData.statistics?.analysis?.MapData;
+        const mapData = (tabData.statistics?.analysis as JsonObject | undefined)
+            ?.MapData;
         if (!mapData || typeof mapData !== "object") {
             return;
         }
@@ -1999,7 +2118,7 @@ function SettingsEditor({ onThemeModeChange }) {
         draft === null ? (
             <section className="tab-content">
                 <div className="card group">
-                    <p {...null}>{status}</p>
+                    <p>{status}</p>
                 </div>
             </section>
         ) : (
@@ -2091,7 +2210,7 @@ function SettingsEditor({ onThemeModeChange }) {
                     isHotkeyModifierKey,
                 },
                 performanceDisplayVisible:
-                    Boolean(getAtPath(draft, ["performance_show"], false)) ||
+                    Boolean(getAtPath(draft, ["performance_show"])) ||
                     performanceEditModeEnabled,
                 languageManager,
                 statsState,

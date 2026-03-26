@@ -16,9 +16,71 @@ pub struct LocalizedLabels {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct EmptyPayload {}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct MonitorOption {
+    pub index: usize,
+    pub label: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct OverlayRandomizerCatalog {
     pub commander_mastery: BTreeMap<String, LocalizedLabels>,
     pub prestige_names: BTreeMap<String, LocalizedLabels>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct OverlayColorPreviewPayload {
+    #[ts(optional)]
+    pub color_player1: Option<String>,
+    #[ts(optional)]
+    pub color_player2: Option<String>,
+    #[ts(optional)]
+    pub color_amon: Option<String>,
+    #[ts(optional)]
+    pub color_mastery: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct OverlayLanguagePreviewPayload {
+    pub language: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct OverlayInitColorsDurationPayload {
+    pub colors: [Option<String>; 4],
+    pub duration: u32,
+    pub show_charts: bool,
+    pub show_session: bool,
+    pub session_victory: u32,
+    pub session_defeat: u32,
+    pub language: String,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct OverlayScreenshotRequestPayload {
+    pub path: String,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct OverlayScreenshotResultPayload {
+    pub ok: bool,
+    pub path: String,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct PerformanceVisibilityPayload {
+    pub visible: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]

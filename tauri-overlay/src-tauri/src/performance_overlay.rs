@@ -2,9 +2,11 @@ use std::thread;
 use std::time::Duration;
 
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 use sysinfo::{Networks, ProcessesToUpdate, System};
 use tauri::{Emitter, Manager, Runtime, Wry};
+
+use crate::shared_types::PerformanceVisibilityPayload;
 
 static PERFORMANCE_EDIT_MODE: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
@@ -353,7 +355,12 @@ pub(crate) fn persist_geometry(window: &tauri::WebviewWindow<Wry>) {
         return;
     };
     let geometry = normalized_geometry(geometry);
-    let value = json!([geometry.x, geometry.y, geometry.width, geometry.height]);
+    let value = Value::Array(vec![
+        Value::from(geometry.x),
+        Value::from(geometry.y),
+        Value::from(geometry.width),
+        Value::from(geometry.height),
+    ]);
     if let Err(error) = persist_setting_value("performance_geometry", value) {
         crate::sco_log!("[SCO/performance] Failed to save geometry: {error}");
     }
@@ -438,7 +445,7 @@ pub(crate) fn set_visibility<R: Runtime>(
 }
 
 fn emit_visibility_event<R: Runtime>(app: &tauri::AppHandle<R>, visible: bool) {
-    let payload = json!({ "visible": visible });
+    let payload = PerformanceVisibilityPayload { visible };
     let _ = app.emit(PERFORMANCE_VISIBILITY_EVENT, payload.clone());
     if let Some(config_window) = app.get_webview_window("config") {
         let _ = config_window.emit(PERFORMANCE_VISIBILITY_EVENT, payload);

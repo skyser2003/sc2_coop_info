@@ -11,7 +11,8 @@ use s2coop_analyzer::tauri_replay_analysis_impl::{
     ParsedReplayMessage, ParsedReplayPlayer, ReplayReport,
 };
 use s2coop_analyzer::weekly_mutation_manager::{WeeklyMutationManager, WeeklyMutationStatus};
-use serde_json::{json, Map, Value};
+use serde::Serialize;
+use serde_json::{Map, Value};
 use std::borrow::{Borrow, Cow};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -77,7 +78,7 @@ fn display_length_seconds(value: f64) -> u64 {
 fn build_ratio_map(values: &[u64], total_games: u64) -> Map<String, Value> {
     let mut result = Map::new();
     for (idx, value) in values.iter().enumerate() {
-        result.insert(idx.to_string(), json!(ratio(*value, total_games)));
+        result.insert(idx.to_string(), Value::from(ratio(*value, total_games)));
     }
     result
 }
@@ -90,8 +91,8 @@ fn build_mastery_ratio_map(raw_values: &[f64; 6]) -> Map<String, Value> {
         let pair_total = left + right;
         let left_ratio = ratio_f64(left, pair_total);
         let right_ratio = ratio_f64(right, pair_total);
-        result.insert((pair_index * 2).to_string(), json!(left_ratio));
-        result.insert((pair_index * 2 + 1).to_string(), json!(right_ratio));
+        result.insert((pair_index * 2).to_string(), Value::from(left_ratio));
+        result.insert((pair_index * 2 + 1).to_string(), Value::from(right_ratio));
     }
     result
 }
@@ -106,8 +107,14 @@ fn build_mastery_by_prestige_ratio_map(raw_values: &[[f64; 6]; 4]) -> Map<String
             let left = mastery_values[left_idx];
             let right = mastery_values[right_idx];
             let pair_total = left + right;
-            grouped.insert(left_idx.to_string(), json!(ratio_f64(left, pair_total)));
-            grouped.insert(right_idx.to_string(), json!(ratio_f64(right, pair_total)));
+            grouped.insert(
+                left_idx.to_string(),
+                Value::from(ratio_f64(left, pair_total)),
+            );
+            grouped.insert(
+                right_idx.to_string(),
+                Value::from(ratio_f64(right, pair_total)),
+            );
         }
         result.insert(prestige.to_string(), Value::Object(grouped));
     }
@@ -173,6 +180,18 @@ fn fastest_map_prestige_name(commander: &str, prestige: u64) -> String {
         .unwrap_or_else(|| format!("P{prestige}"))
 }
 
+#[derive(Serialize)]
+struct FastestMapPlayer {
+    name: String,
+    handle: String,
+    commander: String,
+    apm: u64,
+    mastery_level: u64,
+    masteries: Vec<u64>,
+    prestige: u64,
+    prestige_name: String,
+}
+
 fn fastest_map_player_value(
     name: &str,
     handle: &str,
@@ -182,20 +201,35 @@ fn fastest_map_player_value(
     masteries: &[u64],
     prestige: u64,
 ) -> Value {
-    json!({
-        "name": sanitize_replay_text(name),
-        "handle": handle,
-        "commander": sanitize_replay_text(commander),
-        "apm": apm,
-        "mastery_level": mastery_level,
-        "masteries": normalize_mastery_values(masteries),
-        "prestige": prestige,
-        "prestige_name": fastest_map_prestige_name(commander, prestige),
+    report_value(&FastestMapPlayer {
+        name: sanitize_replay_text(name),
+        handle: handle.to_string(),
+        commander: sanitize_replay_text(commander),
+        apm,
+        mastery_level,
+        masteries: normalize_mastery_values(masteries),
+        prestige,
+        prestige_name: fastest_map_prestige_name(commander, prestige),
     })
 }
 
 fn report_value<T: serde::Serialize>(value: &T) -> Value {
     serde_json::to_value(value).unwrap_or_else(|_| Value::Object(Default::default()))
+}
+
+#[derive(Serialize)]
+struct ReplayAnalysisMutatorRow {
+    name: String,
+    #[serde(rename = "nameEn")]
+    name_en: String,
+    #[serde(rename = "nameKo")]
+    name_ko: String,
+    #[serde(rename = "iconName")]
+    icon_name: String,
+    #[serde(rename = "descriptionEn")]
+    description_en: String,
+    #[serde(rename = "descriptionKo")]
+    description_ko: String,
 }
 
 fn hidden_unit_stats_names() -> &'static HashSet<String> {
@@ -1054,6 +1088,129 @@ impl ReplayAnalysis {
     where
         R: Borrow<ReplayInfo>,
     {
+        #[derive(Serialize)]
+        struct FastestMapDetails {
+            length: f64,
+            file: String,
+            date: u64,
+            difficulty: String,
+            players: Vec<Value>,
+            enemy_race: String,
+        }
+
+        #[derive(Serialize)]
+        struct MapDataRow {
+            id: String,
+            average_victory_time: f64,
+            frequency: f64,
+            #[serde(rename = "Victory")]
+            victory: u64,
+            #[serde(rename = "Defeat")]
+            defeat: u64,
+            #[serde(rename = "Winrate")]
+            winrate: f64,
+            bonus: f64,
+            #[serde(rename = "detailedCount")]
+            detailed_count: u64,
+            #[serde(rename = "Fastest")]
+            fastest: FastestMapDetails,
+        }
+
+        #[derive(Serialize)]
+        struct CommanderDataRow {
+            #[serde(rename = "Frequency")]
+            frequency: f64,
+            #[serde(rename = "Victory")]
+            victory: u64,
+            #[serde(rename = "Defeat")]
+            defeat: u64,
+            #[serde(rename = "Winrate")]
+            winrate: f64,
+            #[serde(rename = "MedianAPM")]
+            median_apm: f64,
+            #[serde(rename = "KillFraction")]
+            kill_fraction: f64,
+            #[serde(rename = "Mastery")]
+            mastery: Map<String, Value>,
+            #[serde(rename = "Prestige")]
+            prestige: Map<String, Value>,
+            #[serde(rename = "MasteryByPrestige")]
+            mastery_by_prestige: Map<String, Value>,
+            #[serde(rename = "detailedCount")]
+            detailed_count: u64,
+        }
+
+        #[derive(Serialize)]
+        struct DifficultyDataRow {
+            #[serde(rename = "Victory")]
+            victory: u64,
+            #[serde(rename = "Defeat")]
+            defeat: u64,
+            #[serde(rename = "Winrate")]
+            winrate: f64,
+        }
+
+        #[derive(Serialize)]
+        struct RegionDataRow {
+            frequency: f64,
+            #[serde(rename = "Victory")]
+            victory: u64,
+            #[serde(rename = "Defeat")]
+            defeat: u64,
+            winrate: f64,
+            max_asc: u64,
+            prestiges: Map<String, Value>,
+            max_com: Vec<String>,
+        }
+
+        #[derive(Serialize)]
+        struct PlayerDataRow {
+            wins: u64,
+            losses: u64,
+            winrate: f64,
+            kills: f64,
+            apm: f64,
+            frequency: f64,
+            last_seen: u64,
+            commander: String,
+        }
+
+        #[derive(Serialize)]
+        struct UnitDataPayload {
+            main: Value,
+            ally: Value,
+            amon: Value,
+        }
+
+        #[derive(Serialize)]
+        struct AnalysisPayload {
+            #[serde(rename = "MapData")]
+            map_data: Map<String, Value>,
+            #[serde(rename = "CommanderData")]
+            commander_data: Map<String, Value>,
+            #[serde(rename = "AllyCommanderData")]
+            ally_commander_data: Map<String, Value>,
+            #[serde(rename = "DifficultyData")]
+            difficulty_data: Map<String, Value>,
+            #[serde(rename = "RegionData")]
+            region_data: Map<String, Value>,
+            #[serde(rename = "PlayerData")]
+            player_data: Map<String, Value>,
+            #[serde(rename = "AmonData")]
+            amon_data: Map<String, Value>,
+            #[serde(rename = "UnitData")]
+            unit_data: Value,
+            #[serde(rename = "MapDataReady")]
+            map_data_ready: bool,
+        }
+
+        #[derive(Serialize)]
+        struct RebuildAnalysisPayload {
+            analysis: Value,
+            commander_mastery: Value,
+            prestige_names: Value,
+        }
+
         let started_at = Instant::now();
         crate::sco_log!(
             "[SCO/stats] rebuild_analysis_payload start include_detailed={} replays={}",
@@ -1487,22 +1644,22 @@ impl ReplayAnalysis {
             };
             map_data.insert(
                 map_name,
-                json!({
-                    "id": map_id,
-                    "average_victory_time": avg_len,
-                    "frequency": ratio(games, total_games),
-                    "Victory": aggregate.wins,
-                    "Defeat": aggregate.losses,
-                    "Winrate": winrate,
-                    "bonus": bonus_rate,
-                    "detailedCount": aggregate.detailed_count,
-                    "Fastest": {
-                        "length": fastest_length,
-                        "file": aggregate.fastest_file,
-                        "date": aggregate.fastest_date,
-                        "difficulty": sanitize_replay_text(&aggregate.fastest_difficulty),
-                        "players": players,
-                        "enemy_race": sanitize_replay_text(&aggregate.fastest_enemy_race),
+                report_value(&MapDataRow {
+                    id: map_id,
+                    average_victory_time: avg_len,
+                    frequency: ratio(games, total_games),
+                    victory: aggregate.wins,
+                    defeat: aggregate.losses,
+                    winrate,
+                    bonus: bonus_rate,
+                    detailed_count: aggregate.detailed_count,
+                    fastest: FastestMapDetails {
+                        length: fastest_length,
+                        file: aggregate.fastest_file,
+                        date: aggregate.fastest_date,
+                        difficulty: sanitize_replay_text(&aggregate.fastest_difficulty),
+                        players,
+                        enemy_race: sanitize_replay_text(&aggregate.fastest_enemy_race),
                     },
                 }),
             );
@@ -1536,19 +1693,19 @@ impl ReplayAnalysis {
             let prestige_games = agg.prestige_counts.iter().sum::<u64>();
             commander_data.insert(
                 name.clone(),
-                json!({
-                    "Frequency": ratio(games, total_games),
-                    "Victory": agg.wins,
-                    "Defeat": agg.losses,
-                    "Winrate": ratio(agg.wins, games),
-                    "MedianAPM": median_u64(&agg.apm_values),
-                    "KillFraction": median_f64(&agg.kill_fractions),
-                    "Mastery": build_mastery_ratio_map(&agg.mastery_counts),
-                    "Prestige": build_ratio_map(&agg.prestige_counts, prestige_games),
-                    "MasteryByPrestige": build_mastery_by_prestige_ratio_map(
+                report_value(&CommanderDataRow {
+                    frequency: ratio(games, total_games),
+                    victory: agg.wins,
+                    defeat: agg.losses,
+                    winrate: ratio(agg.wins, games),
+                    median_apm: median_u64(&agg.apm_values),
+                    kill_fraction: median_f64(&agg.kill_fractions),
+                    mastery: build_mastery_ratio_map(&agg.mastery_counts),
+                    prestige: build_ratio_map(&agg.prestige_counts, prestige_games),
+                    mastery_by_prestige: build_mastery_by_prestige_ratio_map(
                         &agg.mastery_by_prestige_counts,
                     ),
-                    "detailedCount": agg.detailed_count,
+                    detailed_count: agg.detailed_count,
                 }),
             );
         }
@@ -1560,22 +1717,22 @@ impl ReplayAnalysis {
 
         commander_data.insert(
             "any".to_string(),
-            json!({
-                "Frequency": if sum_main_games == 0 { 0.0 } else { 1.0 },
-                "Victory": sum_main_wins,
-                "Defeat": sum_main_losses,
-                "Winrate": ratio(sum_main_wins, sum_main_games),
-                "MedianAPM": median_u64(&sum_main_apm),
-                "KillFraction": median_f64(&sum_main_kill_fraction),
-                "Mastery": build_mastery_ratio_map(&sum_main_mastery_counts),
-                "Prestige": build_ratio_map(
+            report_value(&CommanderDataRow {
+                frequency: if sum_main_games == 0 { 0.0 } else { 1.0 },
+                victory: sum_main_wins,
+                defeat: sum_main_losses,
+                winrate: ratio(sum_main_wins, sum_main_games),
+                median_apm: median_u64(&sum_main_apm),
+                kill_fraction: median_f64(&sum_main_kill_fraction),
+                mastery: build_mastery_ratio_map(&sum_main_mastery_counts),
+                prestige: build_ratio_map(
                     &sum_main_prestige_counts,
                     sum_main_prestige_counts.iter().sum::<u64>(),
                 ),
-                "MasteryByPrestige": build_mastery_by_prestige_ratio_map(
+                mastery_by_prestige: build_mastery_by_prestige_ratio_map(
                     &sum_main_mastery_by_prestige_counts,
                 ),
-                "detailedCount": main_detailed_count,
+                detailed_count: main_detailed_count,
             }),
         );
         crate::sco_log!(
@@ -1610,23 +1767,23 @@ impl ReplayAnalysis {
             let corrected_frequency = corrected_ally_frequency.get(name).copied().unwrap_or(0.0);
             ally_commander_data.insert(
                 name.clone(),
-                json!({
-                    "Frequency": if corrected_ally_frequency_total <= f64::EPSILON {
+                report_value(&CommanderDataRow {
+                    frequency: if corrected_ally_frequency_total <= f64::EPSILON {
                         0.0
                     } else {
                         corrected_frequency / corrected_ally_frequency_total
                     },
-                    "Victory": agg.wins,
-                    "Defeat": agg.losses,
-                    "Winrate": ratio(agg.wins, games),
-                    "MedianAPM": median_u64(&agg.apm_values),
-                    "KillFraction": median_f64(&agg.kill_fractions),
-                    "Mastery": build_mastery_ratio_map(&agg.mastery_counts),
-                    "Prestige": build_ratio_map(&agg.prestige_counts, prestige_games),
-                    "MasteryByPrestige": build_mastery_by_prestige_ratio_map(
+                    victory: agg.wins,
+                    defeat: agg.losses,
+                    winrate: ratio(agg.wins, games),
+                    median_apm: median_u64(&agg.apm_values),
+                    kill_fraction: median_f64(&agg.kill_fractions),
+                    mastery: build_mastery_ratio_map(&agg.mastery_counts),
+                    prestige: build_ratio_map(&agg.prestige_counts, prestige_games),
+                    mastery_by_prestige: build_mastery_by_prestige_ratio_map(
                         &agg.mastery_by_prestige_counts,
                     ),
-                    "detailedCount": agg.detailed_count,
+                    detailed_count: agg.detailed_count,
                 }),
             );
         }
@@ -1639,22 +1796,26 @@ impl ReplayAnalysis {
 
         ally_commander_data.insert(
             "any".to_string(),
-            json!({
-                "Frequency": if corrected_ally_frequency_total <= f64::EPSILON { 0.0 } else { 1.0 },
-                "Victory": _sum_ally_wins,
-                "Defeat": _sum_ally_losses,
-                "Winrate": ratio(_sum_ally_wins, sum_ally_games),
-                "MedianAPM": median_u64(&sum_ally_apm),
-                "KillFraction": median_f64(&sum_ally_kill_fraction),
-                "Mastery": build_mastery_ratio_map(&sum_ally_mastery_counts),
-                "Prestige": build_ratio_map(
+            report_value(&CommanderDataRow {
+                frequency: if corrected_ally_frequency_total <= f64::EPSILON {
+                    0.0
+                } else {
+                    1.0
+                },
+                victory: _sum_ally_wins,
+                defeat: _sum_ally_losses,
+                winrate: ratio(_sum_ally_wins, sum_ally_games),
+                median_apm: median_u64(&sum_ally_apm),
+                kill_fraction: median_f64(&sum_ally_kill_fraction),
+                mastery: build_mastery_ratio_map(&sum_ally_mastery_counts),
+                prestige: build_ratio_map(
                     &sum_ally_prestige_counts,
                     sum_ally_prestige_counts.iter().sum::<u64>(),
                 ),
-                "MasteryByPrestige": build_mastery_by_prestige_ratio_map(
+                mastery_by_prestige: build_mastery_by_prestige_ratio_map(
                     &sum_ally_mastery_by_prestige_counts,
                 ),
-                "detailedCount": ally_detailed_count,
+                detailed_count: ally_detailed_count,
             }),
         );
         crate::sco_log!(
@@ -1669,10 +1830,10 @@ impl ReplayAnalysis {
             let games = agg.wins + agg.losses;
             difficulty_data.insert(
                 name,
-                json!({
-                    "Victory": agg.wins,
-                    "Defeat": agg.losses,
-                    "Winrate": ratio(agg.wins, games),
+                report_value(&DifficultyDataRow {
+                    victory: agg.wins,
+                    defeat: agg.losses,
+                    winrate: ratio(agg.wins, games),
                 }),
             );
         }
@@ -1702,20 +1863,20 @@ impl ReplayAnalysis {
                     if commander.is_empty() {
                         None
                     } else {
-                        Some((commander, json!(value)))
+                        Some((commander, Value::from(value)))
                     }
                 })
                 .collect::<Map<String, Value>>();
             region_data.insert(
                 name,
-                json!({
-                    "frequency": ratio(games, total_games),
-                    "Victory": agg.wins,
-                    "Defeat": agg.losses,
-                    "winrate": ratio(agg.wins, games),
-                    "max_asc": agg.max_asc,
-                    "prestiges": prestiges,
-                    "max_com": max_com
+                report_value(&RegionDataRow {
+                    frequency: ratio(games, total_games),
+                    victory: agg.wins,
+                    defeat: agg.losses,
+                    winrate: ratio(agg.wins, games),
+                    max_asc: agg.max_asc,
+                    prestiges,
+                    max_com,
                 }),
             );
         }
@@ -1733,15 +1894,19 @@ impl ReplayAnalysis {
             let (commander, commander_frequency) = dominant_player_commander(agg);
             player_data.insert(
                 name,
-                json!({
-                    "wins": agg.wins,
-                    "losses": agg.losses,
-                    "winrate": ratio(agg.wins, games),
-                    "kills": median_f64(&agg.kill_fractions),
-                    "apm": if games == 0 { 0.0 } else { median_u64(&agg.apm_values) },
-                    "frequency": commander_frequency,
-                    "last_seen": agg.last_seen,
-                    "commander": commander,
+                report_value(&PlayerDataRow {
+                    wins: agg.wins,
+                    losses: agg.losses,
+                    winrate: ratio(agg.wins, games),
+                    kills: median_f64(&agg.kill_fractions),
+                    apm: if games == 0 {
+                        0.0
+                    } else {
+                        median_u64(&agg.apm_values)
+                    },
+                    frequency: commander_frequency,
+                    last_seen: agg.last_seen,
+                    commander,
                 }),
             );
         }
@@ -1820,38 +1985,53 @@ impl ReplayAnalysis {
                 append_amon_units(&replay.amon_units);
             }
 
-            json!({
-                "main": build_commander_unit_data(main_rollup),
-                "ally": build_commander_unit_data(ally_rollup),
-                "amon": build_amon_unit_data(amon_rollup),
+            report_value(&UnitDataPayload {
+                main: build_commander_unit_data(main_rollup),
+                ally: build_commander_unit_data(ally_rollup),
+                amon: build_amon_unit_data(amon_rollup),
             })
         } else {
             Value::Null
         };
-        let analysis = json!({
-            "MapData": map_data,
-            "CommanderData": commander_data,
-            "AllyCommanderData": ally_commander_data,
-            "DifficultyData": difficulty_data,
-            "RegionData": region_data,
-            "PlayerData": player_data,
-            "AmonData": {},
-            "UnitData": unit_data,
-            "MapDataReady": true,
+        let analysis = report_value(&AnalysisPayload {
+            map_data,
+            commander_data,
+            ally_commander_data,
+            difficulty_data,
+            region_data,
+            player_data,
+            amon_data: Map::new(),
+            unit_data,
+            map_data_ready: true,
         });
 
         crate::sco_log!(
             "[SCO/stats] rebuild_analysis_payload completed in {}ms",
             started_at.elapsed().as_millis()
         );
-        json!({
-            "analysis": analysis,
-            "commander_mastery": commander_mastery,
-            "prestige_names": prestige_names,
+        report_value(&RebuildAnalysisPayload {
+            analysis,
+            commander_mastery: report_value(&commander_mastery),
+            prestige_names: report_value(&prestige_names),
         })
     }
 
     pub fn rebuild_player_rows_fast(replays: &[ReplayInfo]) -> Vec<Value> {
+        #[derive(Serialize)]
+        struct PlayerRow {
+            handle: String,
+            player: String,
+            player_names: Vec<String>,
+            wins: u64,
+            losses: u64,
+            winrate: f64,
+            apm: f64,
+            commander: String,
+            frequency: f64,
+            kills: f64,
+            last_seen: u64,
+        }
+
         let mut player_values: std::collections::BTreeMap<String, PlayerAggregate> =
             std::collections::BTreeMap::new();
 
@@ -1920,18 +2100,18 @@ impl ReplayAnalysis {
                 .first()
                 .cloned()
                 .unwrap_or_else(|| handle.clone());
-            rows.push(json!({
-                "handle": handle,
-                "player": player,
-                "player_names": player_names,
-                "wins": agg.wins,
-                "losses": agg.losses,
-                "winrate": ratio(agg.wins, games),
-                "apm": apm,
-                "commander": commander,
-                "frequency": commander_frequency,
-                "kills": median_f64(&agg.kill_fractions),
-                "last_seen": agg.last_seen,
+            rows.push(report_value(&PlayerRow {
+                handle,
+                player,
+                player_names,
+                wins: agg.wins,
+                losses: agg.losses,
+                winrate: ratio(agg.wins, games),
+                apm,
+                commander,
+                frequency: commander_frequency,
+                kills: median_f64(&agg.kill_fractions),
+                last_seen: agg.last_seen,
             }));
         }
         rows
@@ -1959,6 +2139,29 @@ impl ReplayAnalysis {
         replays: &[ReplayInfo],
         current_date: NaiveDate,
     ) -> Vec<Value> {
+        #[derive(Serialize)]
+        struct WeeklyRow {
+            mutation: String,
+            #[serde(rename = "nameEn")]
+            name_en: String,
+            #[serde(rename = "nameKo")]
+            name_ko: String,
+            map: String,
+            mutators: Vec<Value>,
+            #[serde(rename = "mutationOrder")]
+            mutation_order: usize,
+            #[serde(rename = "isCurrent")]
+            is_current: bool,
+            #[serde(rename = "nextDurationDays")]
+            next_duration_days: i64,
+            #[serde(rename = "nextDuration")]
+            next_duration: String,
+            difficulty: String,
+            wins: u64,
+            losses: u64,
+            winrate: f64,
+        }
+
         #[derive(Default)]
         struct WeeklyMutatorUi<'a> {
             name_en: &'a str,
@@ -2049,23 +2252,27 @@ impl ReplayAnalysis {
                     .map(|mutator_name| {
                         let (name_en, name_ko, description_en, description_ko) =
                             dictionary_data::mutators()
-                            .get(mutator_name)
-                            .map(|value| {
-                                (
-                                    decode_html_entities(&value.name_en),
-                                    decode_html_entities(&value.name_ko),
-                                    decode_html_entities(&value.description_en),
-                                    decode_html_entities(&value.description_ko),
-                                )
-                            })
-                            .unwrap_or_default();
-                        json!({
-                            "name": mutator_name,
-                            "nameEn": if name_en.is_empty() { mutator_name.to_string() } else { name_en },
-                            "nameKo": name_ko,
-                            "iconName": mutator_icon_name(mutator_name),
-                            "descriptionEn": description_en,
-                            "descriptionKo": description_ko,
+                                .get(mutator_name)
+                                .map(|value| {
+                                    (
+                                        decode_html_entities(&value.name_en),
+                                        decode_html_entities(&value.name_ko),
+                                        decode_html_entities(&value.description_en),
+                                        decode_html_entities(&value.description_ko),
+                                    )
+                                })
+                                .unwrap_or_default();
+                        report_value(&ReplayAnalysisMutatorRow {
+                            name: mutator_name.to_string(),
+                            name_en: if name_en.is_empty() {
+                                mutator_name.to_string()
+                            } else {
+                                name_en
+                            },
+                            name_ko,
+                            icon_name: mutator_icon_name(mutator_name).to_string(),
+                            description_en,
+                            description_ko,
                         })
                     })
                     .collect::<Vec<_>>();
@@ -2135,39 +2342,67 @@ impl ReplayAnalysis {
             let next_duration_days = schedule_status
                 .map(|status| status.next_duration_days)
                 .unwrap_or(i64::MAX);
-            rows.push(json!({
-                "mutation": mutation,
-                "nameEn": weekly_details.map(|value| value.name_en).unwrap_or(mutation),
-                "nameKo": weekly_details.map(|value| value.name_ko).unwrap_or(""),
-                "map": weekly_details.map(|value| value.map).unwrap_or(""),
-                "mutators": weekly_details.map(|value| value.mutators.clone()).unwrap_or_default(),
-                "mutationOrder": mutation_order,
-                "isCurrent": is_current,
-                "nextDurationDays": next_duration_days,
-                "nextDuration": if next_duration_days == i64::MAX {"Unknown".to_string()} else {Self::format_next_weekly_duration(next_duration_days)},
-                "difficulty": if aggregate.best_difficulty_label.is_empty() {"N/A"} else {aggregate.best_difficulty_label.as_str()},
-                "wins": aggregate.wins,
-                "losses": aggregate.losses,
-                "winrate": if total == 0 {0.0} else {aggregate.wins as f64 / total as f64},
+            rows.push(report_value(&WeeklyRow {
+                mutation: mutation.clone(),
+                name_en: weekly_details
+                    .map(|value| value.name_en.to_string())
+                    .unwrap_or_else(|| mutation.clone()),
+                name_ko: weekly_details
+                    .map(|value| value.name_ko.to_string())
+                    .unwrap_or_default(),
+                map: weekly_details
+                    .map(|value| value.map.to_string())
+                    .unwrap_or_default(),
+                mutators: weekly_details
+                    .map(|value| value.mutators.clone())
+                    .unwrap_or_default(),
+                mutation_order,
+                is_current,
+                next_duration_days,
+                next_duration: if next_duration_days == i64::MAX {
+                    "Unknown".to_string()
+                } else {
+                    Self::format_next_weekly_duration(next_duration_days)
+                },
+                difficulty: if aggregate.best_difficulty_label.is_empty() {
+                    "N/A".to_string()
+                } else {
+                    aggregate.best_difficulty_label.clone()
+                },
+                wins: aggregate.wins,
+                losses: aggregate.losses,
+                winrate: if total == 0 {
+                    0.0
+                } else {
+                    aggregate.wins as f64 / total as f64
+                },
             }));
         }
 
         for (mutation, aggregate) in aggregates {
             let total = aggregate.wins + aggregate.losses;
-            rows.push(json!({
-                "mutation": mutation,
-                "nameEn": mutation,
-                "nameKo": "",
-                "map": "",
-                "mutators": Vec::<Value>::new(),
-                "mutationOrder": usize::MAX,
-                "isCurrent": false,
-                "nextDurationDays": i64::MAX,
-                "nextDuration": "Unknown",
-                "difficulty": if aggregate.best_difficulty_label.is_empty() {"N/A"} else {aggregate.best_difficulty_label.as_str()},
-                "wins": aggregate.wins,
-                "losses": aggregate.losses,
-                "winrate": if total == 0 {0.0} else {aggregate.wins as f64 / total as f64},
+            rows.push(report_value(&WeeklyRow {
+                mutation: mutation.clone(),
+                name_en: mutation,
+                name_ko: String::new(),
+                map: String::new(),
+                mutators: Vec::new(),
+                mutation_order: usize::MAX,
+                is_current: false,
+                next_duration_days: i64::MAX,
+                next_duration: "Unknown".to_string(),
+                difficulty: if aggregate.best_difficulty_label.is_empty() {
+                    "N/A".to_string()
+                } else {
+                    aggregate.best_difficulty_label
+                },
+                wins: aggregate.wins,
+                losses: aggregate.losses,
+                winrate: if total == 0 {
+                    0.0
+                } else {
+                    aggregate.wins as f64 / total as f64
+                },
             }));
         }
 
@@ -2954,7 +3189,7 @@ impl ReplayAnalysis {
                 TryLockError::WouldBlock => {
                     let fallback = StatsState::default();
                     let mut payload = fallback.as_payload();
-                    payload["message"] = json!("Statistics are updating. Try again.");
+                    payload["message"] = Value::from("Statistics are updating. Try again.");
                     payload
                 }
                 TryLockError::Poisoned(_) => {
@@ -3003,11 +3238,11 @@ impl ReplayAnalysis {
                         if let Some(prestige_names) = filtered_payload.get("prestige_names") {
                             response["prestige_names"] = prestige_names.clone();
                         }
-                        response["games"] = json!(filtered_replays.len() as u64);
+                        response["games"] = Value::from(filtered_replays.len() as u64);
                         let (detailed_parsed_count, total_valid_files) =
                             Self::detailed_stats_counts(&filtered_replays);
-                        response["detailed_parsed_count"] = json!(detailed_parsed_count);
-                        response["total_valid_files"] = json!(total_valid_files);
+                        response["detailed_parsed_count"] = Value::from(detailed_parsed_count);
+                        response["total_valid_files"] = Value::from(total_valid_files);
 
                         let main_names = configured_main_names();
                         let main_handles = configured_main_handles();
@@ -3016,8 +3251,8 @@ impl ReplayAnalysis {
                             &main_names,
                             &main_handles,
                         );
-                        response["main_players"] = json!(main_players);
-                        response["main_handles"] = json!(main_handles);
+                        response["main_players"] = report_value(&main_players);
+                        response["main_handles"] = report_value(&main_handles);
                     }
                     Err(TryLockError::WouldBlock) => {}
                     Err(TryLockError::Poisoned(_)) => {
@@ -3034,12 +3269,18 @@ impl ReplayAnalysis {
             }
         }
         if let Some(query) = path.split('?').nth(1) {
-            response["query"] = json!(query);
+            response["query"] = Value::from(query);
         }
 
-        Ok(json!({
-            "status": "ok",
-            "stats": response,
+        #[derive(Serialize)]
+        struct StatsResponsePayload {
+            status: &'static str,
+            stats: Value,
+        }
+
+        Ok(report_value(&StatsResponsePayload {
+            status: "ok",
+            stats: response,
         }))
     }
 
