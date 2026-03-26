@@ -1,6 +1,11 @@
 import * as React from "react";
 import type { LanguageManager } from "../../i18n/languageManager";
 import { PreviewManager } from "../../previews/PreviewManager";
+import type {
+    CommanderMasteryEntry,
+    CommanderMasteryMap,
+    PrestigeNameMap,
+} from "../types";
 import SelectionPreview from "./SelectionPreview";
 
 type RandomizerChoices = Record<string, boolean>;
@@ -8,20 +13,6 @@ type RandomizerChoices = Record<string, boolean>;
 type RandomizerDraft = {
     rng_choices?: RandomizerChoices | null;
 };
-
-type LocalizedPrestigeNames = {
-    en: string[];
-    ko: string[];
-};
-
-type PrestigeNameMap = Record<string, LocalizedPrestigeNames>;
-type LocalizedMasteryNames = {
-    en: string[];
-    ko: string[];
-};
-
-type CommanderMasteryEntry = string[] | LocalizedMasteryNames;
-type CommanderMasteryMap = Record<string, CommanderMasteryEntry>;
 
 type RandomizerCatalog = {
     prestige_names: PrestigeNameMap;

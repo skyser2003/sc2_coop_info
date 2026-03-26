@@ -3,25 +3,26 @@ import type { LanguageManager } from "../../i18n/languageManager";
 import { Grid } from "@mui/material";
 import { check, Update } from "@tauri-apps/plugin-updater";
 import { app } from "@tauri-apps/api";
+import type { DisplayValue, JsonObject, JsonValue } from "../types";
 
 type SettingsActions = {
     isBusy: boolean;
     ready: boolean;
     hasPendingChanges: boolean;
     promptPath: (path: string[], title: string) => void;
-    openFolderPath: (path: string) => Promise<unknown> | void;
-    triggerOverlayAction: (actionName: string) => Promise<unknown> | void;
+    openFolderPath: (path: string) => Promise<true | null> | void;
+    triggerOverlayAction: (actionName: string) => Promise<void> | void;
     activeHotkeyPath: string;
     beginHotkeyCapture: (path: string) => Promise<void>;
     endHotkeyCapture: (path: string) => Promise<void>;
-    createDesktopShortcut: () => Promise<unknown> | void;
-    parseReplayPrompt: () => Promise<unknown> | void;
-    overlayScreenshot: () => Promise<unknown> | void;
-    runDetailedAnalysis: () => Promise<unknown> | void;
-    startSimpleAnalysis: () => Promise<unknown> | void;
-    pauseDetailedAnalysis: () => Promise<unknown> | void;
-    deleteParsedData: () => Promise<unknown> | void;
-    applyMainSettings: () => Promise<unknown> | void;
+    createDesktopShortcut: () => Promise<void> | void;
+    parseReplayPrompt: () => Promise<void> | void;
+    overlayScreenshot: () => Promise<void> | void;
+    runDetailedAnalysis: () => Promise<void> | void;
+    startSimpleAnalysis: () => Promise<void> | void;
+    pauseDetailedAnalysis: () => Promise<void> | void;
+    deleteParsedData: () => Promise<void> | void;
+    applyMainSettings: () => Promise<void> | void;
     resetMainSettings: () => void;
     isHotkeyClearKey: (key: string) => boolean;
     isHotkeyModifierKey: (key: string) => boolean;
@@ -30,7 +31,7 @@ type SettingsActions = {
     detailedAnalysisStatus?: string;
     simpleAnalysisStatus?: string;
     analysisMessage?: string;
-    analysisScanProgress?: Record<string, unknown> | null;
+    analysisScanProgress?: JsonObject | null;
     analysisTotalValidFiles?: number;
     analysisDetailedParsedCount?: number;
     monitorOptions?: Array<{
@@ -41,10 +42,13 @@ type SettingsActions = {
 
 const HEX_COLOR_PATTERN = /^#[0-9A-F]{6}$/i;
 type SettingsTabProps = {
-    draft: any;
-    onChange: (path: string[], value: unknown) => void;
-    getAtPath?: (source: any, path: string[]) => unknown;
-    asTableValue?: (value: unknown) => string;
+    draft: JsonObject | null;
+    onChange: (path: string[], value: JsonValue) => void;
+    getAtPath?: (
+        source: JsonObject | null,
+        path: string[],
+    ) => JsonValue | undefined;
+    asTableValue?: (value: DisplayValue) => string;
     hotkeyStringFromEvent?: (
         event: React.KeyboardEvent<HTMLInputElement>,
     ) => string;
@@ -52,16 +56,19 @@ type SettingsTabProps = {
     languageManager: LanguageManager;
 };
 
-function asTableValueCompat(value: unknown) {
+function asTableValueCompat(value: DisplayValue) {
     if (value === null || value === undefined) {
         return "";
     }
     return String(value);
 }
 
-function getAtPathCompat(source: any, path: string[]) {
+function getAtPathCompat(source: JsonObject | null, path: string[]) {
     return path.reduce(
-        (acc, key) => (acc == null ? undefined : acc[key]),
+        (acc: JsonValue | undefined, key) =>
+            acc != null && typeof acc === "object"
+                ? (acc as JsonObject)[key]
+                : undefined,
         source,
     );
 }
@@ -151,7 +158,7 @@ function translateText(
     );
 }
 
-function formatNumber(value: unknown) {
+function formatNumber(value: DisplayValue) {
     const num = Number(value);
     if (!Number.isFinite(num)) {
         return asTableValueCompat(value);
@@ -166,7 +173,7 @@ function formatDurationSeconds(totalSeconds: number) {
 }
 
 function renderAnalysisProgress(
-    progressInput: Record<string, unknown> | null | undefined,
+    progressInput: JsonObject | null | undefined,
     languageManager: LanguageManager,
     totalValidFiles?: number,
     detailedParsedCount?: number,
@@ -231,7 +238,7 @@ function renderAnalysisProgress(
     );
 }
 
-function normalizeHexColor(value: unknown, fallback = "#FFFFFF") {
+function normalizeHexColor(value: DisplayValue, fallback: string = "#FFFFFF") {
     if (typeof value !== "string") {
         return fallback;
     }
@@ -246,7 +253,7 @@ type ColorFieldProps = {
     path: string[];
     color: string;
     disabled: boolean;
-    onChange: (path: string[], value: unknown) => void;
+    onChange: (path: string[], value: JsonValue) => void;
 };
 
 type RgbColor = {
@@ -641,7 +648,10 @@ export default function SettingsTab({
     languageManager,
 }: SettingsTabProps) {
     const t = (id: string) => languageManager.translate(id);
-    const read = (path: string[], fallback = null) => {
+    const read = (
+        path: string[],
+        fallback: JsonValue | null = null,
+    ): JsonValue | null => {
         const value = getAtPath(draft, path);
         return value === undefined ? fallback : value;
     };
@@ -742,7 +752,7 @@ export default function SettingsTab({
                     type="text"
                     className={`input hotkey-input ${actions.activeHotkeyPath === hotkeyPath ? "is-recording" : ""}`}
                     readOnly
-                    value={read(path, "") || ""}
+                    value={String(read(path, "") || "")}
                     placeholder={
                         actions.activeHotkeyPath === hotkeyPath
                             ? t("ui_settings_hotkey_recording")
@@ -813,7 +823,7 @@ export default function SettingsTab({
         );
     };
 
-    const checkUpdate = (event) => {
+    const checkUpdate = (event: React.MouseEvent<HTMLButtonElement>) => {
         (async () => {
             const update = await check();
 

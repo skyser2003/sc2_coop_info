@@ -1,6 +1,7 @@
 import languageData from "./languageData.json";
 
 export type AppLanguage = "en" | "ko";
+type LocalizableValue = string | number | boolean | null | undefined;
 
 type LanguageEntry = {
     en: string;
@@ -24,7 +25,7 @@ function normalizeAliasKey(value: string): string {
         .toLocaleLowerCase("en-US");
 }
 
-function isAppLanguage(value: unknown): value is AppLanguage {
+function isAppLanguage(value: string): value is AppLanguage {
     return value === "en" || value === "ko";
 }
 
@@ -53,7 +54,7 @@ export class LanguageManager {
         return this.language;
     }
 
-    setLanguage(language: unknown): void {
+    setLanguage(language: string): void {
         if (isAppLanguage(language)) {
             this.language = language;
         }
@@ -67,7 +68,7 @@ export class LanguageManager {
         return entry[this.language] || entry[ENGLISH_LANGUAGE] || id;
     }
 
-    idFromValue(value: unknown): string | null {
+    idFromValue(value: LocalizableValue): string | null {
         if (typeof value !== "string") {
             return null;
         }
@@ -80,7 +81,7 @@ export class LanguageManager {
         return this.aliasToId.get(normalizeAliasKey(trimmed)) || null;
     }
 
-    localize(value: unknown): string {
+    localize(value: LocalizableValue): string {
         if (value === null || value === undefined) {
             return "";
         }
@@ -102,7 +103,7 @@ export class LanguageManager {
         return this.translate(id);
     }
 
-    englishLabel(value: unknown): string {
+    englishLabel(value: LocalizableValue): string {
         if (value === null || value === undefined) {
             return "";
         }
@@ -125,7 +126,7 @@ export class LanguageManager {
         return entry.asset_en || entry.en;
     }
 
-    localizeMapRacePair(value: unknown): string {
+    localizeMapRacePair(value: LocalizableValue): string {
         if (typeof value !== "string") {
             return this.localize(value);
         }

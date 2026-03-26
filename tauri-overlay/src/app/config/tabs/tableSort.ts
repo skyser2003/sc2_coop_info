@@ -1,3 +1,5 @@
+type SortValue = string | number | boolean | null | undefined;
+
 export type SortDirection = "asc" | "desc";
 
 export type SortState = {
@@ -5,7 +7,7 @@ export type SortState = {
     direction: SortDirection;
 } | null;
 
-function toNumeric(value: unknown): number | null {
+function toNumeric(value: SortValue): number | null {
     if (typeof value === "number" && Number.isFinite(value)) {
         return value;
     }
@@ -22,7 +24,7 @@ function toNumeric(value: unknown): number | null {
     return null;
 }
 
-export function compareSortValues(left: unknown, right: unknown): number {
+export function compareSortValues(left: SortValue, right: SortValue): number {
     const leftNumber = toNumeric(left);
     const rightNumber = toNumeric(right);
     if (leftNumber !== null && rightNumber !== null) {
@@ -47,7 +49,7 @@ export function compareSortValues(left: unknown, right: unknown): number {
 export function sortRows<T>(
     rows: readonly T[],
     sortState: SortState,
-    valueFor: (row: T, key: string) => unknown,
+    valueFor: (row: T, key: string) => SortValue,
 ): T[] {
     if (!sortState) {
         return [...rows];

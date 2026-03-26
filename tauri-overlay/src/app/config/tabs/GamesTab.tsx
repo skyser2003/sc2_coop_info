@@ -13,7 +13,13 @@ import {
     rowsForPage,
     TablePagination,
 } from "./tablePagination";
-import { DifficultyFilterKey, DifficultyFilters } from "../types";
+import type {
+    DisplayValue,
+    DifficultyFilterKey,
+    DifficultyFilters,
+    JsonValue,
+    MutatorData,
+} from "../types";
 
 type GamesTabRow = {
     map?: string | null;
@@ -32,16 +38,7 @@ type GamesTabRow = {
     extension?: boolean | null;
     weekly?: boolean | null;
     is_mutation?: boolean | null;
-    mutators?: readonly GamesTabMutator[] | null;
-};
-
-type GamesTabMutator = {
-    name?: string | null;
-    nameEn?: string | null;
-    nameKo?: string | null;
-    iconName?: string | null;
-    descriptionEn?: string | null;
-    descriptionKo?: string | null;
+    mutators?: readonly MutatorData[] | null;
 };
 
 type GamesTabChatMessage = {
@@ -79,19 +76,19 @@ type GamesTabState = {
 type GamesTabProps = {
     rows: readonly GamesTabRow[] | null;
     state: GamesTabState;
-    asTableValue: (value: unknown) => string;
-    formatDurationSeconds: (value: unknown) => string;
+    asTableValue: (value: DisplayValue) => string;
+    formatDurationSeconds: (value: DisplayValue) => string;
     languageManager: LanguageManager;
 };
 
-function asTableValueCompat(value: unknown) {
+function asTableValueCompat(value: DisplayValue) {
     if (value === null || value === undefined) {
         return "";
     }
     return String(value);
 }
 
-function formatDurationSecondsCompat(value: unknown) {
+function formatDurationSecondsCompat(value: DisplayValue) {
     const seconds = Number(value);
     if (!Number.isFinite(seconds) || seconds <= 0 || seconds >= 999999) {
         return "-";
@@ -110,11 +107,11 @@ function mutatorIconPath(iconName: string): string {
     return `/overlay/Mutator Icons/${encodeURIComponent(iconName)}.png`;
 }
 
-function isGamesTabMutator(value: unknown): value is GamesTabMutator {
+function isGamesTabMutator(value: JsonValue): value is MutatorData {
     return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function readMutators(value: unknown): readonly GamesTabMutator[] {
+function readMutators(value: DisplayValue): readonly MutatorData[] {
     if (!Array.isArray(value)) {
         return [];
     }
@@ -122,9 +119,9 @@ function readMutators(value: unknown): readonly GamesTabMutator[] {
 }
 
 function localizedMutatorName(
-    mutator: GamesTabMutator,
+    mutator: MutatorData,
     languageManager: LanguageManager,
-    asTableValue: (value: unknown) => string,
+    asTableValue: (value: DisplayValue) => string,
 ): string {
     const preferred =
         languageManager.currentLanguage() === "ko"
@@ -138,9 +135,9 @@ function localizedMutatorName(
 }
 
 function localizedMutatorDescription(
-    mutator: GamesTabMutator,
+    mutator: MutatorData,
     languageManager: LanguageManager,
-    asTableValue: (value: unknown) => string,
+    asTableValue: (value: DisplayValue) => string,
 ): string {
     const preferred =
         languageManager.currentLanguage() === "ko"
@@ -265,7 +262,7 @@ export default function GamesTab({
         React.useState<GamesTabChatPayload | null>(null);
     const chatRequestSeq = React.useRef<number>(0);
 
-    const formatReplayTime = (value: unknown) => {
+    const formatReplayTime = (value: DisplayValue) => {
         const num = Number(value);
         if (!Number.isFinite(num) || num <= 0) {
             return "-";
@@ -282,7 +279,7 @@ export default function GamesTab({
         return `${year}-${month}-${day} ${hh}:${mm}`;
     };
 
-    const formatChatTime = (value: unknown) => {
+    const formatChatTime = (value: DisplayValue) => {
         const seconds = Number(value);
         if (!Number.isFinite(seconds) || seconds < 0) {
             return "--:--";
@@ -299,7 +296,7 @@ export default function GamesTab({
 
     const chatPlayerLabel = (
         payload: GamesTabChatPayload,
-        playerValue: unknown,
+        playerValue: DisplayValue,
     ) => {
         const player = Number(playerValue);
         if (player === 1) {

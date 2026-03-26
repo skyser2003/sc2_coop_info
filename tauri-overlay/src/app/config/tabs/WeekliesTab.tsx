@@ -1,5 +1,6 @@
 import * as React from "react";
 import type { LanguageManager } from "../../i18n/languageManager";
+import type { DisplayValue, JsonValue, MutatorData } from "../types";
 import {
     nextSortState,
     sortIndicator,
@@ -7,21 +8,12 @@ import {
     type SortState,
 } from "./tableSort";
 
-type WeekliesTabMutator = {
-    name?: string | null;
-    nameEn?: string | null;
-    nameKo?: string | null;
-    iconName?: string | null;
-    descriptionEn?: string | null;
-    descriptionKo?: string | null;
-};
-
 type WeekliesTabRow = {
     mutation?: string | null;
     nameEn?: string | null;
     nameKo?: string | null;
     map?: string | null;
-    mutators?: readonly WeekliesTabMutator[] | null;
+    mutators?: readonly MutatorData[] | null;
     mutationOrder?: number | string | null;
     isCurrent?: boolean | null;
     nextDuration?: string | null;
@@ -36,19 +28,19 @@ type WeekliesTabProps = {
     rows: readonly WeekliesTabRow[] | null;
     onRefresh: () => void;
     isBusy: boolean;
-    asTableValue?: (value: unknown) => string;
-    formatPercent?: (value: unknown) => string;
+    asTableValue?: (value: DisplayValue) => string;
+    formatPercent?: (value: DisplayValue) => string;
     languageManager: LanguageManager;
 };
 
-function asTableValueCompat(value: unknown): string {
+function asTableValueCompat(value: DisplayValue): string {
     if (value === null || value === undefined) {
         return "";
     }
     return String(value);
 }
 
-function formatPercentCompat(value: unknown): string {
+function formatPercentCompat(value: DisplayValue): string {
     const num = Number(value);
     if (!Number.isFinite(num)) {
         return "0.0%";
@@ -60,11 +52,11 @@ function mutatorIconPath(iconName: string): string {
     return `/overlay/Mutator Icons/${encodeURIComponent(iconName)}.png`;
 }
 
-function isWeekliesTabMutator(value: unknown): value is WeekliesTabMutator {
+function isWeekliesTabMutator(value: JsonValue): value is MutatorData {
     return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function readMutators(value: unknown): readonly WeekliesTabMutator[] {
+function readMutators(value: DisplayValue): readonly MutatorData[] {
     if (!Array.isArray(value)) {
         return [];
     }
@@ -79,7 +71,7 @@ function mutationKeyForRow(row: WeekliesTabRow): string {
 function localizedWeeklyMutationName(
     row: WeekliesTabRow,
     languageManager: LanguageManager,
-    asTableValue: (value: unknown) => string,
+    asTableValue: (value: DisplayValue) => string,
 ): string {
     const preferred =
         languageManager.currentLanguage() === "ko" ? row.nameKo : row.nameEn;
@@ -94,9 +86,9 @@ function localizedWeeklyMutationName(
 }
 
 function localizedMutatorDescription(
-    mutator: WeekliesTabMutator,
+    mutator: MutatorData,
     languageManager: LanguageManager,
-    asTableValue: (value: unknown) => string,
+    asTableValue: (value: DisplayValue) => string,
 ): string {
     const preferred =
         languageManager.currentLanguage() === "ko"
@@ -110,9 +102,9 @@ function localizedMutatorDescription(
 }
 
 function localizedMutatorName(
-    mutator: WeekliesTabMutator,
+    mutator: MutatorData,
     languageManager: LanguageManager,
-    asTableValue: (value: unknown) => string,
+    asTableValue: (value: DisplayValue) => string,
 ): string {
     const preferred =
         languageManager.currentLanguage() === "ko"
@@ -126,9 +118,9 @@ function localizedMutatorName(
 }
 
 function localizeWeeklyDuration(
-    value: unknown,
+    value: DisplayValue,
     languageManager: LanguageManager,
-    asTableValue: (value: unknown) => string,
+    asTableValue: (value: DisplayValue) => string,
 ): string {
     const text = asTableValue(value).trim();
     if (text === "") {

@@ -1,5 +1,6 @@
 import * as React from "react";
 import type { LanguageManager } from "../../i18n/languageManager";
+import type { DisplayValue } from "../types";
 import {
     nextSortState,
     sortIndicator,
@@ -36,8 +37,8 @@ type PlayersTabProps = {
     onNoteChange: (handle: string, note: string) => void;
     onNoteCommit: (handle: string, note: string) => Promise<void>;
     isBusy: boolean;
-    asTableValue?: (value: unknown) => string;
-    formatPercent?: (value: unknown) => string;
+    asTableValue?: (value: DisplayValue) => string;
+    formatPercent?: (value: DisplayValue) => string;
     languageManager: LanguageManager;
 };
 
@@ -47,14 +48,14 @@ type PlayersTableRow = PlayersTabRow & {
     readonly playerNamesList: readonly string[];
 };
 
-function asTableValueCompat(value: unknown) {
+function asTableValueCompat(value: DisplayValue) {
     if (value === null || value === undefined) {
         return "";
     }
     return String(value);
 }
 
-function formatPercentCompat(value: unknown) {
+function formatPercentCompat(value: DisplayValue) {
     const num = Number(value);
     if (!Number.isFinite(num)) {
         return "0.0%";
@@ -62,7 +63,7 @@ function formatPercentCompat(value: unknown) {
     return `${(num * 100).toFixed(1)}%`;
 }
 
-function formatReplayTime(value: unknown) {
+function formatReplayTime(value: DisplayValue) {
     const num = Number(value);
     if (!Number.isFinite(num) || num <= 0) {
         return "-";

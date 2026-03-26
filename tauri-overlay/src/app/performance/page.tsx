@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { JsonObject, JsonValue } from "../config/types";
 
 import "./page.css";
 
@@ -32,23 +33,14 @@ type PerformanceOverlayPayload = {
 
 type PerformanceRuntimeWindow = typeof window & {
     __TAURI_INTERNALS__?: {
-        invoke?: (
-            command: string,
-            args?: Record<string, unknown>,
-        ) => Promise<unknown>;
+        invoke?: (command: string, args?: JsonObject) => Promise<JsonValue>;
         core?: {
-            invoke?: (
-                command: string,
-                args?: Record<string, unknown>,
-            ) => Promise<unknown>;
+            invoke?: (command: string, args?: JsonObject) => Promise<JsonValue>;
         };
     };
     __TAURI__?: {
         core?: {
-            invoke?: (
-                command: string,
-                args?: Record<string, unknown>,
-            ) => Promise<unknown>;
+            invoke?: (command: string, args?: JsonObject) => Promise<JsonValue>;
         };
     };
     updatePerformanceStats?: (payload: PerformanceOverlayPayload) => void;

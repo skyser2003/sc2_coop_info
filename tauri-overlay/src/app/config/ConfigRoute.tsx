@@ -12,6 +12,21 @@ import type {
 } from "../../bindings/overlay";
 
 import { createLanguageManager } from "../i18n/languageManager";
+import type {
+    DisplayValue,
+    JsonArray,
+    JsonObject,
+    JsonValue,
+    StatisticsBoolFilterKey,
+    StatisticsDifficultyKey,
+    StatisticsFilters,
+    StatisticsNumberFilterKey,
+    StatisticsPayload,
+    StatisticsRegionKey,
+    StatisticsState,
+    StatisticsTextFilterKey,
+    StatsHelpers,
+} from "./types";
 import GamesTab from "./tabs/GamesTab";
 import GenericTab from "./tabs/GenericTab";
 import PerformanceTab from "./tabs/PerformanceTab";
@@ -23,26 +38,99 @@ import WeekliesTab from "./tabs/WeekliesTab";
 
 const { useEffect, useMemo, useRef, useState } = React;
 
-type JsonObject = Record<string, unknown>;
-type JsonArray = Array<unknown>;
 type SettingsPayload = JsonObject;
-type StatsPayload = JsonObject;
+type GamesRows = NonNullable<React.ComponentProps<typeof GamesTab>["rows"]>;
+type PlayerRows = NonNullable<React.ComponentProps<typeof PlayersTab>["rows"]>;
+type WeekliesRows = NonNullable<
+    React.ComponentProps<typeof WeekliesTab>["rows"]
+>;
+type GamesChatPayload = Awaited<
+    ReturnType<React.ComponentProps<typeof GamesTab>["state"]["loadChat"]>
+>;
 type GamesPayload = {
-    rows: JsonArray;
+    rows: GamesRows;
     totalRows: number;
 };
 type TabDataState = {
     games: GamesPayload | null;
-    players: JsonArray | null;
-    weeklies: JsonArray | null;
-    statistics: StatsPayload | null;
+    players: PlayerRows | null;
+    weeklies: WeekliesRows | null;
+    statistics: StatisticsPayload | null;
 };
 type RequestOptions = {
     method?: string;
-    body?: unknown;
+    body?: JsonValue;
 };
+type PathValueUpdater = (path: string[], value: JsonValue) => void;
 type LoadTabOptions = {
     gamesLimit?: number;
+};
+type SettingsEditorProps = {
+    onThemeModeChange: (darkThemeEnabled: boolean) => void;
+};
+type LanguageManagerInstance = ReturnType<typeof createLanguageManager>;
+type TabId =
+    | "settings"
+    | "games"
+    | "players"
+    | "weeklies"
+    | "statistics"
+    | "randomizer"
+    | "performance"
+    | "links";
+type TabGroup = {
+    title: string;
+    paths?: string[][];
+    links?: Array<[string, string]>;
+};
+type ConfigTabDefinition = {
+    id: TabId;
+    titleId: string;
+    groups: TabGroup[];
+};
+type SettingsTabActions = React.ComponentProps<typeof SettingsTab>["actions"];
+type RandomizerTabActions = React.ComponentProps<
+    typeof RandomizerTab
+>["actions"];
+type PerformanceTabActions = React.ComponentProps<
+    typeof PerformanceTab
+>["actions"];
+type GamesTabState = React.ComponentProps<typeof GamesTab>["state"];
+type GenericTabValue =
+    | GamesPayload
+    | PlayerRows
+    | WeekliesRows
+    | StatisticsPayload
+    | null;
+type ExtraState = {
+    tabData: TabDataState;
+    isBusy: boolean;
+    settingsActions: SettingsTabActions;
+    refreshPlayers: () => void;
+    playerNotes: Record<string, string>;
+    onPlayerNoteChange: (handle: string, note: string) => void;
+    onPlayerNoteCommit: (handle: string, note: string) => Promise<void>;
+    refreshWeeklies: () => void;
+    randomizerCatalog: OverlayRandomizerCatalog | null;
+    randomizerActions: RandomizerTabActions;
+    performanceActions: PerformanceTabActions;
+    performanceDisplayVisible: boolean;
+    languageManager: LanguageManagerInstance;
+    statsState: StatisticsState;
+    statsActions: StatsHelpers & {
+        runDetailedAnalysis: () => Promise<void>;
+        pauseDetailedAnalysis: () => Promise<void>;
+        setDetailedAnalysisAtStart: (enabled: boolean) => Promise<void>;
+    };
+    gamesState: GamesTabState & {
+        showSelected: () => void;
+        moveReplay: (delta: number) => Promise<void>;
+    };
+};
+type QueuedLiveApply = {
+    settings: SettingsPayload;
+    requestSeq: number;
+    successMessage: string;
 };
 type ConfigResponsePayload = {
     status: string;
@@ -52,13 +140,13 @@ type ConfigResponsePayload = {
     active_settings?: SettingsPayload;
     randomizer_catalog?: OverlayRandomizerCatalog | null;
     monitor_catalog?: Array<MonitorOption>;
-    replays?: JsonArray;
+    replays?: GamesRows;
     total_replays?: number;
     selected_replay_file?: string | null;
-    players?: JsonArray;
-    weeklies?: JsonArray;
-    stats?: StatsPayload | null;
-    chat?: unknown;
+    players?: PlayerRows;
+    weeklies?: WeekliesRows;
+    stats?: StatisticsPayload | null;
+    chat?: JsonValue;
     result?: {
         ok?: boolean;
         path?: string;
@@ -72,7 +160,7 @@ declare global {
     }
 }
 
-const TABS = [
+const TABS: ConfigTabDefinition[] = [
     {
         id: "settings",
         titleId: "ui_tab_settings",
@@ -200,7 +288,16 @@ const SCO_PERFORMANCE_VISIBILITY_EVENT = "sco://performance-visibility";
 const SCO_OVERLAY_COLOR_PREVIEW_EVENT = "sco://overlay-color-preview";
 const SCO_OVERLAY_LANGUAGE_PREVIEW_EVENT = "sco://overlay-language-preview";
 const SCO_OVERLAY_SCREENSHOT_RESULT_EVENT = "sco://overlay-screenshot-result";
-const STATS_DEFAULT_FILTERS = {
+type StatsRefreshMode = "debounced" | "immediate";
+type StatsQueryState = {
+    activeQuery: string;
+    desiredQuery: string;
+    requestSeq: number;
+    inFlight: boolean;
+    completedAt: number;
+};
+
+const STATS_DEFAULT_FILTERS: StatisticsFilters = {
     difficulties: {
         Casual: true,
         Normal: true,
@@ -237,9 +334,12 @@ function cloneJson<T>(value: T): T {
     return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function getAtPath(source: JsonObject | null, path: Array<string>): unknown {
+function getAtPath(
+    source: JsonObject | null,
+    path: Array<string>,
+): JsonValue | undefined {
     return path.reduce(
-        (acc: unknown, key) =>
+        (acc: JsonValue | undefined, key) =>
             acc != null && typeof acc === "object"
                 ? (acc as JsonObject)[key]
                 : undefined,
@@ -250,7 +350,7 @@ function getAtPath(source: JsonObject | null, path: Array<string>): unknown {
 function setAtPath(
     source: JsonObject,
     path: Array<string>,
-    value: unknown,
+    value: JsonValue,
 ): JsonObject {
     const clone = cloneJson(source);
     let cursor: JsonObject = clone;
@@ -293,7 +393,7 @@ function performanceVisibilityFromSettings(
     return Boolean(payload.performance_show);
 }
 
-function prettyLabel(value) {
+function prettyLabel(value: string): string {
     return value
         .replace(/_/g, " ")
         .replace(/\//g, " / ")
@@ -301,7 +401,7 @@ function prettyLabel(value) {
         .replace(/\b\w/g, (match) => match.toUpperCase());
 }
 
-function isSensitivePath(path) {
+function isSensitivePath(path: string[]): boolean {
     const full = path.join(".").toLowerCase();
     return (
         full.includes("secret") ||
@@ -311,7 +411,10 @@ function isSensitivePath(path) {
     );
 }
 
-function asArrayFromText(raw, templateValue) {
+function asArrayFromText(
+    raw: string,
+    templateValue: JsonValue | undefined,
+): string[] | number[] {
     const rows = raw
         .split("\n")
         .map((row) => row.trim())
@@ -327,7 +430,7 @@ function asArrayFromText(raw, templateValue) {
     return rows;
 }
 
-function asTextFromValue(value) {
+function asTextFromValue(value: DisplayValue | JsonArray): string {
     if (value === null || value === undefined) {
         return "";
     }
@@ -340,7 +443,13 @@ function asTextFromValue(value) {
     return String(value);
 }
 
-function renderNode(value, templateValue, path, depth, onChange) {
+function renderNode(
+    value: JsonValue | undefined,
+    templateValue: JsonValue | undefined,
+    path: string[],
+    depth: number,
+    onChange: PathValueUpdater,
+): React.ReactNode {
     const style = `node-depth-${Math.min(depth, 3)}`;
     const label = path[path.length - 1]
         ? prettyLabel(path[path.length - 1])
@@ -377,7 +486,10 @@ function renderNode(value, templateValue, path, depth, onChange) {
                 <label className="field field-textarea">
                     <span className="field-label">{`${label} (one row per line)`}</span>
                     <textarea
-                        rows={Math.max(3, value.length || 3)}
+                        rows={Math.max(
+                            3,
+                            Array.isArray(value) ? value.length : 3,
+                        )}
                         className="mono input"
                         value={asTextFromValue(value)}
                         onChange={(event) =>
@@ -445,7 +557,7 @@ function renderNode(value, templateValue, path, depth, onChange) {
     return null;
 }
 
-function formatPercent(value) {
+function formatPercent(value: DisplayValue): string {
     const num = Number(value);
     if (!Number.isFinite(num)) {
         return "0.0%";
@@ -453,7 +565,7 @@ function formatPercent(value) {
     return `${(num * 100).toFixed(1)}%`;
 }
 
-function normalizeDate(value) {
+function normalizeDate(value: DisplayValue): string {
     if (!value) {
         return "";
     }
@@ -469,14 +581,14 @@ function normalizeDate(value) {
     return date.toLocaleString();
 }
 
-function asTableValue(value) {
+function asTableValue(value: DisplayValue): string {
     if (value === null || value === undefined) {
         return "";
     }
     return String(value);
 }
 
-function formatPercent0(value) {
+function formatPercent0(value: DisplayValue): string {
     const num = Number(value);
     if (!Number.isFinite(num)) {
         return "-";
@@ -484,7 +596,7 @@ function formatPercent0(value) {
     return `${(num * 100).toFixed(0)}%`;
 }
 
-function formatPercent1(value) {
+function formatPercent1(value: DisplayValue): string {
     const num = Number(value);
     if (!Number.isFinite(num)) {
         return "-";
@@ -492,7 +604,7 @@ function formatPercent1(value) {
     return `${(num * 100).toFixed(1)}%`;
 }
 
-function formatNumber(value) {
+function formatNumber(value: DisplayValue): string {
     const num = Number(value);
     if (!Number.isFinite(num)) {
         return asTableValue(value);
@@ -500,7 +612,7 @@ function formatNumber(value) {
     return num.toLocaleString("en-US");
 }
 
-function formatDurationSeconds(value) {
+function formatDurationSeconds(value: DisplayValue): string {
     const seconds = Number(value);
     if (!Number.isFinite(seconds) || seconds <= 0 || seconds >= 999999) {
         return "-";
@@ -515,7 +627,7 @@ function formatDurationSeconds(value) {
     return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
 }
 
-function statsFiltersToQuery(filters) {
+function statsFiltersToQuery(filters: StatisticsFilters): string {
     const difficultyFilter = [];
     if (!filters.difficulties.Casual) difficultyFilter.push("Casual");
     if (!filters.difficulties.Normal) difficultyFilter.push("Normal");
@@ -570,7 +682,9 @@ function statsFiltersToQuery(filters) {
     return params.toString();
 }
 
-function hotkeyStringFromEvent(event) {
+function hotkeyStringFromEvent(
+    event: React.KeyboardEvent<HTMLInputElement>,
+): string {
     const baseKey = event.key;
     if (!baseKey) {
         return "";
@@ -647,7 +761,7 @@ function hotkeyStringFromEvent(event) {
     return [...modifiers, key].join("+");
 }
 
-function isHotkeyClearKey(key) {
+function isHotkeyClearKey(key: string): boolean {
     return (
         key === "Backspace" ||
         key === "Delete" ||
@@ -656,7 +770,7 @@ function isHotkeyClearKey(key) {
     );
 }
 
-function isHotkeyModifierKey(key) {
+function isHotkeyModifierKey(key: string): boolean {
     return (
         key === "Control" || key === "Shift" || key === "Alt" || key === "Meta"
     );
@@ -688,7 +802,10 @@ async function requestJson(
     }
 }
 
-async function syncHotkeyReassign(currentPath, nextPath) {
+async function syncHotkeyReassign(
+    currentPath: string,
+    nextPath: string,
+): Promise<void> {
     if (currentPath === nextPath) {
         return;
     }
@@ -717,10 +834,19 @@ async function syncHotkeyReassign(currentPath, nextPath) {
     }
 }
 
-function renderGamesTab(rows, state, languageManager) {
+function renderGamesTab(
+    rows: GamesPayload | React.ComponentProps<typeof GamesTab>["rows"],
+    state: GamesTabState,
+    languageManager: LanguageManagerInstance,
+): React.ReactNode {
+    const gameRows = Array.isArray(rows)
+        ? rows
+        : rows !== null && typeof rows === "object" && "rows" in rows
+          ? rows.rows
+          : null;
     return (
         <GamesTab
-            rows={rows?.rows || rows}
+            rows={gameRows}
             state={state}
             asTableValue={asTableValue}
             formatDurationSeconds={formatDurationSeconds}
@@ -730,14 +856,14 @@ function renderGamesTab(rows, state, languageManager) {
 }
 
 function renderPlayersTab(
-    rows,
-    onRefresh,
-    isBusy,
-    languageManager,
-    playerNotes,
-    onPlayerNoteChange,
-    onPlayerNoteCommit,
-) {
+    rows: React.ComponentProps<typeof PlayersTab>["rows"],
+    onRefresh: () => void,
+    isBusy: boolean,
+    languageManager: LanguageManagerInstance,
+    playerNotes: React.ComponentProps<typeof PlayersTab>["noteValues"],
+    onPlayerNoteChange: (handle: string, note: string) => void,
+    onPlayerNoteCommit: (handle: string, note: string) => Promise<void>,
+): React.ReactNode {
     return (
         <PlayersTab
             rows={rows}
@@ -753,7 +879,12 @@ function renderPlayersTab(
     );
 }
 
-function renderWeekliesTab(rows, onRefresh, isBusy, languageManager) {
+function renderWeekliesTab(
+    rows: React.ComponentProps<typeof WeekliesTab>["rows"],
+    onRefresh: () => void,
+    isBusy: boolean,
+    languageManager: LanguageManagerInstance,
+): React.ReactNode {
     return (
         <WeekliesTab
             rows={rows}
@@ -767,11 +898,11 @@ function renderWeekliesTab(rows, onRefresh, isBusy, languageManager) {
 }
 
 function renderStatisticsTab(
-    statsPayload,
-    statsState,
-    actions,
-    languageManager,
-) {
+    statsPayload: StatisticsPayload | null,
+    statsState: StatisticsState,
+    actions: StatsHelpers,
+    languageManager: LanguageManagerInstance,
+): React.ReactNode {
     return (
         <StatisticsTab
             statsPayload={statsPayload}
@@ -782,7 +913,12 @@ function renderStatisticsTab(
     );
 }
 
-function renderMainSettingsTab(draft, onChange, actions, languageManager) {
+function renderMainSettingsTab(
+    draft: React.ComponentProps<typeof SettingsTab>["draft"],
+    onChange: PathValueUpdater,
+    actions: SettingsTabActions,
+    languageManager: LanguageManagerInstance,
+): React.ReactNode {
     return (
         <SettingsTab
             draft={draft}
@@ -796,7 +932,12 @@ function renderMainSettingsTab(draft, onChange, actions, languageManager) {
     );
 }
 
-function renderRandomizerTab(draft, onChange, extraState, languageManager) {
+function renderRandomizerTab(
+    draft: React.ComponentProps<typeof RandomizerTab>["draft"],
+    onChange: PathValueUpdater,
+    extraState: ExtraState,
+    languageManager: LanguageManagerInstance,
+): React.ReactNode {
     return (
         <RandomizerTab
             draft={draft}
@@ -808,7 +949,11 @@ function renderRandomizerTab(draft, onChange, extraState, languageManager) {
     );
 }
 
-function renderPerformanceTab(draft, onChange, extraState) {
+function renderPerformanceTab(
+    draft: React.ComponentProps<typeof PerformanceTab>["draft"],
+    onChange: PathValueUpdater,
+    extraState: ExtraState,
+): React.ReactNode {
     return (
         <PerformanceTab
             draft={draft}
@@ -821,7 +966,13 @@ function renderPerformanceTab(draft, onChange, extraState) {
     );
 }
 
-function renderTabContent(tab, draft, settings, onChange, extraState) {
+function renderTabContent(
+    tab: ConfigTabDefinition,
+    draft: SettingsPayload,
+    settings: SettingsPayload | null,
+    onChange: PathValueUpdater,
+    extraState: ExtraState,
+): React.ReactNode {
     if (tab.id === "settings") {
         return renderMainSettingsTab(
             draft,
@@ -878,7 +1029,7 @@ function renderTabContent(tab, draft, settings, onChange, extraState) {
 
     return (
         <GenericTab
-            tab={tab}
+            tab={{ title: tab.titleId, groups: tab.groups }}
             draft={draft}
             settings={settings}
             onChange={onChange}
@@ -888,7 +1039,9 @@ function renderTabContent(tab, draft, settings, onChange, extraState) {
     );
 }
 
-function SettingsEditor({ onThemeModeChange }) {
+function SettingsEditor({
+    onThemeModeChange,
+}: SettingsEditorProps): React.ReactNode {
     const [settings, setSettings] = useState<SettingsPayload | null>(null);
     const [draft, setDraft] = useState<SettingsPayload | null>(null);
     const [status, setStatus] = useState("Loading settings...");
@@ -905,14 +1058,14 @@ function SettingsEditor({ onThemeModeChange }) {
     const [activeHotkeyPath, setActiveHotkeyPath] = useState("");
     const [performanceEditModeEnabled, setPerformanceEditModeEnabled] =
         useState(false);
-    const activeHotkeyPathRef = useRef("");
-    const hotkeyTransitionRef = useRef(Promise.resolve());
+    const activeHotkeyPathRef = useRef<string>("");
+    const hotkeyTransitionRef = useRef<Promise<void>>(Promise.resolve());
     const [randomizerCatalog, setRandomizerCatalog] =
         useState<OverlayRandomizerCatalog | null>(null);
     const [monitorCatalog, setMonitorCatalog] = useState<Array<MonitorOption>>(
         [],
     );
-    const [statsState, setStatsState] = useState({
+    const [statsState, setStatsState] = useState<StatisticsState>({
         filters: cloneJson(STATS_DEFAULT_FILTERS),
         activeSubtab: "maps",
         selectedMap: "",
@@ -925,27 +1078,31 @@ function SettingsEditor({ onThemeModeChange }) {
         selectedUnitSortReverse: false,
         amonSearch: "",
     });
-    const statsFiltersRef = useRef(cloneJson(STATS_DEFAULT_FILTERS));
-    const statsRefreshModeRef = useRef("debounced");
-    const statsQueryRef = useRef({
+    const statsFiltersRef = useRef<StatisticsFilters>(
+        cloneJson(STATS_DEFAULT_FILTERS),
+    );
+    const statsRefreshModeRef = useRef<StatsRefreshMode>("debounced");
+    const statsQueryRef = useRef<StatsQueryState>({
         activeQuery: "",
         desiredQuery: "",
         requestSeq: 0,
         inFlight: false,
         completedAt: 0,
     });
-    const startupAnalysisRequestedRef = useRef(false);
-    const tabLoadInFlightRef = useRef({
+    const startupAnalysisRequestedRef = useRef<boolean>(false);
+    const tabLoadInFlightRef = useRef<
+        Record<"games" | "players" | "weeklies", boolean>
+    >({
         games: false,
         players: false,
         weeklies: false,
     });
-    const gamesLoadLimitRef = useRef(300);
-    const draftRef = useRef(null);
-    const settingsMutationRef = useRef(Promise.resolve());
-    const latestLiveApplySeqRef = useRef(0);
-    const liveApplyInFlightRef = useRef(false);
-    const queuedLiveApplyRef = useRef(null);
+    const gamesLoadLimitRef = useRef<number>(300);
+    const draftRef = useRef<SettingsPayload | null>(null);
+    const settingsMutationRef = useRef<Promise<void>>(Promise.resolve());
+    const latestLiveApplySeqRef = useRef<number>(0);
+    const liveApplyInFlightRef = useRef<boolean>(false);
+    const queuedLiveApplyRef = useRef<QueuedLiveApply | null>(null);
     draftRef.current = draft;
     activeHotkeyPathRef.current = activeHotkeyPath;
 
@@ -1010,7 +1167,7 @@ function SettingsEditor({ onThemeModeChange }) {
         };
     }, []);
 
-    function transitionHotkeyCapture(nextPath) {
+    function transitionHotkeyCapture(nextPath: string): Promise<void> {
         hotkeyTransitionRef.current = hotkeyTransitionRef.current
             .then(async () => {
                 await settingsMutationRef.current;
@@ -1028,18 +1185,18 @@ function SettingsEditor({ onThemeModeChange }) {
         return hotkeyTransitionRef.current;
     }
 
-    function beginHotkeyCapture(path) {
+    function beginHotkeyCapture(path: string): Promise<void> {
         return transitionHotkeyCapture(path);
     }
 
-    function endHotkeyCapture(path) {
+    function endHotkeyCapture(path: string): Promise<void> {
         if (activeHotkeyPathRef.current !== path) {
             return Promise.resolve();
         }
         return transitionHotkeyCapture("");
     }
 
-    function applyPerformanceVisibilityState(visible) {
+    function applyPerformanceVisibilityState(visible: boolean): void {
         setSettings((current) =>
             current === null
                 ? current
@@ -1055,11 +1212,11 @@ function SettingsEditor({ onThemeModeChange }) {
         }
     }
 
-    function safeStatus(message) {
+    function safeStatus(message: string): void {
         setStatus(message);
     }
 
-    function replaceDraft(nextDraft) {
+    function replaceDraft(nextDraft: SettingsPayload | null): void {
         if (
             nextDraft &&
             typeof nextDraft === "object" &&
@@ -1071,7 +1228,7 @@ function SettingsEditor({ onThemeModeChange }) {
         setDraft(nextDraft);
     }
 
-    function queueSettingsMutation(task) {
+    function queueSettingsMutation(task: () => Promise<void>): Promise<void> {
         const run = settingsMutationRef.current.then(task, task);
         settingsMutationRef.current = run.then(
             () => undefined,
@@ -1080,11 +1237,11 @@ function SettingsEditor({ onThemeModeChange }) {
         return run;
     }
 
-    function cancelPendingLiveApply() {
+    function cancelPendingLiveApply(): void {
         queuedLiveApplyRef.current = null;
     }
 
-    function emitOverlayColorPreview(nextSettings) {
+    function emitOverlayColorPreview(nextSettings: SettingsPayload): void {
         void (async () => {
             try {
                 await emit<OverlayColorPreviewPayload>(
@@ -1135,7 +1292,7 @@ function SettingsEditor({ onThemeModeChange }) {
         })();
     }
 
-    function emitOverlayLanguagePreview(nextSettings) {
+    function emitOverlayLanguagePreview(nextSettings: SettingsPayload): void {
         void (async () => {
             try {
                 await emit<OverlayLanguagePreviewPayload>(
@@ -1153,10 +1310,10 @@ function SettingsEditor({ onThemeModeChange }) {
     }
 
     function performRuntimeSettingsApply(
-        nextSettings,
-        requestSeq,
+        nextSettings: SettingsPayload,
+        requestSeq: number,
         successMessage = "Changes applied immediately. Click Save to persist.",
-    ) {
+    ): Promise<ConfigResponsePayload | null> {
         liveApplyInFlightRef.current = true;
         return requestJson("/config", {
             method: "POST",
@@ -1199,9 +1356,9 @@ function SettingsEditor({ onThemeModeChange }) {
     }
 
     function applyRuntimeSettings(
-        nextSettings,
+        nextSettings: SettingsPayload,
         successMessage = "Changes applied immediately. Click Save to persist.",
-    ) {
+    ): Promise<ConfigResponsePayload | null> {
         const requestSeq = latestLiveApplySeqRef.current + 1;
         latestLiveApplySeqRef.current = requestSeq;
         if (liveApplyInFlightRef.current) {
@@ -1280,7 +1437,7 @@ function SettingsEditor({ onThemeModeChange }) {
                             ...current,
                             statistics: {
                                 ...(current.statistics || {}),
-                                scan_progress: progress,
+                                scan_progress: progress as JsonObject,
                             },
                         }));
                     },
@@ -1371,7 +1528,10 @@ function SettingsEditor({ onThemeModeChange }) {
         };
     }, []);
 
-    function getPayloadForTab(tabId, payload) {
+    function getPayloadForTab(
+        tabId: TabId,
+        payload: ConfigResponsePayload,
+    ): GenericTabValue {
         if (tabId === "games") {
             return {
                 rows: payload.replays || [],
@@ -1387,13 +1547,10 @@ function SettingsEditor({ onThemeModeChange }) {
     }
 
     async function loadTabData(
-        tabId,
+        tabId: "games" | "players" | "weeklies",
         force = false,
         options: LoadTabOptions = {},
-    ) {
-        if (!["games", "players", "weeklies"].includes(tabId)) {
-            return;
-        }
+    ): Promise<void> {
         if (!force && tabLoadInFlightRef.current[tabId]) {
             return;
         }
@@ -1450,7 +1607,10 @@ function SettingsEditor({ onThemeModeChange }) {
         tabData.statistics,
     ]);
 
-    async function postAction(path, payload) {
+    async function postAction(
+        path: string,
+        payload: JsonValue,
+    ): Promise<ConfigResponsePayload | null> {
         setIsBusy(true);
         try {
             const result = await requestJson(path, {
@@ -1467,7 +1627,7 @@ function SettingsEditor({ onThemeModeChange }) {
         }
     }
 
-    function updateField(path, value) {
+    function updateField(path: string[], value: JsonValue): void {
         if (draftRef.current === null) {
             return;
         }
@@ -1492,17 +1652,26 @@ function SettingsEditor({ onThemeModeChange }) {
         void applyRuntimeSettings(nextDraft);
     }
 
-    function normalizePlayerNoteKey(value) {
+    function normalizePlayerNoteKey(value: DisplayValue): string {
         return asTableValue(value).trim().toLowerCase();
     }
 
-    function patchedPlayerNotes(currentSettings, handle, noteValue) {
+    function patchedPlayerNotes(
+        currentSettings: SettingsPayload,
+        handle: string,
+        noteValue: string,
+    ): Record<string, string> | undefined {
         const currentNotesValue = getAtPath(currentSettings, ["player_notes"]);
-        const currentNotes =
+        const currentNotes: Record<string, string> =
             currentNotesValue &&
             typeof currentNotesValue === "object" &&
             !Array.isArray(currentNotesValue)
-                ? { ...currentNotesValue }
+                ? Object.fromEntries(
+                      Object.entries(currentNotesValue).map(([key, value]) => [
+                          key,
+                          typeof value === "string" ? value : String(value),
+                      ]),
+                  )
                 : {};
         const normalizedHandle = normalizePlayerNoteKey(handle);
         if (normalizedHandle === "") {
@@ -1523,7 +1692,7 @@ function SettingsEditor({ onThemeModeChange }) {
         return currentNotes;
     }
 
-    function updatePlayerNote(handle, noteValue) {
+    function updatePlayerNote(handle: string, noteValue: string): void {
         setDraft((current) => {
             if (current === null) {
                 return current;
@@ -1536,7 +1705,10 @@ function SettingsEditor({ onThemeModeChange }) {
         });
     }
 
-    async function persistPlayerNote(handle, noteValue) {
+    async function persistPlayerNote(
+        handle: string,
+        noteValue: string,
+    ): Promise<void> {
         try {
             setIsBusy(true);
             const payload = await requestJson("/config/action", {
@@ -1565,7 +1737,9 @@ function SettingsEditor({ onThemeModeChange }) {
         }
     }
 
-    async function saveProvidedSettings(nextSettings) {
+    async function saveProvidedSettings(
+        nextSettings: SettingsPayload,
+    ): Promise<void> {
         cancelPendingLiveApply();
         await queueSettingsMutation(async () => {
             try {
@@ -1625,7 +1799,7 @@ function SettingsEditor({ onThemeModeChange }) {
         }
     }
 
-    async function showReplayByFile(file) {
+    async function showReplayByFile(file: string): Promise<void> {
         if (!file) {
             return;
         }
@@ -1636,7 +1810,7 @@ function SettingsEditor({ onThemeModeChange }) {
         }
     }
 
-    async function loadReplayChat(file) {
+    async function loadReplayChat(file: string): Promise<GamesChatPayload> {
         if (!file) {
             return null;
         }
@@ -1644,10 +1818,10 @@ function SettingsEditor({ onThemeModeChange }) {
             method: "POST",
             body: { file },
         });
-        return result.chat || null;
+        return (result.chat as GamesChatPayload) || null;
     }
 
-    async function revealReplayByFile(file) {
+    async function revealReplayByFile(file: string): Promise<void> {
         if (!file) {
             return;
         }
@@ -1657,7 +1831,7 @@ function SettingsEditor({ onThemeModeChange }) {
         });
     }
 
-    async function moveReplay(delta) {
+    async function moveReplay(delta: number): Promise<void> {
         const result = await postAction("/config/replays/move", { delta });
         if (result) {
             await loadTabData("games", false, {
@@ -1666,11 +1840,14 @@ function SettingsEditor({ onThemeModeChange }) {
         }
     }
 
-    async function postConfigAction(action, payload = {}) {
+    async function postConfigAction(
+        action: string,
+        payload: JsonObject = {},
+    ): Promise<ConfigResponsePayload | null> {
         return postAction("/config/action", { action, ...payload });
     }
 
-    async function promptPath(path, title) {
+    async function promptPath(path: string[], title: string): Promise<void> {
         const current = asTableValue(getAtPath(draftRef.current, path)).trim();
 
         try {
@@ -1703,7 +1880,7 @@ function SettingsEditor({ onThemeModeChange }) {
         }
     }
 
-    async function triggerOverlayAction(actionName) {
+    async function triggerOverlayAction(actionName: string): Promise<void> {
         const result = await postConfigAction(actionName);
         if (!result) {
             return;
@@ -1733,7 +1910,7 @@ function SettingsEditor({ onThemeModeChange }) {
         await postConfigAction("overlay_screenshot");
     }
 
-    async function openFolderPath(path) {
+    async function openFolderPath(path: string): Promise<true | null> {
         const normalized = String(path || "").trim();
         if (normalized === "") {
             safeStatus("Folder path is empty");
@@ -1765,9 +1942,9 @@ function SettingsEditor({ onThemeModeChange }) {
 
     async function refreshStatistics(
         silent = false,
-        customFilters = null,
+        customFilters: StatisticsFilters | null = null,
         force = false,
-    ) {
+    ): Promise<void> {
         const filters = customFilters || statsState.filters;
         const query = statsFiltersToQuery(filters);
         const existingQuery = tabData.statistics && tabData.statistics.query;
@@ -1811,7 +1988,10 @@ function SettingsEditor({ onThemeModeChange }) {
             }
             setTabData((current) => ({
                 ...current,
-                statistics: getPayloadForTab("statistics", payload),
+                statistics: getPayloadForTab(
+                    "statistics",
+                    payload,
+                ) as StatisticsPayload | null,
             }));
             statsQueryRef.current = {
                 ...statsQueryRef.current,
@@ -1894,7 +2074,7 @@ function SettingsEditor({ onThemeModeChange }) {
         }
     }
 
-    async function setDetailedAnalysisAtStart(enabled) {
+    async function setDetailedAnalysisAtStart(enabled: boolean): Promise<void> {
         const result = await postAction("/config/stats/action", {
             action: "set_detailed_analysis_atstart",
             enabled: Boolean(enabled),
@@ -1912,7 +2092,7 @@ function SettingsEditor({ onThemeModeChange }) {
         }
     }
 
-    async function revealReplay(file) {
+    async function revealReplay(file: string): Promise<void> {
         if (!file) {
             return;
         }
@@ -1922,14 +2102,14 @@ function SettingsEditor({ onThemeModeChange }) {
         });
     }
 
-    async function showReplay(file) {
+    async function showReplay(file: string): Promise<void> {
         if (!file) {
             return;
         }
         await postAction("/config/replays/show", { file });
     }
 
-    function setStatsBool(key) {
+    function setStatsBool(key: StatisticsBoolFilterKey) {
         const nextFilters = {
             ...statsFiltersRef.current,
             [key]: !statsFiltersRef.current[key],
@@ -1942,7 +2122,7 @@ function SettingsEditor({ onThemeModeChange }) {
         }));
     }
 
-    function setStatsText(key, value) {
+    function setStatsText(key: StatisticsTextFilterKey, value: string) {
         const nextFilters = {
             ...statsFiltersRef.current,
             [key]: value,
@@ -1955,7 +2135,10 @@ function SettingsEditor({ onThemeModeChange }) {
         }));
     }
 
-    function setStatsNumber(key, value) {
+    function setStatsNumber(
+        key: StatisticsNumberFilterKey,
+        value: number | string,
+    ) {
         const parsed = Number(value);
         const nextFilters = {
             ...statsFiltersRef.current,
@@ -1969,7 +2152,7 @@ function SettingsEditor({ onThemeModeChange }) {
         }));
     }
 
-    function toggleDifficulty(key) {
+    function toggleDifficulty(key: StatisticsDifficultyKey) {
         const nextFilters = {
             ...statsFiltersRef.current,
             difficulties: {
@@ -1985,7 +2168,7 @@ function SettingsEditor({ onThemeModeChange }) {
         }));
     }
 
-    function toggleRegion(key) {
+    function toggleRegion(key: StatisticsRegionKey) {
         const nextFilters = {
             ...statsFiltersRef.current,
             regions: {
@@ -2091,7 +2274,7 @@ function SettingsEditor({ onThemeModeChange }) {
         statsState.filters,
     ]);
 
-    function refreshDataTabOnClick(tabId) {
+    function refreshDataTabOnClick(tabId: TabId): void {
         if (tabId === "games") {
             loadTabData("games");
             return;
@@ -2152,16 +2335,25 @@ function SettingsEditor({ onThemeModeChange }) {
                     simpleAnalysisRunning: Boolean(
                         tabData.statistics?.simple_analysis_running,
                     ),
-                    simpleAnalysisStatus:
+                    simpleAnalysisStatus: String(
                         tabData.statistics?.simple_analysis_status || "",
+                    ),
                     detailedAnalysisRunning: Boolean(
                         tabData.statistics?.detailed_analysis_running,
                     ),
-                    detailedAnalysisStatus:
+                    detailedAnalysisStatus: String(
                         tabData.statistics?.detailed_analysis_status || "",
-                    analysisMessage: tabData.statistics?.message || "",
+                    ),
+                    analysisMessage: String(tabData.statistics?.message || ""),
                     analysisScanProgress:
-                        tabData.statistics?.scan_progress ?? null,
+                        tabData.statistics?.scan_progress &&
+                        typeof tabData.statistics.scan_progress === "object" &&
+                        !Array.isArray(tabData.statistics.scan_progress)
+                            ? (tabData.statistics.scan_progress as Record<
+                                  string,
+                                  JsonValue
+                              >)
+                            : null,
                     analysisTotalValidFiles: Number(
                         tabData.statistics?.total_valid_files ?? 0,
                     ),
@@ -2175,8 +2367,8 @@ function SettingsEditor({ onThemeModeChange }) {
                     draft.player_notes &&
                     typeof draft.player_notes === "object" &&
                     !Array.isArray(draft.player_notes)
-                        ? draft.player_notes
-                        : {},
+                        ? (draft.player_notes as Record<string, string>)
+                        : ({} as Record<string, string>),
                 onPlayerNoteChange: updatePlayerNote,
                 onPlayerNoteCommit: persistPlayerNote,
                 refreshWeeklies: () => loadTabData("weeklies"),
@@ -2196,7 +2388,18 @@ function SettingsEditor({ onThemeModeChange }) {
                         ) {
                             return null;
                         }
-                        return result.randomizer;
+                        return {
+                            commander: String(result.randomizer.commander),
+                            prestige: Number(result.randomizer.prestige),
+                            prestige_name: String(
+                                result.randomizer.prestige_name,
+                            ),
+                            mastery: result.randomizer.mastery.map((row) => ({
+                                points: Number(row.points),
+                                label: String(row.label),
+                            })),
+                            map_race: String(result.randomizer.map_race),
+                        };
                     },
                 },
                 performanceActions: {

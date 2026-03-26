@@ -1,6 +1,7 @@
 import type { LanguageManager } from "../i18n/languageManager";
 
 export type PreviewKind = "map" | "commander";
+type PreviewValue = string | number | boolean | null | undefined;
 
 export type PreviewEntry = {
     id: string;
@@ -14,7 +15,7 @@ export type MapRacePair = {
     race: string;
 };
 
-function readText(value: unknown): string {
+function readText(value: PreviewValue): string {
     if (value === null || value === undefined) {
         return "";
     }
@@ -31,15 +32,15 @@ export class PreviewManager {
         this.languageManager = languageManager;
     }
 
-    commander(value: unknown): PreviewEntry {
+    commander(value: PreviewValue): PreviewEntry {
         return this.buildPreviewEntry(value, "commander");
     }
 
-    map(value: unknown): PreviewEntry {
+    map(value: PreviewValue): PreviewEntry {
         return this.buildPreviewEntry(value, "map");
     }
 
-    splitMapRacePair(value: unknown): MapRacePair {
+    splitMapRacePair(value: PreviewValue): MapRacePair {
         if (typeof value !== "string") {
             return { map: "", race: "" };
         }
@@ -76,7 +77,10 @@ export class PreviewManager {
         return result;
     }
 
-    private buildPreviewEntry(value: unknown, kind: PreviewKind): PreviewEntry {
+    private buildPreviewEntry(
+        value: PreviewValue,
+        kind: PreviewKind,
+    ): PreviewEntry {
         const rawValue = readText(value);
         const assetName = this.languageManager.englishLabel(rawValue);
         const id = this.languageManager.idFromValue(rawValue) || rawValue;

@@ -1,5 +1,6 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import * as React from "react";
+import type { JsonObject, JsonValue } from "../types";
 
 type TabGroup = {
     title: string;
@@ -15,17 +16,20 @@ type ConfigTab = {
 
 type GenericTabProps = {
     tab: ConfigTab;
-    draft: any;
-    settings: any;
-    onChange: (path: string[], value: unknown) => void;
+    draft: JsonObject | null;
+    settings: JsonObject | null;
+    onChange: (path: string[], value: JsonValue) => void;
     renderNode: (
-        value: unknown,
-        templateValue: unknown,
+        value: JsonValue | undefined,
+        templateValue: JsonValue | undefined,
         path: string[],
         depth: number,
-        onChange: (path: string[], value: unknown) => void,
+        onChange: (path: string[], value: JsonValue) => void,
     ) => React.ReactNode;
-    getAtPath: (source: any, path: string[]) => unknown;
+    getAtPath: (
+        source: JsonObject | null,
+        path: string[],
+    ) => JsonValue | undefined;
 };
 
 export default function GenericTab({

@@ -1,6 +1,18 @@
 import * as React from "react";
 import type { LanguageManager } from "../../i18n/languageManager";
 import { PreviewManager } from "../../previews/PreviewManager";
+import type {
+    LocalizedMasteryNames,
+    PrestigeNameMap,
+    DisplayValue,
+    JsonArray,
+    JsonObject,
+    JsonValue,
+    StatisticsAnalysis,
+    StatisticsPayload,
+    StatisticsState,
+    StatsHelpers,
+} from "../types";
 import {
     nextSortState,
     sortIndicator,
@@ -16,7 +28,7 @@ const STATS_SUBTABS = [
     { id: "diffregion", titleId: "ui_statistics_subtab_difficulty_regions" },
     { id: "units", titleId: "ui_statistics_subtab_unit_stats" },
     { id: "amon", titleId: "ui_statistics_subtab_amon_stats" },
-];
+] as const;
 
 const DIFFICULTY_ORDER = [
     "Casual",
@@ -31,41 +43,15 @@ const DIFFICULTY_ORDER = [
     "B+6",
 ];
 
-type StatsHelpers = {
-    isBusy: boolean;
-    setStatsState: React.Dispatch<React.SetStateAction<any>>;
-    refreshStats: () => void;
-    startSimpleAnalysis: () => void;
-    dumpData: () => void;
-    deleteParsedData: () => void;
-    showReplay: (file: string) => void;
-    revealReplay: (file: string) => void;
-    setStatsBool: (key: string) => void;
-    setStatsText: (key: string, value: any) => void;
-    setStatsNumber: (key: string, value: any) => void;
-    toggleDifficulty: (key: string) => void;
-    toggleRegion: (key: string) => void;
-};
-
 type StatisticsTabProps = {
-    statsPayload: any;
-    statsState: any;
+    statsPayload: StatisticsPayload | null;
+    statsState: StatisticsState;
     actions: StatsHelpers;
     languageManager: LanguageManager;
 };
 
-type LocalizedMasteryNames = {
-    en: string[];
-    ko: string[];
-};
-
 type CommanderMasteryLookup = Record<string, LocalizedMasteryNames>;
-type LocalizedPrestigeNames = {
-    en: string[];
-    ko: string[];
-};
-
-type PrestigeNameLookup = Record<string, LocalizedPrestigeNames>;
+type PrestigeNameLookup = PrestigeNameMap;
 
 type FastestMapPlayer = {
     name: string;
@@ -87,18 +73,37 @@ type FastestMapDetails = {
     players: FastestMapPlayer[];
 };
 
-type StatsRow = Record<string, unknown>;
+type StatsRow = JsonObject;
 type NamedStatsRows = Array<[string, StatsRow]>;
+type StatsSelectionField = "selectedAllyCommander" | "selectedMyCommander";
+type UnitStatRow = StatsRow & {
+    created?: number | string;
+    made?: number | string;
+    lost?: number | string;
+    lost_percent?: number | string | null;
+    kills?: number | string;
+    KD?: number | string | null;
+    kill_percentage?: number | string;
+};
+type UnitCommanderStats = Record<string, UnitStatRow | number | string> & {
+    count?: number | string;
+};
+type UnitSideData = Record<string, UnitCommanderStats>;
+type UnitData = {
+    main?: UnitSideData;
+    ally?: UnitSideData;
+    amon?: Record<string, UnitStatRow>;
+};
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord(value: JsonValue | undefined): value is JsonObject {
     return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function asStatsRow(value: unknown): StatsRow {
+function asStatsRow(value: JsonValue | undefined): StatsRow {
     return isRecord(value) ? value : {};
 }
 
-function namedStatsRows(value: unknown): NamedStatsRows {
+function namedStatsRows(value: JsonValue | undefined): NamedStatsRows {
     if (!isRecord(value)) {
         return [];
     }
@@ -106,12 +111,12 @@ function namedStatsRows(value: unknown): NamedStatsRows {
     return Object.entries(value).map(([name, row]) => [name, asStatsRow(row)]);
 }
 
-function readNumber(value: unknown, fallback = 0): number {
+function readNumber(value: DisplayValue, fallback: number = 0): number {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function readStringArray(value: unknown): string[] {
+function readStringArray(value: JsonValue | undefined): string[] {
     if (!Array.isArray(value)) {
         return [];
     }
@@ -119,7 +124,7 @@ function readStringArray(value: unknown): string[] {
     return value.filter((item): item is string => typeof item === "string");
 }
 
-function readNumberArray(value: unknown): number[] {
+function readNumberArray(value: JsonValue | undefined): number[] {
     if (!Array.isArray(value)) {
         return [];
     }
@@ -127,7 +132,9 @@ function readNumberArray(value: unknown): number[] {
     return value.map((item) => Number(item)).filter(Number.isFinite);
 }
 
-function readCommanderMasteryLookup(value: unknown): CommanderMasteryLookup {
+function readCommanderMasteryLookup(
+    value: StatisticsPayload["commander_mastery"],
+): CommanderMasteryLookup {
     if (!isRecord(value)) {
         return {};
     }
@@ -166,7 +173,9 @@ function masteryLabelsForLanguage(
     return localized[language].length > 0 ? localized[language] : localized.en;
 }
 
-function readPrestigeNameLookup(value: unknown): PrestigeNameLookup {
+function readPrestigeNameLookup(
+    value: StatisticsPayload["prestige_names"],
+): PrestigeNameLookup {
     if (!isRecord(value)) {
         return {};
     }
@@ -205,7 +214,9 @@ function prestigeLabelForLanguage(
     );
 }
 
-function readFastestMapPlayer(value: unknown): FastestMapPlayer | null {
+function readFastestMapPlayer(
+    value: JsonValue | undefined,
+): FastestMapPlayer | null {
     if (!isRecord(value)) {
         return null;
     }
@@ -222,7 +233,9 @@ function readFastestMapPlayer(value: unknown): FastestMapPlayer | null {
     };
 }
 
-function readFastestMapDetails(value: unknown): FastestMapDetails {
+function readFastestMapDetails(
+    value: JsonValue | undefined,
+): FastestMapDetails {
     if (!isRecord(value)) {
         return {
             length: 0,
@@ -249,19 +262,19 @@ function readFastestMapDetails(value: unknown): FastestMapDetails {
     };
 }
 
-function normalizeHandleKey(value: unknown): string {
+function normalizeHandleKey(value: DisplayValue): string {
     const text = asTableValue(value).trim().toLowerCase();
     return text.includes("-s2-") ? text : "";
 }
 
-function asTableValue(value: unknown) {
+function asTableValue(value: DisplayValue) {
     if (value === null || value === undefined) {
         return "";
     }
     return String(value);
 }
 
-function formatPercent(value: unknown) {
+function formatPercent(value: DisplayValue) {
     const num = Number(value);
     if (!Number.isFinite(num)) {
         return "0.0%";
@@ -269,7 +282,7 @@ function formatPercent(value: unknown) {
     return `${(num * 100).toFixed(1)}%`;
 }
 
-function formatPercent0(value: unknown) {
+function formatPercent0(value: DisplayValue) {
     const num = Number(value);
     if (!Number.isFinite(num)) {
         return "-";
@@ -277,7 +290,7 @@ function formatPercent0(value: unknown) {
     return `${(num * 100).toFixed(0)}%`;
 }
 
-function formatPercent1(value: unknown) {
+function formatPercent1(value: DisplayValue) {
     const num = Number(value);
     if (!Number.isFinite(num)) {
         return "-";
@@ -285,7 +298,7 @@ function formatPercent1(value: unknown) {
     return `${(num * 100).toFixed(1)}%`;
 }
 
-function formatNumber(value: unknown) {
+function formatNumber(value: DisplayValue) {
     const num = Number(value);
     if (!Number.isFinite(num)) {
         return asTableValue(value);
@@ -293,7 +306,7 @@ function formatNumber(value: unknown) {
     return num.toLocaleString("en-US");
 }
 
-function formatDurationSeconds(value: unknown) {
+function formatDurationSeconds(value: DisplayValue) {
     const seconds = Number(value);
     if (!Number.isFinite(seconds) || seconds <= 0 || seconds >= 999999) {
         return "-";
@@ -308,7 +321,7 @@ function formatDurationSeconds(value: unknown) {
     return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
 }
 
-function formatReplayTime(value: unknown) {
+function formatReplayTime(value: DisplayValue) {
     const num = Number(value);
     if (!Number.isFinite(num) || num <= 0) {
         return "-";
@@ -339,7 +352,9 @@ function translate(
     );
 }
 
-function orderedDifficultyEntries(diffData: unknown): NamedStatsRows {
+function orderedDifficultyEntries(
+    diffData: JsonValue | undefined,
+): NamedStatsRows {
     const rows: NamedStatsRows = [];
     const difficultyRows = asStatsRow(diffData);
     const existing = Object.keys(difficultyRows);
@@ -449,9 +464,9 @@ function tableHeader(
 }
 
 function renderCommanderDetails(
-    commander: any,
-    entry: any,
-    statsPayload: any,
+    commander: string | null,
+    entry: StatsRow | null,
+    statsPayload: StatisticsPayload | null,
     languageManager: LanguageManager,
     previewManager: PreviewManager,
 ) {
@@ -796,10 +811,10 @@ function renderFastestMapPlayer(
 }
 
 function renderStatsMaps(
-    analysis: any,
-    statsState: any,
+    analysis: StatisticsAnalysis,
+    statsState: StatisticsState,
     actions: StatsHelpers,
-    statsPayload: any,
+    statsPayload: StatisticsPayload | null,
     mapSort: SortState,
     onMapSort: (key: string) => void,
     languageManager: LanguageManager,
@@ -1041,10 +1056,10 @@ function renderStatsMaps(
 }
 
 function renderStatsCommanders(
-    analysis: any,
-    statsState: any,
+    analysis: StatisticsAnalysis,
+    statsState: StatisticsState,
     actions: StatsHelpers,
-    statsPayload: any,
+    statsPayload: StatisticsPayload | null,
     allied: boolean,
     commanderSort: SortState,
     onCommanderSort: (key: string) => void,
@@ -1066,7 +1081,7 @@ function renderStatsCommanders(
         if (sortKey === "kills") return readNumber(row.KillFraction);
         return "";
     });
-    const selectedField = allied
+    const selectedField: StatsSelectionField = allied
         ? "selectedAllyCommander"
         : "selectedMyCommander";
     const selectedCommander = (rows.find(
@@ -1216,7 +1231,7 @@ function renderStatsCommanders(
 }
 
 function renderStatsDiffRegion(
-    analysis: any,
+    analysis: StatisticsAnalysis,
     regionSort: SortState,
     onRegionSort: (key: string) => void,
     difficultySort: SortState,
@@ -1408,7 +1423,7 @@ function renderStatsDiffRegion(
                         onDifficultySort,
                     )}
                     <tbody>
-                        {diffEntries.map(([name, row]: [string, any]) => (
+                        {diffEntries.map(([name, row]: [string, StatsRow]) => (
                             <tr key={`diff-${name}`}>
                                 <td>{languageManager.localize(name)}</td>
                                 <td>{formatNumber(row.Victory || 0)}</td>
@@ -1436,13 +1451,13 @@ function renderStatsDiffRegion(
 }
 
 function renderStatsUnits(
-    analysis: any,
-    statsPayload: any,
-    statsState: any,
+    analysis: StatisticsAnalysis,
+    statsPayload: StatisticsPayload | null,
+    statsState: StatisticsState,
     actions: StatsHelpers,
     languageManager: LanguageManager,
 ) {
-    const unitData = analysis ? analysis.UnitData : null;
+    const unitData = analysis.UnitData as UnitData | undefined;
     const detailNote = translate(
         languageManager,
         "ui_stats_detailed_stats_note",
@@ -1485,7 +1500,7 @@ function renderStatsUnits(
             : false;
 
     const applyUnitSort = (field: string) =>
-        actions.setStatsState((current: any) => {
+        actions.setStatsState((current) => {
             const currentField = current.selectedUnitSortBy || defaultUnitSort;
             const currentReverse =
                 typeof current.selectedUnitSortReverse === "boolean"
@@ -1525,7 +1540,7 @@ function renderStatsUnits(
             "kill_percentage",
     };
 
-    const sortingf = ([, row]: [string, any], sortField: string) => {
+    const sortingf = ([, row]: [string, UnitStatRow], sortField: string) => {
         const value = row ? row[sortField] : undefined;
         if (typeof value === "number" && Number.isFinite(value)) {
             return value;
@@ -1533,7 +1548,9 @@ function renderStatsUnits(
         return 0;
     };
 
-    const entries = Object.entries(source);
+    const entries = Object.entries(source).filter(
+        ([, row]) => typeof row === "object" && row !== null,
+    ) as Array<[string, UnitStatRow]>;
     const orderedEntries = (() => {
         const sorted = [...entries];
         if (sortBy === defaultUnitSort) {
@@ -1580,7 +1597,7 @@ function renderStatsUnits(
             return false;
         }
 
-        return Number((row as any).created || 0) > 0;
+        return Number(row.created || 0) > 0;
     });
     const sumEntry = filteredRows.find(([name]) => name === "sum");
     const unitRows = filteredRows.filter(([name]) => name !== "sum");
@@ -1615,7 +1632,7 @@ function renderStatsUnits(
                                         }
                                         onClick={() =>
                                             actions.setStatsState(
-                                                (current: any) => ({
+                                                (current) => ({
                                                     ...current,
                                                     selectedUnitMainCommander:
                                                         name,
@@ -1649,7 +1666,7 @@ function renderStatsUnits(
                                         }
                                         onClick={() =>
                                             actions.setStatsState(
-                                                (current: any) => ({
+                                                (current) => ({
                                                     ...current,
                                                     selectedUnitAllyCommander:
                                                         name,
@@ -1746,38 +1763,31 @@ function renderStatsUnits(
                                             : languageManager.localize(name)}
                                     </td>
                                     <td className="stats-unit-col-num">
-                                        {formatNumber(
-                                            (row as any).created || 0,
-                                        )}
+                                        {formatNumber(row.created || 0)}
                                     </td>
                                     <td className="stats-unit-col-num">
-                                        {formatPercent0((row as any).made || 0)}
+                                        {formatPercent0(row.made || 0)}
                                     </td>
                                     <td className="stats-unit-col-num">
-                                        {formatNumber((row as any).lost || 0)}
+                                        {formatNumber(row.lost || 0)}
                                     </td>
                                     <td className="stats-unit-col-num">
-                                        {(row as any).lost_percent === null ||
-                                        (row as any).lost_percent === undefined
+                                        {row.lost_percent === null ||
+                                        row.lost_percent === undefined
                                             ? "-"
-                                            : formatPercent0(
-                                                  (row as any).lost_percent,
-                                              )}
+                                            : formatPercent0(row.lost_percent)}
                                     </td>
                                     <td className="stats-unit-col-num">
-                                        {formatNumber((row as any).kills || 0)}
+                                        {formatNumber(row.kills || 0)}
                                     </td>
                                     <td className="stats-unit-col-num">
-                                        {(row as any).KD === null ||
-                                        (row as any).KD === undefined
+                                        {row.KD === null || row.KD === undefined
                                             ? "-"
-                                            : Number((row as any).KD).toFixed(
-                                                  1,
-                                              )}
+                                            : Number(row.KD).toFixed(1)}
                                     </td>
                                     <td className="stats-unit-col-num">
                                         {formatPercent1(
-                                            (row as any).kill_percentage || 0,
+                                            row.kill_percentage || 0,
                                         )}
                                     </td>
                                 </tr>
@@ -1794,13 +1804,13 @@ function renderStatsUnits(
 }
 
 function renderStatsAmon(
-    analysis: any,
-    statsPayload: any,
+    analysis: StatisticsAnalysis,
+    statsPayload: StatisticsPayload | null,
     amonSort: SortState,
     onAmonSort: (key: string) => void,
     languageManager: LanguageManager,
 ) {
-    const unitData = analysis ? analysis.UnitData : null;
+    const unitData = analysis.UnitData as UnitData | undefined;
     const detailNote = translate(
         languageManager,
         "ui_stats_detailed_stats_note",
@@ -1817,12 +1827,14 @@ function renderStatsAmon(
             </div>
         );
     }
-    const rowsBase = Object.entries(unitData.amon).sort((a, b) => {
+    const rowsBase = Object.entries(unitData.amon) as Array<
+        [string, UnitStatRow]
+    >;
+    rowsBase.sort((a, b) => {
         if (a[0] === "sum") return -1;
         if (b[0] === "sum") return 1;
         const createdDelta =
-            Number((b[1] as any).created || 0) -
-            Number((a[1] as any).created || 0);
+            Number(b[1].created || 0) - Number(a[1].created || 0);
         if (createdDelta !== 0) return createdDelta;
         return String(a[0]).localeCompare(String(b[0]));
     });
@@ -1833,11 +1845,11 @@ function renderStatsAmon(
         amonSort,
         ([name, row], key) => {
             if (key === "name") return name;
-            if (key === "created") return Number((row as any).created || 0);
-            if (key === "lost") return Number((row as any).lost || 0);
-            if (key === "kills") return Number((row as any).kills || 0);
+            if (key === "created") return Number(row.created || 0);
+            if (key === "lost") return Number(row.lost || 0);
+            if (key === "kills") return Number(row.kills || 0);
             if (key === "kd") {
-                const raw = (row as any).KD;
+                const raw = row.KD;
                 if (typeof raw === "string") {
                     if (raw.toLowerCase() === "inf") {
                         return Number.POSITIVE_INFINITY;
@@ -1903,17 +1915,13 @@ function renderStatsAmon(
                                           )
                                         : languageManager.localize(name)}
                                 </td>
+                                <td>{formatNumber(row.created || 0)}</td>
+                                <td>{formatNumber(row.lost || 0)}</td>
+                                <td>{formatNumber(row.kills || 0)}</td>
                                 <td>
-                                    {formatNumber((row as any).created || 0)}
-                                </td>
-                                <td>{formatNumber((row as any).lost || 0)}</td>
-                                <td>{formatNumber((row as any).kills || 0)}</td>
-                                <td>
-                                    {typeof (row as any).KD === "string"
-                                        ? (row as any).KD
-                                        : Number((row as any).KD || 0).toFixed(
-                                              1,
-                                          )}
+                                    {typeof row.KD === "string"
+                                        ? row.KD
+                                        : Number(row.KD || 0).toFixed(1)}
                                 </td>
                             </tr>
                         ))}

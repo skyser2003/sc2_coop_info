@@ -1,5 +1,6 @@
 import * as React from "react";
 import type { LanguageManager } from "../../i18n/languageManager";
+import type { JsonObject, JsonValue } from "../types";
 
 type PerformanceActions = {
     isBusy: boolean;
@@ -9,15 +10,15 @@ type PerformanceActions = {
     hotkeyStringFromEvent: (
         event: React.KeyboardEvent<HTMLInputElement>,
     ) => string;
-    triggerOverlayAction: (actionName: string) => Promise<unknown> | void;
+    triggerOverlayAction: (actionName: string) => Promise<void> | void;
     isHotkeyClearKey: (key: string) => boolean;
     isHotkeyModifierKey: (key: string) => boolean;
 };
 
 type PerformanceTabProps = {
-    draft: Record<string, unknown>;
-    onChange: (path: string[], value: unknown) => void;
-    getAtPath: (source: Record<string, unknown>, path: string[]) => unknown;
+    draft: JsonObject;
+    onChange: (path: string[], value: JsonValue) => void;
+    getAtPath: (source: JsonObject, path: string[]) => JsonValue | undefined;
     actions: PerformanceActions;
     displayVisibility: boolean;
     languageManager: LanguageManager;
@@ -33,7 +34,10 @@ export default function PerformanceTab({
 }: PerformanceTabProps) {
     const t = (id: string) => languageManager.translate(id);
     const hotkeyPath = "performance_hotkey";
-    const read = (path: string[], fallback: unknown = null): unknown => {
+    const read = (
+        path: string[],
+        fallback: JsonValue | null = null,
+    ): JsonValue | null => {
         const value = getAtPath(draft, path);
         return value === undefined ? fallback : value;
     };

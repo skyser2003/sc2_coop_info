@@ -12,6 +12,7 @@ import {
     reset_overlay_chart_pixel_ratio,
     set_overlay_chart_pixel_ratio,
 } from "./charts";
+import type { DisplayValue } from "../config/types";
 import type {
     OverlayColorPreviewPayload,
     OverlayInitColorsDurationPayload,
@@ -55,7 +56,7 @@ type OverlayConfigResponse = {
     randomizer_catalog: OverlayRandomizerCatalog;
 };
 
-function formatOverlayScreenshotError(error: unknown): string {
+function formatOverlayScreenshotError(error: DisplayValue | Error): string {
     if (error instanceof Error) {
         return error.message;
     }
