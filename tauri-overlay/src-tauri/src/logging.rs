@@ -1,4 +1,3 @@
-use serde_json::Value;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
@@ -6,9 +5,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::path_manager;
 
+use crate::app_settings::AppSettings;
+
 static FILE_LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
 
-pub(crate) fn refresh_from_settings(settings: &Value) {
+pub(crate) fn refresh_from_settings(settings: &AppSettings) {
     FILE_LOGGING_ENABLED.store(
         crate::logging_enabled_from_settings(settings),
         Ordering::Release,

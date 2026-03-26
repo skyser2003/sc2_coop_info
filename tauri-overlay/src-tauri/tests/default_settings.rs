@@ -19,14 +19,21 @@ fn unique_temp_settings_path() -> std::path::PathBuf {
 fn merge_settings_with_defaults_uses_requested_overlay_defaults() {
     let merged = merge_settings_with_defaults(json!({}));
 
-    assert_eq!(merged["start_with_windows"], json!(false));
-    assert_eq!(merged["minimize_to_tray"], json!(true));
-    assert_eq!(merged["start_minimized"], json!(false));
-    assert_eq!(merged["duration"], json!(30));
-    assert_eq!(merged["show_player_winrates"], json!(true));
-    assert_eq!(merged["show_replay_info_after_game"], json!(true));
-    assert_eq!(merged["show_session"], json!(true));
-    assert_eq!(merged["show_charts"], json!(true));
+    assert!(!merged.start_with_windows);
+    assert!(merged.minimize_to_tray);
+    assert!(!merged.start_minimized);
+    assert_eq!(merged.duration, 30);
+    assert!(merged.show_player_winrates);
+    assert!(merged.show_replay_info_after_game);
+    assert!(merged.show_session);
+    assert!(merged.show_charts);
+    assert_eq!(merged.hotkey_show_hide, Some("Ctrl+Shift+8".to_string()));
+    assert_eq!(merged.hotkey_show, None);
+    assert_eq!(merged.hotkey_hide, None);
+    assert_eq!(merged.hotkey_newer, Some("Ctrl+Alt+/".to_string()));
+    assert_eq!(merged.hotkey_older, Some("Ctrl+Alt+8".to_string()));
+    assert_eq!(merged.hotkey_winrates, Some("Ctrl+Alt+-".to_string()));
+    assert_eq!(merged.performance_hotkey, None);
 }
 
 #[test]
@@ -35,14 +42,12 @@ fn merge_settings_with_defaults_preserves_existing_values() {
         "duration": 45,
         "show_session": false,
         "show_charts": false,
-        "custom_setting": "keep",
     }));
 
-    assert_eq!(merged["duration"], json!(45));
-    assert_eq!(merged["show_session"], json!(false));
-    assert_eq!(merged["show_charts"], json!(false));
-    assert_eq!(merged["custom_setting"], json!("keep"));
-    assert_eq!(merged["show_replay_info_after_game"], json!(true));
+    assert_eq!(merged.duration, 45);
+    assert!(!merged.show_session);
+    assert!(!merged.show_charts);
+    assert!(merged.show_replay_info_after_game);
 }
 
 #[test]
@@ -59,9 +64,31 @@ fn read_saved_settings_file_from_path_creates_defaults_when_missing() {
     let parsed: Value =
         serde_json::from_str(&written).expect("created settings file should contain valid json");
 
-    assert_eq!(settings, default_settings_value());
-    assert_eq!(parsed, default_settings_value());
+    let mut expected = default_settings_value();
+    let mut actual_settings = settings;
+    let mut parsed_settings = merge_settings_with_defaults(parsed);
+    actual_settings.present_keys.clear();
+    parsed_settings.present_keys.clear();
+    expected.present_keys.clear();
+
+    assert_eq!(actual_settings, expected);
+    assert_eq!(parsed_settings, expected);
 
     let _ = std::fs::remove_file(&settings_path);
     let _ = std::fs::remove_dir(&parent);
+}
+
+#[test]
+fn merge_settings_with_defaults_initializes_null_overlay_hotkeys_to_defaults() {
+    let merged = merge_settings_with_defaults(json!({
+        "hotkey_show/hide": null,
+        "hotkey_newer": null,
+        "hotkey_older": null,
+        "hotkey_winrates": null,
+    }));
+
+    assert_eq!(merged.hotkey_show_hide, Some("Ctrl+Shift+8".to_string()));
+    assert_eq!(merged.hotkey_newer, Some("Ctrl+Alt+/".to_string()));
+    assert_eq!(merged.hotkey_older, Some("Ctrl+Alt+8".to_string()));
+    assert_eq!(merged.hotkey_winrates, Some("Ctrl+Alt+-".to_string()));
 }

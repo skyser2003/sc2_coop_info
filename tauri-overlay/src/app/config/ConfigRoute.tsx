@@ -2,6 +2,7 @@ import * as React from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
 import type {
+    AppSettings,
     MonitorOption,
     OverlayColorPreviewPayload,
     OverlayLanguagePreviewPayload,
@@ -38,7 +39,6 @@ import WeekliesTab from "./tabs/WeekliesTab";
 
 const { useEffect, useMemo, useRef, useState } = React;
 
-type SettingsPayload = JsonObject;
 type GamesRows = NonNullable<React.ComponentProps<typeof GamesTab>["rows"]>;
 type PlayerRows = NonNullable<React.ComponentProps<typeof PlayersTab>["rows"]>;
 type WeekliesRows = NonNullable<
@@ -128,7 +128,7 @@ type ExtraState = {
     };
 };
 type QueuedLiveApply = {
-    settings: SettingsPayload;
+    settings: AppSettings;
     requestSeq: number;
     successMessage: string;
 };
@@ -136,8 +136,8 @@ type ConfigResponsePayload = {
     status: string;
     error?: string;
     message?: string;
-    settings?: SettingsPayload;
-    active_settings?: SettingsPayload;
+    settings?: AppSettings;
+    active_settings?: AppSettings;
     randomizer_catalog?: OverlayRandomizerCatalog | null;
     monitor_catalog?: Array<MonitorOption>;
     replays?: GamesRows;
@@ -171,10 +171,8 @@ const TABS: ConfigTabDefinition[] = [
                     ["enable_logging"],
                     ["show_player_winrates"],
                     ["show_session"],
-                    ["show_random_on_overlay"],
                     ["show_charts"],
                     ["dark_theme"],
-                    ["check_for_multiple_instances"],
                 ],
             },
             {
@@ -183,17 +181,7 @@ const TABS: ConfigTabDefinition[] = [
             },
             {
                 title: "Overlay",
-                paths: [
-                    ["monitor"],
-                    ["width"],
-                    ["height"],
-                    ["top_offset"],
-                    ["right_offset"],
-                    ["subtract_height"],
-                    ["duration"],
-                    ["font_scale"],
-                    ["force_width"],
-                ],
+                paths: [["monitor"], ["duration"]],
             },
             {
                 title: "Hotkeys",
@@ -335,25 +323,25 @@ function cloneJson<T>(value: T): T {
 }
 
 function getAtPath(
-    source: JsonObject | null,
+    source: object | null,
     path: Array<string>,
 ): JsonValue | undefined {
     return path.reduce(
         (acc: JsonValue | undefined, key) =>
             acc != null && typeof acc === "object"
-                ? (acc as JsonObject)[key]
+                ? (acc as Record<string, JsonValue>)[key]
                 : undefined,
-        source,
+        source as JsonValue | undefined,
     );
 }
 
-function setAtPath(
-    source: JsonObject,
+function setAtPath<T extends object>(
+    source: T,
     path: Array<string>,
     value: JsonValue,
-): JsonObject {
+): T {
     const clone = cloneJson(source);
-    let cursor: JsonObject = clone;
+    let cursor = clone as Record<string, JsonValue>;
     for (let i = 0; i < path.length - 1; i += 1) {
         const key = path[i];
         if (
@@ -363,7 +351,7 @@ function setAtPath(
         ) {
             cursor[key] = {};
         }
-        cursor = cursor[key] as JsonObject;
+        cursor = cursor[key] as Record<string, JsonValue>;
     }
     cursor[path[path.length - 1]] = value;
     return clone;
@@ -382,7 +370,7 @@ function performanceVisibilityFromPayload(
 }
 
 function performanceVisibilityFromSettings(
-    payload: JsonObject | null | undefined,
+    payload: AppSettings | null | undefined,
 ): boolean | null {
     if (!payload || typeof payload !== "object") {
         return null;
@@ -968,8 +956,8 @@ function renderPerformanceTab(
 
 function renderTabContent(
     tab: ConfigTabDefinition,
-    draft: SettingsPayload,
-    settings: SettingsPayload | null,
+    draft: AppSettings,
+    settings: AppSettings | null,
     onChange: PathValueUpdater,
     extraState: ExtraState,
 ): React.ReactNode {
@@ -1042,8 +1030,8 @@ function renderTabContent(
 function SettingsEditor({
     onThemeModeChange,
 }: SettingsEditorProps): React.ReactNode {
-    const [settings, setSettings] = useState<SettingsPayload | null>(null);
-    const [draft, setDraft] = useState<SettingsPayload | null>(null);
+    const [settings, setSettings] = useState<AppSettings | null>(null);
+    const [draft, setDraft] = useState<AppSettings | null>(null);
     const [status, setStatus] = useState("Loading settings...");
     const [isBusy, setIsBusy] = useState(false);
     const [activeTab, setActiveTab] = useState("settings");
@@ -1098,7 +1086,7 @@ function SettingsEditor({
         weeklies: false,
     });
     const gamesLoadLimitRef = useRef<number>(300);
-    const draftRef = useRef<SettingsPayload | null>(null);
+    const draftRef = useRef<AppSettings | null>(null);
     const settingsMutationRef = useRef<Promise<void>>(Promise.resolve());
     const latestLiveApplySeqRef = useRef<number>(0);
     const liveApplyInFlightRef = useRef<boolean>(false);
@@ -1216,7 +1204,7 @@ function SettingsEditor({
         setStatus(message);
     }
 
-    function replaceDraft(nextDraft: SettingsPayload | null): void {
+    function replaceDraft(nextDraft: AppSettings | null): void {
         if (
             nextDraft &&
             typeof nextDraft === "object" &&
@@ -1241,7 +1229,7 @@ function SettingsEditor({
         queuedLiveApplyRef.current = null;
     }
 
-    function emitOverlayColorPreview(nextSettings: SettingsPayload): void {
+    function emitOverlayColorPreview(nextSettings: AppSettings): void {
         void (async () => {
             try {
                 await emit<OverlayColorPreviewPayload>(
@@ -1292,7 +1280,7 @@ function SettingsEditor({
         })();
     }
 
-    function emitOverlayLanguagePreview(nextSettings: SettingsPayload): void {
+    function emitOverlayLanguagePreview(nextSettings: AppSettings): void {
         void (async () => {
             try {
                 await emit<OverlayLanguagePreviewPayload>(
@@ -1310,7 +1298,7 @@ function SettingsEditor({
     }
 
     function performRuntimeSettingsApply(
-        nextSettings: SettingsPayload,
+        nextSettings: AppSettings,
         requestSeq: number,
         successMessage = "Changes applied immediately. Click Save to persist.",
     ): Promise<ConfigResponsePayload | null> {
@@ -1356,7 +1344,7 @@ function SettingsEditor({
     }
 
     function applyRuntimeSettings(
-        nextSettings: SettingsPayload,
+        nextSettings: AppSettings,
         successMessage = "Changes applied immediately. Click Save to persist.",
     ): Promise<ConfigResponsePayload | null> {
         const requestSeq = latestLiveApplySeqRef.current + 1;
@@ -1657,7 +1645,7 @@ function SettingsEditor({
     }
 
     function patchedPlayerNotes(
-        currentSettings: SettingsPayload,
+        currentSettings: AppSettings,
         handle: string,
         noteValue: string,
     ): Record<string, string> | undefined {
@@ -1738,7 +1726,7 @@ function SettingsEditor({
     }
 
     async function saveProvidedSettings(
-        nextSettings: SettingsPayload,
+        nextSettings: AppSettings,
     ): Promise<void> {
         cancelPendingLiveApply();
         await queueSettingsMutation(async () => {

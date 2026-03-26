@@ -3,7 +3,8 @@ import type { LanguageManager } from "../../i18n/languageManager";
 import { Grid } from "@mui/material";
 import { check, Update } from "@tauri-apps/plugin-updater";
 import { app } from "@tauri-apps/api";
-import type { DisplayValue, JsonObject, JsonValue } from "../types";
+import type { AppSettings } from "../../../bindings/overlay";
+import type { DisplayValue, JsonValue } from "../types";
 
 type SettingsActions = {
     isBusy: boolean;
@@ -31,7 +32,7 @@ type SettingsActions = {
     detailedAnalysisStatus?: string;
     simpleAnalysisStatus?: string;
     analysisMessage?: string;
-    analysisScanProgress?: JsonObject | null;
+    analysisScanProgress?: Record<string, JsonValue> | null;
     analysisTotalValidFiles?: number;
     analysisDetailedParsedCount?: number;
     monitorOptions?: Array<{
@@ -42,10 +43,10 @@ type SettingsActions = {
 
 const HEX_COLOR_PATTERN = /^#[0-9A-F]{6}$/i;
 type SettingsTabProps = {
-    draft: JsonObject | null;
+    draft: AppSettings | null;
     onChange: (path: string[], value: JsonValue) => void;
     getAtPath?: (
-        source: JsonObject | null,
+        source: AppSettings | null,
         path: string[],
     ) => JsonValue | undefined;
     asTableValue?: (value: DisplayValue) => string;
@@ -63,13 +64,13 @@ function asTableValueCompat(value: DisplayValue) {
     return String(value);
 }
 
-function getAtPathCompat(source: JsonObject | null, path: string[]) {
+function getAtPathCompat(source: AppSettings | null, path: string[]) {
     return path.reduce(
         (acc: JsonValue | undefined, key) =>
             acc != null && typeof acc === "object"
-                ? (acc as JsonObject)[key]
+                ? (acc as Record<string, JsonValue>)[key]
                 : undefined,
-        source,
+        source as JsonValue | undefined,
     );
 }
 
@@ -173,7 +174,7 @@ function formatDurationSeconds(totalSeconds: number) {
 }
 
 function renderAnalysisProgress(
-    progressInput: JsonObject | null | undefined,
+    progressInput: Record<string, JsonValue> | null | undefined,
     languageManager: LanguageManager,
     totalValidFiles?: number,
     detailedParsedCount?: number,
@@ -789,7 +790,7 @@ export default function SettingsTab({
                         };
 
                         if (actions.isHotkeyClearKey(event.key)) {
-                            onChange(path, null);
+                            onChange(path, "");
                             finishCapture();
                             return;
                         }

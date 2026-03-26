@@ -29,6 +29,7 @@ use winreg::enums::HKEY_CURRENT_USER;
 #[cfg(target_os = "windows")]
 use winreg::RegKey;
 
+mod app_settings;
 mod dictionary_data;
 pub mod logging;
 pub mod overlay_info;
@@ -37,6 +38,7 @@ mod performance_overlay;
 pub mod randomizer;
 pub mod replay_analysis;
 pub mod shared_types;
+pub use app_settings::AppSettings;
 
 #[macro_export]
 macro_rules! sco_log {
@@ -45,6 +47,7 @@ macro_rules! sco_log {
     }};
 }
 
+use crate::app_settings::PlayerNotes;
 use crate::path_manager::{get_cache_path, get_json_data_dir, is_dev_env};
 use crate::replay_analysis::ReplayAnalysis;
 
@@ -52,7 +55,7 @@ pub const UNLIMITED_REPLAY_LIMIT: usize = 0;
 const SCO_REPLAY_SCAN_PROGRESS_EVENT: &str = "sco://replay-scan-progress";
 const WINDOWS_STARTUP_RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 const WINDOWS_STARTUP_VALUE_NAME: &str = "SCO Overlay";
-static ACTIVE_SETTINGS: OnceLock<Mutex<Value>> = OnceLock::new();
+static ACTIVE_SETTINGS: OnceLock<Mutex<AppSettings>> = OnceLock::new();
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub(crate) struct OverlayActionResult {
@@ -121,8 +124,8 @@ fn to_json_value<T: Serialize>(value: T) -> Value {
 #[derive(Clone, Debug, Serialize)]
 struct ConfigPayload {
     status: &'static str,
-    settings: Value,
-    active_settings: Value,
+    settings: AppSettings,
+    active_settings: AppSettings,
     randomizer_catalog: shared_types::OverlayRandomizerCatalog,
     monitor_catalog: Vec<shared_types::MonitorOption>,
 }
@@ -222,34 +225,8 @@ fn get_system_language() -> String {
     language.to_string()
 }
 
-pub fn default_settings_value() -> Value {
-    #[derive(Serialize)]
-    struct DefaultSettings {
-        start_with_windows: bool,
-        minimize_to_tray: bool,
-        start_minimized: bool,
-        auto_update: bool,
-        duration: u32,
-        show_player_winrates: bool,
-        show_replay_info_after_game: bool,
-        show_session: bool,
-        show_charts: bool,
-        account_folder: String,
-        color_player1: &'static str,
-        color_player2: &'static str,
-        color_amon: &'static str,
-        color_mastery: &'static str,
-        #[serde(rename = "hotkey_show/hide")]
-        hotkey_show_hide: &'static str,
-        hotkey_newer: &'static str,
-        hotkey_older: &'static str,
-        hotkey_winrates: &'static str,
-        enable_logging: bool,
-        dark_theme: bool,
-        language: String,
-    }
-
-    to_json_value(DefaultSettings {
+pub fn default_settings_value() -> AppSettings {
+    let mut settings = AppSettings {
         start_with_windows: false,
         minimize_to_tray: true,
         start_minimized: false,
@@ -260,23 +237,73 @@ pub fn default_settings_value() -> Value {
         show_session: true,
         show_charts: true,
         account_folder: get_default_accounts_folder(),
-        color_player1: "#0080F8",
-        color_player2: "#00D532",
-        color_amon: "#FF0000",
-        color_mastery: "#FFDC87",
-        hotkey_show_hide: "Ctrl+Shift+8",
-        hotkey_newer: "Ctrl+Alt+/",
-        hotkey_older: "Ctrl+Alt+8",
-        hotkey_winrates: "Ctrl+Alt+-",
+        screenshot_folder: String::new(),
+        color_player1: "#0080F8".to_string(),
+        color_player2: "#00D532".to_string(),
+        color_amon: "#FF0000".to_string(),
+        color_mastery: "#FFDC87".to_string(),
+        hotkey_show_hide: None,
+        hotkey_show: None,
+        hotkey_hide: None,
+        hotkey_newer: None,
+        hotkey_older: None,
+        hotkey_winrates: None,
         enable_logging: true,
         dark_theme: true,
         language: get_system_language(),
-    })
+        monitor: 1,
+        performance_show: false,
+        performance_hotkey: None,
+        performance_processes: Vec::new(),
+        performance_geometry: None,
+        rng_choices: Default::default(),
+        player_notes: Default::default(),
+        main_names: Vec::new(),
+        detailed_analysis_atstart: false,
+        present_keys: Default::default(),
+    };
+    initialize_unset_hotkeys(&mut settings);
+    settings
 }
 
-pub fn merge_settings_with_defaults(value: Value) -> Value {
+fn initialize_unset_hotkeys(settings: &mut AppSettings) {
+    if settings.hotkey_show_hide.is_none() {
+        settings.hotkey_show_hide = Some("Ctrl+Shift+8".to_string());
+    }
+    if settings.hotkey_newer.is_none() {
+        settings.hotkey_newer = Some("Ctrl+Alt+/".to_string());
+    }
+    if settings.hotkey_older.is_none() {
+        settings.hotkey_older = Some("Ctrl+Alt+8".to_string());
+    }
+    if settings.hotkey_winrates.is_none() {
+        settings.hotkey_winrates = Some("Ctrl+Alt+-".to_string());
+    }
+}
+
+pub(crate) fn app_settings_as_value(settings: &AppSettings) -> Value {
+    serde_json::to_value(settings).unwrap_or_else(|_| Value::Object(Default::default()))
+}
+
+pub(crate) fn settings_field_value(settings: &AppSettings, key: &str) -> Option<Value> {
+    app_settings_as_value(settings).get(key).cloned()
+}
+
+pub(crate) fn settings_has_explicit_key(settings: &AppSettings, key: &str) -> bool {
+    settings.present_keys.contains(key)
+}
+
+fn settings_from_value(value: Value) -> Result<AppSettings, String> {
+    serde_json::from_value(value).map_err(|error| format!("Invalid settings payload: {error}"))
+}
+
+pub fn merge_settings_with_defaults(value: Value) -> AppSettings {
     let sanitized = sanitize_settings_value(value);
-    let mut merged = match default_settings_value() {
+    let present_keys = match &sanitized {
+        Value::Object(settings) => settings.keys().cloned().collect(),
+        _ => Default::default(),
+    };
+    let mut merged = match app_settings_as_value(&default_settings_value()) {
         Value::Object(defaults) => defaults,
         _ => Map::new(),
     };
@@ -285,10 +312,14 @@ pub fn merge_settings_with_defaults(value: Value) -> Value {
         merged.extend(settings);
     }
 
-    Value::Object(merged)
+    let mut settings =
+        settings_from_value(Value::Object(merged)).unwrap_or_else(|_| default_settings_value());
+    initialize_unset_hotkeys(&mut settings);
+    settings.present_keys = present_keys;
+    settings
 }
 
-pub fn read_saved_settings_file_from_path(path: &Path, create_if_missing: bool) -> Value {
+pub fn read_saved_settings_file_from_path(path: &Path, create_if_missing: bool) -> AppSettings {
     let defaults = default_settings_value();
     if !path.exists() {
         if create_if_missing {
@@ -302,33 +333,36 @@ pub fn read_saved_settings_file_from_path(path: &Path, create_if_missing: bool) 
     merge_settings_with_defaults(parsed)
 }
 
-pub(crate) fn read_saved_settings_file() -> Value {
+pub(crate) fn read_saved_settings_file() -> AppSettings {
     let path = path_manager::get_settings_path();
 
     read_saved_settings_file_from_path(&path, !cfg!(test))
 }
 
-fn active_settings_store() -> &'static Mutex<Value> {
+fn active_settings_store() -> &'static Mutex<AppSettings> {
     ACTIVE_SETTINGS.get_or_init(|| Mutex::new(read_saved_settings_file()))
 }
 
-pub fn replace_active_settings(value: &Value) -> Value {
-    let sanitized = sanitize_settings_value(value.clone());
+pub fn replace_active_settings(value: &AppSettings) -> AppSettings {
+    let sanitized = merge_settings_with_defaults(app_settings_as_value(value));
     if let Ok(mut cached_settings) = active_settings_store().lock() {
         *cached_settings = sanitized.clone();
     }
     sanitized
 }
 
-pub fn read_settings_file() -> Value {
+pub fn read_settings_file() -> AppSettings {
     active_settings_store()
         .lock()
         .map(|settings| settings.clone())
         .unwrap_or_else(|_| read_saved_settings_file())
 }
 
-fn write_saved_settings_file_to_path(path: &Path, value: &Value) -> Result<Value, String> {
-    let sanitized = merge_settings_with_defaults(value.clone());
+fn write_saved_settings_file_to_path(
+    path: &Path,
+    value: &AppSettings,
+) -> Result<AppSettings, String> {
+    let sanitized = merge_settings_with_defaults(app_settings_as_value(value));
     let text = serde_json::to_string_pretty(&sanitized)
         .map_err(|error| format!("Failed to serialize settings: {error}"))?;
     if let Some(parent) = path
@@ -342,13 +376,13 @@ fn write_saved_settings_file_to_path(path: &Path, value: &Value) -> Result<Value
     Ok(sanitized)
 }
 
-fn write_saved_settings_file(value: &Value) -> Result<Value, String> {
+fn write_saved_settings_file(value: &AppSettings) -> Result<AppSettings, String> {
     let path = path_manager::get_settings_path();
 
     write_saved_settings_file_to_path(&path, value)
 }
 
-fn write_settings_file(value: &Value) -> Result<(), String> {
+fn write_settings_file(value: &AppSettings) -> Result<(), String> {
     let previous_start_with_windows = start_with_windows_enabled(&read_settings_file());
     let sanitized = write_saved_settings_file(value)?;
     replace_active_settings(&sanitized);
@@ -361,11 +395,8 @@ fn write_settings_file(value: &Value) -> Result<(), String> {
     Ok(())
 }
 
-pub fn start_with_windows_enabled(settings: &Value) -> bool {
-    settings
-        .get("start_with_windows")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
+pub fn start_with_windows_enabled(settings: &AppSettings) -> bool {
+    settings.start_with_windows
 }
 
 pub fn windows_startup_command_value(executable_path: &Path) -> String {
@@ -431,7 +462,7 @@ fn sync_windows_startup_registration(_enabled: bool) -> Result<(), String> {
     Ok(())
 }
 
-fn sync_start_with_windows_setting(settings: &Value) -> Result<(), String> {
+fn sync_start_with_windows_setting(settings: &AppSettings) -> Result<(), String> {
     sync_windows_startup_registration(start_with_windows_enabled(settings))
 }
 
@@ -456,14 +487,7 @@ pub const OVERLAY_HOTKEY_SETTING_KEYS: [&str; 7] = [
     "performance_hotkey",
 ];
 
-pub const OVERLAY_PLACEMENT_SETTING_KEYS: [&str; 6] = [
-    "monitor",
-    "width",
-    "height",
-    "top_offset",
-    "right_offset",
-    "subtract_height",
-];
+pub const OVERLAY_PLACEMENT_SETTING_KEYS: [&str; 1] = ["monitor"];
 
 const PERFORMANCE_RUNTIME_SETTING_KEYS: [&str; 4] = [
     "performance_show",
@@ -472,13 +496,17 @@ const PERFORMANCE_RUNTIME_SETTING_KEYS: [&str; 4] = [
     "monitor",
 ];
 
-fn setting_value_changed(previous_settings: &Value, next_settings: &Value, key: &str) -> bool {
-    previous_settings.get(key) != next_settings.get(key)
+fn setting_value_changed(
+    previous_settings: &AppSettings,
+    next_settings: &AppSettings,
+    key: &str,
+) -> bool {
+    settings_field_value(previous_settings, key) != settings_field_value(next_settings, key)
 }
 
 pub fn any_setting_changed(
-    previous_settings: &Value,
-    next_settings: &Value,
+    previous_settings: &AppSettings,
+    next_settings: &AppSettings,
     keys: &[&str],
 ) -> bool {
     keys.iter()
@@ -486,32 +514,28 @@ pub fn any_setting_changed(
 }
 
 pub(crate) fn persist_single_setting_value(key: &str, value: Value) -> Result<(), String> {
-    let mut saved_settings = read_saved_settings_file();
-    if !saved_settings.is_object() {
-        saved_settings = Value::Object(Default::default());
-    }
-    let saved_map = saved_settings
-        .as_object_mut()
-        .ok_or_else(|| "Settings root is not an object".to_string())?;
+    let mut saved_map = match app_settings_as_value(&read_saved_settings_file()) {
+        Value::Object(map) => map,
+        _ => Map::new(),
+    };
     saved_map.insert(key.to_string(), value.clone());
+    let saved_settings = merge_settings_with_defaults(Value::Object(saved_map));
     write_saved_settings_file(&saved_settings)?;
 
-    let mut active_settings = read_settings_file();
-    if !active_settings.is_object() {
-        active_settings = Value::Object(Default::default());
-    }
-    let active_map = active_settings
-        .as_object_mut()
-        .ok_or_else(|| "Active settings root is not an object".to_string())?;
+    let mut active_map = match app_settings_as_value(&read_settings_file()) {
+        Value::Object(map) => map,
+        _ => Map::new(),
+    };
     active_map.insert(key.to_string(), value);
+    let active_settings = merge_settings_with_defaults(Value::Object(active_map));
     replace_active_settings(&active_settings);
     Ok(())
 }
 
 fn apply_runtime_settings(
     app: &tauri::AppHandle<Wry>,
-    previous_settings: &Value,
-    next_settings: &Value,
+    previous_settings: &AppSettings,
+    next_settings: &AppSettings,
 ) {
     let next_settings = replace_active_settings(next_settings);
     logging::refresh_from_settings(&next_settings);
@@ -540,14 +564,8 @@ fn apply_runtime_settings(
         overlay_info::sync_overlay_runtime_settings(app);
     }
 
-    let previous_show_charts = previous_settings
-        .get("show_charts")
-        .and_then(Value::as_bool)
-        .unwrap_or(true);
-    let show_charts = next_settings
-        .get("show_charts")
-        .and_then(Value::as_bool)
-        .unwrap_or(true);
+    let previous_show_charts = previous_settings.show_charts;
+    let show_charts = next_settings.show_charts;
     if show_charts != previous_show_charts {
         let _ = app.emit(
             overlay_info::OVERLAY_SET_SHOW_CHARTS_FROM_CONFIG_EVENT,
@@ -573,15 +591,12 @@ fn apply_runtime_settings(
     }
 
     if let Ok(mut stats) = app.state::<BackendState>().stats.lock() {
-        stats.detailed_analysis_atstart = next_settings
-            .get("detailed_analysis_atstart")
-            .and_then(Value::as_bool)
-            .unwrap_or(stats.detailed_analysis_atstart);
+        stats.detailed_analysis_atstart = next_settings.detailed_analysis_atstart;
     }
 }
 
 pub fn update_settings_player_note(
-    settings: &mut Value,
+    settings: &mut AppSettings,
     handle: &str,
     note_value: &str,
 ) -> Result<(), String> {
@@ -590,22 +605,7 @@ pub fn update_settings_player_note(
         return Err("Handle is empty".to_string());
     }
 
-    if !settings.is_object() {
-        *settings = Value::Object(Default::default());
-    }
-    let settings_map = settings
-        .as_object_mut()
-        .ok_or_else(|| "Settings root is not an object".to_string())?;
-
-    let notes_value = settings_map
-        .entry("player_notes".to_string())
-        .or_insert_with(|| Value::Object(Default::default()));
-    if !notes_value.is_object() {
-        *notes_value = Value::Object(Default::default());
-    }
-    let notes = notes_value
-        .as_object_mut()
-        .ok_or_else(|| "player_notes is not an object".to_string())?;
+    let notes: &mut PlayerNotes = &mut settings.player_notes;
 
     let existing_key = notes
         .keys()
@@ -617,7 +617,7 @@ pub fn update_settings_player_note(
     if trimmed_note.is_empty() {
         notes.remove(&existing_key);
     } else {
-        notes.insert(existing_key, Value::String(note_value.to_string()));
+        notes.insert(existing_key, note_value.to_string());
     }
 
     Ok(())
@@ -643,11 +643,8 @@ pub fn folder_dialog_start_directory(directory: Option<String>) -> Option<PathBu
     })
 }
 
-pub fn logging_enabled_from_settings(settings: &Value) -> bool {
-    settings
-        .get("enable_logging")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
+pub fn logging_enabled_from_settings(settings: &AppSettings) -> bool {
+    settings.enable_logging
 }
 
 pub fn session_counter_delta(result: &str) -> (u64, u64) {
@@ -670,11 +667,8 @@ fn record_session_result(state: &BackendState, result: &str) {
     }
 }
 
-pub fn show_replay_info_after_game_from_settings(settings: &Value) -> bool {
-    settings
-        .get("show_replay_info_after_game")
-        .and_then(Value::as_bool)
-        .unwrap_or(true)
+pub fn show_replay_info_after_game_from_settings(settings: &AppSettings) -> bool {
+    settings.show_replay_info_after_game
 }
 
 fn session_counts(state: &BackendState) -> (u64, u64) {
@@ -767,29 +761,19 @@ fn get_default_accounts_folder() -> String {
     }
 }
 
-pub fn configured_main_names_from_settings(settings: &Value) -> HashSet<String> {
+pub fn configured_main_names_from_settings(settings: &AppSettings) -> HashSet<String> {
     let mut names = settings
-        .get("main_names")
-        .and_then(Value::as_array)
-        .map(|names| {
-            names
-                .iter()
-                .filter_map(Value::as_str)
-                .map(ReplayAnalysis::normalized_player_key)
-                .filter(|name| !name.is_empty())
-                .collect::<HashSet<_>>()
-        })
-        .unwrap_or_default();
+        .main_names
+        .iter()
+        .map(|name| ReplayAnalysis::normalized_player_key(name))
+        .filter(|name| !name.is_empty())
+        .collect::<HashSet<_>>();
 
     if !names.is_empty() {
         return names;
     }
 
-    let account_root = settings
-        .get("account_folder")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .unwrap_or("");
+    let account_root = settings.account_folder.trim();
     if account_root.is_empty() {
         return names;
     }
@@ -858,12 +842,8 @@ fn configured_main_names() -> HashSet<String> {
     configured_main_names_from_settings(&read_settings_file())
 }
 
-pub fn configured_main_handles_from_settings(settings: &Value) -> HashSet<String> {
-    let account_root = settings
-        .get("account_folder")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .unwrap_or("");
+pub fn configured_main_handles_from_settings(settings: &AppSettings) -> HashSet<String> {
+    let account_root = settings.account_folder.trim();
     if account_root.is_empty() {
         return HashSet::new();
     }
@@ -2142,12 +2122,11 @@ fn build_replay_root_candidates(raw: &str) -> Vec<PathBuf> {
 
 fn resolve_replay_root() -> Option<PathBuf> {
     let settings = read_settings_file();
-    if let Value::Object(map) = settings {
-        if let Some(account_folder) = map.get("account_folder").and_then(Value::as_str) {
-            let candidates = build_replay_root_candidates(account_folder);
-            if let Some(path) = candidates.iter().find(|path| path.is_dir()) {
-                return Some(path.clone());
-            }
+    let account_folder = settings.account_folder.trim();
+    if !account_folder.is_empty() {
+        let candidates = build_replay_root_candidates(account_folder);
+        if let Some(path) = candidates.iter().find(|path| path.is_dir()) {
+            return Some(path.clone());
         }
     }
 
@@ -2156,11 +2135,10 @@ fn resolve_replay_root() -> Option<PathBuf> {
 
 fn replay_watch_root_from_settings() -> Option<PathBuf> {
     let settings = read_settings_file();
-    let account_folder = settings
-        .get("account_folder")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())?;
+    let account_folder = settings.account_folder.trim();
+    if account_folder.is_empty() {
+        return None;
+    }
 
     build_replay_root_candidates(account_folder)
         .into_iter()
@@ -3999,10 +3977,7 @@ fn spawn_game_launch_winrate_task(app: tauri::AppHandle<Wry>) {
             thread::sleep(Duration::from_millis(500));
 
             let settings = read_settings_file();
-            let show_player_winrates = settings
-                .get("show_player_winrates")
-                .and_then(Value::as_bool)
-                .unwrap_or(true);
+            let show_player_winrates = settings.show_player_winrates;
             if !show_player_winrates {
                 continue;
             }
@@ -4342,12 +4317,8 @@ impl Default for StatsState {
 impl StatsState {
     fn from_settings() -> Self {
         let mut state = Self::default();
-        if let Value::Object(settings) = read_settings_file() {
-            state.detailed_analysis_atstart = settings
-                .get("detailed_analysis_atstart")
-                .and_then(Value::as_bool)
-                .unwrap_or(state.detailed_analysis_atstart);
-        }
+        let settings = read_settings_file();
+        state.detailed_analysis_atstart = settings.detailed_analysis_atstart;
         state
     }
 
@@ -4503,15 +4474,15 @@ async fn config_request(
         ("post", "/config") => {
             if let Some(payload) = body {
                 if let Some(settings) = payload.get("settings") {
-                    let mut next_settings = sanitize_settings_value(settings.clone());
+                    let mut next_settings = merge_settings_with_defaults(settings.clone());
                     let previous_settings = read_settings_file();
                     let persist = payload
                         .get("persist")
                         .and_then(Value::as_bool)
                         .unwrap_or(true);
 
-                    next_settings["performance_geometry"] =
-                        previous_settings["performance_geometry"].clone();
+                    next_settings.performance_geometry =
+                        previous_settings.performance_geometry.clone();
 
                     if persist {
                         write_settings_file(&next_settings)?;

@@ -16,6 +16,7 @@ use tauri::{
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
+use crate::app_settings::AppSettings;
 use crate::randomizer;
 use crate::replay_analysis::ReplayAnalysis;
 use crate::shared_types::{
@@ -267,53 +268,17 @@ fn default_runtime_flags() -> RuntimeFlags {
     }
 }
 
-fn overlay_placement_from_settings(settings: &Value) -> OverlayPlacement {
+fn overlay_placement_from_settings(settings: &AppSettings) -> OverlayPlacement {
     let defaults = default_overlay_placement();
-    let placement = match settings {
-        Value::Object(map) => map,
-        _ => return defaults,
-    };
-
-    let monitor = placement
-        .get("monitor")
-        .and_then(Value::as_u64)
-        .and_then(|v| usize::try_from(v).ok())
-        .filter(|v| *v >= 1)
-        .unwrap_or(defaults.monitor);
-
-    let width = placement
-        .get("width")
-        .and_then(Value::as_f64)
-        .filter(|value| *value > 0.0)
-        .unwrap_or(defaults.width);
-    let height = placement
-        .get("height")
-        .and_then(Value::as_f64)
-        .filter(|value| *value > 0.0)
-        .unwrap_or(defaults.height);
-    let top_offset = placement
-        .get("top_offset")
-        .and_then(Value::as_i64)
-        .and_then(|value| i32::try_from(value).ok())
-        .unwrap_or(defaults.top_offset);
-    let right_offset = placement
-        .get("right_offset")
-        .and_then(Value::as_i64)
-        .and_then(|value| i32::try_from(value).ok())
-        .unwrap_or(defaults.right_offset);
-    let subtract_height = placement
-        .get("subtract_height")
-        .and_then(Value::as_i64)
-        .and_then(|value| i32::try_from(value).ok())
-        .unwrap_or(defaults.subtract_height);
+    let monitor = settings.monitor.max(1);
 
     OverlayPlacement {
         monitor,
-        width,
-        height,
-        top_offset,
-        right_offset,
-        subtract_height,
+        width: defaults.width,
+        height: defaults.height,
+        top_offset: defaults.top_offset,
+        right_offset: defaults.right_offset,
+        subtract_height: defaults.subtract_height,
     }
 }
 
@@ -356,34 +321,19 @@ pub fn overlay_window_bounds_for_monitor(
 
 pub fn parse_runtime_flags() -> RuntimeFlags {
     let settings = crate::read_settings_file();
-    let defaults = default_runtime_flags();
+    let minimize_to_tray = settings.minimize_to_tray;
+    let start_minimized = if minimize_to_tray {
+        settings.start_minimized
+    } else {
+        false
+    };
+    let auto_update = settings.auto_update;
 
-    if let Value::Object(map) = settings {
-        let minimize_to_tray = map
-            .get("minimize_to_tray")
-            .and_then(Value::as_bool)
-            .unwrap_or(defaults.minimize_to_tray);
-        let start_minimized = if minimize_to_tray {
-            map.get("start_minimized")
-                .and_then(Value::as_bool)
-                .unwrap_or(defaults.start_minimized)
-        } else {
-            false
-        };
-
-        let auto_update = map
-            .get("auto_update")
-            .and_then(Value::as_bool)
-            .unwrap_or(defaults.auto_update);
-
-        return RuntimeFlags {
-            start_minimized,
-            minimize_to_tray,
-            auto_update,
-        };
+    RuntimeFlags {
+        start_minimized,
+        minimize_to_tray,
+        auto_update,
     }
-
-    defaults
 }
 
 pub(crate) fn apply_overlay_placement(window: &tauri::WebviewWindow) -> Result<(), String> {
@@ -392,7 +342,7 @@ pub(crate) fn apply_overlay_placement(window: &tauri::WebviewWindow) -> Result<(
 
 pub(crate) fn apply_overlay_placement_from_settings(
     window: &tauri::WebviewWindow,
-    settings_value: &Value,
+    settings_value: &AppSettings,
 ) -> Result<(), String> {
     let settings = overlay_placement_from_settings(settings_value);
     let monitor_index = if settings.monitor == 0 {
@@ -622,20 +572,24 @@ pub fn normalize_hotkey(raw: &str) -> Option<String> {
 }
 
 fn resolved_overlay_hotkey_bindings_from_settings(
-    settings_value: &Value,
+    settings_value: &AppSettings,
 ) -> Vec<ResolvedHotkeyBinding> {
     let mut bindings = Vec::new();
-    let settings = settings_value.as_object();
 
     for (path, action) in OVERLAY_HOTKEY_BINDINGS {
-        let configured = settings.and_then(|settings| settings.get(path));
-        let using_default = configured.is_none();
-        let shortcut = match configured {
+        let configured = crate::settings_field_value(settings_value, path);
+        let using_default =
+            configured.is_none() || matches!(configured.as_ref(), Some(Value::Null));
+        let shortcut = match configured.as_ref() {
             None => OVERLAY_HOTKEY_DEFAULTS
                 .iter()
                 .find(|(default_path, _)| *default_path == path)
                 .and_then(|(_, default_value)| normalize_hotkey(default_value)),
-            Some(Value::Null) | Some(Value::Bool(false)) => {
+            Some(Value::Null) => OVERLAY_HOTKEY_DEFAULTS
+                .iter()
+                .find(|(default_path, _)| *default_path == path)
+                .and_then(|(_, default_value)| normalize_hotkey(default_value)),
+            Some(Value::Bool(false)) => {
                 crate::sco_log!("[SCO/hotkey] '{path}' disabled by settings.");
                 None
             }
@@ -695,7 +649,7 @@ fn resolved_overlay_hotkey_bindings() -> Vec<ResolvedHotkeyBinding> {
 }
 
 pub fn resolve_hotkey_binding_for_reassign_end(
-    settings_value: &Value,
+    settings_value: &AppSettings,
     path: &str,
     fallback_binding: Option<&ResolvedHotkeyBinding>,
 ) -> Option<ResolvedHotkeyBinding> {
@@ -704,13 +658,16 @@ pub fn resolve_hotkey_binding_for_reassign_end(
         return Some(binding);
     }
 
-    let configured_value = settings_value
-        .as_object()
-        .and_then(|settings| settings.get(path));
-    let explicitly_disabled = match configured_value {
-        Some(Value::Null) | Some(Value::Bool(false)) => true,
-        Some(Value::String(raw)) => raw.trim().is_empty(),
-        _ => false,
+    let configured_value = crate::settings_field_value(settings_value, path);
+    let explicitly_disabled = if !crate::settings_has_explicit_key(settings_value, path) {
+        false
+    } else {
+        match configured_value.as_ref() {
+            Some(Value::Null) => false,
+            Some(Value::Bool(false)) => true,
+            Some(Value::String(raw)) => raw.trim().is_empty(),
+            _ => false,
+        }
     };
     if explicitly_disabled {
         return None;
@@ -945,10 +902,7 @@ pub(crate) fn emit_replay_to_overlay_from_replay(
         .unwrap_or_else(|| replay.clone());
 
     let settings = crate::read_settings_file();
-    let show_session = settings
-        .get("show_session")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
+    let show_session = settings.show_session;
     let (session_victories, session_defeats) = crate::session_counts(&state);
     let payload = overlay_payload_from_replay(
         &replay,
@@ -1417,12 +1371,13 @@ fn lookup_player_stats_row(
     })
 }
 
-pub fn player_note_from_settings_value(settings: &Value, player_handle: &str) -> Option<String> {
-    let notes = settings.get("player_notes").and_then(Value::as_object)?;
-
-    let direct = notes
+pub fn player_note_from_settings_value(
+    settings: &AppSettings,
+    player_handle: &str,
+) -> Option<String> {
+    let direct = settings
+        .player_notes
         .get(player_handle)
-        .and_then(Value::as_str)
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
 
@@ -1556,18 +1511,16 @@ pub(crate) fn show_player_winrate_for_name(
     true
 }
 
-fn overlay_screenshot_directory_from_settings(settings: &Value) -> Result<PathBuf, String> {
-    let folder = settings
-        .get("screenshot_folder")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| "Screenshot folder is not configured".to_string())?;
+fn overlay_screenshot_directory_from_settings(settings: &AppSettings) -> Result<PathBuf, String> {
+    let folder = settings.screenshot_folder.trim();
+    if folder.is_empty() {
+        return Err("Screenshot folder is not configured".to_string());
+    }
     Ok(PathBuf::from(folder))
 }
 
 pub fn overlay_screenshot_output_path_from_settings(
-    settings: &Value,
+    settings: &AppSettings,
     captured_at: SystemTime,
 ) -> Result<PathBuf, String> {
     let directory = overlay_screenshot_directory_from_settings(settings)?;
@@ -1747,47 +1700,34 @@ pub fn open_folder_in_explorer(folder: &str) -> Result<(), String> {
     Err("Folder opening is not supported on this platform".to_string())
 }
 
-fn overlay_setting_string(settings: &Value, key: &str) -> Option<String> {
-    settings
-        .get(key)
-        .and_then(Value::as_str)
-        .map(str::trim)
+fn overlay_setting_string(settings: &AppSettings, key: &str) -> Option<String> {
+    crate::settings_field_value(settings, key)
+        .and_then(|value| value.as_str().map(ToString::to_string))
+        .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .map(ToString::to_string)
 }
 
-fn overlay_duration_from_settings(settings: &Value) -> u32 {
-    settings
-        .get("duration")
-        .and_then(Value::as_u64)
-        .filter(|value| *value > 0)
-        .and_then(|value| u32::try_from(value).ok())
-        .unwrap_or(30)
+fn overlay_duration_from_settings(settings: &AppSettings) -> u32 {
+    settings.duration.max(1)
 }
 
-fn overlay_show_charts_from_settings(settings: &Value) -> bool {
-    settings
-        .get("show_charts")
-        .and_then(Value::as_bool)
-        .unwrap_or(true)
+fn overlay_show_charts_from_settings(settings: &AppSettings) -> bool {
+    settings.show_charts
 }
 
-fn overlay_show_session_from_settings(settings: &Value) -> bool {
-    settings
-        .get("show_session")
-        .and_then(Value::as_bool)
-        .unwrap_or(true)
+fn overlay_show_session_from_settings(settings: &AppSettings) -> bool {
+    settings.show_session
 }
 
-fn overlay_language_from_settings(settings: &Value) -> &'static str {
-    match settings.get("language").and_then(Value::as_str) {
-        Some("ko") => "ko",
+fn overlay_language_from_settings(settings: &AppSettings) -> &'static str {
+    match settings.language.as_str() {
+        "ko" => "ko",
         _ => "en",
     }
 }
 
 pub fn overlay_runtime_settings_payload(
-    settings: &Value,
+    settings: &AppSettings,
     session_victories: u64,
     session_defeats: u64,
 ) -> Value {

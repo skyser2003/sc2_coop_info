@@ -1,23 +1,33 @@
-use sco_tauri_overlay::{start_with_windows_enabled, windows_startup_command_value};
+use sco_tauri_overlay::{
+    merge_settings_with_defaults, start_with_windows_enabled, windows_startup_command_value,
+};
 use serde_json::json;
 use std::path::Path;
 
 #[test]
 fn start_with_windows_defaults_to_disabled() {
-    assert!(!start_with_windows_enabled(&json!({})));
-    assert!(!start_with_windows_enabled(&json!({
-        "start_with_windows": "yes",
-    })));
+    assert!(!start_with_windows_enabled(&merge_settings_with_defaults(
+        json!({})
+    )));
+    assert!(!start_with_windows_enabled(&merge_settings_with_defaults(
+        json!({
+            "start_with_windows": "yes",
+        })
+    )));
 }
 
 #[test]
 fn start_with_windows_reads_boolean_setting() {
-    assert!(start_with_windows_enabled(&json!({
-        "start_with_windows": true,
-    })));
-    assert!(!start_with_windows_enabled(&json!({
-        "start_with_windows": false,
-    })));
+    assert!(start_with_windows_enabled(&merge_settings_with_defaults(
+        json!({
+            "start_with_windows": true,
+        })
+    )));
+    assert!(!start_with_windows_enabled(&merge_settings_with_defaults(
+        json!({
+            "start_with_windows": false,
+        })
+    )));
 }
 
 #[test]

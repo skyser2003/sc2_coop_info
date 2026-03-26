@@ -6,14 +6,15 @@ use sco_tauri_overlay::replay_analysis::{
 };
 use sco_tauri_overlay::{
     canonicalize_coop_map_id, configured_main_handles_from_settings,
-    configured_main_names_from_settings, sanitize_unit_map, ReplayInfo,
+    configured_main_names_from_settings, merge_settings_with_defaults, sanitize_unit_map,
+    AppSettings, ReplayInfo,
 };
 use serde_json::json;
 use serde_json::Value;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-fn replay_analysis_fixture_paths() -> Option<(PathBuf, Value)> {
+fn replay_analysis_fixture_paths() -> Option<(PathBuf, AppSettings)> {
     let current_cache = get_cache_path();
     let settings_path = PathBuf::from("../settings.json");
     if !current_cache.is_file() || !settings_path.is_file() {
@@ -21,7 +22,9 @@ fn replay_analysis_fixture_paths() -> Option<(PathBuf, Value)> {
     }
 
     let settings_text = std::fs::read_to_string(settings_path).ok()?;
-    let settings = serde_json::from_str::<Value>(&settings_text).ok()?;
+    let settings = serde_json::from_str(&settings_text)
+        .ok()
+        .map(merge_settings_with_defaults)?;
     Some((current_cache, settings))
 }
 

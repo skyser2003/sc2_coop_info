@@ -1,4 +1,4 @@
-use sco_tauri_overlay::overlay_info;
+use sco_tauri_overlay::{merge_settings_with_defaults, overlay_info};
 use serde_json::json;
 
 #[test]
@@ -27,7 +27,7 @@ fn reassign_end_uses_cached_binding_when_current_settings_do_not_resolve_path() 
     };
 
     let resolved = overlay_info::resolve_hotkey_binding_for_reassign_end(
-        &json!({ "hotkey_show/hide": "Ctrl+Shift+*" }),
+        &merge_settings_with_defaults(json!({ "hotkey_show/hide": "Ctrl+Shift+*" })),
         "performance_hotkey",
         Some(&fallback),
     )
@@ -40,6 +40,26 @@ fn reassign_end_uses_cached_binding_when_current_settings_do_not_resolve_path() 
 }
 
 #[test]
+fn reassign_end_reuses_cached_binding_when_hotkey_is_null() {
+    let fallback = overlay_info::ResolvedHotkeyBinding {
+        path: "performance_hotkey",
+        action: "performance_show_hide",
+        shortcut: "control+shift+p".to_string(),
+        canonical: "control+shift+p".to_string(),
+    };
+
+    let resolved = overlay_info::resolve_hotkey_binding_for_reassign_end(
+        &merge_settings_with_defaults(json!({ "performance_hotkey": null })),
+        "performance_hotkey",
+        Some(&fallback),
+    );
+
+    let resolved = resolved.expect("null hotkey should be treated as not set");
+    assert_eq!(resolved.path, "performance_hotkey");
+    assert_eq!(resolved.shortcut, "control+shift+p");
+}
+
+#[test]
 fn reassign_end_does_not_restore_explicitly_cleared_hotkey() {
     let fallback = overlay_info::ResolvedHotkeyBinding {
         path: "performance_hotkey",
@@ -49,10 +69,25 @@ fn reassign_end_does_not_restore_explicitly_cleared_hotkey() {
     };
 
     let resolved = overlay_info::resolve_hotkey_binding_for_reassign_end(
-        &json!({ "performance_hotkey": null }),
+        &merge_settings_with_defaults(json!({ "performance_hotkey": "" })),
         "performance_hotkey",
         Some(&fallback),
     );
 
     assert!(resolved.is_none());
+}
+
+#[test]
+fn reassign_end_uses_builtin_default_when_overlay_hotkey_is_null() {
+    let resolved = overlay_info::resolve_hotkey_binding_for_reassign_end(
+        &merge_settings_with_defaults(json!({ "hotkey_show/hide": null })),
+        "hotkey_show/hide",
+        None,
+    )
+    .expect("null overlay hotkey should use builtin default");
+
+    assert_eq!(resolved.path, "hotkey_show/hide");
+    assert_eq!(resolved.action, "overlay_show_hide");
+    assert_eq!(resolved.shortcut, "control+shift+8");
+    assert_eq!(resolved.canonical, "shift+control+digit8");
 }

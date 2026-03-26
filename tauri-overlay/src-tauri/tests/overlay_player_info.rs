@@ -1,6 +1,7 @@
 mod common;
 
 use common::test_replay_path;
+use sco_tauri_overlay::merge_settings_with_defaults;
 use sco_tauri_overlay::overlay_info::{
     overlay_payload_from_replay, player_note_from_settings_value,
 };
@@ -43,11 +44,11 @@ fn overlay_payload_includes_session_counts_when_enabled() {
 #[test]
 fn player_note_lookup_matches_case_insensitive_names() {
     let note = player_note_from_settings_value(
-        &json!({
+        &merge_settings_with_defaults(json!({
             "player_notes": {
                 "allyplayer": "  Expand early.  "
             }
-        }),
+        })),
         "allyplayer",
     );
 

@@ -1,6 +1,7 @@
 import * as React from "react";
 import type { LanguageManager } from "../../i18n/languageManager";
-import type { JsonObject, JsonValue } from "../types";
+import type { AppSettings } from "../../../bindings/overlay";
+import type { JsonValue } from "../types";
 
 type PerformanceActions = {
     isBusy: boolean;
@@ -16,9 +17,9 @@ type PerformanceActions = {
 };
 
 type PerformanceTabProps = {
-    draft: JsonObject;
+    draft: AppSettings;
     onChange: (path: string[], value: JsonValue) => void;
-    getAtPath: (source: JsonObject, path: string[]) => JsonValue | undefined;
+    getAtPath: (source: AppSettings, path: string[]) => JsonValue | undefined;
     actions: PerformanceActions;
     displayVisibility: boolean;
     languageManager: LanguageManager;
@@ -133,7 +134,7 @@ export default function PerformanceTab({
                                 };
 
                                 if (actions.isHotkeyClearKey(event.key)) {
-                                    onChange(["performance_hotkey"], null);
+                                    onChange(["performance_hotkey"], "");
                                     finishCapture();
                                     return;
                                 }

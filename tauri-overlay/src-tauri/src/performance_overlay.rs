@@ -86,35 +86,23 @@ fn normalized_geometry(mut geometry: PerformanceGeometry) -> PerformanceGeometry
 }
 
 fn performance_show_enabled() -> bool {
-    crate::read_settings_file()
-        .get("performance_show")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
+    crate::read_settings_file().performance_show
 }
 
 fn performance_process_names() -> Vec<String> {
-    match crate::read_settings_file().get("performance_processes") {
-        Some(Value::Array(values)) => {
-            let names = values
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(ToOwned::to_owned)
-                .collect::<Vec<String>>();
-            if names.is_empty() {
-                DEFAULT_PERFORMANCE_PROCESSES
-                    .iter()
-                    .map(|value| (*value).to_string())
-                    .collect()
-            } else {
-                names
-            }
-        }
-        _ => DEFAULT_PERFORMANCE_PROCESSES
+    let names = crate::read_settings_file()
+        .performance_processes
+        .into_iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<String>>();
+    if names.is_empty() {
+        DEFAULT_PERFORMANCE_PROCESSES
             .iter()
             .map(|value| (*value).to_string())
-            .collect(),
+            .collect()
+    } else {
+        names
     }
 }
 
@@ -123,28 +111,11 @@ fn persist_setting_value(key: &str, value: Value) -> Result<(), String> {
 }
 
 fn parse_saved_geometry() -> Option<PerformanceGeometry> {
-    let settings = crate::read_settings_file();
-    let geometry = settings.get("performance_geometry")?.as_array()?;
-    if geometry.len() != 4 {
-        return None;
-    }
-
-    let x = geometry
-        .first()?
-        .as_i64()
-        .and_then(|value| i32::try_from(value).ok())?;
-    let y = geometry
-        .get(1)?
-        .as_i64()
-        .and_then(|value| i32::try_from(value).ok())?;
-    let width = geometry
-        .get(2)?
-        .as_u64()
-        .and_then(|value| u32::try_from(value).ok())?;
-    let height = geometry
-        .get(3)?
-        .as_u64()
-        .and_then(|value| u32::try_from(value).ok())?;
+    let geometry = crate::read_settings_file().performance_geometry?;
+    let x = geometry[0];
+    let y = geometry[1];
+    let width = u32::try_from(geometry[2]).ok()?;
+    let height = u32::try_from(geometry[3]).ok()?;
 
     Some(PerformanceGeometry {
         x,
@@ -156,12 +127,7 @@ fn parse_saved_geometry() -> Option<PerformanceGeometry> {
 }
 
 fn default_geometry(window: &tauri::WebviewWindow<Wry>) -> Result<PerformanceGeometry, String> {
-    let monitor_setting = crate::read_settings_file()
-        .get("monitor")
-        .and_then(Value::as_u64)
-        .and_then(|value| usize::try_from(value).ok())
-        .filter(|value| *value >= 1)
-        .unwrap_or(1);
+    let monitor_setting = crate::read_settings_file().monitor.max(1);
     let monitor_index = monitor_setting.saturating_sub(1);
     let monitors = window.available_monitors().unwrap_or_default();
     if monitors.is_empty() {
@@ -355,11 +321,13 @@ pub(crate) fn persist_geometry(window: &tauri::WebviewWindow<Wry>) {
         return;
     };
     let geometry = normalized_geometry(geometry);
+    let width = i32::try_from(geometry.width).unwrap_or(i32::MAX);
+    let height = i32::try_from(geometry.height).unwrap_or(i32::MAX);
     let value = Value::Array(vec![
         Value::from(geometry.x),
         Value::from(geometry.y),
-        Value::from(geometry.width),
-        Value::from(geometry.height),
+        Value::from(width),
+        Value::from(height),
     ]);
     if let Err(error) = persist_setting_value("performance_geometry", value) {
         crate::sco_log!("[SCO/performance] Failed to save geometry: {error}");

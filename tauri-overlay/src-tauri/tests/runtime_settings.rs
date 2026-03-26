@@ -1,21 +1,21 @@
 use sco_tauri_overlay::{
-    any_setting_changed, overlay_info, OVERLAY_HOTKEY_SETTING_KEYS, OVERLAY_PLACEMENT_SETTING_KEYS,
-    OVERLAY_RUNTIME_SETTING_KEYS,
+    any_setting_changed, merge_settings_with_defaults, overlay_info, OVERLAY_HOTKEY_SETTING_KEYS,
+    OVERLAY_PLACEMENT_SETTING_KEYS, OVERLAY_RUNTIME_SETTING_KEYS,
 };
 use serde_json::json;
 
 #[test]
 fn runtime_setting_diff_ignores_color_updates_for_hotkeys_and_placement() {
-    let previous = json!({
+    let previous = merge_settings_with_defaults(json!({
         "color_player1": "#0080F8",
         "hotkey_show/hide": "Ctrl+Shift+*",
-        "width": 0.7,
-    });
-    let next = json!({
+        "monitor": 1,
+    }));
+    let next = merge_settings_with_defaults(json!({
         "color_player1": "#FF0000",
         "hotkey_show/hide": "Ctrl+Shift+*",
-        "width": 0.7,
-    });
+        "monitor": 1,
+    }));
 
     assert!(any_setting_changed(
         &previous,
@@ -36,14 +36,14 @@ fn runtime_setting_diff_ignores_color_updates_for_hotkeys_and_placement() {
 
 #[test]
 fn runtime_setting_diff_detects_hotkey_and_placement_changes() {
-    let previous = json!({
+    let previous = merge_settings_with_defaults(json!({
         "hotkey_show/hide": "Ctrl+Shift+*",
-        "width": 0.7,
-    });
-    let next = json!({
+        "monitor": 1,
+    }));
+    let next = merge_settings_with_defaults(json!({
         "hotkey_show/hide": "Ctrl+Shift+P",
-        "width": 0.9,
-    });
+        "monitor": 2,
+    }));
 
     assert!(any_setting_changed(
         &previous,
