@@ -7,6 +7,7 @@ s2coop-analyzer/generated/
 **/node_modules/
 .env
 .envrc*
+tauri-overlay/test-results/
 
 # Per user data
 cache_overall_stats.json
