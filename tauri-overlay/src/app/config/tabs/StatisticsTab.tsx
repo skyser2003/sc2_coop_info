@@ -306,6 +306,11 @@ function formatNumber(value: DisplayValue) {
     return num.toLocaleString("en-US");
 }
 
+function finiteNumberOrNull(value: DisplayValue | undefined) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+}
+
 function formatDurationSeconds(value: DisplayValue) {
     const seconds = Number(value);
     if (!Number.isFinite(seconds) || seconds <= 0 || seconds >= 999999) {
@@ -1603,7 +1608,16 @@ function renderStatsUnits(
             return false;
         }
 
-        return Number(row.created || 0) > 0;
+        const created = finiteNumberOrNull(row.created);
+        if (created !== null) {
+            return created > 0;
+        }
+
+        return (
+            (finiteNumberOrNull(row.made) ?? 0) > 0 ||
+            (finiteNumberOrNull(row.kills) ?? 0) > 0 ||
+            (finiteNumberOrNull(row.lost) ?? 0) > 0
+        );
     });
     const sumEntry = filteredRows.find(([name]) => name === "sum");
     const unitRows = filteredRows.filter(([name]) => name !== "sum");
