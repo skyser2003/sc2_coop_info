@@ -1239,9 +1239,13 @@
         "en": "Mutations",
         "ko": "돌연변이"
     },
-    "ui_stats_wins_only": {
-        "en": "Wins only",
-        "ko": "승리만"
+    "ui_stats_include_wins": {
+        "en": "Wins",
+        "ko": "승리"
+    },
+    "ui_stats_include_losses": {
+        "en": "Losses",
+        "ko": "패배"
     },
     "ui_stats_override_folder": {
         "en": "Override folder selection",
@@ -1252,12 +1256,64 @@
         "ko": "멀티박스 게임 포함"
     },
     "ui_stats_include_levels_1_14": {
-        "en": "Include levels 1-14",
-        "ko": "1-14 레벨 포함"
+        "en": "1-14",
+        "ko": "1-14"
     },
     "ui_stats_include_levels_15_plus": {
-        "en": "Include levels 15+",
-        "ko": "15+ 레벨 포함"
+        "en": "15+",
+        "ko": "15+"
+    },
+    "ui_stats_include_normal_mastery_sum": {
+        "en": "<= 90",
+        "ko": "<= 90"
+    },
+    "ui_stats_include_abnormal_mastery_sum": {
+        "en": "> 90",
+        "ko": "> 90"
+    },
+    "ui_stats_group_difficulty": {
+        "en": "Difficulty",
+        "ko": "난이도"
+    },
+    "ui_stats_group_region": {
+        "en": "Region",
+        "ko": "지역"
+    },
+    "ui_stats_group_game_type": {
+        "en": "Game type",
+        "ko": "게임 유형"
+    },
+    "ui_stats_group_game_type_result": {
+        "en": "Game type / result",
+        "ko": "게임 유형 / 결과"
+    },
+    "ui_stats_group_game_result": {
+        "en": "Game result",
+        "ko": "게임 결과"
+    },
+    "ui_stats_group_level": {
+        "en": "Level",
+        "ko": "레벨"
+    },
+    "ui_stats_group_main_level": {
+        "en": "Main level",
+        "ko": "내 레벨"
+    },
+    "ui_stats_group_main_mastery": {
+        "en": "Main mastery point",
+        "ko": "내 마스터 힘"
+    },
+    "ui_stats_group_ally_level": {
+        "en": "Ally level",
+        "ko": "동맹 레벨"
+    },
+    "ui_stats_group_ally_mastery": {
+        "en": "Ally mastery point",
+        "ko": "동맹 마스터 힘"
+    },
+    "ui_stats_group_etc": {
+        "en": "Etc",
+        "ko": "기타"
     },
     "ui_stats_game_length_minutes": {
         "en": "Game length (minutes)",

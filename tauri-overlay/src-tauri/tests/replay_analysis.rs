@@ -426,3 +426,61 @@ fn miner_evacuation_fastest_payload_matches_reference_fastest_replay() {
         .iter()
         .any(|handle| Some(handle.as_str()) == players[0]["handle"].as_str()));
 }
+
+#[test]
+fn mastery_sum_filters_partition_existing_cache_replays() {
+    let Some((current_cache, settings)) = replay_analysis_fixture_paths() else {
+        eprintln!("skipping exclusive stats partition test: required cache fixtures are missing");
+        return;
+    };
+
+    let data_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../s2coop-analyzer/data");
+    let _ = dictionary_data::shared_dictionary_data(Some(data_dir));
+
+    let main_names = configured_main_names_from_settings(&settings);
+    let main_handles = configured_main_handles_from_settings(&settings);
+    let replays = ReplayAnalysis::stats_replays_for_response_from_path(
+        true,
+        &[],
+        &current_cache,
+        &main_names,
+        &main_handles,
+    );
+
+    let total = ReplayAnalysis::filter_replays_for_stats("/config/stats", &replays).len();
+    let wins_only =
+        ReplayAnalysis::filter_replays_for_stats("/config/stats?include_losses=0", &replays).len();
+    let losses_only =
+        ReplayAnalysis::filter_replays_for_stats("/config/stats?include_wins=0", &replays).len();
+    let main_levels_1_14 =
+        ReplayAnalysis::filter_replays_for_stats("/config/stats?over_15=0", &replays).len();
+    let main_levels_15_plus =
+        ReplayAnalysis::filter_replays_for_stats("/config/stats?sub_15=0", &replays).len();
+    let ally_levels_1_14 =
+        ReplayAnalysis::filter_replays_for_stats("/config/stats?ally_over_15=0", &replays).len();
+    let ally_levels_15_plus =
+        ReplayAnalysis::filter_replays_for_stats("/config/stats?ally_sub_15=0", &replays).len();
+    assert_eq!(total, wins_only + losses_only);
+    assert_eq!(total, main_levels_1_14 + main_levels_15_plus);
+    assert_eq!(total, ally_levels_1_14 + ally_levels_15_plus);
+    assert_eq!(
+        total,
+        ReplayAnalysis::filter_replays_for_stats("/config/stats?main_abnormal_mastery=0", &replays)
+            .len()
+            + ReplayAnalysis::filter_replays_for_stats(
+                "/config/stats?main_normal_mastery=0",
+                &replays,
+            )
+            .len()
+    );
+    assert_eq!(
+        total,
+        ReplayAnalysis::filter_replays_for_stats("/config/stats?ally_abnormal_mastery=0", &replays)
+            .len()
+            + ReplayAnalysis::filter_replays_for_stats(
+                "/config/stats?ally_normal_mastery=0",
+                &replays,
+            )
+            .len()
+    );
+}

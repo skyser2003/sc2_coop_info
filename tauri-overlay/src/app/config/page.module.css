@@ -779,15 +779,35 @@
 
 .configPage :global(.stats-check-cols) {
     display: grid;
-    grid-template-columns: repeat(4, minmax(130px, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 12px;
     flex: 1;
+    align-items: start;
 }
 
-.configPage :global(.stats-col) {
+.configPage :global(.stats-filter-group) {
     display: flex;
     flex-direction: column;
     gap: 6px;
+    padding: 10px 12px;
+    border: 1px solid #5f5f5f;
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.22);
+    width: 100%;
+}
+
+.configPage :global(.stats-filter-stack) {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+}
+
+.configPage :global(.stats-filter-group h4) {
+    margin: 0 0 4px;
+    color: #cbd5e1;
+    font-size: 13px;
+    font-weight: 700;
 }
 
 .configPage :global(.stats-checkbox-line) {

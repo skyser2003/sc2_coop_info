@@ -674,6 +674,91 @@ test.describe("Config route", () => {
         });
     });
 
+    test("statistics abnormal mastery filter refreshes immediately", async ({
+        page,
+    }) => {
+        await installTauriMock(
+            page,
+            {
+                status: "ok",
+                stats: {
+                    ready: true,
+                    games: 10,
+                    simple_analysis_running: false,
+                    detailed_analysis_running: false,
+                    message: "",
+                    query: "",
+                    analysis: {
+                        MapData: {},
+                        CommanderData: {},
+                        AllyCommanderData: {},
+                        DifficultyData: {},
+                        RegionData: {},
+                        PlayerData: {},
+                        AmonData: {},
+                        MapDataReady: true,
+                        UnitData: {
+                            main: {},
+                            ally: {},
+                            amon: {},
+                        },
+                    },
+                },
+            },
+            [
+                {
+                    match: "main_normal_mastery=0",
+                    response: {
+                        status: "ok",
+                        stats: {
+                            ready: true,
+                            games: 2,
+                            simple_analysis_running: false,
+                            detailed_analysis_running: false,
+                            message: "",
+                            query: "main_normal_mastery=0",
+                            analysis: {
+                                MapData: {},
+                                CommanderData: {},
+                                AllyCommanderData: {},
+                                DifficultyData: {},
+                                RegionData: {},
+                                PlayerData: {},
+                                AmonData: {},
+                                MapDataReady: true,
+                                UnitData: {
+                                    main: {},
+                                    ally: {},
+                                    amon: {},
+                                },
+                            },
+                        },
+                    },
+                },
+            ],
+        );
+
+        await page.goto("/", { waitUntil: "domcontentloaded" });
+        await page.getByRole("button", { name: "Statistics" }).click();
+
+        await expect(
+            page.getByText("Games found: 10", { exact: true }),
+        ).toBeVisible();
+        await page
+            .locator(".stats-filter-group")
+            .filter({ hasText: "Main mastery point" })
+            .getByRole("checkbox", {
+                name: "Mastery Point <= 90",
+                exact: true,
+            })
+            .click();
+        await expect(
+            page.getByText("Games found: 2", { exact: true }),
+        ).toBeVisible({
+            timeout: 200,
+        });
+    });
+
     test("detailed analysis disables simple-analysis and delete buttons", async ({
         page,
     }) => {

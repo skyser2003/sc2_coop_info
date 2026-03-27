@@ -38,9 +38,16 @@ export type StatisticsBoolFilterKey =
     | "includeMutations"
     | "overrideFolderSelection"
     | "includeMultiBox"
-    | "winsOnly"
-    | "includeSub15"
-    | "includeOver15";
+    | "includeWins"
+    | "includeLosses"
+    | "includeMainSub15"
+    | "includeMainOver15"
+    | "includeAllySub15"
+    | "includeAllyOver15"
+    | "includeMainNormalMastery"
+    | "includeMainAbnormalMastery"
+    | "includeAllyNormalMastery"
+    | "includeAllyAbnormalMastery";
 
 export type StatisticsTextFilterKey = "fromDate" | "toDate" | "player";
 export type StatisticsNumberFilterKey = "minLength" | "maxLength";
@@ -52,9 +59,16 @@ export type StatisticsFilters = {
     includeMutations: boolean;
     overrideFolderSelection: boolean;
     includeMultiBox: boolean;
-    winsOnly: boolean;
-    includeSub15: boolean;
-    includeOver15: boolean;
+    includeWins: boolean;
+    includeLosses: boolean;
+    includeMainSub15: boolean;
+    includeMainOver15: boolean;
+    includeAllySub15: boolean;
+    includeAllyOver15: boolean;
+    includeMainNormalMastery: boolean;
+    includeMainAbnormalMastery: boolean;
+    includeAllyNormalMastery: boolean;
+    includeAllyAbnormalMastery: boolean;
     minLength: number;
     maxLength: number;
     fromDate: string;

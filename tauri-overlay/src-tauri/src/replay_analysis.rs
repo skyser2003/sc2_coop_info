@@ -131,12 +131,7 @@ fn ratio_f64(numerator: f64, denominator: f64) -> f64 {
 
 fn normalize_mastery_vector(raw_values: &[u64]) -> [f64; 6] {
     let mut normalized = [0f64; 6];
-    let total_points = raw_values
-        .iter()
-        .take(6)
-        .map(|value| *value as f64)
-        .sum::<f64>()
-        / 3.0;
+    let total_points = mastery_points_invested(raw_values) as f64;
     if total_points <= f64::EPSILON {
         return normalized;
     }
@@ -145,6 +140,10 @@ fn normalize_mastery_vector(raw_values: &[u64]) -> [f64; 6] {
         normalized[idx] = *raw as f64 / total_points;
     }
     normalized
+}
+
+fn mastery_points_invested(raw_values: &[u64]) -> u64 {
+    raw_values.iter().take(6).copied().sum::<u64>()
 }
 
 fn record_command_mastery_counts(target: &mut [f64; 6], raw_values: &[f64; 6]) {
@@ -2999,10 +2998,21 @@ impl ReplayAnalysis {
     fn replay_matches_stats_filters(path: &str, replay: &ReplayInfo) -> bool {
         let include_mutations = parse_query_bool(path, "include_mutations", true);
         let include_normal_games = parse_query_bool(path, "include_normal_games", true);
-        let wins_only = parse_query_bool(path, "wins_only", false);
+        let include_wins = parse_query_value(path, "include_wins")
+            .map(|_| parse_query_bool(path, "include_wins", true))
+            .unwrap_or(true);
+        let include_losses = parse_query_value(path, "include_losses")
+            .map(|_| parse_query_bool(path, "include_losses", true))
+            .unwrap_or_else(|| !parse_query_bool(path, "wins_only", false));
         let include_both_main = parse_query_bool(path, "include_both_main", true);
         let include_sub_15 = parse_query_bool(path, "sub_15", true);
         let include_over_15 = parse_query_bool(path, "over_15", true);
+        let include_ally_sub_15 = parse_query_bool(path, "ally_sub_15", true);
+        let include_ally_over_15 = parse_query_bool(path, "ally_over_15", true);
+        let include_main_normal_mastery = parse_query_bool(path, "main_normal_mastery", true);
+        let include_main_abnormal_mastery = parse_query_bool(path, "main_abnormal_mastery", true);
+        let include_ally_normal_mastery = parse_query_bool(path, "ally_normal_mastery", true);
+        let include_ally_abnormal_mastery = parse_query_bool(path, "ally_abnormal_mastery", true);
 
         let min_length_minutes = parse_query_i64(path, "minlength")
             .and_then(|value| u64::try_from(value.max(0)).ok())
@@ -3040,7 +3050,13 @@ impl ReplayAnalysis {
         if !include_normal_games && !replay.extension {
             return false;
         }
-        if wins_only && !result_is_victory(&replay.result).unwrap_or(false) {
+        let Some(is_victory) = result_is_victory(&replay.result) else {
+            return false;
+        };
+        if !include_wins && is_victory {
+            return false;
+        }
+        if !include_losses && !is_victory {
             return false;
         }
 
@@ -3067,6 +3083,26 @@ impl ReplayAnalysis {
             return false;
         }
         if !include_over_15 && replay.main_commander_level >= 15 {
+            return false;
+        }
+        if !include_ally_sub_15 && replay.ally_commander_level < 15 {
+            return false;
+        }
+        if !include_ally_over_15 && replay.ally_commander_level >= 15 {
+            return false;
+        }
+        let main_mastery_points = mastery_points_invested(&replay.main_masteries);
+        let ally_mastery_points = mastery_points_invested(&replay.ally_masteries);
+        if !include_main_normal_mastery && main_mastery_points <= 90 {
+            return false;
+        }
+        if !include_main_abnormal_mastery && main_mastery_points > 90 {
+            return false;
+        }
+        if !include_ally_normal_mastery && ally_mastery_points <= 90 {
+            return false;
+        }
+        if !include_ally_abnormal_mastery && ally_mastery_points > 90 {
             return false;
         }
 

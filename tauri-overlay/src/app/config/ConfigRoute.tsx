@@ -308,9 +308,16 @@ const STATS_DEFAULT_FILTERS: StatisticsFilters = {
     includeMutations: true,
     overrideFolderSelection: true,
     includeMultiBox: false,
-    winsOnly: false,
-    includeSub15: true,
-    includeOver15: true,
+    includeWins: true,
+    includeLosses: true,
+    includeMainSub15: true,
+    includeMainOver15: true,
+    includeAllySub15: true,
+    includeAllyOver15: true,
+    includeMainNormalMastery: true,
+    includeMainAbnormalMastery: true,
+    includeAllyNormalMastery: true,
+    includeAllyAbnormalMastery: true,
     minLength: 0,
     maxLength: 0,
     fromDate: "2015-11-10",
@@ -650,10 +657,29 @@ function statsFiltersToQuery(filters: StatisticsFilters): string {
     params.set("include_mutations", filters.includeMutations ? "1" : "0");
     params.set("include_normal_games", filters.includeNormalGames ? "1" : "0");
     params.set("show_all", filters.overrideFolderSelection ? "1" : "0");
-    params.set("wins_only", filters.winsOnly ? "1" : "0");
+    params.set("include_wins", filters.includeWins ? "1" : "0");
+    params.set("include_losses", filters.includeLosses ? "1" : "0");
     params.set("include_both_main", filters.includeMultiBox ? "1" : "0");
-    params.set("sub_15", filters.includeSub15 ? "1" : "0");
-    params.set("over_15", filters.includeOver15 ? "1" : "0");
+    params.set("sub_15", filters.includeMainSub15 ? "1" : "0");
+    params.set("over_15", filters.includeMainOver15 ? "1" : "0");
+    params.set("ally_sub_15", filters.includeAllySub15 ? "1" : "0");
+    params.set("ally_over_15", filters.includeAllyOver15 ? "1" : "0");
+    params.set(
+        "main_normal_mastery",
+        filters.includeMainNormalMastery ? "1" : "0",
+    );
+    params.set(
+        "main_abnormal_mastery",
+        filters.includeMainAbnormalMastery ? "1" : "0",
+    );
+    params.set(
+        "ally_normal_mastery",
+        filters.includeAllyNormalMastery ? "1" : "0",
+    );
+    params.set(
+        "ally_abnormal_mastery",
+        filters.includeAllyAbnormalMastery ? "1" : "0",
+    );
     params.set(
         "minlength",
         String(Math.max(0, Number(filters.minLength) || 0)),

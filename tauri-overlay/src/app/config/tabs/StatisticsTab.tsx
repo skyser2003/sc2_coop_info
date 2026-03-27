@@ -2105,7 +2105,8 @@ export default function StatisticsTab({
             <section className="card group stats-root">
                 <div className="stats-top-grid">
                     <div className="stats-check-cols">
-                        <div className="stats-col">
+                        <div className="stats-filter-group">
+                            <h4>{t("ui_stats_group_difficulty")}</h4>
                             {filterCheckbox(
                                 languageManager.localize("Casual"),
                                 statsState.filters.difficulties.Casual,
@@ -2157,7 +2158,8 @@ export default function StatisticsTab({
                                 () => actions.toggleDifficulty("BrutalPlus6"),
                             )}
                         </div>
-                        <div className="stats-col">
+                        <div className="stats-filter-group">
+                            <h4>{t("ui_stats_group_region")}</h4>
                             {filterCheckbox(
                                 t("ui_stats_region_americas"),
                                 statsState.filters.regions.NA,
@@ -2179,25 +2181,124 @@ export default function StatisticsTab({
                                 () => actions.toggleRegion("CN"),
                             )}
                         </div>
-                        <div className="stats-col">
-                            {filterCheckbox(
-                                t("ui_stats_normal_games"),
-                                statsState.filters.includeNormalGames,
-                                () =>
-                                    actions.setStatsBool("includeNormalGames"),
-                            )}
-                            {filterCheckbox(
-                                t("ui_stats_mutations"),
-                                statsState.filters.includeMutations,
-                                () => actions.setStatsBool("includeMutations"),
-                            )}
-                            {filterCheckbox(
-                                t("ui_stats_wins_only"),
-                                statsState.filters.winsOnly,
-                                () => actions.setStatsBool("winsOnly"),
-                            )}
+                        <div className="stats-filter-stack">
+                            <div className="stats-filter-group">
+                                <h4>{t("ui_stats_group_game_type")}</h4>
+                                {filterCheckbox(
+                                    t("ui_stats_normal_games"),
+                                    statsState.filters.includeNormalGames,
+                                    () =>
+                                        actions.setStatsBool(
+                                            "includeNormalGames",
+                                        ),
+                                )}
+                                {filterCheckbox(
+                                    t("ui_stats_mutations"),
+                                    statsState.filters.includeMutations,
+                                    () =>
+                                        actions.setStatsBool(
+                                            "includeMutations",
+                                        ),
+                                )}
+                            </div>
+                            <div className="stats-filter-group">
+                                <h4>{t("ui_stats_group_game_result")}</h4>
+                                {filterCheckbox(
+                                    t("ui_stats_include_wins"),
+                                    statsState.filters.includeWins,
+                                    () => actions.setStatsBool("includeWins"),
+                                )}
+                                {filterCheckbox(
+                                    t("ui_stats_include_losses"),
+                                    statsState.filters.includeLosses,
+                                    () => actions.setStatsBool("includeLosses"),
+                                )}
+                            </div>
                         </div>
-                        <div className="stats-col">
+                        <div className="stats-filter-stack">
+                            <div className="stats-filter-group">
+                                <h4>{t("ui_stats_group_main_level")}</h4>
+                                {filterCheckbox(
+                                    t("ui_stats_include_levels_1_14"),
+                                    statsState.filters.includeMainSub15,
+                                    () =>
+                                        actions.setStatsBool(
+                                            "includeMainSub15",
+                                        ),
+                                )}
+                                {filterCheckbox(
+                                    t("ui_stats_include_levels_15_plus"),
+                                    statsState.filters.includeMainOver15,
+                                    () =>
+                                        actions.setStatsBool(
+                                            "includeMainOver15",
+                                        ),
+                                )}
+                            </div>
+                            <div className="stats-filter-group">
+                                <h4>{t("ui_stats_group_main_mastery")}</h4>
+                                {filterCheckbox(
+                                    t("ui_stats_include_normal_mastery_sum"),
+                                    statsState.filters.includeMainNormalMastery,
+                                    () =>
+                                        actions.setStatsBool(
+                                            "includeMainNormalMastery",
+                                        ),
+                                )}
+                                {filterCheckbox(
+                                    t("ui_stats_include_abnormal_mastery_sum"),
+                                    statsState.filters
+                                        .includeMainAbnormalMastery,
+                                    () =>
+                                        actions.setStatsBool(
+                                            "includeMainAbnormalMastery",
+                                        ),
+                                )}
+                            </div>
+                        </div>
+                        <div className="stats-filter-stack">
+                            <div className="stats-filter-group">
+                                <h4>{t("ui_stats_group_ally_level")}</h4>
+                                {filterCheckbox(
+                                    t("ui_stats_include_levels_1_14"),
+                                    statsState.filters.includeAllySub15,
+                                    () =>
+                                        actions.setStatsBool(
+                                            "includeAllySub15",
+                                        ),
+                                )}
+                                {filterCheckbox(
+                                    t("ui_stats_include_levels_15_plus"),
+                                    statsState.filters.includeAllyOver15,
+                                    () =>
+                                        actions.setStatsBool(
+                                            "includeAllyOver15",
+                                        ),
+                                )}
+                            </div>
+                            <div className="stats-filter-group">
+                                <h4>{t("ui_stats_group_ally_mastery")}</h4>
+                                {filterCheckbox(
+                                    t("ui_stats_include_normal_mastery_sum"),
+                                    statsState.filters.includeAllyNormalMastery,
+                                    () =>
+                                        actions.setStatsBool(
+                                            "includeAllyNormalMastery",
+                                        ),
+                                )}
+                                {filterCheckbox(
+                                    t("ui_stats_include_abnormal_mastery_sum"),
+                                    statsState.filters
+                                        .includeAllyAbnormalMastery,
+                                    () =>
+                                        actions.setStatsBool(
+                                            "includeAllyAbnormalMastery",
+                                        ),
+                                )}
+                            </div>
+                        </div>
+                        <div className="stats-filter-group">
+                            <h4>{t("ui_stats_group_etc")}</h4>
                             {filterCheckbox(
                                 t("ui_stats_override_folder"),
                                 statsState.filters.overrideFolderSelection,
@@ -2210,16 +2311,6 @@ export default function StatisticsTab({
                                 t("ui_stats_include_multibox"),
                                 statsState.filters.includeMultiBox,
                                 () => actions.setStatsBool("includeMultiBox"),
-                            )}
-                            {filterCheckbox(
-                                t("ui_stats_include_levels_1_14"),
-                                statsState.filters.includeSub15,
-                                () => actions.setStatsBool("includeSub15"),
-                            )}
-                            {filterCheckbox(
-                                t("ui_stats_include_levels_15_plus"),
-                                statsState.filters.includeOver15,
-                                () => actions.setStatsBool("includeOver15"),
                             )}
                         </div>
                     </div>
