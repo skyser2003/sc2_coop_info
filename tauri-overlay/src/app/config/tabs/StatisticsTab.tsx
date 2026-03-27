@@ -488,9 +488,12 @@ function renderCommanderDetails(
     const commanderMastery = readCommanderMasteryLookup(
         statsPayload.commander_mastery,
     );
+
+    const commanderKey = languageManager.englishLabel(commander);
+
     const masteryLabels = masteryLabelsForLanguage(
         commanderMastery,
-        commander,
+        commanderKey,
         languageManager.currentLanguage(),
     );
     const mastery = entry.Mastery || {};
