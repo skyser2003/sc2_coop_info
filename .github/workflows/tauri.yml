@@ -51,7 +51,7 @@ jobs:
               with:
                   tagName: v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
                   releaseName: "SC2_Coop_Info v__VERSION__"
-                  releaseBody: "Feature: Added unit name translation to statistics/overlay\nBug fix: Tab showing wrong color when clicked in dark theme"
+                  releaseBody: "Feature: Adjusted filters for statistics tab\nBug fix: Fixed Han & Horner not displaying mastery names correctly in statistics tab"
                   releaseDraft: false
                   prerelease: false
                   projectPath: "./tauri-overlay"
