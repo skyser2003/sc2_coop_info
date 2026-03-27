@@ -1,4 +1,5 @@
 import languageData from "./languageData.json";
+import unitCompositionData from "./unit_composition.json";
 import unitTranslationData from "../../../../s2coop-analyzer/data/unit_translation_data.json";
 
 export type AppLanguage = "en" | "ko";
@@ -12,6 +13,7 @@ type LanguageEntry = {
 };
 
 type LanguageData = Record<string, LanguageEntry>;
+type UnitCompositionData = Record<string, LanguageEntry>;
 type UnitTranslationEntry = {
     en: string;
     ko: string;
@@ -21,6 +23,8 @@ type UnitTranslationData = Record<string, UnitTranslationEntry>;
 const DEFAULT_LANGUAGE: AppLanguage = "en";
 const ENGLISH_LANGUAGE: AppLanguage = "en";
 const entries: LanguageData = languageData as LanguageData;
+const unitCompositionEntries: UnitCompositionData =
+    unitCompositionData as UnitCompositionData;
 const unitEntries: UnitTranslationData =
     unitTranslationData as UnitTranslationData;
 
@@ -40,11 +44,13 @@ function isAppLanguage(value: string): value is AppLanguage {
 export class LanguageManager {
     private language: AppLanguage;
     private readonly aliasToId: Map<string, string>;
+    private readonly unitCompositionAliasToId: Map<string, string>;
     private readonly unitAliasToKey: Map<string, string>;
 
     constructor(language: string) {
         this.language = isAppLanguage(language) ? language : DEFAULT_LANGUAGE;
         this.aliasToId = new Map<string, string>();
+        this.unitCompositionAliasToId = new Map<string, string>();
         this.unitAliasToKey = new Map<string, string>();
 
         for (const [id, entry] of Object.entries(entries)) {
@@ -63,6 +69,21 @@ export class LanguageManager {
             this.unitAliasToKey.set(normalizeAliasKey(key), key);
             this.unitAliasToKey.set(normalizeAliasKey(entry.en), key);
             this.unitAliasToKey.set(normalizeAliasKey(entry.ko), key);
+        }
+
+        for (const [id, entry] of Object.entries(unitCompositionEntries)) {
+            this.unitCompositionAliasToId.set(normalizeAliasKey(id), id);
+            this.unitCompositionAliasToId.set(normalizeAliasKey(entry.en), id);
+            this.unitCompositionAliasToId.set(normalizeAliasKey(entry.ko), id);
+
+            if (Array.isArray(entry.aliases)) {
+                for (const alias of entry.aliases) {
+                    this.unitCompositionAliasToId.set(
+                        normalizeAliasKey(alias),
+                        id,
+                    );
+                }
+            }
         }
     }
 
@@ -97,6 +118,22 @@ export class LanguageManager {
         return this.aliasToId.get(normalizeAliasKey(trimmed)) || null;
     }
 
+    private unitCompositionIdFromValue(value: LocalizableValue): string | null {
+        if (typeof value !== "string") {
+            return null;
+        }
+
+        const trimmed = value.trim();
+        if (trimmed === "") {
+            return null;
+        }
+
+        return (
+            this.unitCompositionAliasToId.get(normalizeAliasKey(trimmed)) ||
+            null
+        );
+    }
+
     localize(value: LocalizableValue): string {
         if (value === null || value === undefined) {
             return "";
@@ -112,11 +149,17 @@ export class LanguageManager {
         }
 
         const id = this.idFromValue(trimmed);
-        if (!id) {
+        if (id) {
+            return this.translate(id);
+        }
+
+        const unitCompositionId = this.unitCompositionIdFromValue(trimmed);
+        if (!unitCompositionId) {
             return trimmed;
         }
 
-        return this.translate(id);
+        const entry = unitCompositionEntries[unitCompositionId];
+        return entry?.[this.language] || entry?.[ENGLISH_LANGUAGE] || trimmed;
     }
 
     localizeUnitName(value: LocalizableValue): string {
@@ -167,12 +210,18 @@ export class LanguageManager {
         }
 
         const id = this.idFromValue(trimmed);
-        if (!id) {
+        if (id) {
+            const entry = entries[id];
+            return entry.asset_en || entry.en;
+        }
+
+        const unitCompositionId = this.unitCompositionIdFromValue(trimmed);
+        if (!unitCompositionId) {
             return trimmed;
         }
 
-        const entry = entries[id];
-        return entry.asset_en || entry.en;
+        const entry = unitCompositionEntries[unitCompositionId];
+        return entry?.asset_en || entry?.en || trimmed;
     }
 
     localizeMapRacePair(value: LocalizableValue): string {
