@@ -1,4 +1,4 @@
-import languageData from "./languageData.json";
+import languageData from "./language_data.json";
 import unitCompositionData from "./unit_composition.json";
 import unitTranslationData from "../../../../s2coop-analyzer/data/unit_translation_data.json";
 
