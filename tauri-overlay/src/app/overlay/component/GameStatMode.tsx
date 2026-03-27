@@ -1,6 +1,6 @@
 import { LanguageManager } from "../../i18n/languageManager";
-import GameStatChart, { ReplayChartVisible } from "./game_stat_chart";
-import GameStatText from "./game_stat_text";
+import GameStatChart, { ReplayChartVisible } from "./GameStatChart";
+import GameStatText from "./GameStatText";
 import type {
     OverlayRandomizerCatalog,
     OverlayReplayPayload,

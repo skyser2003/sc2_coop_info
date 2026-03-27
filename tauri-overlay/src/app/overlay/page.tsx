@@ -1,8 +1,8 @@
 import { useInsertionEffect, useEffect, useState } from "react";
 
-import { ReplayChartVisible } from "./component/game_stat_chart";
-import GameStatMode from "./component/game_stat_mode";
-import PlayerStatMode from "./component/player_stat_mode";
+import { ReplayChartVisible } from "./component/GameStatChart";
+import GameStatMode from "./component/GameStatMode";
+import PlayerStatMode from "./component/PlayerStatMode";
 import { createLanguageManager } from "../i18n/languageManager";
 import { emit, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
