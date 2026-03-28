@@ -3,11 +3,15 @@ use sco_tauri_overlay::{canonicalize_coop_map_id, ReplayInfo};
 use serde_json::json;
 use serde_json::Value;
 
+fn test_map_id(raw: &str) -> String {
+    canonicalize_coop_map_id(raw).expect("map id should resolve")
+}
+
 #[test]
 fn ally_commander_data_includes_sum_row() {
     let replays = vec![
         ReplayInfo {
-            map: canonicalize_coop_map_id("Void Launch").expect("map id should resolve"),
+            map: test_map_id("Void Launch"),
             result: "Victory".to_string(),
             difficulty: "Brutal".to_string(),
             p1: "Main".to_string(),
@@ -21,7 +25,7 @@ fn ally_commander_data_includes_sum_row() {
             ..ReplayInfo::default()
         },
         ReplayInfo {
-            map: canonicalize_coop_map_id("Void Launch").expect("map id should resolve"),
+            map: test_map_id("Void Launch"),
             result: "Defeat".to_string(),
             difficulty: "Brutal".to_string(),
             p1: "Main".to_string(),
@@ -57,7 +61,7 @@ fn ally_commander_data_includes_sum_row() {
 fn ally_commander_frequency_matches_wx_preference_correction_rule() {
     let replays = vec![
         ReplayInfo {
-            map: canonicalize_coop_map_id("Void Launch").expect("map id should resolve"),
+            map: test_map_id("Void Launch"),
             result: "Victory".to_string(),
             difficulty: "Brutal".to_string(),
             p1: "Main".to_string(),
@@ -69,7 +73,7 @@ fn ally_commander_frequency_matches_wx_preference_correction_rule() {
             ..ReplayInfo::default()
         },
         ReplayInfo {
-            map: canonicalize_coop_map_id("Void Launch").expect("map id should resolve"),
+            map: test_map_id("Void Launch"),
             result: "Victory".to_string(),
             difficulty: "Brutal".to_string(),
             p1: "Main".to_string(),
@@ -81,7 +85,7 @@ fn ally_commander_frequency_matches_wx_preference_correction_rule() {
             ..ReplayInfo::default()
         },
         ReplayInfo {
-            map: canonicalize_coop_map_id("Void Launch").expect("map id should resolve"),
+            map: test_map_id("Void Launch"),
             result: "Victory".to_string(),
             difficulty: "Brutal".to_string(),
             p1: "Main".to_string(),

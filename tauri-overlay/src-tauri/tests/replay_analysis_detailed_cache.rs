@@ -9,6 +9,10 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+fn test_map_id(raw: &str) -> String {
+    canonicalize_coop_map_id(raw).expect("map id should resolve")
+}
+
 fn unique_temp_path(label: &str) -> PathBuf {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -157,10 +161,7 @@ fn load_detailed_analysis_replays_snapshot_from_path_uses_cache_entries() {
 
     assert_eq!(replays.len(), 1);
     assert_eq!(replays[0].file, replay_path.display().to_string());
-    assert_eq!(
-        replays[0].map,
-        canonicalize_coop_map_id("Void Launch").expect("map id should resolve")
-    );
+    assert_eq!(replays[0].map, test_map_id("Void Launch"));
     assert_eq!(replays[0].difficulty, "Brutal");
     assert_eq!(replays[0].length, 610);
     assert_eq!(replays[0].main_commander, "Raynor");
@@ -170,9 +171,7 @@ fn load_detailed_analysis_replays_snapshot_from_path_uses_cache_entries() {
     assert_eq!(replays[0].bonus, vec![1, 1]);
     assert_eq!(
         replays[0].bonus_total,
-        bonus_objective_total_for_map_id(
-            &canonicalize_coop_map_id("Void Launch").expect("map id should resolve")
-        )
+        bonus_objective_total_for_map_id(&test_map_id("Void Launch"))
     );
 
     let _ = std::fs::remove_file(&cache_path);

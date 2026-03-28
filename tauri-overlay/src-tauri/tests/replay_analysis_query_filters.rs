@@ -1,12 +1,5 @@
-use s2coop_analyzer::dictionary_data;
 use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
 use sco_tauri_overlay::ReplayInfo;
-use std::path::PathBuf;
-
-fn initialize_dictionary_data() {
-    let data_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../s2coop-analyzer/data");
-    let _ = dictionary_data::shared_dictionary_data(Some(data_dir));
-}
 
 fn replay_for_checkbox_filter(
     file_name: &str,
@@ -103,8 +96,6 @@ fn replay_for_ally_level_filter(file_name: &str, ally_commander_level: u64) -> R
 
 #[test]
 fn filter_replays_for_stats_decodes_checkbox_filter_lists_from_query_string() {
-    initialize_dictionary_data();
-
     let replays = vec![
         replay_for_checkbox_filter("na_brutal", "Brutal", 0, "1-S2-1-111"),
         replay_for_checkbox_filter("eu_normal", "Normal", 0, "2-S2-1-222"),
@@ -122,8 +113,6 @@ fn filter_replays_for_stats_decodes_checkbox_filter_lists_from_query_string() {
 
 #[test]
 fn filter_replays_for_stats_decodes_brutal_plus_checkbox_values() {
-    initialize_dictionary_data();
-
     let replays = vec![
         replay_for_checkbox_filter("plain_brutal", "Brutal", 0, "1-S2-1-111"),
         replay_for_checkbox_filter("bplus1", "Brutal", 1, "1-S2-1-222"),
@@ -140,8 +129,6 @@ fn filter_replays_for_stats_decodes_brutal_plus_checkbox_values() {
 
 #[test]
 fn filter_replays_for_stats_can_limit_results_to_main_normal_mastery_games() {
-    initialize_dictionary_data();
-
     let replays = vec![
         replay_for_mastery_filter("main_normal_90", 90, 200),
         replay_for_mastery_filter("main_abnormal_91", 91, 0),
@@ -164,8 +151,6 @@ fn filter_replays_for_stats_can_limit_results_to_main_normal_mastery_games() {
 
 #[test]
 fn filter_replays_for_stats_can_limit_results_to_ally_abnormal_mastery_games() {
-    initialize_dictionary_data();
-
     let replays = vec![
         replay_for_mastery_filter("ally_normal_90", 0, 90),
         replay_for_mastery_filter("ally_abnormal_91", 10, 91),
@@ -188,8 +173,6 @@ fn filter_replays_for_stats_can_limit_results_to_ally_abnormal_mastery_games() {
 
 #[test]
 fn filter_replays_for_stats_can_limit_results_to_losses() {
-    initialize_dictionary_data();
-
     let replays = vec![
         replay_for_result_filter("win", "Victory"),
         replay_for_result_filter("loss", "Defeat"),
@@ -204,8 +187,6 @@ fn filter_replays_for_stats_can_limit_results_to_losses() {
 
 #[test]
 fn filter_replays_for_stats_can_limit_results_to_ally_levels_1_14() {
-    initialize_dictionary_data();
-
     let replays = vec![
         replay_for_ally_level_filter("ally_low", 10),
         replay_for_ally_level_filter("ally_high", 15),
@@ -220,8 +201,6 @@ fn filter_replays_for_stats_can_limit_results_to_ally_levels_1_14() {
 
 #[test]
 fn filter_replays_for_stats_uses_or_logic_within_main_level_group() {
-    initialize_dictionary_data();
-
     let replays = vec![
         ReplayInfo {
             file: "fixtures/replays/main_group_level_match.SC2Replay".to_string(),
@@ -294,8 +273,6 @@ fn filter_replays_for_stats_uses_or_logic_within_main_level_group() {
 
 #[test]
 fn abnormal_main_mastery_filter_updates_fastest_map_payload() {
-    initialize_dictionary_data();
-
     let replays = vec![
         ReplayInfo {
             file: "fixtures/replays/excluded_fastest.SC2Replay".to_string(),

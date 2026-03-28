@@ -9,6 +9,10 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+fn test_map_id(raw: &str) -> String {
+    canonicalize_coop_map_id(raw).expect("map id should resolve")
+}
+
 fn unique_temp_path(label: &str) -> PathBuf {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -175,7 +179,7 @@ fn stats_response_prefers_detailed_analysis_cache_when_unit_data_is_enabled() {
 
     let stale_replay = ReplayInfo {
         file: replay_path.display().to_string(),
-        map: canonicalize_coop_map_id("Void Launch").expect("map id should resolve"),
+        map: test_map_id("Void Launch"),
         result: "Victory".to_string(),
         difficulty: "Brutal".to_string(),
         p1: "Stale Main".to_string(),
@@ -215,7 +219,7 @@ fn stats_response_prefers_detailed_analysis_cache_when_unit_data_is_enabled() {
 fn stats_replays_for_response_prefers_in_memory_stats_cache() {
     let resident_replay = ReplayInfo {
         file: "fixtures/replays/resident.SC2Replay".to_string(),
-        map: canonicalize_coop_map_id("Void Launch").expect("map id should resolve"),
+        map: test_map_id("Void Launch"),
         result: "Victory".to_string(),
         difficulty: "Brutal".to_string(),
         p1: "Resident Main".to_string(),
@@ -253,7 +257,7 @@ fn merge_cached_detailed_replays_replaces_matching_simple_entries() {
 
     let simple_replay = ReplayInfo {
         file: replay_path.display().to_string(),
-        map: canonicalize_coop_map_id("Void Launch").expect("map id should resolve"),
+        map: test_map_id("Void Launch"),
         result: "Victory".to_string(),
         difficulty: "Brutal".to_string(),
         p1: "Simple Main".to_string(),

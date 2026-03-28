@@ -14,6 +14,10 @@ use serde_json::Value;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
+fn test_map_id(raw: &str) -> String {
+    canonicalize_coop_map_id(raw).expect("map id should resolve")
+}
+
 fn replay_analysis_fixture_paths() -> Option<(PathBuf, AppSettings)> {
     let current_cache = get_cache_path();
     let settings_path = PathBuf::from("../settings.json");
@@ -67,7 +71,7 @@ fn rebuild_snapshot_returns_empty_payload() {
 fn rebuild_snapshot_without_detailed_data_uses_null_unit_data() {
     let replays = vec![ReplayInfo {
         file: "simple.SC2Replay".to_string(),
-        map: canonicalize_coop_map_id("Void Launch").expect("map id should resolve"),
+        map: test_map_id("Void Launch"),
         result: "Victory".to_string(),
         difficulty: "Brutal".to_string(),
         p1: "Main".to_string(),
@@ -125,7 +129,7 @@ fn map_times_use_accurate_length_like_wx_version() {
     let replays = vec![
         ReplayInfo {
             file: "a.SC2Replay".to_string(),
-            map: canonicalize_coop_map_id("Void Launch").expect("map id should resolve"),
+            map: test_map_id("Void Launch"),
             result: "Victory".to_string(),
             difficulty: "Brutal".to_string(),
             p1: "Main".to_string(),
@@ -138,7 +142,7 @@ fn map_times_use_accurate_length_like_wx_version() {
         },
         ReplayInfo {
             file: "b.SC2Replay".to_string(),
-            map: canonicalize_coop_map_id("Void Launch").expect("map id should resolve"),
+            map: test_map_id("Void Launch"),
             result: "Victory".to_string(),
             difficulty: "Brutal".to_string(),
             p1: "Main".to_string(),
@@ -181,7 +185,7 @@ fn map_fastest_payload_includes_player_metadata() {
     let replays = vec![ReplayInfo {
         file: "fastest.SC2Replay".to_string(),
         date: fastest_date,
-        map: canonicalize_coop_map_id("Void Launch").expect("map id should resolve"),
+        map: test_map_id("Void Launch"),
         result: "Victory".to_string(),
         difficulty: "Brutal".to_string(),
         enemy: "Zerg".to_string(),
@@ -257,7 +261,7 @@ fn map_fastest_prefers_oldest_replay_when_lengths_tie() {
             file: "newer_fastest.SC2Replay".to_string(),
             date: parse_replay_timestamp_seconds("2020:01:02:03:04:05")
                 .expect("newer replay timestamp should parse"),
-            map: canonicalize_coop_map_id("Void Launch").expect("map id should resolve"),
+            map: test_map_id("Void Launch"),
             result: "Victory".to_string(),
             difficulty: "Brutal".to_string(),
             enemy: "Zerg".to_string(),
@@ -276,7 +280,7 @@ fn map_fastest_prefers_oldest_replay_when_lengths_tie() {
             file: "older_fastest.SC2Replay".to_string(),
             date: parse_replay_timestamp_seconds("2019:01:02:03:04:05")
                 .expect("older replay timestamp should parse"),
-            map: canonicalize_coop_map_id("Void Launch").expect("map id should resolve"),
+            map: test_map_id("Void Launch"),
             result: "Victory".to_string(),
             difficulty: "Normal".to_string(),
             enemy: "Terran".to_string(),
@@ -326,7 +330,7 @@ fn map_fastest_prefers_oldest_replay_when_lengths_tie() {
 fn collect_main_identity_lists_tracks_p2_main_handle_for_fastest_maps() {
     let replays = vec![ReplayInfo {
         file: "fastest.SC2Replay".to_string(),
-        map: canonicalize_coop_map_id("Miner Evacuation").expect("map id should resolve"),
+        map: test_map_id("Miner Evacuation"),
         result: "Victory".to_string(),
         difficulty: "Normal".to_string(),
         p1: "Teammate".to_string(),
@@ -433,9 +437,6 @@ fn mastery_sum_filters_partition_existing_cache_replays() {
         eprintln!("skipping exclusive stats partition test: required cache fixtures are missing");
         return;
     };
-
-    let data_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../s2coop-analyzer/data");
-    let _ = dictionary_data::shared_dictionary_data(Some(data_dir));
 
     let main_names = configured_main_names_from_settings(&settings);
     let main_handles = configured_main_handles_from_settings(&settings);

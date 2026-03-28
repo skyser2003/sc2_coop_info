@@ -680,13 +680,69 @@ fn load_shared_dictionary_data_impl(
     })
 }
 
+const DEFAULT_DATA_DIR_CANDIDATES: [&str; 2] = ["data", "s2coop-analyzer/data"];
+
+fn add_default_data_dir_candidate(
+    candidates: &mut Vec<PathBuf>,
+    seen: &mut HashSet<PathBuf>,
+    candidate: PathBuf,
+) {
+    if seen.insert(candidate.clone()) {
+        candidates.push(candidate);
+    }
+}
+
+fn add_default_data_dir_ancestors(
+    candidates: &mut Vec<PathBuf>,
+    seen: &mut HashSet<PathBuf>,
+    start: &Path,
+) {
+    let mut probe = Some(start);
+    while let Some(base) = probe {
+        for relative in DEFAULT_DATA_DIR_CANDIDATES {
+            add_default_data_dir_candidate(candidates, seen, base.join(relative));
+        }
+        probe = base.parent();
+    }
+}
+
+fn required_dictionary_files_present(path: &Path) -> bool {
+    path.is_dir()
+        && path.join("mutators_exclude_ids.json").is_file()
+        && path.join("replay_analysis_data.json").is_file()
+}
+
+fn resolve_default_dictionary_data_dir() -> PathBuf {
+    let mut candidates = Vec::<PathBuf>::new();
+    let mut seen = HashSet::<PathBuf>::new();
+
+    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        add_default_data_dir_ancestors(&mut candidates, &mut seen, Path::new(&manifest_dir));
+    }
+
+    if let Ok(current_dir) = std::env::current_dir() {
+        add_default_data_dir_ancestors(&mut candidates, &mut seen, current_dir.as_path());
+    }
+
+    if let Ok(current_exe) = std::env::current_exe() {
+        if let Some(parent) = current_exe.parent() {
+            add_default_data_dir_ancestors(&mut candidates, &mut seen, parent);
+        }
+    }
+
+    candidates
+        .into_iter()
+        .find(|candidate| required_dictionary_files_present(candidate))
+        .unwrap_or_else(|| PathBuf::from("./data"))
+}
+
 pub fn shared_dictionary_data(
     data_dir: Option<PathBuf>,
 ) -> Result<&'static Sc2DictionaryData, DictionaryDataError> {
     static DATA: OnceLock<Result<Sc2DictionaryData, DictionaryDataError>> = OnceLock::new();
 
     if DATA.get().is_none() {
-        let resolved_data_dir = data_dir.unwrap_or_else(|| PathBuf::from("./").join("data"));
+        let resolved_data_dir = data_dir.unwrap_or_else(resolve_default_dictionary_data_dir);
         let data = load_shared_dictionary_data_impl(&resolved_data_dir);
         let _ = DATA.set(data);
     }

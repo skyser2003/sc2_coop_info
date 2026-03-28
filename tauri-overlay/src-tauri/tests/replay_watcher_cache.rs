@@ -1,3 +1,5 @@
+#![cfg(not(windows))]
+
 mod common;
 
 use common::test_replay_path;
