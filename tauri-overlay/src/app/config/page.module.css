@@ -1692,12 +1692,27 @@
     max-width: 100%;
 }
 
-.configPage :global(.randomizer-main-grid) {
+.configPage :global(.randomizer-layout) {
     display: grid;
-    grid-template-columns: max-content minmax(320px, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 16px;
     align-items: start;
     margin-top: 14px;
+}
+
+.configPage :global(.randomizer-pane) {
+    min-width: 0;
+}
+
+.configPage :global(.randomizer-pane-right) {
+    min-height: 100%;
+}
+
+.configPage :global(.randomizer-main-grid) {
+    display: grid;
+    grid-template-columns: minmax(0, max-content) minmax(320px, 1fr);
+    gap: 16px;
+    align-items: start;
 }
 
 .configPage :global(.randomizer-choice-box h3),
@@ -2007,6 +2022,10 @@
 
     .configPage :global(.randomizer-controls) {
         align-items: stretch;
+    }
+
+    .configPage :global(.randomizer-layout) {
+        grid-template-columns: 1fr;
     }
 
     .configPage :global(.randomizer-main-grid) {

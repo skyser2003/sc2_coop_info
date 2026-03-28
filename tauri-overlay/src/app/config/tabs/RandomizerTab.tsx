@@ -311,209 +311,223 @@ export default function RandomizerTab({
                     </label>
                 </div>
 
-                <div className="randomizer-main-grid">
-                    <div className="randomizer-choice-box">
-                        <h3>{t("ui_randomizer_choices_title")}</h3>
-                        <div className="randomizer-table-shell">
-                            <table className="data-table randomizer-choice-table">
-                                <thead>
-                                    <tr>
-                                        <th>
-                                            {t(
-                                                "ui_randomizer_commander_column",
-                                            )}
-                                        </th>
-                                        {[0, 1, 2, 3].map((prestige) => (
-                                            <th
-                                                key={`head-${prestige}`}
-                                                className="randomizer-header-toggle-cell"
-                                            >
-                                                <button
-                                                    type="button"
-                                                    className="randomizer-header-toggle"
-                                                    aria-label={formatText(
-                                                        "ui_randomizer_toggle_prestige_all",
-                                                        {
-                                                            prestige,
-                                                        },
+                <div className="randomizer-layout">
+                    <div className="randomizer-pane randomizer-pane-left">
+                        <div className="randomizer-main-grid">
+                            <div className="randomizer-choice-box">
+                                <h3>{t("ui_randomizer_choices_title")}</h3>
+                                <div className="randomizer-table-shell">
+                                    <table className="data-table randomizer-choice-table">
+                                        <thead>
+                                            <tr>
+                                                <th>
+                                                    {t(
+                                                        "ui_randomizer_commander_column",
                                                     )}
-                                                    onClick={() =>
-                                                        togglePrestigeColumn(
-                                                            prestige,
-                                                        )
-                                                    }
-                                                >
-                                                    {`P${prestige}`}
-                                                </button>
-                                            </th>
-                                        ))}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {commanderNames.map((commander) => (
-                                        <tr key={commander}>
-                                            <td className="randomizer-commander-cell">
-                                                <button
-                                                    type="button"
-                                                    className="randomizer-commander-toggle"
-                                                    aria-label={formatText(
-                                                        "ui_randomizer_toggle_all_prestiges",
-                                                        {
-                                                            commander:
-                                                                displayCommanderName(
+                                                </th>
+                                                {[0, 1, 2, 3].map(
+                                                    (prestige) => (
+                                                        <th
+                                                            key={`head-${prestige}`}
+                                                            className="randomizer-header-toggle-cell"
+                                                        >
+                                                            <button
+                                                                type="button"
+                                                                className="randomizer-header-toggle"
+                                                                aria-label={formatText(
+                                                                    "ui_randomizer_toggle_prestige_all",
+                                                                    {
+                                                                        prestige,
+                                                                    },
+                                                                )}
+                                                                onClick={() =>
+                                                                    togglePrestigeColumn(
+                                                                        prestige,
+                                                                    )
+                                                                }
+                                                            >
+                                                                {`P${prestige}`}
+                                                            </button>
+                                                        </th>
+                                                    ),
+                                                )}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {commanderNames.map((commander) => (
+                                                <tr key={commander}>
+                                                    <td className="randomizer-commander-cell">
+                                                        <button
+                                                            type="button"
+                                                            className="randomizer-commander-toggle"
+                                                            aria-label={formatText(
+                                                                "ui_randomizer_toggle_all_prestiges",
+                                                                {
+                                                                    commander:
+                                                                        displayCommanderName(
+                                                                            commander,
+                                                                        ),
+                                                                },
+                                                            )}
+                                                            onClick={() =>
+                                                                toggleCommander(
                                                                     commander,
-                                                                ),
-                                                        },
-                                                    )}
-                                                    onClick={() =>
-                                                        toggleCommander(
-                                                            commander,
-                                                        )
-                                                    }
-                                                >
-                                                    {displayCommanderName(
-                                                        commander,
-                                                    )}
-                                                </button>
-                                            </td>
-                                            {[0, 1, 2, 3].map((prestige) => {
-                                                const prestigeLabel =
-                                                    prestigeLabelForLanguage(
-                                                        catalog.prestige_names,
-                                                        commander,
-                                                        prestige,
-                                                        languageManager.currentLanguage(),
-                                                    );
-                                                return (
-                                                    <td
-                                                        key={`${commander}-${prestige}`}
-                                                        className="randomizer-checkbox-cell"
-                                                    >
-                                                        <input
-                                                            type="checkbox"
-                                                            aria-label={`${commander} P${prestige}`}
-                                                            title={
-                                                                prestigeLabel
-                                                            }
-                                                            checked={
-                                                                effectiveChoices[
-                                                                    `${commander}_${prestige}`
-                                                                ] || false
-                                                            }
-                                                            onChange={(event) =>
-                                                                setChoice(
-                                                                    commander,
-                                                                    prestige,
-                                                                    event.target
-                                                                        .checked,
                                                                 )
                                                             }
-                                                        />
+                                                        >
+                                                            {displayCommanderName(
+                                                                commander,
+                                                            )}
+                                                        </button>
                                                     </td>
-                                                );
-                                            })}
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <div className="randomizer-actions">
-                            <button
-                                type="button"
-                                onClick={onGenerate}
-                                disabled={actions.isBusy}
-                            >
-                                {t("ui_randomizer_generate")}
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="randomizer-result-box">
-                        <h3>{t("ui_randomizer_result")}</h3>
-                        <div className="randomizer-result-head">
-                            {result
-                                ? `${languageManager.localize(result.commander)} - ${prestigeLabelForLanguage(
-                                      catalog.prestige_names,
-                                      result.commander,
-                                      result.prestige,
-                                      languageManager.currentLanguage(),
-                                  )} (P${result.prestige})`
-                                : "-"}
-                        </div>
-                        {result ? (
-                            <div className="randomizer-result-previews">
-                                <SelectionPreview
-                                    assetUrl={resultCommanderPreview.url}
-                                    title={languageManager.localize(
-                                        result.commander,
-                                    )}
-                                    subtitle={`${prestigeLabelForLanguage(
-                                        catalog.prestige_names,
-                                        result.commander,
-                                        result.prestige,
-                                        languageManager.currentLanguage(),
-                                    )} (P${result.prestige})`}
-                                    kind="commander"
-                                    className="randomizer-result-preview"
-                                    titleClassName="randomizer-result-preview-title"
-                                    subtitleClassName="randomizer-result-preview-subtitle"
-                                />
-                                {resultMapRace.map !== "" ? (
-                                    <SelectionPreview
-                                        assetUrl={resultMapPreview.url}
-                                        title={languageManager.localize(
-                                            resultMapRace.map,
-                                        )}
-                                        subtitle={
-                                            resultMapRace.race !== ""
-                                                ? languageManager.localize(
-                                                      resultMapRace.race,
-                                                  )
-                                                : undefined
-                                        }
-                                        kind="map"
-                                        className="randomizer-result-preview"
-                                        titleClassName="randomizer-result-preview-title"
-                                        subtitleClassName="randomizer-result-preview-subtitle"
-                                    />
-                                ) : null}
-                            </div>
-                        ) : null}
-                        <div className="stats-block randomizer-result-body">
-                            {result ? (
-                                resultMasteryRows.map((row, index) => {
-                                    return (
-                                        <div
-                                            key={`${row.label}-${index}`}
-                                            className={`randomizer-result-row${
-                                                row.points === 0
-                                                    ? " is-zero"
-                                                    : ""
-                                            }`}
-                                        >
-                                            <span className="randomizer-result-points">
-                                                {String(row.points).padStart(
-                                                    2,
-                                                    " ",
-                                                )}
-                                            </span>
-                                            <span>{` ${row.label}`}</span>
-                                        </div>
-                                    );
-                                })
-                            ) : (
-                                <div className="randomizer-result-empty">
-                                    {t("ui_randomizer_empty_result")}
+                                                    {[0, 1, 2, 3].map(
+                                                        (prestige) => {
+                                                            const prestigeLabel =
+                                                                prestigeLabelForLanguage(
+                                                                    catalog.prestige_names,
+                                                                    commander,
+                                                                    prestige,
+                                                                    languageManager.currentLanguage(),
+                                                                );
+                                                            return (
+                                                                <td
+                                                                    key={`${commander}-${prestige}`}
+                                                                    className="randomizer-checkbox-cell"
+                                                                >
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        aria-label={`${commander} P${prestige}`}
+                                                                        title={
+                                                                            prestigeLabel
+                                                                        }
+                                                                        checked={
+                                                                            effectiveChoices[
+                                                                                `${commander}_${prestige}`
+                                                                            ] ||
+                                                                            false
+                                                                        }
+                                                                        onChange={(
+                                                                            event,
+                                                                        ) =>
+                                                                            setChoice(
+                                                                                commander,
+                                                                                prestige,
+                                                                                event
+                                                                                    .target
+                                                                                    .checked,
+                                                                            )
+                                                                        }
+                                                                    />
+                                                                </td>
+                                                            );
+                                                        },
+                                                    )}
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
                                 </div>
-                            )}
-                        </div>
-                        <div className="randomizer-result-foot">
-                            {languageManager.localizeMapRacePair(
-                                result?.map_race || "",
-                            )}
+
+                                <div className="randomizer-actions">
+                                    <button
+                                        type="button"
+                                        onClick={onGenerate}
+                                        disabled={actions.isBusy}
+                                    >
+                                        {t("ui_randomizer_generate")}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="randomizer-result-box">
+                                <h3>{t("ui_randomizer_result")}</h3>
+                                <div className="randomizer-result-head">
+                                    {result
+                                        ? `${languageManager.localize(result.commander)} - ${prestigeLabelForLanguage(
+                                              catalog.prestige_names,
+                                              result.commander,
+                                              result.prestige,
+                                              languageManager.currentLanguage(),
+                                          )} (P${result.prestige})`
+                                        : "-"}
+                                </div>
+                                {result ? (
+                                    <div className="randomizer-result-previews">
+                                        <SelectionPreview
+                                            assetUrl={
+                                                resultCommanderPreview.url
+                                            }
+                                            title={languageManager.localize(
+                                                result.commander,
+                                            )}
+                                            subtitle={`${prestigeLabelForLanguage(
+                                                catalog.prestige_names,
+                                                result.commander,
+                                                result.prestige,
+                                                languageManager.currentLanguage(),
+                                            )} (P${result.prestige})`}
+                                            kind="commander"
+                                            className="randomizer-result-preview"
+                                            titleClassName="randomizer-result-preview-title"
+                                            subtitleClassName="randomizer-result-preview-subtitle"
+                                        />
+                                        {resultMapRace.map !== "" ? (
+                                            <SelectionPreview
+                                                assetUrl={resultMapPreview.url}
+                                                title={languageManager.localize(
+                                                    resultMapRace.map,
+                                                )}
+                                                subtitle={
+                                                    resultMapRace.race !== ""
+                                                        ? languageManager.localize(
+                                                              resultMapRace.race,
+                                                          )
+                                                        : undefined
+                                                }
+                                                kind="map"
+                                                className="randomizer-result-preview"
+                                                titleClassName="randomizer-result-preview-title"
+                                                subtitleClassName="randomizer-result-preview-subtitle"
+                                            />
+                                        ) : null}
+                                    </div>
+                                ) : null}
+                                <div className="stats-block randomizer-result-body">
+                                    {result ? (
+                                        resultMasteryRows.map((row, index) => {
+                                            return (
+                                                <div
+                                                    key={`${row.label}-${index}`}
+                                                    className={`randomizer-result-row${
+                                                        row.points === 0
+                                                            ? " is-zero"
+                                                            : ""
+                                                    }`}
+                                                >
+                                                    <span className="randomizer-result-points">
+                                                        {String(
+                                                            row.points,
+                                                        ).padStart(2, " ")}
+                                                    </span>
+                                                    <span>{` ${row.label}`}</span>
+                                                </div>
+                                            );
+                                        })
+                                    ) : (
+                                        <div className="randomizer-result-empty">
+                                            {t("ui_randomizer_empty_result")}
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="randomizer-result-foot">
+                                    {languageManager.localizeMapRacePair(
+                                        result?.map_race || "",
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     </div>
+                    <div className="randomizer-pane randomizer-pane-right" />
                 </div>
             </section>
         </div>
