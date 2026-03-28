@@ -9,24 +9,6 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use thiserror::Error;
 
-const MUTATOR_CUSTOM_FORBIDDEN: [&str; 15] = [
-    "Nap Time",
-    "Stone Zealots",
-    "Chaos Studios",
-    "Undying Evil",
-    "Afraid of the Dark",
-    "Trick or Treat",
-    "Turkey Shoot",
-    "Sharing Is Caring",
-    "Gift Exchange",
-    "Naughty List",
-    "Extreme Caution",
-    "Insubordination",
-    "Fireworks",
-    "Lucky Envelopes",
-    "Sluggishness",
-];
-
 #[derive(Clone, Debug, Error)]
 pub enum DictionaryDataError {
     #[error("SC2 dictionary data directory was not found from '{0}'")]
@@ -875,8 +857,10 @@ pub fn mutator_list_all() -> &'static Vec<String> {
 pub fn mutator_list() -> &'static Vec<String> {
     static CACHE: OnceLock<Vec<String>> = OnceLock::new();
     CACHE.get_or_init(|| {
+        let mutators_exclude_set =
+            parse_string_set(&shared_dictionary_data_or_default().mutators_exclude_ids_json);
         let mut mutators = mutator_list_all().clone();
-        mutators.retain(|mutator| !MUTATOR_CUSTOM_FORBIDDEN.contains(&mutator.as_str()));
+        mutators.retain(|mutator| !mutators_exclude_set.contains(mutator.as_str()));
         mutators
     })
 }
