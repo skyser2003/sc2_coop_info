@@ -1,0 +1,103 @@
+[
+  {
+    "value": 1,
+    "ids": [
+      "TemporalField",
+      "StructureSteal",
+      "PhotonOverload",
+      "OrbitalStrike",
+      "ReducedVision",
+      "LifeLeech",
+      "TimeWarp",
+      "ConcussiveAttacks",
+      "SideStep"
+    ]
+  },
+  {
+    "value": 2,
+    "ids": [
+      "WalkingInfested",
+      "Inspiration",
+      "Entomb",
+      "HardenedWill",
+      "LaserDrill",
+      "Barrier",
+      "FireFight",
+      "UnitSpeed",
+      "BlackFog",
+      "SpawnBroodlings",
+      "LongRange",
+      "PurifierBeam",
+      "MomentOfSilence",
+      "Tornadoes"
+    ]
+  },
+  {
+    "value": 3,
+    "ids": [
+      "DropPods",
+      "Fear",
+      "MissileBarrage",
+      "AllEnemiesCloaked",
+      "DamageReflect",
+      "LavaBurst",
+      "DeathAOE",
+      "InfestedTerranSpawner",
+      "DeathPull",
+      "Nukes",
+      "DamageBounce"
+    ]
+  },
+  {
+    "value": 4,
+    "ids": [
+      "Blizzard",
+      "Magnificent"
+    ]
+  },
+  {
+    "value": 5,
+    "ids": [
+      "Reanimators",
+      "Avenger",
+      "HybridNuke",
+      "OopsAllCasters",
+      "NoResources",
+      "OrderCosts"
+    ]
+  },
+  {
+    "value": 6,
+    "ids": [
+      "SpiderMines",
+      "KillBots"
+    ]
+  },
+  {
+    "value": 7,
+    "ids": [
+      "Polarity",
+      "Evolve",
+      "JustDie",
+      "Plague"
+    ]
+  },
+  {
+    "value": 8,
+    "ids": [
+      "Propagate"
+    ]
+  },
+  {
+    "value": 9,
+    "ids": []
+  },
+  {
+    "value": 10,
+    "ids": [
+      "VoidRifts",
+      "HeroesFromTheStorm",
+      "BoomBots"
+    ]
+  }
+]
