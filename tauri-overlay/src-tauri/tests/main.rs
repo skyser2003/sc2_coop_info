@@ -1,37 +1,57 @@
 mod common;
 
 use common::test_replay_path;
+use s2coop_analyzer::dictionary_data;
 use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
 use sco_tauri_overlay::{
     canonicalize_coop_map_id, parse_detailed_analysis_progress_counts,
-    prepare_startup_analysis_request, sync_detailed_analysis_status_from_replays,
-    sync_replay_cache_slots, ReplayInfo, StartupAnalysisRequestOutcome, StartupAnalysisTrigger,
-    StatsState,
+    prepare_startup_analysis_request, sync_detailed_analysis_status_from_replays, BackendState,
+    ReplayInfo, StartupAnalysisRequestOutcome, StartupAnalysisTrigger, StatsState,
 };
 use serde_json::json;
 use serde_json::Value;
-use std::sync::{Arc, Mutex};
+use std::path::PathBuf;
+use std::sync::Once;
+
+fn initialize_dictionary_data() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let data_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("s2coop-analyzer")
+            .join("data");
+        let _ = dictionary_data::shared_dictionary_data(Some(data_dir));
+    });
+}
 
 #[test]
 fn sync_replay_cache_slots_uses_cached_entries_and_sets_selected_file() {
     let replay_path = test_replay_path("example.SC2Replay");
-    let replays_slot = Arc::new(Mutex::new(vec![ReplayInfo {
-        file: replay_path.clone(),
-        date: 123,
-        result: "Victory".to_string(),
-        ..ReplayInfo::default()
-    }]));
-    let selected_replay_file = Arc::new(Mutex::new(None));
+    let state = BackendState::new();
+    {
+        let replay_state = state.get_replay_state();
+        let replay_slots = replay_state
+            .lock()
+            .expect("replay state mutex should not be poisoned");
+        let mut replays = replay_slots
+            .replays
+            .lock()
+            .expect("replays mutex should not be poisoned");
+        replays.push(ReplayInfo {
+            file: replay_path.clone(),
+            date: 123,
+            result: "Victory".to_string(),
+            ..ReplayInfo::default()
+        });
+    }
 
-    let replays = sync_replay_cache_slots(&replays_slot, &selected_replay_file, 1);
+    let replays = state.sync_replay_cache_slots(1);
 
     assert_eq!(replays.len(), 1);
     assert_eq!(replays[0].file.as_str(), replay_path.as_str());
     assert_eq!(
-        selected_replay_file
-            .lock()
-            .expect("selected replay mutex should not be poisoned")
-            .as_deref(),
+        state.get_current_replay_file().as_deref(),
         Some(replay_path.as_str())
     );
 }
@@ -97,6 +117,8 @@ fn parse_detailed_analysis_progress_counts_reads_completion_line() {
 
 #[test]
 fn sync_detailed_analysis_status_from_replays_reports_cached_progress() {
+    initialize_dictionary_data();
+
     let mut stats = StatsState::default();
     let detailed_replay = ReplayInfo {
         file: test_replay_path("detailed.SC2Replay"),

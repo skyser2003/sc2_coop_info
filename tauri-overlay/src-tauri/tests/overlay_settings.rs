@@ -35,7 +35,10 @@ fn overlay_runtime_settings_defaults_to_visible_charts() {
     );
     assert_eq!(payload.get("language").and_then(Value::as_str), Some("en"));
     assert_eq!(colors.len(), 4);
-    assert!(colors.iter().all(Value::is_null));
+    assert_eq!(colors.first().and_then(Value::as_str), Some("#0080F8"));
+    assert_eq!(colors.get(1).and_then(Value::as_str), Some("#00D532"));
+    assert_eq!(colors.get(2).and_then(Value::as_str), Some("#FF0000"));
+    assert_eq!(colors.get(3).and_then(Value::as_str), Some("#FFDC87"));
 }
 
 #[test]

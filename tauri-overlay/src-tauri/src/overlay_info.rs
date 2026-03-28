@@ -29,8 +29,7 @@ use crate::shared_types::{
 };
 use crate::{
     configured_main_handles, configured_main_names, replay_index_by_file,
-    replay_should_swap_main_and_ally, sanitize_replay_text, sync_replay_cache, BackendState,
-    UNLIMITED_REPLAY_LIMIT,
+    replay_should_swap_main_and_ally, sanitize_replay_text, BackendState, UNLIMITED_REPLAY_LIMIT,
 };
 
 pub(crate) const MENU_ITEM_SHOW_CONFIG: &str = "show_config";
@@ -904,7 +903,7 @@ pub(crate) fn emit_replay_to_overlay_from_replay(
 
     let settings = crate::read_settings_file();
     let show_session = settings.show_session;
-    let (session_victories, session_defeats) = crate::session_counts(&state);
+    let (session_victories, session_defeats) = state.session_counts();
     let payload = overlay_payload_from_replay(
         &replay,
         mark_new_replay,
@@ -976,12 +975,8 @@ pub(crate) fn replay_show_for_window(
     state: &BackendState,
     requested: Option<&str>,
 ) -> Value {
-    let replays = sync_replay_cache(state, UNLIMITED_REPLAY_LIMIT);
-    let selected = state
-        .selected_replay_file
-        .lock()
-        .ok()
-        .and_then(|current| current.clone());
+    let replays = state.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT);
+    let selected = state.get_current_replay_file();
     let Some(replay) = replay_for_display(&replays, requested, &selected) else {
         return serde_json::to_value(crate::OverlayActionResponse::failure("No replay selected"))
             .unwrap_or_else(|_| Value::Object(Default::default()));
@@ -992,9 +987,7 @@ pub(crate) fn replay_show_for_window(
     state
         .overlay_replay_data_active
         .store(true, Ordering::Release);
-    if let Ok(mut selected_replay_file) = state.selected_replay_file.lock() {
-        *selected_replay_file = Some(file);
-    }
+    state.set_current_replay_file(Some(&file));
 
     serde_json::to_value(crate::OverlayActionResponse::success("Replay shown"))
         .unwrap_or_else(|_| Value::Object(Default::default()))
@@ -1005,18 +998,12 @@ pub(crate) fn replay_move_window(
     state: &BackendState,
     delta: i64,
 ) -> Value {
-    let cached = {
-        state
-            .replays
-            .lock()
-            .ok()
-            .filter(|replays| !replays.is_empty())
-            .map(|replays| replays.clone())
-    };
+    let cached = state.replay_cache_snapshot();
 
-    let replays = match cached {
-        Some(replays) => replays,
-        None => sync_replay_cache(state, UNLIMITED_REPLAY_LIMIT),
+    let replays = if cached.is_empty() {
+        state.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT)
+    } else {
+        cached
     };
 
     if replays.is_empty() {
@@ -1026,11 +1013,7 @@ pub(crate) fn replay_move_window(
         .unwrap_or_else(|_| Value::Object(Default::default()));
     }
 
-    let selected = state
-        .selected_replay_file
-        .lock()
-        .ok()
-        .and_then(|current| current.clone());
+    let selected = state.get_current_replay_file();
     let replay_data_active = state.overlay_replay_data_active.load(Ordering::Acquire);
     let current_index = replay_index_by_file(&replays, &selected);
     let index = replay_move_target_index(&replays, &selected, delta, replay_data_active);
@@ -1046,9 +1029,7 @@ pub(crate) fn replay_move_window(
     state
         .overlay_replay_data_active
         .store(true, Ordering::Release);
-    if let Ok(mut selected_replay_file) = state.selected_replay_file.lock() {
-        *selected_replay_file = Some(file);
-    }
+    state.set_current_replay_file(Some(&file));
 
     serde_json::to_value(crate::OverlayActionResponse::success("Replay moved"))
         .unwrap_or_else(|_| Value::Object(Default::default()))
@@ -1104,9 +1085,7 @@ pub(crate) fn perform_overlay_action(
                 .overlay_replay_data_active
                 .store(active, Ordering::Release);
             if !active {
-                if let Ok(mut selected_replay_file) = state.selected_replay_file.lock() {
-                    *selected_replay_file = None;
-                }
+                state.set_current_replay_file(None);
             }
             Some(
                 serde_json::to_value(crate::OverlayActionResponse::success(if active {
@@ -1268,12 +1247,8 @@ pub(crate) fn perform_overlay_action(
 }
 
 fn build_overlay_player_info_payload(state: &BackendState) -> OverlayPlayerInfoPayload {
-    let replays = sync_replay_cache(state, UNLIMITED_REPLAY_LIMIT);
-    let selected_file = state
-        .selected_replay_file
-        .lock()
-        .ok()
-        .and_then(|current| current.clone());
+    let replays = state.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT);
+    let selected_file = state.get_current_replay_file();
 
     let selected = selected_file
         .and_then(|file| replays.iter().find(|replay| replay.file == file).cloned())
@@ -1752,7 +1727,7 @@ pub fn overlay_runtime_settings_payload(
 pub(crate) fn sync_overlay_runtime_settings<R: Runtime>(app: &tauri::AppHandle<R>) {
     let settings = crate::read_settings_file();
     let state = app.state::<crate::BackendState>();
-    let (session_victories, session_defeats) = crate::session_counts(&state);
+    let (session_victories, session_defeats) = state.session_counts();
     let payload = overlay_runtime_settings_payload(&settings, session_victories, session_defeats);
     let _ = app.emit(OVERLAY_INIT_COLORS_DURATION_EVENT, payload);
 }

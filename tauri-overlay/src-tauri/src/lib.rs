@@ -20,10 +20,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri_plugin_updater::UpdaterExt;
 
-use tauri::{
-    tray::{TrayIcon, TrayIconBuilder},
-    AppHandle, Emitter, Manager, State, Wry,
-};
+use tauri::{tray::TrayIconBuilder, AppHandle, Emitter, Manager, State, Wry};
 
 #[cfg(target_os = "windows")]
 use winreg::enums::HKEY_CURRENT_USER;
@@ -31,6 +28,7 @@ use winreg::enums::HKEY_CURRENT_USER;
 use winreg::RegKey;
 
 mod app_settings;
+mod backend_state;
 pub mod logging;
 pub mod overlay_info;
 pub mod path_manager;
@@ -39,6 +37,7 @@ pub mod randomizer;
 pub mod replay_analysis;
 pub mod shared_types;
 pub use app_settings::AppSettings;
+pub use backend_state::BackendState;
 
 #[macro_export]
 macro_rules! sco_log {
@@ -48,6 +47,7 @@ macro_rules! sco_log {
 }
 
 use crate::app_settings::PlayerNotes;
+use crate::backend_state::ReplayState;
 use crate::path_manager::{get_cache_path, get_json_data_dir, is_dev_env};
 use crate::replay_analysis::ReplayAnalysis;
 
@@ -655,27 +655,8 @@ pub fn session_counter_delta(result: &str) -> (u64, u64) {
     }
 }
 
-fn record_session_result(state: &BackendState, result: &str) {
-    let (victories, defeats) = session_counter_delta(result);
-    if victories > 0 {
-        state
-            .session_victories
-            .fetch_add(victories, Ordering::AcqRel);
-    }
-    if defeats > 0 {
-        state.session_defeats.fetch_add(defeats, Ordering::AcqRel);
-    }
-}
-
 pub fn show_replay_info_after_game_from_settings(settings: &AppSettings) -> bool {
     settings.show_replay_info_after_game
-}
-
-fn session_counts(state: &BackendState) -> (u64, u64) {
-    (
-        state.session_victories.load(Ordering::Acquire),
-        state.session_defeats.load(Ordering::Acquire),
-    )
 }
 
 fn units_to_stats() -> &'static HashSet<String> {
@@ -2045,8 +2026,6 @@ fn sanitize_player_stats_payload(value: &Value) -> Value {
     Value::Object(output)
 }
 
-static PLAYERS_SCAN_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
-
 fn normalize_known_commander_name(name: &str) -> Option<&'static str> {
     match name.trim().to_ascii_lowercase().as_str() {
         "alarak" => Some("Alarak"),
@@ -2247,13 +2226,13 @@ pub struct StartupAnalysisRequestOutcome {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum AnalysisMode {
+pub(crate) enum AnalysisMode {
     Simple,
     Detailed,
 }
 
 impl AnalysisMode {
-    fn from_include_detailed(include_detailed: bool) -> Self {
+    pub(crate) fn from_include_detailed(include_detailed: bool) -> Self {
         if include_detailed {
             Self::Detailed
         } else {
@@ -2987,120 +2966,13 @@ fn build_stats_response(
     ReplayAnalysis::build_stats_response(path, stats, stats_replays, stats_current_replay_files)
 }
 
-fn spawn_players_scan_task(
-    replays_slot: Arc<Mutex<Vec<ReplayInfo>>>,
-    selected_replay_file: Arc<Mutex<Option<String>>>,
-    limit: usize,
-) {
-    if PLAYERS_SCAN_IN_FLIGHT
-        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-        .is_err()
-    {
-        return;
-    }
-
-    thread::spawn(move || {
-        crate::sco_log!("[SCO/players] background player scan started (limit={limit})");
-        let replays = scan_replays(limit);
-        let selected = replays.first().map(|replay| replay.file.clone());
-
-        match replays_slot.lock() {
-            Ok(mut cache) => {
-                *cache = replays;
-            }
-            Err(error) => {
-                crate::sco_log!("[SCO/players] failed to update player replay cache: {error}");
-            }
-        }
-
-        if let Ok(mut selected_file) = selected_replay_file.lock() {
-            match selected_file.as_ref() {
-                Some(current)
-                    if replays_slot.lock().ok().map_or(false, |cache| {
-                        cache.iter().any(|replay| &replay.file == current)
-                    }) => {}
-                _ => {
-                    *selected_file = selected;
-                }
-            }
-        }
-
-        PLAYERS_SCAN_IN_FLIGHT.store(false, Ordering::Release);
-        crate::sco_log!("[SCO/players] background player scan completed");
-    });
-}
-
 fn replay_index_by_file(replays: &[ReplayInfo], file: &Option<String>) -> Option<usize> {
     let needle = file.as_deref()?;
     replays.iter().position(|entry| entry.file == needle)
 }
 
-fn sync_full_replay_cache_slots(
-    replays_slot: &Arc<Mutex<Vec<ReplayInfo>>>,
-    selected_replay_file: &Arc<Mutex<Option<String>>>,
-) -> Vec<ReplayInfo> {
-    let cached = replays_slot
-        .lock()
-        .ok()
-        .map(|cache| cache.clone())
-        .unwrap_or_default();
-
-    let replays = if cached.is_empty() {
-        let main_names = configured_main_names();
-        let main_handles = configured_main_handles();
-        let from_detailed_analysis = ReplayAnalysis::load_detailed_analysis_replays_snapshot(
-            UNLIMITED_REPLAY_LIMIT,
-            &main_names,
-            &main_handles,
-        );
-        let loaded = if from_detailed_analysis.is_empty() {
-            scan_replays(UNLIMITED_REPLAY_LIMIT)
-        } else {
-            from_detailed_analysis
-        };
-        if let Ok(mut cache) = replays_slot.lock() {
-            *cache = loaded.clone();
-        }
-        loaded
-    } else {
-        cached
-    };
-
-    let selected = replays.first().map(|replay| replay.file.clone());
-
-    if let Ok(mut selected_file) = selected_replay_file.lock() {
-        match selected_file.as_ref() {
-            Some(current) if replays.iter().any(|replay| &replay.file == current) => {}
-            _ => {
-                *selected_file = selected;
-            }
-        }
-    }
-
-    replays
-}
-
-pub fn sync_replay_cache_slots(
-    replays_slot: &Arc<Mutex<Vec<ReplayInfo>>>,
-    selected_replay_file: &Arc<Mutex<Option<String>>>,
-    limit: usize,
-) -> Vec<ReplayInfo> {
-    let replays = sync_full_replay_cache_slots(replays_slot, selected_replay_file);
-
-    let mut limited = replays.clone();
-    if limit > 0 && limited.len() > limit {
-        limited.truncate(limit);
-    }
-    limited
-}
-
-fn sync_replay_cache(state: &BackendState, limit: usize) -> Vec<ReplayInfo> {
-    sync_replay_cache_slots(&state.replays, &state.selected_replay_file, limit)
-}
-
 fn replay_chat_payload_from_slots(
-    replays_slot: &Arc<Mutex<Vec<ReplayInfo>>>,
-    selected_replay_file: &Arc<Mutex<Option<String>>>,
+    replay_state: Arc<Mutex<ReplayState>>,
     file: &str,
 ) -> Result<ReplayChatPayload, String> {
     let requested_file = file.trim();
@@ -3108,8 +2980,11 @@ fn replay_chat_payload_from_slots(
         return Err("No replay file specified.".to_string());
     }
 
-    let replays =
-        sync_replay_cache_slots(replays_slot, selected_replay_file, UNLIMITED_REPLAY_LIMIT);
+    let replays = replay_state
+        .lock()
+        .map(|state| state.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT))
+        .unwrap_or_default();
+
     if let Some(replay) = replays.iter().find(|replay| replay.file == requested_file) {
         return Ok(replay.chat_payload());
     }
@@ -3392,28 +3267,6 @@ fn collect_sc2_replay_files(root: &Path) -> Vec<PathBuf> {
     out
 }
 
-fn upsert_replay_cache_slot(cache: &mut Vec<ReplayInfo>, replay: &ReplayInfo) {
-    cache.retain(|entry| entry.file != replay.file);
-    cache.push(replay.clone());
-    cache.sort_by(|left, right| {
-        right
-            .date
-            .cmp(&left.date)
-            .then_with(|| right.file.cmp(&left.file))
-    });
-}
-
-fn include_detailed_stats_for_cache(stats: &StatsState, replays: &[ReplayInfo]) -> bool {
-    stats
-        .analysis
-        .as_ref()
-        .and_then(|analysis| analysis.get("UnitData"))
-        .is_some_and(|value| !value.is_null())
-        || replays
-            .iter()
-            .any(ReplayAnalysis::replay_has_detailed_unit_stats)
-}
-
 pub fn sync_detailed_analysis_status_from_replays(stats: &mut StatsState, replays: &[ReplayInfo]) {
     let total_valid_files = replays
         .iter()
@@ -3438,50 +3291,6 @@ pub fn sync_detailed_analysis_status_from_replays(stats: &mut StatsState, replay
             "Detailed analysis: loaded from cache ({detailed_parsed_count}/{total_valid_files})."
         )
     };
-}
-
-fn refresh_stats_snapshot_after_replay_upsert(state: &BackendState) {
-    let stats_replays = match state.stats_replays.lock() {
-        Ok(replays) => replays.clone(),
-        Err(_) => return,
-    };
-
-    let mut stats = match state.stats.lock() {
-        Ok(stats) => stats,
-        Err(_) => return,
-    };
-
-    if !stats.ready || stats.simple_analysis_running || stats.detailed_analysis_running {
-        return;
-    }
-
-    let include_detailed = include_detailed_stats_for_cache(&stats, &stats_replays);
-    let mode = AnalysisMode::from_include_detailed(include_detailed);
-    let snapshot = ReplayAnalysis::build_rebuild_snapshot(&stats_replays, include_detailed);
-    apply_rebuild_snapshot(&mut stats, snapshot, mode);
-    if !include_detailed {
-        sync_detailed_analysis_status_from_replays(&mut stats, &stats_replays);
-    }
-}
-
-pub fn upsert_replay_in_memory_cache(state: &BackendState, replay: &ReplayInfo) {
-    if let Ok(mut replays) = state.replays.lock() {
-        upsert_replay_cache_slot(&mut replays, replay);
-    }
-
-    if let Ok(mut stats_replays) = state.stats_replays.lock() {
-        upsert_replay_cache_slot(&mut stats_replays, replay);
-    }
-
-    if let Ok(mut current_replay_files) = state.stats_current_replay_files.lock() {
-        current_replay_files.insert(replay.file.clone());
-    }
-
-    if let Ok(mut selected) = state.selected_replay_file.lock() {
-        *selected = Some(replay.file.clone());
-    }
-
-    refresh_stats_snapshot_after_replay_upsert(state);
 }
 
 fn process_new_replay_path(
@@ -3539,14 +3348,14 @@ fn process_new_replay_path(
         replay.ally_commander
     );
     let state = app.state::<BackendState>();
-    upsert_replay_in_memory_cache(&state, &replay);
+    state.upsert_replay_in_memory_cache(&replay);
     if let Err(error) = persist_detailed_cache_entry(&cache_entry) {
         crate::sco_log!(
             "[SCO/watch] failed to persist detailed cache entry for '{}': {error}",
             replay.file
         );
     }
-    record_session_result(&state, &replay.result);
+    state.record_session_result(&replay.result);
     let settings = read_settings_file();
     let show_replay_info_after_game = show_replay_info_after_game_from_settings(&settings);
 
@@ -3625,7 +3434,7 @@ fn process_replay_detailed(
         replay.ally_commander
     );
 
-    upsert_replay_in_memory_cache(&state, &replay);
+    state.upsert_replay_in_memory_cache(&replay);
     if let Err(error) = persist_detailed_cache_entry(&cache_entry) {
         crate::sco_log!(
             "[SCO/show] failed to persist detailed cache entry for '{}': {error}",
@@ -3900,68 +3709,6 @@ fn choose_other_coop_player_info(
     None
 }
 
-fn build_launch_main_identity(state: &BackendState) -> (HashSet<String>, HashSet<String>) {
-    let mut main_names = configured_main_names();
-    let mut main_handles = configured_main_handles();
-
-    if let Ok(stats) = state.stats.lock() {
-        for name in &stats.main_players {
-            let normalized = ReplayAnalysis::normalized_player_key(name);
-            if !normalized.is_empty() {
-                main_names.insert(normalized);
-            }
-        }
-    }
-
-    let selected = state
-        .selected_replay_file
-        .lock()
-        .ok()
-        .and_then(|current| current.clone());
-    if let Ok(replays) = state.replays.lock() {
-        let seed = selected
-            .as_ref()
-            .and_then(|file| replays.iter().find(|replay| &replay.file == file))
-            .or_else(|| replays.first());
-        if let Some(seed) = seed {
-            let normalized_name = ReplayAnalysis::normalized_player_key(&seed.p1);
-            if !normalized_name.is_empty() {
-                main_names.insert(normalized_name);
-            }
-            let normalized_handle = ReplayAnalysis::normalized_handle_key(&seed.p1_handle);
-            if !normalized_handle.is_empty() {
-                main_handles.insert(normalized_handle);
-            }
-        }
-    }
-
-    (main_names, main_handles)
-}
-
-fn stats_have_player_rows(state: &BackendState) -> bool {
-    state
-        .stats
-        .lock()
-        .ok()
-        .and_then(|stats| stats.analysis.clone())
-        .and_then(|analysis| {
-            analysis
-                .get("PlayerData")
-                .and_then(Value::as_object)
-                .cloned()
-        })
-        .is_some_and(|rows| !rows.is_empty())
-}
-
-fn replay_count_for_launch_detector(state: &BackendState) -> usize {
-    state
-        .replays
-        .lock()
-        .ok()
-        .map(|replays| replays.len())
-        .unwrap_or(0)
-}
-
 fn spawn_game_launch_winrate_task(app: tauri::AppHandle<Wry>) {
     thread::spawn(move || {
         thread::sleep(Duration::from_secs(4));
@@ -3983,13 +3730,13 @@ fn spawn_game_launch_winrate_task(app: tauri::AppHandle<Wry>) {
             }
 
             let state = app.state::<BackendState>();
-            let replay_count = replay_count_for_launch_detector(&state);
+            let replay_count = state.replay_count_for_launch_detector();
             if replay_count > last_replay_amount_flowing {
                 last_replay_amount_flowing = replay_count;
                 last_replay_time = Instant::now();
             }
 
-            if !stats_have_player_rows(&state) || replay_count == last_replay_amount {
+            if !state.stats_have_player_rows() || replay_count == last_replay_amount {
                 continue;
             }
 
@@ -4029,7 +3776,7 @@ fn spawn_game_launch_winrate_task(app: tauri::AppHandle<Wry>) {
                 continue;
             }
 
-            let (main_names, main_handles) = build_launch_main_identity(&state);
+            let (main_names, main_handles) = state.build_launch_main_identity();
             let Some((other_player_handle, other_player_name)) =
                 choose_other_coop_player_info(&players, &main_names, &main_handles)
             else {
@@ -4189,7 +3936,11 @@ fn empty_stats_payload() -> Value {
     })
 }
 
-fn apply_rebuild_snapshot(stats: &mut StatsState, snapshot: StatsSnapshot, mode: AnalysisMode) {
+pub(crate) fn apply_rebuild_snapshot(
+    stats: &mut StatsState,
+    snapshot: StatsSnapshot,
+    mode: AnalysisMode,
+) {
     stats.ready = snapshot.ready;
     stats.games = snapshot.games;
     stats.main_players = snapshot.main_players;
@@ -4200,19 +3951,6 @@ fn apply_rebuild_snapshot(stats: &mut StatsState, snapshot: StatsSnapshot, mode:
     stats.message = snapshot.message;
 
     set_analysis_terminal_status(stats, mode, "completed");
-}
-
-#[allow(dead_code)]
-pub struct BackendState {
-    pub tray_icon: Arc<Mutex<Option<TrayIcon<Wry>>>>,
-    pub stats: Arc<Mutex<StatsState>>,
-    pub replays: Arc<Mutex<Vec<ReplayInfo>>>,
-    pub stats_replays: Arc<Mutex<Vec<ReplayInfo>>>,
-    pub stats_current_replay_files: Arc<Mutex<HashSet<String>>>,
-    pub selected_replay_file: Arc<Mutex<Option<String>>>,
-    pub overlay_replay_data_active: AtomicBool,
-    pub session_victories: AtomicU64,
-    pub session_defeats: AtomicU64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -4502,24 +4240,24 @@ async fn config_request(
         }
         ("get", "/config/replays") => {
             let limit = parse_query_usize(&path, "limit", 300);
-            let replays_slot = state.replays.clone();
-            let selected_slot = state.selected_replay_file.clone();
-            let (replays, total_replays, selected_replay_file) =
-                tauri::async_runtime::spawn_blocking(move || {
-                    let all_replays = sync_full_replay_cache_slots(&replays_slot, &selected_slot);
-                    let total_replays = all_replays.len();
-                    let mut replays = all_replays;
-                    if limit > 0 && replays.len() > limit {
-                        replays.truncate(limit);
-                    }
-                    let selected_replay_file = selected_slot
-                        .lock()
-                        .ok()
-                        .and_then(|current| current.clone());
-                    (replays, total_replays, selected_replay_file)
-                })
-                .await
-                .map_err(|error| format!("Failed to load /config/replays: {error}"))?;
+            let replay_state = state.get_replay_state();
+
+            let (replays, selected_replay_file) = tauri::async_runtime::spawn_blocking(move || {
+                let replay_state = replay_state.lock().ok();
+                let replays = replay_state
+                    .as_ref()
+                    .map(|state| state.sync_replay_cache_slots(limit))
+                    .unwrap_or_default();
+                let selected_replay_file = replay_state
+                    .as_ref()
+                    .and_then(|state| state.get_current_replay_file());
+
+                (replays, selected_replay_file)
+            })
+            .await
+            .map_err(|error| format!("Failed to load /config/replays: {error}"))?;
+            let total_replays = replays.len();
+
             Ok(to_json_value(ConfigReplaysPayload {
                 status: "ok",
                 replays: replays
@@ -4532,33 +4270,42 @@ async fn config_request(
         }
         ("get", "/config/players") => {
             let limit = parse_query_usize(&path, "limit", 500);
-            let replays = match state.replays.try_lock() {
-                Ok(replays) if !replays.is_empty() => replays.clone(),
-                Ok(_) => {
-                    crate::sco_log!(
-                        "[SCO/players] replay cache empty, starting background scan for players"
-                    );
-                    spawn_players_scan_task(
-                        state.replays.clone(),
-                        state.selected_replay_file.clone(),
-                        limit,
-                    );
-                    Vec::new()
-                }
+            let replay_state = state.get_replay_state();
+            let replays = match replay_state.try_lock() {
+                Ok(replay_state) => match replay_state.replays.try_lock() {
+                    Ok(replays) if !replays.is_empty() => replays.clone(),
+                    Ok(_) => {
+                        crate::sco_log!(
+                            "[SCO/players] replay cache empty, starting background scan for players"
+                        );
+                        state.spawn_players_scan_task(limit);
+                        Vec::new()
+                    }
+                    Err(error) => match error {
+                        TryLockError::WouldBlock => {
+                            crate::sco_log!(
+                                "[SCO/players] replay cache busy, starting background scan for players"
+                            );
+                            state.spawn_players_scan_task(limit);
+                            Vec::new()
+                        }
+                        TryLockError::Poisoned(_) => {
+                            return Err(
+                                "Failed to access replay cache: mutex is poisoned".to_string()
+                            );
+                        }
+                    },
+                },
                 Err(error) => match error {
                     TryLockError::WouldBlock => {
                         crate::sco_log!(
-                            "[SCO/players] replay cache busy, starting background scan for players"
+                            "[SCO/players] replay state busy, starting background scan for players"
                         );
-                        spawn_players_scan_task(
-                            state.replays.clone(),
-                            state.selected_replay_file.clone(),
-                            limit,
-                        );
+                        state.spawn_players_scan_task(limit);
                         Vec::new()
                     }
                     TryLockError::Poisoned(_) => {
-                        return Err("Failed to access replay cache: mutex is poisoned".to_string());
+                        return Err("Failed to access replay state: mutex is poisoned".to_string());
                     }
                 },
             };
@@ -4569,10 +4316,13 @@ async fn config_request(
             }))
         }
         ("get", "/config/weeklies") => {
-            let replays_slot = state.replays.clone();
-            let selected_slot = state.selected_replay_file.clone();
+            let replay_state = state.get_replay_state();
+
             let replays = tauri::async_runtime::spawn_blocking(move || {
-                sync_replay_cache_slots(&replays_slot, &selected_slot, UNLIMITED_REPLAY_LIMIT)
+                replay_state
+                    .lock()
+                    .map(|state| state.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT))
+                    .unwrap_or_default()
             })
             .await
             .map_err(|error| format!("Failed to load /config/weeklies: {error}"))?;
@@ -4615,10 +4365,9 @@ async fn config_request(
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string();
-            let replays_slot = state.replays.clone();
-            let selected_slot = state.selected_replay_file.clone();
+            let replay_state = state.get_replay_state();
             let chat = tauri::async_runtime::spawn_blocking(move || {
-                replay_chat_payload_from_slots(&replays_slot, &selected_slot, &requested_file)
+                replay_chat_payload_from_slots(replay_state, &requested_file)
             })
             .await
             .map_err(|error| format!("Failed to load /config/replays/chat: {error}"))?
@@ -4701,7 +4450,11 @@ async fn config_request(
                     request_startup_analysis(
                         app.clone(),
                         state.stats.clone(),
-                        state.replays.clone(),
+                        state
+                            .get_replay_state()
+                            .lock()
+                            .map(|replay_state| replay_state.replays.clone())
+                            .unwrap_or_else(|_| Arc::new(Mutex::new(Vec::new()))),
                         state.stats_replays.clone(),
                         state.stats_current_replay_files.clone(),
                         StartupAnalysisTrigger::FrontendReady,
@@ -4735,7 +4488,11 @@ async fn config_request(
                     spawn_analysis_task(
                         app.clone(),
                         state.stats.clone(),
-                        state.replays.clone(),
+                        state
+                            .get_replay_state()
+                            .lock()
+                            .map(|replay_state| replay_state.replays.clone())
+                            .unwrap_or_else(|_| Arc::new(Mutex::new(Vec::new()))),
                         state.stats_replays.clone(),
                         state.stats_current_replay_files.clone(),
                         include_detailed,
@@ -4825,9 +4582,7 @@ async fn config_request(
                     set_analysis_terminal_status(&mut stats, AnalysisMode::Simple, "not started");
                     set_analysis_terminal_status(&mut stats, AnalysisMode::Detailed, "not started");
                     stats.message = "No parsed statistics available yet.".to_string();
-                    if let Ok(mut replays) = state.replays.lock() {
-                        replays.clear();
-                    }
+                    state.clear_replay_cache_slots();
                     if let Ok(mut stats_replays) = state.stats_replays.lock() {
                         stats_replays.clear();
                     }
@@ -4835,9 +4590,6 @@ async fn config_request(
                         state.stats_current_replay_files.lock()
                     {
                         stats_current_replay_files.clear();
-                    }
-                    if let Ok(mut selected_replay_file) = state.selected_replay_file.lock() {
-                        *selected_replay_file = None;
                     }
                     state
                         .overlay_replay_data_active
@@ -4960,17 +4712,7 @@ pub fn run() {
     let data_dir = get_json_data_dir();
     let _ = s2coop_analyzer::dictionary_data::shared_dictionary_data(Some(data_dir));
 
-    let state = BackendState {
-        tray_icon: Arc::new(Mutex::new(None)),
-        stats: Arc::new(Mutex::new(StatsState::from_settings())),
-        replays: Arc::new(Mutex::new(Vec::new())),
-        stats_replays: Arc::new(Mutex::new(Vec::new())),
-        stats_current_replay_files: Arc::new(Mutex::new(HashSet::new())),
-        selected_replay_file: Arc::new(Mutex::new(None)),
-        overlay_replay_data_active: AtomicBool::new(false),
-        session_victories: AtomicU64::new(0),
-        session_defeats: AtomicU64::new(0),
-    };
+    let state = BackendState::new();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -5124,9 +4866,14 @@ pub fn run() {
             performance_overlay::spawn_monitor(app.app_handle().clone());
             let (stats, replays, stats_replays, stats_current_replay_files) = {
                 let state = app.state::<BackendState>();
+                let replays = state
+                    .get_replay_state()
+                    .lock()
+                    .map(|replay_state| replay_state.replays.clone())
+                    .unwrap_or_else(|_| Arc::new(Mutex::new(Vec::new())));
                 (
                     state.stats.clone(),
-                    state.replays.clone(),
+                    replays,
                     state.stats_replays.clone(),
                     state.stats_current_replay_files.clone(),
                 )

@@ -1,6 +1,7 @@
 mod common;
 
 use common::test_replay_path;
+use s2coop_analyzer::dictionary_data;
 use sco_tauri_overlay::merge_settings_with_defaults;
 use sco_tauri_overlay::overlay_info::{
     overlay_payload_from_replay, player_note_from_settings_value,
@@ -8,6 +9,20 @@ use sco_tauri_overlay::overlay_info::{
 use sco_tauri_overlay::shared_types::OverlayReplayPayload;
 use sco_tauri_overlay::ReplayInfo;
 use serde_json::json;
+use std::path::PathBuf;
+use std::sync::Once;
+
+fn initialize_dictionary_data() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let data_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("s2coop-analyzer")
+            .join("data");
+        let _ = dictionary_data::shared_dictionary_data(Some(data_dir));
+    });
+}
 
 fn sample_replay() -> ReplayInfo {
     ReplayInfo {
@@ -57,6 +72,8 @@ fn player_note_lookup_matches_case_insensitive_names() {
 
 #[test]
 fn overlay_prestige_text_uses_selected_language() {
+    initialize_dictionary_data();
+
     assert_eq!(
         OverlayReplayPayload::localized_prestige_text("Abathur", 1, "en"),
         "Essence Hoarder"
