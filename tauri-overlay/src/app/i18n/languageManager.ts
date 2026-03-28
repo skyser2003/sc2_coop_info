@@ -1,6 +1,6 @@
 import languageData from "./language_data.json";
 import unitCompositionData from "./unit_composition.json";
-import unitTranslationData from "../../../../s2coop-analyzer/data/unit_translation_data.json";
+import unitTranslationData from "./unit_translation_data.json";
 
 export type AppLanguage = "en" | "ko";
 type LocalizableValue = string | number | boolean | null | undefined;
