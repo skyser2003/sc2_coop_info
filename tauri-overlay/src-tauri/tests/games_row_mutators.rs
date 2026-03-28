@@ -18,6 +18,6 @@ fn games_rows_include_mutators_and_mutation_flag() {
 
     assert_eq!(row.get("is_mutation"), Some(&json!(true)));
     assert_eq!(row.get("weekly"), Some(&json!(true)));
-    assert_eq!(row.pointer("/mutators/0/name"), Some(&json!("Barrier")));
+    assert_eq!(row.pointer("/mutators/0/name/en"), Some(&json!("Barrier")));
     assert_eq!(row.pointer("/mutators/0/iconName"), Some(&json!("Barrier")));
 }

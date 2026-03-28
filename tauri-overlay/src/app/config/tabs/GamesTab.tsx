@@ -18,6 +18,7 @@ import type {
     DifficultyFilterKey,
     DifficultyFilters,
     JsonValue,
+    LocalizedText,
     MutatorData,
 } from "../types";
 
@@ -123,15 +124,11 @@ function localizedMutatorName(
     languageManager: LanguageManager,
     asTableValue: (value: DisplayValue) => string,
 ): string {
-    const preferred =
-        languageManager.currentLanguage() === "ko"
-            ? mutator.nameKo
-            : mutator.nameEn;
-    const fallback =
-        languageManager.currentLanguage() === "ko"
-            ? mutator.nameEn
-            : mutator.nameKo;
-    return asTableValue(preferred || fallback || mutator.name);
+    return asTableValue(
+        languageManager.localizedValue(
+            mutator.name as LocalizedText | null | undefined,
+        ),
+    );
 }
 
 function localizedMutatorDescription(
@@ -139,15 +136,11 @@ function localizedMutatorDescription(
     languageManager: LanguageManager,
     asTableValue: (value: DisplayValue) => string,
 ): string {
-    const preferred =
-        languageManager.currentLanguage() === "ko"
-            ? mutator.descriptionKo
-            : mutator.descriptionEn;
-    const fallback =
-        languageManager.currentLanguage() === "ko"
-            ? mutator.descriptionEn
-            : mutator.descriptionKo;
-    return asTableValue(preferred || fallback);
+    return asTableValue(
+        languageManager.localizedValue(
+            mutator.description as LocalizedText | null | undefined,
+        ),
+    );
 }
 
 function difficultyFilterKeyForRow(row: GamesTabRow): DifficultyFilterKey {
@@ -774,9 +767,11 @@ export default function GamesTab({
                                                                 const iconName =
                                                                     asTableValue(
                                                                         mutator.iconName ||
-                                                                            mutator.nameEn ||
+                                                                            mutator
+                                                                                .name
+                                                                                ?.en ||
                                                                             mutator.id ||
-                                                                            mutator.name,
+                                                                            "",
                                                                     );
                                                                 const displayName =
                                                                     localizedMutatorName(

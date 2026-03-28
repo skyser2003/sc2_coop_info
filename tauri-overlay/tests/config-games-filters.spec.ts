@@ -1,12 +1,15 @@
 import { expect, test, type Page } from "@playwright/test";
 
 type GamesMutator = {
-    name: string;
-    nameEn: string;
-    nameKo: string;
+    name: {
+        en: string;
+        ko: string;
+    };
     iconName: string;
-    descriptionEn: string;
-    descriptionKo: string;
+    description: {
+        en: string;
+        ko: string;
+    };
 };
 
 type GamesRow = {
@@ -283,14 +286,15 @@ test.describe("Games filters and mutators", () => {
                 is_mutation: true,
                 mutators: [
                     {
-                        name: "Barrier",
-                        nameEn: "Barrier",
-                        nameKo: "방벽",
+                        name: {
+                            en: "Barrier",
+                            ko: "방벽",
+                        },
                         iconName: "Barrier",
-                        descriptionEn:
-                            "Enemy units gain a temporary shield when damaged.",
-                        descriptionKo:
-                            "적 유닛이 피해를 받으면 일시적인 보호막을 얻습니다.",
+                        description: {
+                            en: "Enemy units gain a temporary shield when damaged.",
+                            ko: "적 유닛이 피해를 받으면 일시적인 보호막을 얻습니다.",
+                        },
                     },
                 ],
             },

@@ -1,530 +1,882 @@
 {
   "Random": {
-    "nameEn": "Random",
-    "nameKo": "",
-    "descriptionEn": "Applies a random Mutator that has not yet been chosen for this game.",
-    "descriptionKo": ""
+    "name": {
+      "en": "Random",
+      "ko": ""
+    },
+    "description": {
+      "en": "Applies a random Mutator that has not yet been chosen for this game.",
+      "ko": ""
+    }
   },
   "WalkingInfested": {
-    "nameEn": "Walking Infested",
-    "nameKo": "감염자의 행진",
-    "descriptionEn": "Enemy units spawn Infested Terran upon death in numbers according to the unit's life.",
-    "descriptionKo": "적 유닛이 죽으면 그 유닛의 체력에 따라 정해진 수의 감염된 테란이 생성됩니다."
+    "name": {
+      "en": "Walking Infested",
+      "ko": "감염자의 행진"
+    },
+    "description": {
+      "en": "Enemy units spawn Infested Terran upon death in numbers according to the unit's life.",
+      "ko": "적 유닛이 죽으면 그 유닛의 체력에 따라 정해진 수의 감염된 테란이 생성됩니다."
+    }
   },
   "InfestedTerranSpawner": {
-    "nameEn": "Outbreak",
-    "nameKo": "재앙",
-    "descriptionEn": "Enemy Infested Terrans spawn continuously around the map.",
-    "descriptionKo": "적 감염된 테란이 지도 곳곳에서 계속 생성됩니다."
+    "name": {
+      "en": "Outbreak",
+      "ko": "재앙"
+    },
+    "description": {
+      "en": "Enemy Infested Terrans spawn continuously around the map.",
+      "ko": "적 감염된 테란이 지도 곳곳에서 계속 생성됩니다."
+    }
   },
   "BlackFog": {
-    "nameEn": "Darkness",
-    "nameKo": "암흑",
-    "descriptionEn": "Previously explored areas remain blacked out on the minimap while outside of player vision.",
-    "descriptionKo": "플레이어가 탐험한 지역이더라도 플레이어의 시야 밖이라면 미니맵상에서 여전히 검게 표시됩니다."
+    "name": {
+      "en": "Darkness",
+      "ko": "암흑"
+    },
+    "description": {
+      "en": "Previously explored areas remain blacked out on the minimap while outside of player vision.",
+      "ko": "플레이어가 탐험한 지역이더라도 플레이어의 시야 밖이라면 미니맵상에서 여전히 검게 표시됩니다."
+    }
   },
   "TimeWarp": {
-    "nameEn": "Time Warp",
-    "nameKo": "시간 왜곡",
-    "descriptionEn": "Enemy Time Warps are periodically deployed throughout the map.",
-    "descriptionKo": "적의 시간 왜곡이 주기적으로 지도 곳곳에 배치됩니다."
+    "name": {
+      "en": "Time Warp",
+      "ko": "시간 왜곡"
+    },
+    "description": {
+      "en": "Enemy Time Warps are periodically deployed throughout the map.",
+      "ko": "적의 시간 왜곡이 주기적으로 지도 곳곳에 배치됩니다."
+    }
   },
   "UnitSpeed": {
-    "nameEn": "Speed Freaks",
-    "nameKo": "속도광",
-    "descriptionEn": "Enemy units have double their normal movement speed.",
-    "descriptionKo": "적 유닛의 이동 속도가 평소의 두 배가 됩니다."
+    "name": {
+      "en": "Speed Freaks",
+      "ko": "속도광"
+    },
+    "description": {
+      "en": "Enemy units have double their normal movement speed.",
+      "ko": "적 유닛의 이동 속도가 평소의 두 배가 됩니다."
+    }
   },
   "Magnificent": {
-    "nameEn": "Mag-nificent",
-    "nameKo": "죽이는 자기",
-    "descriptionEn": "Mag Mines are deployed throughout the map at the start of the mission.",
-    "descriptionKo": "자기 지뢰가 임무 시작과 함께 지도 곳곳에 배치됩니다."
+    "name": {
+      "en": "Mag-nificent",
+      "ko": "죽이는 자기"
+    },
+    "description": {
+      "en": "Mag Mines are deployed throughout the map at the start of the mission.",
+      "ko": "자기 지뢰가 임무 시작과 함께 지도 곳곳에 배치됩니다."
+    }
   },
   "Entomb": {
-    "nameEn": "Mineral Shields",
-    "nameKo": "광물 보호막",
-    "descriptionEn": "Mineral clusters at player bases are periodically encased in a shield which must be destroyed for gathering to continue.",
-    "descriptionKo": "플레이어의 기지에 있는 광물 덩어리들이 주기적으로 보호막으로 둘러싸입니다. 보호막을 파괴해야 광물을 계속 채취할 수 있습니다."
+    "name": {
+      "en": "Mineral Shields",
+      "ko": "광물 보호막"
+    },
+    "description": {
+      "en": "Mineral clusters at player bases are periodically encased in a shield which must be destroyed for gathering to continue.",
+      "ko": "플레이어의 기지에 있는 광물 덩어리들이 주기적으로 보호막으로 둘러싸입니다. 보호막을 파괴해야 광물을 계속 채취할 수 있습니다."
+    }
   },
   "Barrier": {
-    "nameEn": "Barrier",
-    "nameKo": "방어막",
-    "descriptionEn": "Enemy units and structures gain a temporary shield upon the first time they take damage.",
-    "descriptionKo": "적 유닛과 구조물이 처음 피해를 받을 때 일시적인 보호막을 얻습니다."
+    "name": {
+      "en": "Barrier",
+      "ko": "방어막"
+    },
+    "description": {
+      "en": "Enemy units and structures gain a temporary shield upon the first time they take damage.",
+      "ko": "적 유닛과 구조물이 처음 피해를 받을 때 일시적인 보호막을 얻습니다."
+    }
   },
   "Avenger": {
-    "nameEn": "Avenger",
-    "nameKo": "복수자",
-    "descriptionEn": "Enemy units gain increased attack speed, movement speed, armor, life, and life-regeneration when nearby enemy units die.",
-    "descriptionKo": "적 유닛이 죽으면 주위에 있는 적 유닛의 공격 속도, 이동 속도, 방어력, 체력, 체력 재생이 증가합니다."
+    "name": {
+      "en": "Avenger",
+      "ko": "복수자"
+    },
+    "description": {
+      "en": "Enemy units gain increased attack speed, movement speed, armor, life, and life-regeneration when nearby enemy units die.",
+      "ko": "적 유닛이 죽으면 주위에 있는 적 유닛의 공격 속도, 이동 속도, 방어력, 체력, 체력 재생이 증가합니다."
+    }
   },
   "SideStep": {
-    "nameEn": "Evasive Maneuvers",
-    "nameKo": "회피 기동",
-    "descriptionEn": "Enemy units teleport a short distance away upon taking damage.",
-    "descriptionKo": "피해를 받은 적 유닛이 짧은 거리를 순간이동합니다."
+    "name": {
+      "en": "Evasive Maneuvers",
+      "ko": "회피 기동"
+    },
+    "description": {
+      "en": "Enemy units teleport a short distance away upon taking damage.",
+      "ko": "피해를 받은 적 유닛이 짧은 거리를 순간이동합니다."
+    }
   },
   "FireFight": {
-    "nameEn": "Scorched Earth",
-    "nameKo": "불타는 대지",
-    "descriptionEn": "Enemy units set the terrain on fire upon death.",
-    "descriptionKo": "적 유닛이 죽으면서 그 위치에 불길을 일으킵니다."
+    "name": {
+      "en": "Scorched Earth",
+      "ko": "불타는 대지"
+    },
+    "description": {
+      "en": "Enemy units set the terrain on fire upon death.",
+      "ko": "적 유닛이 죽으면서 그 위치에 불길을 일으킵니다."
+    }
   },
   "LavaBurst": {
-    "nameEn": "Lava Burst",
-    "nameKo": "용암 폭발",
-    "descriptionEn": "Lava periodically bursts from the ground at random locations and deals damage to player air and ground units.",
-    "descriptionKo": "용암이 지상의 무작위 위치에서 주기적으로 분출되어 플레이어의 지상 및 공중 유닛에게 피해를 줍니다."
+    "name": {
+      "en": "Lava Burst",
+      "ko": "용암 폭발"
+    },
+    "description": {
+      "en": "Lava periodically bursts from the ground at random locations and deals damage to player air and ground units.",
+      "ko": "용암이 지상의 무작위 위치에서 주기적으로 분출되어 플레이어의 지상 및 공중 유닛에게 피해를 줍니다."
+    }
   },
   "DeathAOE": {
-    "nameEn": "Self Destruction",
-    "nameKo": "자폭",
-    "descriptionEn": "Enemy units explode and deal damage to nearby player units upon death.",
-    "descriptionKo": "적 유닛이 죽으면 폭발하여 주위의 플레이어 유닛들에게 피해를 줍니다."
+    "name": {
+      "en": "Self Destruction",
+      "ko": "자폭"
+    },
+    "description": {
+      "en": "Enemy units explode and deal damage to nearby player units upon death.",
+      "ko": "적 유닛이 죽으면 폭발하여 주위의 플레이어 유닛들에게 피해를 줍니다."
+    }
   },
   "DropPods": {
-    "nameEn": "Aggressive Deployment",
-    "nameKo": "공격적 배치",
-    "descriptionEn": "Additional enemy units are periodically deployed onto the battlefield.",
-    "descriptionKo": "추가 적 유닛이 주기적으로 전장에 배치됩니다."
+    "name": {
+      "en": "Aggressive Deployment",
+      "ko": "공격적 배치"
+    },
+    "description": {
+      "en": "Additional enemy units are periodically deployed onto the battlefield.",
+      "ko": "추가 적 유닛이 주기적으로 전장에 배치됩니다."
+    }
   },
   "SpawnBroodlings": {
-    "nameEn": "Alien Incubation",
-    "nameKo": "에일리언 부화",
-    "descriptionEn": "All enemy units spawn Broodlings upon death.",
-    "descriptionKo": "모든 적 유닛이 죽을 때 시체에서 공생충이 생성됩니다."
+    "name": {
+      "en": "Alien Incubation",
+      "ko": "에일리언 부화"
+    },
+    "description": {
+      "en": "All enemy units spawn Broodlings upon death.",
+      "ko": "모든 적 유닛이 죽을 때 시체에서 공생충이 생성됩니다."
+    }
   },
   "LaserDrill": {
-    "nameEn": "Laser Drill",
-    "nameKo": "레이저 천공기",
-    "descriptionEn": "An enemy Laser Drill constantly attacks player units within enemy vision.",
-    "descriptionKo": "적의 레이저 천공기가 시야 안의 플레이어 유닛들을 지속적으로 공격합니다."
+    "name": {
+      "en": "Laser Drill",
+      "ko": "레이저 천공기"
+    },
+    "description": {
+      "en": "An enemy Laser Drill constantly attacks player units within enemy vision.",
+      "ko": "적의 레이저 천공기가 시야 안의 플레이어 유닛들을 지속적으로 공격합니다."
+    }
   },
   "LongRange": {
-    "nameEn": "Long Range",
-    "nameKo": "원거리",
-    "descriptionEn": "Enemy units and structures have increased weapon and vision range.",
-    "descriptionKo": "적 유닛 및 구조물의 무기 사거리와 시야 범위가 증가합니다."
+    "name": {
+      "en": "Long Range",
+      "ko": "원거리"
+    },
+    "description": {
+      "en": "Enemy units and structures have increased weapon and vision range.",
+      "ko": "적 유닛 및 구조물의 무기 사거리와 시야 범위가 증가합니다."
+    }
   },
   "ReducedVision": {
-    "nameEn": "Shortsighted",
-    "nameKo": "근시안",
-    "descriptionEn": "Player units and structures have reduced vision range.",
-    "descriptionKo": "플레이어의 유닛과 구조물의 시야가 감소합니다."
+    "name": {
+      "en": "Shortsighted",
+      "ko": "근시안"
+    },
+    "description": {
+      "en": "Player units and structures have reduced vision range.",
+      "ko": "플레이어의 유닛과 구조물의 시야가 감소합니다."
+    }
   },
   "HybridNuke": {
-    "nameEn": "Mutually Assured Destruction",
-    "nameKo": "상호 파괴 보장",
-    "descriptionEn": "Enemy Hybrid units detonate a Nuke upon death.",
-    "descriptionKo": "적 혼종 유닛이 죽으면서 핵폭발을 일으킵니다."
+    "name": {
+      "en": "Mutually Assured Destruction",
+      "ko": "상호 파괴 보장"
+    },
+    "description": {
+      "en": "Enemy Hybrid units detonate a Nuke upon death.",
+      "ko": "적 혼종 유닛이 죽으면서 핵폭발을 일으킵니다."
+    }
   },
   "AllEnemiesCloaked": {
-    "nameEn": "We Move Unseen",
-    "nameKo": "아무도 모르게",
-    "descriptionEn": "All enemy units are permanently cloaked.",
-    "descriptionKo": "모든 적 유닛이 영구 은폐 상태입니다."
+    "name": {
+      "en": "We Move Unseen",
+      "ko": "아무도 모르게"
+    },
+    "description": {
+      "en": "All enemy units are permanently cloaked.",
+      "ko": "모든 적 유닛이 영구 은폐 상태입니다."
+    }
   },
   "LazyWorkers": {
-    "nameEn": "Nap Time",
-    "nameKo": "낮잠 시간",
-    "descriptionEn": "Player worker units periodically fall asleep and must be awoken via the Wake Up ability on their command card.",
-    "descriptionKo": "플레이어 일꾼 유닛이 주기적으로 잠들기 때문에 명령 창의 “기상” 능력으로 깨워야 합니다."
+    "name": {
+      "en": "Nap Time",
+      "ko": "낮잠 시간"
+    },
+    "description": {
+      "en": "Player worker units periodically fall asleep and must be awoken via the Wake Up ability on their command card.",
+      "ko": "플레이어 일꾼 유닛이 주기적으로 잠들기 때문에 명령 창의 “기상” 능력으로 깨워야 합니다."
+    }
   },
   "NoResources": {
-    "nameEn": "Slim Pickings",
-    "nameKo": "허리띠 졸라 매고",
-    "descriptionEn": "Player worker units gather resources at a reduced rate, but resource pickups spawn throughout the map.",
-    "descriptionKo": "플레이어의 일꾼이 자원을 더디게 채취하지만, 자원 운반함이 지도 전역에 생성됩니다."
+    "name": {
+      "en": "Slim Pickings",
+      "ko": "허리띠 졸라 매고"
+    },
+    "description": {
+      "en": "Player worker units gather resources at a reduced rate, but resource pickups spawn throughout the map.",
+      "ko": "플레이어의 일꾼이 자원을 더디게 채취하지만, 자원 운반함이 지도 전역에 생성됩니다."
+    }
   },
   "ConcussiveAttacks": {
-    "nameEn": "Concussive Attacks",
-    "nameKo": "충격 요법",
-    "descriptionEn": "Player units are slowed by all enemy attacks.",
-    "descriptionKo": "적의 모든 공격이 플레이어 유닛을 느려지게 합니다."
+    "name": {
+      "en": "Concussive Attacks",
+      "ko": "충격 요법"
+    },
+    "description": {
+      "en": "Player units are slowed by all enemy attacks.",
+      "ko": "적의 모든 공격이 플레이어 유닛을 느려지게 합니다."
+    }
   },
   "StoneZealots": {
-    "nameEn": "Stone Zealots",
-    "nameKo": "광전사 석상",
-    "descriptionEn": "The enemy has deployed Stone Zealots.",
-    "descriptionKo": "적이 광전사 석상을 배치했습니다."
+    "name": {
+      "en": "Stone Zealots",
+      "ko": "광전사 석상"
+    },
+    "description": {
+      "en": "The enemy has deployed Stone Zealots.",
+      "ko": "적이 광전사 석상을 배치했습니다."
+    }
   },
   "JustDie": {
-    "nameEn": "Just Die!",
-    "nameKo": "좀 죽어!",
-    "descriptionEn": "Enemy units are automatically revived upon death.",
-    "descriptionKo": "적 유닛이 죽으면 자동으로 부활합니다."
+    "name": {
+      "en": "Just Die!",
+      "ko": "좀 죽어!"
+    },
+    "description": {
+      "en": "Enemy units are automatically revived upon death.",
+      "ko": "적 유닛이 죽으면 자동으로 부활합니다."
+    }
   },
   "TemporalField": {
-    "nameEn": "Temporal Field",
-    "nameKo": "감속장",
-    "descriptionEn": "Enemy Temporal Fields are periodically deployed throughout the map.",
-    "descriptionKo": "적의 감속장이 주기적으로 지도 곳곳에 배치됩니다."
+    "name": {
+      "en": "Temporal Field",
+      "ko": "감속장"
+    },
+    "description": {
+      "en": "Enemy Temporal Fields are periodically deployed throughout the map.",
+      "ko": "적의 감속장이 주기적으로 지도 곳곳에 배치됩니다."
+    }
   },
   "VoidRifts": {
-    "nameEn": "Void Rifts",
-    "nameKo": "공허 균열",
-    "descriptionEn": "Void Rifts periodically appear in random locations and spawn enemy units until destroyed.",
-    "descriptionKo": "공허 균열이 주기적으로 무작위 위치에 나타나 균열이 파괴될 때까지 적 유닛들을 생성합니다."
+    "name": {
+      "en": "Void Rifts",
+      "ko": "공허 균열"
+    },
+    "description": {
+      "en": "Void Rifts periodically appear in random locations and spawn enemy units until destroyed.",
+      "ko": "공허 균열이 주기적으로 무작위 위치에 나타나 균열이 파괴될 때까지 적 유닛들을 생성합니다."
+    }
   },
   "Tornadoes": {
-    "nameEn": "Twister",
-    "nameKo": "회오리바람",
-    "descriptionEn": "Tornadoes move across the map, damaging and knocking back player units in their path.",
-    "descriptionKo": "회오리바람이 지도 곳곳을 돌아다니며 경로에 있는 플레이어 유닛을 밀쳐내고 피해를 줍니다."
+    "name": {
+      "en": "Twister",
+      "ko": "회오리바람"
+    },
+    "description": {
+      "en": "Tornadoes move across the map, damaging and knocking back player units in their path.",
+      "ko": "회오리바람이 지도 곳곳을 돌아다니며 경로에 있는 플레이어 유닛을 밀쳐내고 피해를 줍니다."
+    }
   },
   "OrbitalStrike": {
-    "nameEn": "Orbital Strike",
-    "nameKo": "궤도 폭격",
-    "descriptionEn": "Enemy Orbital Strikes are periodically fired throughout the map.",
-    "descriptionKo": "적의 궤도 폭격이 주기적으로 지도 곳곳에 떨어집니다."
+    "name": {
+      "en": "Orbital Strike",
+      "ko": "궤도 폭격"
+    },
+    "description": {
+      "en": "Enemy Orbital Strikes are periodically fired throughout the map.",
+      "ko": "적의 궤도 폭격이 주기적으로 지도 곳곳에 떨어집니다."
+    }
   },
   "PurifierBeam": {
-    "nameEn": "Purifier Beam",
-    "nameKo": "정화 광선",
-    "descriptionEn": "An enemy Purifier Beam moves across the map toward nearby player units.",
-    "descriptionKo": "적 정화 광선이 지도 전역을 이동하며 주위의 플레이어 유닛을 노립니다."
+    "name": {
+      "en": "Purifier Beam",
+      "ko": "정화 광선"
+    },
+    "description": {
+      "en": "An enemy Purifier Beam moves across the map toward nearby player units.",
+      "ko": "적 정화 광선이 지도 전역을 이동하며 주위의 플레이어 유닛을 노립니다."
+    }
   },
   "Blizzard": {
-    "nameEn": "Blizzard",
-    "nameKo": "눈보라",
-    "descriptionEn": "Storm clouds move across the map, damaging and freezing player units in their path.",
-    "descriptionKo": "폭풍우가 지도를 가로지르며 그 경로에 있는 플레이어 유닛에게 피해를 주고 얼립니다."
+    "name": {
+      "en": "Blizzard",
+      "ko": "눈보라"
+    },
+    "description": {
+      "en": "Storm clouds move across the map, damaging and freezing player units in their path.",
+      "ko": "폭풍우가 지도를 가로지르며 그 경로에 있는 플레이어 유닛에게 피해를 주고 얼립니다."
+    }
   },
   "Fear": {
-    "nameEn": "Fear",
-    "nameKo": "공포",
-    "descriptionEn": "Player units will occasionally stop attacking and run around in fear upon taking damage.",
-    "descriptionKo": "플레이어 유닛이 피해를 받으면 가끔 공격을 멈추고 공포에 질려 도망다닙니다."
+    "name": {
+      "en": "Fear",
+      "ko": "공포"
+    },
+    "description": {
+      "en": "Player units will occasionally stop attacking and run around in fear upon taking damage.",
+      "ko": "플레이어 유닛이 피해를 받으면 가끔 공격을 멈추고 공포에 질려 도망다닙니다."
+    }
   },
   "PhotonOverload": {
-    "nameEn": "Photon Overload",
-    "nameKo": "광자 과부하",
-    "descriptionEn": "All enemy structures attack nearby hostile units.",
-    "descriptionKo": "적의 모든 구조물이 주위의 적대적인 유닛을 공격합니다."
+    "name": {
+      "en": "Photon Overload",
+      "ko": "광자 과부하"
+    },
+    "description": {
+      "en": "All enemy structures attack nearby hostile units.",
+      "ko": "적의 모든 구조물이 주위의 적대적인 유닛을 공격합니다."
+    }
   },
   "SpiderMines": {
-    "nameEn": "Minesweeper",
-    "nameKo": "지뢰청소부",
-    "descriptionEn": "Groups of Widow Mines and Spider Mines are buried throughout the battlefield.",
-    "descriptionKo": "땅거미 지뢰와 거미 지뢰가 전장 곳곳에 다발로 매장되어 있습니다."
+    "name": {
+      "en": "Minesweeper",
+      "ko": "지뢰청소부"
+    },
+    "description": {
+      "en": "Groups of Widow Mines and Spider Mines are buried throughout the battlefield.",
+      "ko": "땅거미 지뢰와 거미 지뢰가 전장 곳곳에 다발로 매장되어 있습니다."
+    }
   },
   "CycleRandom": {
-    "nameEn": "Chaos Studios",
-    "nameKo": "혼돈의 도가니",
-    "descriptionEn": "Mutators are chosen at random and periodically cycle throughout the mission.",
-    "descriptionKo": "돌연변이원이 무작위로 선택되고 임무가 진행되는 동안 주기적으로 순환합니다."
+    "name": {
+      "en": "Chaos Studios",
+      "ko": "혼돈의 도가니"
+    },
+    "description": {
+      "en": "Mutators are chosen at random and periodically cycle throughout the mission.",
+      "ko": "돌연변이원이 무작위로 선택되고 임무가 진행되는 동안 주기적으로 순환합니다."
+    }
   },
   "Reanimators": {
-    "nameEn": "Void Reanimators",
-    "nameKo": "공허 부활자",
-    "descriptionEn": "Void Reanimators wander the battlefield, bringing your enemies back to life.",
-    "descriptionKo": "공허 부활자가 전장을 돌아다니며 죽은 적을 되살립니다."
+    "name": {
+      "en": "Void Reanimators",
+      "ko": "공허 부활자"
+    },
+    "description": {
+      "en": "Void Reanimators wander the battlefield, bringing your enemies back to life.",
+      "ko": "공허 부활자가 전장을 돌아다니며 죽은 적을 되살립니다."
+    }
   },
   "Nukes": {
-    "nameEn": "Going Nuclear",
-    "nameKo": "핵전쟁",
-    "descriptionEn": "Nukes are launched at random throughout the map.",
-    "descriptionKo": "핵폭탄이 지도 곳곳에 무작위로 발사됩니다."
+    "name": {
+      "en": "Going Nuclear",
+      "ko": "핵전쟁"
+    },
+    "description": {
+      "en": "Nukes are launched at random throughout the map.",
+      "ko": "핵폭탄이 지도 곳곳에 무작위로 발사됩니다."
+    }
   },
   "LifeLeech": {
-    "nameEn": "Life Leech",
-    "nameKo": "생명력 착취",
-    "descriptionEn": "Enemy units and structures steal life or shields whenever they do damage.",
-    "descriptionKo": "적 유닛과 구조물이 피해를 줄 때마다 생명력 또는 보호막을 흡수합니다."
+    "name": {
+      "en": "Life Leech",
+      "ko": "생명력 착취"
+    },
+    "description": {
+      "en": "Enemy units and structures steal life or shields whenever they do damage.",
+      "ko": "적 유닛과 구조물이 피해를 줄 때마다 생명력 또는 보호막을 흡수합니다."
+    }
   },
   "OopsAllCasters": {
-    "nameEn": "Power Overwhelming",
-    "nameKo": "압도적인 힘으로",
-    "descriptionEn": "All enemy units have energy and use random abilities.",
-    "descriptionKo": "모든 적 유닛이 에너지가 있고 무작위 능력을 사용합니다."
+    "name": {
+      "en": "Power Overwhelming",
+      "ko": "압도적인 힘으로"
+    },
+    "description": {
+      "en": "All enemy units have energy and use random abilities.",
+      "ko": "모든 적 유닛이 에너지가 있고 무작위 능력을 사용합니다."
+    }
   },
   "OrderCosts": {
-    "nameEn": "Micro Transactions",
-    "nameKo": "활동 비용",
-    "descriptionEn": "Giving commands to your units costs resources based on the unit's cost.",
-    "descriptionKo": "유닛에 명령을 내리면 유닛의 비용에 따라 자원이 소모됩니다."
+    "name": {
+      "en": "Micro Transactions",
+      "ko": "활동 비용"
+    },
+    "description": {
+      "en": "Giving commands to your units costs resources based on the unit's cost.",
+      "ko": "유닛에 명령을 내리면 유닛의 비용에 따라 자원이 소모됩니다."
+    }
   },
   "MissileBarrage": {
-    "nameEn": "Missile Command",
-    "nameKo": "미사일 폭격",
-    "descriptionEn": "Endless missile bombardments target your structures and must be shot down throughout the mission.",
-    "descriptionKo": "끝없이 플레이어의 구조물에 폭격을 가하는 미사일을 임무 내내 격추해야 합니다."
+    "name": {
+      "en": "Missile Command",
+      "ko": "미사일 폭격"
+    },
+    "description": {
+      "en": "Endless missile bombardments target your structures and must be shot down throughout the mission.",
+      "ko": "끝없이 플레이어의 구조물에 폭격을 가하는 미사일을 임무 내내 격추해야 합니다."
+    }
   },
   "Vertigo": {
-    "nameEn": "Vertigo",
-    "nameKo": "현기증",
-    "descriptionEn": "Your camera randomly changes positions.",
-    "descriptionKo": "카메라가 무작위로 변화합니다."
+    "name": {
+      "en": "Vertigo",
+      "ko": "현기증"
+    },
+    "description": {
+      "en": "Your camera randomly changes positions.",
+      "ko": "카메라가 무작위로 변화합니다."
+    }
   },
   "UndyingEvil": {
-    "nameEn": "Undying Evil",
-    "nameKo": "죽지 않는 악",
-    "descriptionEn": "A monster is deployed against you. Each time you kill it, it will gather more power and return even stronger.",
-    "descriptionKo": "플레이어를 상대로 괴물이 배치됩니다. 괴물은 죽일 때마다 더 큰 힘을 모아 더욱 강력하게 돌아옵니다."
+    "name": {
+      "en": "Undying Evil",
+      "ko": "죽지 않는 악"
+    },
+    "description": {
+      "en": "A monster is deployed against you. Each time you kill it, it will gather more power and return even stronger.",
+      "ko": "플레이어를 상대로 괴물이 배치됩니다. 괴물은 죽일 때마다 더 큰 힘을 모아 더욱 강력하게 돌아옵니다."
+    }
   },
   "Polarity": {
-    "nameEn": "Polarity",
-    "nameKo": "극성",
-    "descriptionEn": "Each enemy unit is immune to either your units or your ally's units.",
-    "descriptionKo": "각각의 적 유닛이 플레이어 또는 플레이어의 동맹의 유닛 중 한 쪽에게 면역이 됩니다."
+    "name": {
+      "en": "Polarity",
+      "ko": "극성"
+    },
+    "description": {
+      "en": "Each enemy unit is immune to either your units or your ally's units.",
+      "ko": "각각의 적 유닛이 플레이어 또는 플레이어의 동맹의 유닛 중 한 쪽에게 면역이 됩니다."
+    }
   },
   "Evolve": {
-    "nameEn": "Transmutation",
-    "nameKo": "변성",
-    "descriptionEn": "Enemy units have a chance to transform into more powerful units whenever they deal damage.",
-    "descriptionKo": "적 유닛들이 피해를 줄 때마다 일정 확률로 더욱 강력한 유닛으로 변합니다."
+    "name": {
+      "en": "Transmutation",
+      "ko": "변성"
+    },
+    "description": {
+      "en": "Enemy units have a chance to transform into more powerful units whenever they deal damage.",
+      "ko": "적 유닛들이 피해를 줄 때마다 일정 확률로 더욱 강력한 유닛으로 변합니다."
+    }
   },
   "UberDarkness": {
-    "nameEn": "Afraid of the Dark",
-    "nameKo": "어둠의 공포",
-    "descriptionEn": "Vision provided by all sources is extremely limited except when in view of your camera.",
-    "descriptionKo": "카메라로 보고 있지 않을 때 모든 유닛의 시야가 극도로 제한됩니다."
+    "name": {
+      "en": "Afraid of the Dark",
+      "ko": "어둠의 공포"
+    },
+    "description": {
+      "en": "Vision provided by all sources is extremely limited except when in view of your camera.",
+      "ko": "카메라로 보고 있지 않을 때 모든 유닛의 시야가 극도로 제한됩니다."
+    }
   },
   "TrickOrTreat": {
-    "nameEn": "Trick or Treat",
-    "nameKo": "즐거운 할로윈",
-    "descriptionEn": "Civilians visit your Candy Bowl looking for treats, which are generated by spending minerals. If no treats are available, the civilians randomly transform into enemy units.",
-    "descriptionKo": "민간인들이 사탕 단지를 받으러 기지의 사탕 단지를 찾아옵니다. 사탕은 광물로 구매합니다. 단지 안에 사탕이 없으면 민간인들은 무작위 적 유닛으로 변합니다."
+    "name": {
+      "en": "Trick or Treat",
+      "ko": "즐거운 할로윈"
+    },
+    "description": {
+      "en": "Civilians visit your Candy Bowl looking for treats, which are generated by spending minerals. If no treats are available, the civilians randomly transform into enemy units.",
+      "ko": "민간인들이 사탕 단지를 받으러 기지의 사탕 단지를 찾아옵니다. 사탕은 광물로 구매합니다. 단지 안에 사탕이 없으면 민간인들은 무작위 적 유닛으로 변합니다."
+    }
   },
   "FoodHunt": {
-    "nameEn": "Turkey Shoot",
-    "nameKo": "칠면조 사냥",
-    "descriptionEn": "Supply can only be generated by killing turkeys that wander throughout the map. Doing so may anger the turkeys that remain.",
-    "descriptionKo": "전장을 배회하는 칠면조를 처치해서만 보급품을 늘릴 수 있습니다. 칠면조를 처치하면 다른 칠면조들이 화가 날 수도 있습니다."
+    "name": {
+      "en": "Turkey Shoot",
+      "ko": "칠면조 사냥"
+    },
+    "description": {
+      "en": "Supply can only be generated by killing turkeys that wander throughout the map. Doing so may anger the turkeys that remain.",
+      "ko": "전장을 배회하는 칠면조를 처치해서만 보급품을 늘릴 수 있습니다. 칠면조를 처치하면 다른 칠면조들이 화가 날 수도 있습니다."
+    }
   },
   "SharedSupply": {
-    "nameEn": "Sharing Is Caring",
-    "nameKo": "공유의 미덕",
-    "descriptionEn": "Supply is shared between you and your partner, and units from both armies contribute to your combined supply cap.",
-    "descriptionKo": "동맹과 보급품을 공유합니다. 양쪽 부대의 유닛이 공유된 보급품 한도의 영향을 받습니다."
+    "name": {
+      "en": "Sharing Is Caring",
+      "ko": "공유의 미덕"
+    },
+    "description": {
+      "en": "Supply is shared between you and your partner, and units from both armies contribute to your combined supply cap.",
+      "ko": "동맹과 보급품을 공유합니다. 양쪽 부대의 유닛이 공유된 보급품 한도의 영향을 받습니다."
+    }
   },
   "DamageBounce": {
-    "nameEn": "Diffusion",
-    "nameKo": "확산",
-    "descriptionEn": "Damage dealt to enemies is split evenly across all nearby units, including your own.",
-    "descriptionKo": "적에게 준 피해가 플레이어의 유닛을 포함한 주위의 모든 유닛에게 균등하게 나뉘어 가해집니다."
+    "name": {
+      "en": "Diffusion",
+      "ko": "확산"
+    },
+    "description": {
+      "en": "Damage dealt to enemies is split evenly across all nearby units, including your own.",
+      "ko": "적에게 준 피해가 플레이어의 유닛을 포함한 주위의 모든 유닛에게 균등하게 나뉘어 가해집니다."
+    }
   },
   "Plague": {
-    "nameEn": "Black Death",
-    "nameKo": "흑사병",
-    "descriptionEn": "Some enemy units carry a plague that deals damage over time and spreads to other nearby units. The plague spreads to your units when the enemy unit is killed.",
-    "descriptionKo": "일부 적 유닛은 대상에게 지속 피해를 주고 주위의 다른 유닛에게 번지는 역병을 지닙니다. 해당 적 유닛을 처치하면 아군 유닛에게 역병이 번집니다."
+    "name": {
+      "en": "Black Death",
+      "ko": "흑사병"
+    },
+    "description": {
+      "en": "Some enemy units carry a plague that deals damage over time and spreads to other nearby units. The plague spreads to your units when the enemy unit is killed.",
+      "ko": "일부 적 유닛은 대상에게 지속 피해를 주고 주위의 다른 유닛에게 번지는 역병을 지닙니다. 해당 적 유닛을 처치하면 아군 유닛에게 역병이 번집니다."
+    }
   },
   "StructureSteal": {
-    "nameEn": "Eminent Domain",
-    "nameKo": "강제 수용권",
-    "descriptionEn": "Enemies gain control of your structures after destroying them.",
-    "descriptionKo": "적이 플레이어의 구조물을 파괴한 후 자신의 것으로 만듭니다."
+    "name": {
+      "en": "Eminent Domain",
+      "ko": "강제 수용권"
+    },
+    "description": {
+      "en": "Enemies gain control of your structures after destroying them.",
+      "ko": "적이 플레이어의 구조물을 파괴한 후 자신의 것으로 만듭니다."
+    }
   },
   "GiftFight": {
-    "nameEn": "Gift Exchange",
-    "nameKo": "선물 교환",
-    "descriptionEn": "Gifts are periodically deployed around the map. If you don't claim them, Amon will!",
-    "descriptionKo": "지도 곳곳에 주기적으로 선물이 배치됩니다. 차지하지 않으면 아몬이 차지할 겁니다!"
+    "name": {
+      "en": "Gift Exchange",
+      "ko": "선물 교환"
+    },
+    "description": {
+      "en": "Gifts are periodically deployed around the map. If you don't claim them, Amon will!",
+      "ko": "지도 곳곳에 주기적으로 선물이 배치됩니다. 차지하지 않으면 아몬이 차지할 겁니다!"
+    }
   },
   "KillKarma": {
-    "nameEn": "Naughty List",
-    "nameKo": "인과응보",
-    "descriptionEn": "Player units and structures take increased damage for each enemy they've killed.",
-    "descriptionKo": "플레이어의 유닛과 구조물이, 적을 처치할 때마다 받는 피해가 증가합니다."
+    "name": {
+      "en": "Naughty List",
+      "ko": "인과응보"
+    },
+    "description": {
+      "en": "Player units and structures take increased damage for each enemy they've killed.",
+      "ko": "플레이어의 유닛과 구조물이, 적을 처치할 때마다 받는 피해가 증가합니다."
+    }
   },
   "AfraidOfTheDark": {
-    "nameEn": "Extreme Caution",
-    "nameKo": "과도한 경계",
-    "descriptionEn": "Your units will not obey any command placed in areas they cannot see.",
-    "descriptionKo": "유닛들이 어둠을 두려워해 자신들이 볼 수 없는 지역에 내려진 명령을 따르지 않습니다."
+    "name": {
+      "en": "Extreme Caution",
+      "ko": "과도한 경계"
+    },
+    "description": {
+      "en": "Your units will not obey any command placed in areas they cannot see.",
+      "ko": "유닛들이 어둠을 두려워해 자신들이 볼 수 없는 지역에 내려진 명령을 따르지 않습니다."
+    }
   },
   "Insubordination": {
-    "nameEn": "Insubordination",
-    "nameKo": "반항",
-    "descriptionEn": "Your units don't follow orders exactly.",
-    "descriptionKo": "유닛들이 명령을 정확하게 따르지 않습니다."
+    "name": {
+      "en": "Insubordination",
+      "ko": "반항"
+    },
+    "description": {
+      "en": "Your units don't follow orders exactly.",
+      "ko": "유닛들이 명령을 정확하게 따르지 않습니다."
+    }
   },
   "HeroesFromTheStorm": {
-    "nameEn": "Heroes from the Storm",
-    "nameKo": "폭풍의 영웅들",
-    "descriptionEn": "Attack waves will be joined by heroes of increasing power.",
-    "descriptionKo": "무시무시한 위력을 지닌 영웅들이 공세에 합류합니다."
+    "name": {
+      "en": "Heroes from the Storm",
+      "ko": "폭풍의 영웅들"
+    },
+    "description": {
+      "en": "Attack waves will be joined by heroes of increasing power.",
+      "ko": "무시무시한 위력을 지닌 영웅들이 공세에 합류합니다."
+    }
   },
   "Inspiration": {
-    "nameEn": "Inspiration",
-    "nameKo": "감화",
-    "descriptionEn": "Enemy Heroic units increase the attack speed and armor of all enemies within a small range.",
-    "descriptionKo": "적 영웅 유닛이 좁은 범위 내 모든 적의 공격 속도와 방어력을 증가시킵니다."
+    "name": {
+      "en": "Inspiration",
+      "ko": "감화"
+    },
+    "description": {
+      "en": "Enemy Heroic units increase the attack speed and armor of all enemies within a small range.",
+      "ko": "적 영웅 유닛이 좁은 범위 내 모든 적의 공격 속도와 방어력을 증가시킵니다."
+    }
   },
   "HardenedWill": {
-    "nameEn": "Hardened Will",
-    "nameKo": "굳건한 의지",
-    "descriptionEn": "Enemy Heroic units reduce all incoming damage to a maximum of 10 when any non-heroic enemy unit is near them.",
-    "descriptionKo": "영웅이 아닌 적군 유닛이 근처에 있으면 적 영웅 유닛이 받는 모든 피해를 최대 10으로 감소시킵니다."
+    "name": {
+      "en": "Hardened Will",
+      "ko": "굳건한 의지"
+    },
+    "description": {
+      "en": "Enemy Heroic units reduce all incoming damage to a maximum of 10 when any non-heroic enemy unit is near them.",
+      "ko": "영웅이 아닌 적군 유닛이 근처에 있으면 적 영웅 유닛이 받는 모든 피해를 최대 10으로 감소시킵니다."
+    }
   },
   "Fireworks": {
-    "nameEn": "Fireworks",
-    "nameKo": "불꽃놀이",
-    "descriptionEn": "Enemies launch a dazzling fireworks display upon death, dealing damage to your nearby units.",
-    "descriptionKo": "적들이 죽으면서 휘황찬란한 불꽃놀이를 일으켜 주위의 유닛에게 피해를 줍니다."
+    "name": {
+      "en": "Fireworks",
+      "ko": "불꽃놀이"
+    },
+    "description": {
+      "en": "Enemies launch a dazzling fireworks display upon death, dealing damage to your nearby units.",
+      "ko": "적들이 죽으면서 휘황찬란한 불꽃놀이를 일으켜 주위의 유닛에게 피해를 줍니다."
+    }
   },
   "RedEnvelopes": {
-    "nameEn": "Lucky Envelopes",
-    "nameKo": "행운의 봉투",
-    "descriptionEn": "Festive envelopes containing resource pickups are dropped at random throughout the map.",
-    "descriptionKo": "자원이 담긴 선물 봉투가 지도 위에 무작위로 떨어집니다."
+    "name": {
+      "en": "Lucky Envelopes",
+      "ko": "행운의 봉투"
+    },
+    "description": {
+      "en": "Festive envelopes containing resource pickups are dropped at random throughout the map.",
+      "ko": "자원이 담긴 선물 봉투가 지도 위에 무작위로 떨어집니다."
+    }
   },
   "Sluggish": {
-    "nameEn": "Sluggishness",
-    "nameKo": "둔화",
-    "descriptionEn": "Your units accelerate and turn slowly.",
-    "descriptionKo": "아군 유닛의 가속과 방향 전환이 느려집니다."
+    "name": {
+      "en": "Sluggishness",
+      "ko": "둔화"
+    },
+    "description": {
+      "en": "Your units accelerate and turn slowly.",
+      "ko": "아군 유닛의 가속과 방향 전환이 느려집니다."
+    }
   },
   "DamageReflect": {
-    "nameEn": "Double-Edged",
-    "nameKo": "양날의 검",
-    "descriptionEn": "Your units also receive all the damage they deal, but they are healed over time.",
-    "descriptionKo": "아군 유닛들이 적에게 준 피해만큼 자신도 피해를 받지만 시간에 걸쳐 회복됩니다."
+    "name": {
+      "en": "Double-Edged",
+      "ko": "양날의 검"
+    },
+    "description": {
+      "en": "Your units also receive all the damage they deal, but they are healed over time.",
+      "ko": "아군 유닛들이 적에게 준 피해만큼 자신도 피해를 받지만 시간에 걸쳐 회복됩니다."
+    }
   },
   "DeathPull": {
-    "nameEn": "Fatal Attraction",
-    "nameKo": "치명적 끌림",
-    "descriptionEn": "When enemy units and structures die, any of your nearby units are pulled to their location.",
-    "descriptionKo": "적 유닛과 구조물이 파괴되면 근처의 아군 유닛이 해당 위치로 끌어당겨집니다."
+    "name": {
+      "en": "Fatal Attraction",
+      "ko": "치명적 끌림"
+    },
+    "description": {
+      "en": "When enemy units and structures die, any of your nearby units are pulled to their location.",
+      "ko": "적 유닛과 구조물이 파괴되면 근처의 아군 유닛이 해당 위치로 끌어당겨집니다."
+    }
   },
   "Propagate": {
-    "nameEn": "Propagators",
-    "nameKo": "번식자",
-    "descriptionEn": "Shapeless lifeforms creep toward your base, transforming all of the units and structures they touch into copies of themselves.",
-    "descriptionKo": "형체가 없는 생명체들이 기지로 몰려들어, 접촉하는 모든 유닛과 구조물을 자신의 복제물로 변형시킵니다."
+    "name": {
+      "en": "Propagators",
+      "ko": "번식자"
+    },
+    "description": {
+      "en": "Shapeless lifeforms creep toward your base, transforming all of the units and structures they touch into copies of themselves.",
+      "ko": "형체가 없는 생명체들이 기지로 몰려들어, 접촉하는 모든 유닛과 구조물을 자신의 복제물로 변형시킵니다."
+    }
   },
   "MomentOfSilence": {
-    "nameEn": "Moment Of Silence",
-    "nameKo": "침묵의 순간",
-    "descriptionEn": "When a Heroic enemy dies, all player units around it will reflect on their transgressions, leaving them unable to attack or use abilities.",
-    "descriptionKo": "적 영웅 유닛이 죽으면 주위 모든 플레이어 유닛이 영향을 받아, 공격하거나 능력을 사용할 수 없게 됩니다."
+    "name": {
+      "en": "Moment Of Silence",
+      "ko": "침묵의 순간"
+    },
+    "description": {
+      "en": "When a Heroic enemy dies, all player units around it will reflect on their transgressions, leaving them unable to attack or use abilities.",
+      "ko": "적 영웅 유닛이 죽으면 주위 모든 플레이어 유닛이 영향을 받아, 공격하거나 능력을 사용할 수 없게 됩니다."
+    }
   },
   "KillBots": {
-    "nameEn": "Kill Bots",
-    "nameKo": "처치 로봇",
-    "descriptionEn": "Invincible Kill Bots attack your forces until they hit their predetermined kill limit and shut down.",
-    "descriptionKo": "특정 수의 유닛을 처치할 때까지 무적 상태인 로봇들이 몰려와 플레이어를 공격합니다."
+    "name": {
+      "en": "Kill Bots",
+      "ko": "처치 로봇"
+    },
+    "description": {
+      "en": "Invincible Kill Bots attack your forces until they hit their predetermined kill limit and shut down.",
+      "ko": "특정 수의 유닛을 처치할 때까지 무적 상태인 로봇들이 몰려와 플레이어를 공격합니다."
+    }
   },
   "BoomBots": {
-    "nameEn": "Boom Bots",
-    "nameKo": "폭탄로봇",
-    "descriptionEn": "Uncaring automatons carry a nuclear payload toward your base. One player must discern the disarming sequence and the other player must enter it.",
-    "descriptionKo": "로봇 장치가 여러분의 기지로 핵탄두를 운반합니다. 한 명의 플레이어는 해체 암호를 알아내고 다른 플레이어는 암호를 입력해야 합니다."
+    "name": {
+      "en": "Boom Bots",
+      "ko": "폭탄로봇"
+    },
+    "description": {
+      "en": "Uncaring automatons carry a nuclear payload toward your base. One player must discern the disarming sequence and the other player must enter it.",
+      "ko": "로봇 장치가 여러분의 기지로 핵탄두를 운반합니다. 한 명의 플레이어는 해체 암호를 알아내고 다른 플레이어는 암호를 입력해야 합니다."
+    }
   },
   "TheMist": {
-    "nameEn": "The Mist",
-    "nameKo": "",
-    "descriptionEn": "Mists roll over battlefield while unseen terrors lurk inside. Desperate warriors will fall and rise again.",
-    "descriptionKo": ""
+    "name": {
+      "en": "The Mist",
+      "ko": ""
+    },
+    "description": {
+      "en": "Mists roll over battlefield while unseen terrors lurk inside. Desperate warriors will fall and rise again.",
+      "ko": ""
+    }
   },
   "TheUsualSuspects": {
-    "nameEn": "The Usual Suspects",
-    "nameKo": "",
-    "descriptionEn": "Enemy attacks will be led by dark reflections of Heroes in the service of Amon",
-    "descriptionKo": ""
+    "name": {
+      "en": "The Usual Suspects",
+      "ko": ""
+    },
+    "description": {
+      "en": "Enemy attacks will be led by dark reflections of Heroes in the service of Amon",
+      "ko": ""
+    }
   },
   "SupremeCommander": {
-    "nameEn": "Supreme Commander",
-    "nameKo": "",
-    "descriptionEn": "Massive units gain 25% life and are bigger, the rest of units have 25% less life and are smaller. All units gain +2 weapon range.",
-    "descriptionKo": ""
+    "name": {
+      "en": "Supreme Commander",
+      "ko": ""
+    },
+    "description": {
+      "en": "Massive units gain 25% life and are bigger, the rest of units have 25% less life and are smaller. All units gain +2 weapon range.",
+      "ko": ""
+    }
   },
   "Shapeshifters": {
-    "nameEn": "Shapeshifters",
-    "nameKo": "",
-    "descriptionEn": "Shapeshifters spawn with enemy attacks and in enemy bases. These creatures can transform into any unit of yours.",
-    "descriptionKo": ""
+    "name": {
+      "en": "Shapeshifters",
+      "ko": ""
+    },
+    "description": {
+      "en": "Shapeshifters spawn with enemy attacks and in enemy bases. These creatures can transform into any unit of yours.",
+      "ko": ""
+    }
   },
   "RipFieldGenerators": {
-    "nameEn": "Rip Field Generators",
-    "nameKo": "",
-    "descriptionEn": "Rip-Field Generators are deployed throughout the map. They will burn any unit that comes into their range.",
-    "descriptionKo": ""
+    "name": {
+      "en": "Rip Field Generators",
+      "ko": ""
+    },
+    "description": {
+      "en": "Rip-Field Generators are deployed throughout the map. They will burn any unit that comes into their range.",
+      "ko": ""
+    }
   },
   "RepulsiveField": {
-    "nameEn": "Repulsive Field",
-    "nameKo": "",
-    "descriptionEn": "Enemy attacks will push your units away.",
-    "descriptionKo": ""
+    "name": {
+      "en": "Repulsive Field",
+      "ko": ""
+    },
+    "description": {
+      "en": "Enemy attacks will push your units away.",
+      "ko": ""
+    }
   },
   "OldTimes": {
-    "nameEn": "Old Times",
-    "nameKo": "",
-    "descriptionEn": "We are traveling back in time. Unit selection is limited to 12 units. There is no worker auto-mine, no smart cast, no multiple building select, etc.",
-    "descriptionKo": ""
+    "name": {
+      "en": "Old Times",
+      "ko": ""
+    },
+    "description": {
+      "en": "We are traveling back in time. Unit selection is limited to 12 units. There is no worker auto-mine, no smart cast, no multiple building select, etc.",
+      "ko": ""
+    }
   },
   "NuclearMines": {
-    "nameEn": "Nuclear Mines",
-    "nameKo": "",
-    "descriptionEn": "Nuclear Mines have been placed around the battlefield.",
-    "descriptionKo": ""
+    "name": {
+      "en": "Nuclear Mines",
+      "ko": ""
+    },
+    "description": {
+      "en": "Nuclear Mines have been placed around the battlefield.",
+      "ko": ""
+    }
   },
   "Necronomicon": {
-    "nameEn": "Necronomicon",
-    "nameKo": "",
-    "descriptionEn": "Killed player units will rise again at enemy bases.",
-    "descriptionKo": ""
+    "name": {
+      "en": "Necronomicon",
+      "ko": ""
+    },
+    "description": {
+      "en": "Killed player units will rise again at enemy bases.",
+      "ko": ""
+    }
   },
   "Mothership": {
-    "nameEn": "Mothership",
-    "nameKo": "",
-    "descriptionEn": "Enemy Mothership roams the map and attacks player units.",
-    "descriptionKo": ""
+    "name": {
+      "en": "Mothership",
+      "ko": ""
+    },
+    "description": {
+      "en": "Enemy Mothership roams the map and attacks player units.",
+      "ko": ""
+    }
   },
   "Matryoshka": {
-    "nameEn": "Matryoshka",
-    "nameKo": "",
-    "descriptionEn": "Enemy units will spawn mini-self upon death. This can trigger several times for larger units.",
-    "descriptionKo": ""
+    "name": {
+      "en": "Matryoshka",
+      "ko": ""
+    },
+    "description": {
+      "en": "Enemy units will spawn mini-self upon death. This can trigger several times for larger units.",
+      "ko": ""
+    }
   },
   "LevelPlayingField": {
-    "nameEn": "Level Playing Field",
-    "nameKo": "",
-    "descriptionEn": "All weapons and abilities can hit both air and ground targets.",
-    "descriptionKo": ""
+    "name": {
+      "en": "Level Playing Field",
+      "ko": ""
+    },
+    "description": {
+      "en": "All weapons and abilities can hit both air and ground targets.",
+      "ko": ""
+    }
   },
   "InfestationStation": {
-    "nameEn": "Infestation Station",
-    "nameKo": "",
-    "descriptionEn": "Damaging any structure can cause infestation.",
-    "descriptionKo": ""
+    "name": {
+      "en": "Infestation Station",
+      "ko": ""
+    },
+    "description": {
+      "en": "Damaging any structure can cause infestation.",
+      "ko": ""
+    }
   },
   "ICollectIChange": {
-    "nameEn": "I Collect, I Change",
-    "nameKo": "",
-    "descriptionEn": "When a non-heroic unit kills a hostile unit, it becomes the unit it killed. Units can only evolve into more expensive units.",
-    "descriptionKo": ""
+    "name": {
+      "en": "I Collect, I Change",
+      "ko": ""
+    },
+    "description": {
+      "en": "When a non-heroic unit kills a hostile unit, it becomes the unit it killed. Units can only evolve into more expensive units.",
+      "ko": ""
+    }
   },
   "GreatWall": {
-    "nameEn": "Great Wall",
-    "nameKo": "",
-    "descriptionEn": "Enemy begins massive effort to construct defensive structures around the battlefield.",
-    "descriptionKo": ""
+    "name": {
+      "en": "Great Wall",
+      "ko": ""
+    },
+    "description": {
+      "en": "Enemy begins massive effort to construct defensive structures around the battlefield.",
+      "ko": ""
+    }
   },
   "Endurance": {
-    "nameEn": "Endurance",
-    "nameKo": "",
-    "descriptionEn": "Player and enemy units and structures have 3x more health and shields.",
-    "descriptionKo": ""
+    "name": {
+      "en": "Endurance",
+      "ko": ""
+    },
+    "description": {
+      "en": "Player and enemy units and structures have 3x more health and shields.",
+      "ko": ""
+    }
   },
   "DarkMirror": {
-    "nameEn": "Dark Mirror",
-    "nameKo": "",
-    "descriptionEn": "Enemy attack waves will contain player units.",
-    "descriptionKo": ""
+    "name": {
+      "en": "Dark Mirror",
+      "ko": ""
+    },
+    "description": {
+      "en": "Enemy attack waves will contain player units.",
+      "ko": ""
+    }
   },
   "Bloodlust": {
-    "nameEn": "Bloodlust",
-    "nameKo": "",
-    "descriptionEn": "Enemy units gain increased attack speed, movement speed, acceleration and damage reduction as their health gets lower.",
-    "descriptionKo": ""
+    "name": {
+      "en": "Bloodlust",
+      "ko": ""
+    },
+    "description": {
+      "en": "Enemy units gain increased attack speed, movement speed, acceleration and damage reduction as their health gets lower.",
+      "ko": ""
+    }
   },
   "BlizzConChallenge": {
-    "nameEn": "BlizzCon Challenge",
-    "nameKo": "",
-    "descriptionEn": "The BlizzCon Challenge starts with a single Mutator. As time passes, more Mutators will be added, until TEN Mutators are running wild at the same time.",
-    "descriptionKo": ""
+    "name": {
+      "en": "BlizzCon Challenge",
+      "ko": ""
+    },
+    "description": {
+      "en": "The BlizzCon Challenge starts with a single Mutator. As time passes, more Mutators will be added, until TEN Mutators are running wild at the same time.",
+      "ko": ""
+    }
   }
 }

@@ -5,6 +5,10 @@ import unitTranslationData from "./unit_translation_data.json";
 
 export type AppLanguage = "en" | "ko";
 type LocalizableValue = string | number | boolean | null | undefined;
+export type LanguageValue = {
+    en?: string | null;
+    ko?: string | null;
+};
 
 type LanguageEntry = {
     en: string;
@@ -100,6 +104,29 @@ export class LanguageManager {
 
     currentLanguage(): AppLanguage {
         return this.language;
+    }
+
+    localizedValue(
+        value: LanguageValue | null | undefined,
+        language: AppLanguage = this.language,
+    ): string {
+        if (value === null || value === undefined) {
+            return "";
+        }
+
+        const preferred = value[language];
+        if (typeof preferred === "string" && preferred.trim() !== "") {
+            return preferred;
+        }
+
+        const fallbackLanguage: AppLanguage =
+            language === ENGLISH_LANGUAGE ? "ko" : ENGLISH_LANGUAGE;
+        const fallback = value[fallbackLanguage];
+        if (typeof fallback === "string" && fallback.trim() !== "") {
+            return fallback;
+        }
+
+        return "";
     }
 
     setLanguage(language: string): void {

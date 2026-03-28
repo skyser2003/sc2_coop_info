@@ -82,19 +82,19 @@ pub struct LocalizedPrestigeNames {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct LocalizedMutatorText {
+    #[serde(default)]
+    pub en: String,
+    #[serde(default)]
+    pub ko: String,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct LocalizedMutatorDescription {
     #[serde(default)]
-    #[serde(rename = "nameEn")]
-    pub name_en: String,
+    pub name: LocalizedMutatorText,
     #[serde(default)]
-    #[serde(rename = "nameKo")]
-    pub name_ko: String,
-    #[serde(default)]
-    #[serde(rename = "descriptionEn")]
-    pub description_en: String,
-    #[serde(default)]
-    #[serde(rename = "descriptionKo")]
-    pub description_ko: String,
+    pub description: LocalizedMutatorText,
 }
 
 transparent_json_wrapper!(MutatorsJson, IndexMap<String, LocalizedMutatorDescription>);

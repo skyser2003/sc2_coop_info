@@ -1,6 +1,11 @@
 import * as React from "react";
 import type { LanguageManager } from "../../i18n/languageManager";
-import type { DisplayValue, JsonValue, MutatorData } from "../types";
+import type {
+    DisplayValue,
+    JsonValue,
+    LocalizedText,
+    MutatorData,
+} from "../types";
 import {
     nextSortState,
     sortIndicator,
@@ -90,15 +95,11 @@ function localizedMutatorDescription(
     languageManager: LanguageManager,
     asTableValue: (value: DisplayValue) => string,
 ): string {
-    const preferred =
-        languageManager.currentLanguage() === "ko"
-            ? mutator.descriptionKo
-            : mutator.descriptionEn;
-    const fallback =
-        languageManager.currentLanguage() === "ko"
-            ? mutator.descriptionEn
-            : mutator.descriptionKo;
-    return asTableValue(preferred || fallback);
+    return asTableValue(
+        languageManager.localizedValue(
+            mutator.description as LocalizedText | null | undefined,
+        ),
+    );
 }
 
 function localizedMutatorName(
@@ -106,15 +107,11 @@ function localizedMutatorName(
     languageManager: LanguageManager,
     asTableValue: (value: DisplayValue) => string,
 ): string {
-    const preferred =
-        languageManager.currentLanguage() === "ko"
-            ? mutator.nameKo
-            : mutator.nameEn;
-    const fallback =
-        languageManager.currentLanguage() === "ko"
-            ? mutator.nameEn
-            : mutator.nameKo;
-    return asTableValue(preferred || fallback || mutator.name);
+    return asTableValue(
+        languageManager.localizedValue(
+            mutator.name as LocalizedText | null | undefined,
+        ),
+    );
 }
 
 function localizeWeeklyDuration(
@@ -405,9 +402,9 @@ export default function WeekliesTab({
                                             (mutator, index) => {
                                                 const iconName = asTableValue(
                                                     mutator.iconName ||
-                                                        mutator.nameEn ||
+                                                        mutator.name?.en ||
                                                         mutator.id ||
-                                                        mutator.name,
+                                                        "",
                                                 );
                                                 const displayName =
                                                     localizedMutatorName(
@@ -417,7 +414,7 @@ export default function WeekliesTab({
                                                     );
                                                 return (
                                                     <article
-                                                        key={`${asTableValue(mutator.id || mutator.name)}-${index}`}
+                                                        key={`${asTableValue(mutator.id || mutator.name?.en || "")}-${index}`}
                                                         className="weeklies-mutator-card"
                                                     >
                                                         <img

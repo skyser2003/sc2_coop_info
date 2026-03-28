@@ -87,7 +87,7 @@ fn overlay_mutator_name(mutator_id: &str) -> String {
     };
 
     dictionary_data::mutator_data(&canonical)
-        .map(|value| value.name_en.trim())
+        .map(|value| value.name.en.trim())
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
         .or_else(|| {

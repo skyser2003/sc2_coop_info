@@ -126,15 +126,16 @@ export type LocalizedPrestigeNames = {
 };
 
 export type PrestigeNameMap = Record<string, LocalizedPrestigeNames>;
+export type LocalizedText = {
+    en?: string | null;
+    ko?: string | null;
+};
 
 export type MutatorData = {
     id?: string | null;
-    name?: string | null;
-    nameEn?: string | null;
-    nameKo?: string | null;
+    name?: LocalizedText | null;
+    description?: LocalizedText | null;
     iconName?: string | null;
-    descriptionEn?: string | null;
-    descriptionKo?: string | null;
 };
 
 export type StatsHelpers = {

@@ -202,7 +202,7 @@ fn canonical_mutator_id(mutator: &str) -> String {
 fn mutator_display_name_en(mutator: &str) -> String {
     let mutator_id = canonical_mutator_id(mutator);
     dictionary_data::mutator_data(&mutator_id)
-        .map(|value| decode_html_entities(&value.name_en))
+        .map(|value| decode_html_entities(&value.name.en))
         .filter(|value| !value.is_empty())
         .or_else(|| {
             dictionary_data::mutator_ids()
@@ -1063,19 +1063,18 @@ impl ReplayInfo {
             sanitized.slot2_commander.clone()
         };
         #[derive(Serialize)]
+        struct LocalizedTextValue {
+            en: String,
+            ko: String,
+        }
+
+        #[derive(Serialize)]
         struct GamesRowMutator {
             id: String,
-            name: String,
-            #[serde(rename = "nameEn")]
-            name_en: String,
-            #[serde(rename = "nameKo")]
-            name_ko: String,
+            name: LocalizedTextValue,
             #[serde(rename = "iconName")]
             icon_name: String,
-            #[serde(rename = "descriptionEn")]
-            description_en: String,
-            #[serde(rename = "descriptionKo")]
-            description_ko: String,
+            description: LocalizedTextValue,
         }
 
         #[derive(Serialize)]
@@ -1112,10 +1111,10 @@ impl ReplayInfo {
                     dictionary_data::mutator_data(&mutator_id)
                         .map(|value| {
                             (
-                                decode_html_entities(&value.name_en),
-                                decode_html_entities(&value.name_ko),
-                                decode_html_entities(&value.description_en),
-                                decode_html_entities(&value.description_ko),
+                                decode_html_entities(&value.name.en),
+                                decode_html_entities(&value.name.ko),
+                                decode_html_entities(&value.description.en),
+                                decode_html_entities(&value.description.ko),
                             )
                         })
                         .unwrap_or_default();
@@ -1132,12 +1131,15 @@ impl ReplayInfo {
                 };
                 GamesRowMutator {
                     id: mutator_id.clone(),
-                    name: display_name_en.clone(),
-                    name_en: display_name_en,
-                    name_ko,
+                    name: LocalizedTextValue {
+                        en: display_name_en,
+                        ko: name_ko,
+                    },
                     icon_name,
-                    description_en,
-                    description_ko,
+                    description: LocalizedTextValue {
+                        en: description_en,
+                        ko: description_ko,
+                    },
                 }
             })
             .collect::<Vec<_>>();

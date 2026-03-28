@@ -68,7 +68,8 @@ fn rebuild_weeklies_rows_uses_dictionary_order_for_mutation_sort() {
             .get("mutators")
             .and_then(|value| value.as_array())
             .and_then(|items| items.first())
-            .and_then(|value| value.get("nameKo")),
+            .and_then(|value| value.get("name"))
+            .and_then(|value| value.get("ko")),
         Some(&json!("암흑"))
     );
     assert_eq!(
@@ -76,7 +77,8 @@ fn rebuild_weeklies_rows_uses_dictionary_order_for_mutation_sort() {
             .get("mutators")
             .and_then(|value| value.as_array())
             .and_then(|items| items.first())
-            .and_then(|value| value.get("descriptionEn")),
+            .and_then(|value| value.get("description"))
+            .and_then(|value| value.get("en")),
         Some(&json!(
             "Previously explored areas remain blacked out on the minimap while outside of player vision."
         ))
