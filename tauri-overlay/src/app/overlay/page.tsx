@@ -18,7 +18,6 @@ import type {
     OverlayInitColorsDurationPayload,
     OverlayLanguagePreviewPayload,
     OverlayPlayerInfoPayload,
-    OverlayRandomizerCatalog,
     OverlayReplayPayload,
     OverlayScreenshotRequestPayload,
     OverlayScreenshotResultPayload,
@@ -49,11 +48,14 @@ type OverlayEventName =
     | typeof OVERLAY_SCREENSHOT_REQUEST_EVENT;
 
 type LocalizableValue = string | number | boolean | null | undefined;
-type OverlayCommanderMasteryCatalog =
-    OverlayRandomizerCatalog["commander_mastery"];
-type OverlayPrestigeNameCatalog = OverlayRandomizerCatalog["prestige_names"];
+type OverlayPrestigeNameCatalog = Record<
+    string,
+    { en: string[]; ko: string[] }
+>;
 type OverlayConfigResponse = {
-    randomizer_catalog: OverlayRandomizerCatalog;
+    randomizer_catalog: {
+        prestige_names: OverlayPrestigeNameCatalog;
+    };
 };
 
 function formatOverlayScreenshotError(error: DisplayValue | Error): string {
@@ -192,8 +194,6 @@ export default function OverlayPage() {
         useState<NodeJS.Timeout | null>(null);
     const [replayExpiryTimer, setReplayExpiryTimer] =
         useState<NodeJS.Timeout | null>(null);
-    const [overlayCommanderMasteryCatalog, setOverlayCommanderMasteryCatalog] =
-        useState<OverlayCommanderMasteryCatalog>({});
     const [overlayPrestigeNameCatalog, setOverlayPrestigeNameCatalog] =
         useState<OverlayPrestigeNameCatalog>({});
     const [chartVisibility, setChartVisibility] = useState<ReplayChartVisible>({
@@ -220,7 +220,7 @@ export default function OverlayPage() {
         return overlayLanguageManager.englishLabel(value);
     }
 
-    async function loadOverlayCommanderMasteryCatalog(): Promise<void> {
+    async function loadOverlayPrestigeNameCatalog(): Promise<void> {
         try {
             const response = await invoke<OverlayConfigResponse>(
                 "config_request",
@@ -229,24 +229,18 @@ export default function OverlayPage() {
                     method: "GET",
                 },
             );
-            setOverlayCommanderMasteryCatalog(
-                response.randomizer_catalog.commander_mastery,
-            );
             setOverlayPrestigeNameCatalog(
                 response.randomizer_catalog.prestige_names,
             );
         } catch (error) {
-            console.warn(
-                "Failed to load overlay commander mastery catalog",
-                error,
-            );
+            console.warn("Failed to load overlay prestige catalog", error);
         }
     }
 
     function applyOverlayLanguage(nextLanguage: string): void {
         setLanguage(nextLanguage);
         overlayLanguageManager.setLanguage(nextLanguage);
-        void loadOverlayCommanderMasteryCatalog();
+        void loadOverlayPrestigeNameCatalog();
 
         const noData = document.getElementById("nodata");
         if (noData != null) {
@@ -857,7 +851,7 @@ export default function OverlayPage() {
                 amonColor={amonColor}
                 masteryColor={masteryColor}
                 cancelReplayDisplayClearTimer={cancelReplayDisplayClearTimer}
-                overlayCommanderMasteryCatalog={overlayCommanderMasteryCatalog}
+                overlayCommanderMasteryCatalog={overlayLanguageManager.commanderMasteryData()}
                 overlayPrestigeNameCatalog={overlayPrestigeNameCatalog}
                 language={language}
                 overlayLanguageManager={overlayLanguageManager}

@@ -108,7 +108,6 @@ export type StatisticsPayload = JsonObject & {
     detailed_analysis_running?: boolean;
     detailed_parsed_count?: number;
     total_valid_files?: number;
-    commander_mastery?: CommanderMasteryMap | JsonObject;
     prestige_names?: PrestigeNameMap | JsonObject;
     main_handles?: string[] | JsonArray;
 };

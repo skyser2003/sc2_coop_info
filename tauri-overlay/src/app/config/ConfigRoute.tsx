@@ -2402,17 +2402,21 @@ function SettingsEditor({
                         ) {
                             return null;
                         }
+
+                        const randomizerResult = result.randomizer;
+
                         return {
-                            commander: String(result.randomizer.commander),
-                            prestige: Number(result.randomizer.prestige),
-                            prestige_name: String(
-                                result.randomizer.prestige_name,
-                            ),
-                            mastery: result.randomizer.mastery.map((row) => ({
-                                points: Number(row.points),
-                                label: String(row.label),
-                            })),
-                            map_race: String(result.randomizer.map_race),
+                            commander: String(randomizerResult.commander),
+                            prestige: Number(randomizerResult.prestige),
+                            mastery_indices: Array.isArray(
+                                randomizerResult.mastery_indices,
+                            )
+                                ? randomizerResult.mastery_indices.map(
+                                      (value) =>
+                                          value === null ? null : Number(value),
+                                  )
+                                : [],
+                            map_race: String(randomizerResult.map_race),
                         };
                     },
                 },

@@ -2,7 +2,6 @@ import * as React from "react";
 import type { LanguageManager } from "../../i18n/languageManager";
 import { PreviewManager } from "../../previews/PreviewManager";
 import type {
-    LocalizedMasteryNames,
     PrestigeNameMap,
     DisplayValue,
     JsonArray,
@@ -50,7 +49,6 @@ type StatisticsTabProps = {
     languageManager: LanguageManager;
 };
 
-type CommanderMasteryLookup = Record<string, LocalizedMasteryNames>;
 type PrestigeNameLookup = PrestigeNameMap;
 
 type FastestMapPlayer = {
@@ -132,45 +130,11 @@ function readNumberArray(value: JsonValue | undefined): number[] {
     return value.map((item) => Number(item)).filter(Number.isFinite);
 }
 
-function readCommanderMasteryLookup(
-    value: StatisticsPayload["commander_mastery"],
-): CommanderMasteryLookup {
-    if (!isRecord(value)) {
-        return {};
-    }
-
-    const entries = Object.entries(value).map(([commander, labels]) => {
-        if (Array.isArray(labels)) {
-            const english = readStringArray(labels);
-            return [commander, { en: english, ko: [] }] as const;
-        }
-
-        if (!isRecord(labels)) {
-            return [commander, { en: [], ko: [] }] as const;
-        }
-
-        return [
-            commander,
-            {
-                en: readStringArray(labels.en),
-                ko: readStringArray(labels.ko),
-            },
-        ] as const;
-    });
-    return Object.fromEntries(entries);
-}
-
 function masteryLabelsForLanguage(
-    commanderMastery: CommanderMasteryLookup,
+    languageManager: LanguageManager,
     commander: string,
-    language: "en" | "ko",
 ): string[] {
-    const localized = commanderMastery[commander];
-    if (!localized) {
-        return [];
-    }
-
-    return localized[language].length > 0 ? localized[language] : localized.en;
+    return languageManager.commanderMasteryLabels(commander);
 }
 
 function readPrestigeNameLookup(
@@ -471,7 +435,6 @@ function tableHeader(
 function renderCommanderDetails(
     commander: string | null,
     entry: StatsRow | null,
-    statsPayload: StatisticsPayload | null,
     languageManager: LanguageManager,
     previewManager: PreviewManager,
 ) {
@@ -485,16 +448,12 @@ function renderCommanderDetails(
 
     const displayCommander = languageManager.localize(commander);
     const commanderPreview = previewManager.commander(commander);
-    const commanderMastery = readCommanderMasteryLookup(
-        statsPayload.commander_mastery,
-    );
 
     const commanderKey = languageManager.englishLabel(commander);
 
     const masteryLabels = masteryLabelsForLanguage(
-        commanderMastery,
+        languageManager,
         commanderKey,
-        languageManager.currentLanguage(),
     );
     const mastery = entry.Mastery || {};
     const masteryKeys = Object.keys(mastery)
@@ -708,14 +667,9 @@ function fastestMapPrestigeLabel(
 
 function fastestMapMasteryRows(
     player: FastestMapPlayer,
-    commanderMastery: CommanderMasteryLookup,
     languageManager: LanguageManager,
 ): string[] {
-    const labels = masteryLabelsForLanguage(
-        commanderMastery,
-        player.commander,
-        languageManager.currentLanguage(),
-    );
+    const labels = masteryLabelsForLanguage(languageManager, player.commander);
     const values = player.masteries;
     if (values.length === 0 && labels.length === 0) {
         return [];
@@ -748,16 +702,11 @@ function fastestMapMasteryRows(
 
 function renderFastestMapPlayer(
     player: FastestMapPlayer,
-    commanderMastery: CommanderMasteryLookup,
     prestigeNames: PrestigeNameLookup,
     key: string,
     languageManager: LanguageManager,
 ) {
-    const masteryRows = fastestMapMasteryRows(
-        player,
-        commanderMastery,
-        languageManager,
-    );
+    const masteryRows = fastestMapMasteryRows(player, languageManager);
     const masteryLevel =
         player.masteryLevel > 0
             ? `Lv. ${Math.round(player.masteryLevel)}`
@@ -855,9 +804,6 @@ function renderStatsMaps(
     const selectedMapPreview = previewManager.map(selectedMap);
     const fastest = readFastestMapDetails(selectedMapData?.Fastest);
     const players = fastest.players;
-    const commanderMastery = readCommanderMasteryLookup(
-        statsPayload?.commander_mastery,
-    );
     const prestigeNames = readPrestigeNameLookup(statsPayload?.prestige_names);
     const mainHandles = new Set(
         readStringArray(statsPayload?.main_handles)
@@ -1017,14 +963,12 @@ function renderStatsMaps(
                             <div className="stats-map-players">
                                 {renderFastestMapPlayer(
                                     p1,
-                                    commanderMastery,
                                     prestigeNames,
                                     "fastest-p1",
                                     languageManager,
                                 )}
                                 {renderFastestMapPlayer(
                                     p2,
-                                    commanderMastery,
                                     prestigeNames,
                                     "fastest-p2",
                                     languageManager,
@@ -1229,7 +1173,6 @@ function renderStatsCommanders(
                 {renderCommanderDetails(
                     selectedCommander,
                     selectedEntry,
-                    statsPayload,
                     languageManager,
                     previewManager,
                 )}

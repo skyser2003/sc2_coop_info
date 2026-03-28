@@ -31,37 +31,16 @@ pub struct RandomizerRequest {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, TS)]
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
-pub struct RandomizerMasteryRow {
-    pub points: u64,
-    pub label: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, TS)]
-#[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct RandomizerResult {
     pub commander: String,
     pub prestige: u64,
-    pub prestige_name: String,
-    pub mastery: Vec<RandomizerMasteryRow>,
+    pub mastery_indices: Vec<Option<u64>>,
     pub map_race: String,
 }
 
 pub fn catalog_payload() -> OverlayRandomizerCatalog {
     match dictionary_data::tauri_ui_data() {
         Ok(data) => OverlayRandomizerCatalog {
-            commander_mastery: data
-                .commander_mastery
-                .iter()
-                .map(|(key, value)| {
-                    (
-                        key.clone(),
-                        LocalizedLabels {
-                            en: value.en.clone(),
-                            ko: value.ko.clone(),
-                        },
-                    )
-                })
-                .collect(),
             prestige_names: data
                 .prestige_names_json
                 .iter()
@@ -113,8 +92,7 @@ pub fn generate_with_rng(
     let commander_index = rng.usize(0..available_commanders.len());
     let (commander, prestiges) = available_commanders[commander_index];
     let prestige = prestiges[rng.usize(0..prestiges.len())];
-    let mastery_points = generate_masteries(&request.mastery_mode, rng)?;
-    let mastery = mastery_rows(commander, &mastery_points);
+    let mastery_indices = generate_mastery_indices(&request.mastery_mode, rng)?;
 
     let map_name = random_map_name(rng);
     let race_name = RANDOMIZER_RACES[rng.usize(0..RANDOMIZER_RACES.len())].to_string();
@@ -129,10 +107,7 @@ pub fn generate_with_rng(
     Ok(RandomizerResult {
         commander: commander.clone(),
         prestige,
-        prestige_name: dictionary_data::prestige_name(commander, prestige)
-            .map(str::to_string)
-            .unwrap_or_else(|| format!("P{prestige}")),
-        mastery,
+        mastery_indices: mastery_indices.into_iter().collect(),
         map_race: map_race_parts.join(" | "),
     })
 }
@@ -180,46 +155,23 @@ fn random_map_name(rng: &mut Rng) -> String {
     }
 }
 
-fn generate_masteries(mastery_mode: &str, rng: &mut Rng) -> Result<[u64; 6], String> {
-    let mut mastery = [0u64; 6];
+fn generate_mastery_indices(mastery_mode: &str, rng: &mut Rng) -> Result<[Option<u64>; 3], String> {
+    let mut mastery = [None; 3];
     match mastery_mode {
         "all_in" => {
             for pair_index in 0..3 {
                 let chosen = rng.usize(0..2);
-                mastery[pair_index * 2 + chosen] = 30;
+                mastery[pair_index] = Some(if chosen == 0 { 30 } else { 0 });
             }
             Ok(mastery)
         }
         "random" => {
             for pair_index in 0..3 {
-                let chosen = rng.usize(0..31) as u64;
-                mastery[pair_index * 2] = chosen;
-                mastery[pair_index * 2 + 1] = 30 - chosen;
+                mastery[pair_index] = Some(rng.usize(0..31) as u64);
             }
             Ok(mastery)
         }
         "none" => Ok(mastery),
         _ => Err(format!("Unsupported mastery mode: {mastery_mode}")),
     }
-}
-
-fn mastery_rows(commander: &str, points: &[u64; 6]) -> Vec<RandomizerMasteryRow> {
-    let labels = commander_mastery_labels(commander);
-    (0..6)
-        .map(|index| RandomizerMasteryRow {
-            points: points[index],
-            label: labels
-                .get(index)
-                .cloned()
-                .unwrap_or_else(|| format!("Mastery {}", index + 1)),
-        })
-        .collect()
-}
-
-fn commander_mastery_labels(commander: &str) -> Vec<String> {
-    dictionary_data::tauri_ui_data()
-        .ok()
-        .and_then(|data| data.commander_mastery.get(commander))
-        .map(|labels| labels.en.clone())
-        .unwrap_or_default()
 }

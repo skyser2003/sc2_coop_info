@@ -1,14 +1,15 @@
-import { LanguageManager } from "../../i18n/languageManager";
+import {
+    type CommanderMasteryData,
+    LanguageManager,
+} from "../../i18n/languageManager";
 import GameStatChart, { ReplayChartVisible } from "./GameStatChart";
 import GameStatText from "./GameStatText";
-import type {
-    OverlayRandomizerCatalog,
-    OverlayReplayPayload,
-} from "../../../bindings/overlay";
+import type { OverlayReplayPayload } from "../../../bindings/overlay";
 
-type OverlayCommanderMasteryCatalog =
-    OverlayRandomizerCatalog["commander_mastery"];
-type OverlayPrestigeNameCatalog = OverlayRandomizerCatalog["prestige_names"];
+type OverlayPrestigeNameCatalog = Record<
+    string,
+    { en: string[]; ko: string[] }
+>;
 
 export default function GameStatMode({
     payload,
@@ -39,7 +40,7 @@ export default function GameStatMode({
     amonColor: string | null;
     masteryColor: string | null;
     cancelReplayDisplayClearTimer: () => void;
-    overlayCommanderMasteryCatalog: OverlayCommanderMasteryCatalog;
+    overlayCommanderMasteryCatalog: CommanderMasteryData;
     overlayPrestigeNameCatalog: OverlayPrestigeNameCatalog;
     language: string;
     overlayLanguageManager: LanguageManager;

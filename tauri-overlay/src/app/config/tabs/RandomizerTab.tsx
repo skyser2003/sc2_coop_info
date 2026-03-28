@@ -1,11 +1,7 @@
 import * as React from "react";
 import type { LanguageManager } from "../../i18n/languageManager";
 import { PreviewManager } from "../../previews/PreviewManager";
-import type {
-    CommanderMasteryEntry,
-    CommanderMasteryMap,
-    PrestigeNameMap,
-} from "../types";
+import type { PrestigeNameMap } from "../types";
 import SelectionPreview from "./SelectionPreview";
 
 type RandomizerChoices = Record<string, boolean>;
@@ -16,19 +12,12 @@ type RandomizerDraft = {
 
 type RandomizerCatalog = {
     prestige_names: PrestigeNameMap;
-    commander_mastery: CommanderMasteryMap;
-};
-
-type RandomizerMasteryRow = {
-    points: number;
-    label: string;
 };
 
 type RandomizerResult = {
     commander: string;
     prestige: number;
-    prestige_name: string;
-    mastery: RandomizerMasteryRow[];
+    mastery_indices: Array<number | null>;
     map_race: string;
 };
 
@@ -123,19 +112,34 @@ function prestigeLabelForLanguage(
     );
 }
 
-function masteryLabelsForLanguage(
-    masteryEntry: CommanderMasteryEntry | undefined,
-    language: "en" | "ko",
-): string[] {
-    if (!masteryEntry) {
-        return [];
+function masteryRowsFromIndices(
+    commander: string,
+    masteryIndices: Array<number | null>,
+    languageManager: LanguageManager,
+): Array<{ points: number; label: string }> {
+    const labels = languageManager.commanderMasteryLabels(commander);
+    const rows: Array<{ points: number; label: string }> = [];
+
+    for (let pairIndex = 0; pairIndex < 3; pairIndex += 1) {
+        const selected = masteryIndices[pairIndex];
+        const leftIndex = pairIndex * 2;
+        const rightIndex = leftIndex + 1;
+        const leftPoints =
+            selected === null || selected === undefined ? 0 : selected;
+        const rightPoints =
+            selected === null || selected === undefined ? 0 : 30 - selected;
+
+        rows.push({
+            points: leftPoints,
+            label: labels[leftIndex] || `Mastery ${leftIndex + 1}`,
+        });
+        rows.push({
+            points: rightPoints,
+            label: labels[rightIndex] || `Mastery ${rightIndex + 1}`,
+        });
     }
-    if (Array.isArray(masteryEntry)) {
-        return masteryEntry;
-    }
-    return masteryEntry[language].length > 0
-        ? masteryEntry[language]
-        : masteryEntry.en;
+
+    return rows;
 }
 
 export default function RandomizerTab({
@@ -185,15 +189,16 @@ export default function RandomizerTab({
         () => previewManager.map(resultMapRace.map),
         [previewManager, resultMapRace.map],
     );
-    const resultMasteryLabels = React.useMemo(
+    const resultMasteryRows = React.useMemo(
         () =>
             result
-                ? masteryLabelsForLanguage(
-                      catalog?.commander_mastery[result.commander],
-                      languageManager.currentLanguage(),
+                ? masteryRowsFromIndices(
+                      result.commander,
+                      result.mastery_indices,
+                      languageManager,
                   )
                 : [],
-        [catalog, languageManager, result],
+        [languageManager, result],
     );
 
     function setChoice(commander: string, prestige: number, checked: boolean) {
@@ -477,9 +482,7 @@ export default function RandomizerTab({
                         ) : null}
                         <div className="stats-block randomizer-result-body">
                             {result ? (
-                                result.mastery.map((row, index) => {
-                                    const localizedLabel =
-                                        resultMasteryLabels[index] || row.label;
+                                resultMasteryRows.map((row, index) => {
                                     return (
                                         <div
                                             key={`${row.label}-${index}`}
@@ -495,7 +498,7 @@ export default function RandomizerTab({
                                                     " ",
                                                 )}
                                             </span>
-                                            <span>{` ${localizedLabel}`}</span>
+                                            <span>{` ${row.label}`}</span>
                                         </div>
                                     );
                                 })

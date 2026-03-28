@@ -1206,7 +1206,6 @@ impl ReplayAnalysis {
         #[derive(Serialize)]
         struct RebuildAnalysisPayload {
             analysis: Value,
-            commander_mastery: Value,
             prestige_names: Value,
         }
 
@@ -1915,13 +1914,8 @@ impl ReplayAnalysis {
             player_data.len()
         );
 
-        let (commander_mastery, prestige_names) = super::dictionary_data::tauri_ui_data()
-            .map(|data| {
-                (
-                    data.commander_mastery.clone(),
-                    data.prestige_names_json.clone(),
-                )
-            })
+        let prestige_names = super::dictionary_data::tauri_ui_data()
+            .map(|data| data.prestige_names_json.clone())
             .unwrap_or_default();
 
         let unit_data = if include_detailed {
@@ -2010,7 +2004,6 @@ impl ReplayAnalysis {
         );
         report_value(&RebuildAnalysisPayload {
             analysis,
-            commander_mastery: report_value(&commander_mastery),
             prestige_names: report_value(&prestige_names),
         })
     }
@@ -2495,10 +2488,6 @@ impl ReplayAnalysis {
             main_players,
             main_handles,
             analysis,
-            commander_mastery: payload
-                .get("commander_mastery")
-                .cloned()
-                .unwrap_or_else(|| Value::Object(Default::default())),
             prestige_names: payload
                 .get("prestige_names")
                 .cloned()
@@ -3267,9 +3256,6 @@ impl ReplayAnalysis {
                             Self::rebuild_analysis_payload(&filtered_replays, include_detailed);
                         if let Some(analysis) = filtered_payload.get("analysis") {
                             response["analysis"] = analysis.clone();
-                        }
-                        if let Some(commander_mastery) = filtered_payload.get("commander_mastery") {
-                            response["commander_mastery"] = commander_mastery.clone();
                         }
                         if let Some(prestige_names) = filtered_payload.get("prestige_names") {
                             response["prestige_names"] = prestige_names.clone();

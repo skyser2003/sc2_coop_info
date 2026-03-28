@@ -1,4 +1,5 @@
 import languageData from "./language_data.json";
+import commanderMasteryDataJson from "./commander_mastery.json";
 import unitCompositionData from "./unit_composition.json";
 import unitTranslationData from "./unit_translation_data.json";
 
@@ -19,10 +20,20 @@ type UnitTranslationEntry = {
     ko: string;
 };
 type UnitTranslationData = Record<string, UnitTranslationEntry>;
+export type LocalizedCommanderMasteryLabels = {
+    en: string[];
+    ko: string[];
+};
+export type CommanderMasteryData = Record<
+    string,
+    LocalizedCommanderMasteryLabels
+>;
 
 const DEFAULT_LANGUAGE: AppLanguage = "en";
 const ENGLISH_LANGUAGE: AppLanguage = "en";
 const entries: LanguageData = languageData as LanguageData;
+const commanderMasteryEntries: CommanderMasteryData =
+    commanderMasteryDataJson as CommanderMasteryData;
 const unitCompositionEntries: UnitCompositionData =
     unitCompositionData as UnitCompositionData;
 const unitEntries: UnitTranslationData =
@@ -237,6 +248,21 @@ export class LanguageManager {
             return "";
         }
         return parts.join(" | ");
+    }
+
+    commanderMasteryLabels(commander: string): string[] {
+        const labels = commanderMasteryEntries[commander];
+        if (labels === undefined) {
+            return [];
+        }
+
+        return labels[this.language].length > 0
+            ? labels[this.language]
+            : labels.en;
+    }
+
+    commanderMasteryData(): CommanderMasteryData {
+        return commanderMasteryEntries;
     }
 }
 

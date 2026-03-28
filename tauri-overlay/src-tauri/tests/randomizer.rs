@@ -3,16 +3,11 @@ use sco_tauri_overlay::randomizer::{catalog_payload, generate_with_rng, Randomiz
 use serde_json::json;
 
 #[test]
-fn randomizer_catalog_exposes_prestige_and_mastery_metadata() {
+fn randomizer_catalog_exposes_prestige_metadata() {
     let payload = catalog_payload();
 
     assert!(!payload.prestige_names.is_empty());
-    assert!(!payload.commander_mastery.is_empty());
     assert_eq!(payload.prestige_names["Abathur"].en[0], "Evolution Master");
-    assert_eq!(
-        payload.commander_mastery["Fenix"].en[0],
-        "Fenix Suit Attack Speed"
-    );
 }
 
 #[test]
@@ -30,8 +25,11 @@ fn randomizer_defaults_to_p0_when_saved_choices_are_empty() {
 
     assert_eq!(result.prestige, 0);
     assert_eq!(result.map_race, "");
-    assert_eq!(result.mastery.len(), 6);
-    assert_eq!(result.mastery.iter().map(|row| row.points).sum::<u64>(), 90);
+    assert_eq!(result.mastery_indices.len(), 3);
+    assert!(result
+        .mastery_indices
+        .iter()
+        .all(|value| matches!(value, Some(0 | 30))));
 }
 
 #[test]
@@ -51,8 +49,7 @@ fn randomizer_respects_selected_choices_and_none_mode() {
 
     assert_eq!(result.commander, "Fenix");
     assert_eq!(result.prestige, 2);
-    assert_eq!(result.prestige_name, "Network Administrator");
-    assert!(result.mastery.iter().all(|row| row.points == 0));
+    assert_eq!(result.mastery_indices, vec![None, None, None]);
     assert!(!result.map_race.is_empty());
     assert!(!result.map_race.contains('|'));
 }
@@ -78,11 +75,8 @@ fn randomizer_all_in_mode_assigns_one_side_of_each_mastery_pair() {
         result.map_race.as_str(),
         "Terran" | "Protoss" | "Zerg"
     ));
-    for pair_index in 0..3 {
-        let left = result.mastery[pair_index * 2].points;
-        let right = result.mastery[pair_index * 2 + 1].points;
-        assert_eq!(left + right, 30);
-        assert!(matches!(left, 0 | 30));
-        assert!(matches!(right, 0 | 30));
-    }
+    assert!(result
+        .mastery_indices
+        .iter()
+        .all(|value| matches!(value, Some(0 | 30))));
 }

@@ -28,7 +28,6 @@ pub struct MonitorOption {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct OverlayRandomizerCatalog {
-    pub commander_mastery: BTreeMap<String, LocalizedLabels>,
     pub prestige_names: BTreeMap<String, LocalizedLabels>,
 }
 

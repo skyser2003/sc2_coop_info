@@ -1,9 +1,9 @@
 import { Fragment, ReactNode, useEffect, useMemo, useState } from "react";
-import { LanguageManager } from "../../i18n/languageManager";
-import type {
-    OverlayRandomizerCatalog,
-    OverlayReplayPayload,
-} from "../../../bindings/overlay";
+import {
+    type CommanderMasteryData,
+    LanguageManager,
+} from "../../i18n/languageManager";
+import type { OverlayReplayPayload } from "../../../bindings/overlay";
 
 const showmutators = true;
 const maxUnits = 5;
@@ -32,9 +32,10 @@ const bonusNumbers: Record<string, number> = {
 };
 
 type LocalizableValue = string | number | boolean | null | undefined;
-type OverlayCommanderMasteryCatalog =
-    OverlayRandomizerCatalog["commander_mastery"];
-type OverlayPrestigeNameCatalog = OverlayRandomizerCatalog["prestige_names"];
+type OverlayPrestigeNameCatalog = Record<
+    string,
+    { en: string[]; ko: string[] }
+>;
 type IconPayload = OverlayReplayPayload["mainIcons"];
 type UnitStatsMap = OverlayReplayPayload["mainUnits"];
 
@@ -364,7 +365,7 @@ export default function GameStatText({
     amonColor: string | null;
     masteryColor: string | null;
     cancelReplayDisplayClearTimer: () => void;
-    overlayCommanderMasteryCatalog: OverlayCommanderMasteryCatalog;
+    overlayCommanderMasteryCatalog: CommanderMasteryData;
     overlayPrestigeNameCatalog: OverlayPrestigeNameCatalog;
     language: string;
     overlayLanguageManager: LanguageManager;

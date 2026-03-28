@@ -2584,7 +2584,6 @@ fn spawn_analysis_task(
         guard.games = 0;
         guard.main_players = Vec::new();
         guard.main_handles = Vec::new();
-        guard.commander_mastery = Value::Object(Default::default());
         guard.prestige_names = Value::Object(Default::default());
         if guard.message.is_empty() {
             guard.message = analysis_started_message(mode);
@@ -3946,7 +3945,6 @@ pub(crate) fn apply_rebuild_snapshot(
     stats.main_players = snapshot.main_players;
     stats.main_handles = snapshot.main_handles;
     stats.analysis = Some(snapshot.analysis);
-    stats.commander_mastery = snapshot.commander_mastery;
     stats.prestige_names = snapshot.prestige_names;
     stats.message = snapshot.message;
 
@@ -4011,7 +4009,6 @@ pub struct StatsState {
     pub detailed_analysis_running: bool,
     pub detailed_analysis_status: String,
     pub detailed_analysis_atstart: bool,
-    pub commander_mastery: Value,
     pub prestige_names: Value,
     pub message: String,
 }
@@ -4023,7 +4020,6 @@ pub struct StatsSnapshot {
     pub main_players: Vec<String>,
     pub main_handles: Vec<String>,
     pub analysis: Value,
-    pub commander_mastery: Value,
     pub prestige_names: Value,
     pub message: String,
 }
@@ -4045,7 +4041,6 @@ impl Default for StatsState {
             detailed_analysis_running: false,
             detailed_analysis_status: analysis_status_text(AnalysisMode::Detailed, "not started"),
             detailed_analysis_atstart: false,
-            commander_mastery: Value::Object(Default::default()),
             prestige_names: Value::Object(Default::default()),
             message: "No parsed statistics available yet.".to_string(),
         }
@@ -4062,20 +4057,11 @@ impl StatsState {
 
     fn as_payload(&self) -> Value {
         let scan_progress = replay_scan_progress().as_json();
-        let (
-            analysis,
-            main_players,
-            main_handles,
-            commander_mastery,
-            prestige_names,
-            games,
-            message,
-        ) = if self.ready {
+        let (analysis, main_players, main_handles, prestige_names, games, message) = if self.ready {
             (
                 self.analysis.clone(),
                 self.main_players.clone(),
                 self.main_handles.clone(),
-                self.commander_mastery.clone(),
                 self.prestige_names.clone(),
                 self.games,
                 self.message.clone(),
@@ -4085,7 +4071,6 @@ impl StatsState {
                 Some(empty_stats_payload()),
                 Vec::new(),
                 Vec::new(),
-                Value::Object(Default::default()),
                 Value::Object(Default::default()),
                 0,
                 if self.message.is_empty() {
@@ -4110,7 +4095,6 @@ impl StatsState {
             detailed_analysis_running: bool,
             detailed_analysis_status: String,
             detailed_analysis_atstart: bool,
-            commander_mastery: Value,
             prestige_names: Value,
             message: String,
             scan_progress: Value,
@@ -4129,7 +4113,6 @@ impl StatsState {
             detailed_analysis_running: self.detailed_analysis_running,
             detailed_analysis_status: self.detailed_analysis_status.clone(),
             detailed_analysis_atstart: self.detailed_analysis_atstart,
-            commander_mastery,
             prestige_names,
             message,
             scan_progress,
@@ -4577,7 +4560,6 @@ async fn config_request(
                 "delete_parsed_data" => {
                     stats.ready = false;
                     stats.analysis = Some(empty_stats_payload());
-                    stats.commander_mastery = Value::Object(Default::default());
                     stats.prestige_names = Value::Object(Default::default());
                     set_analysis_terminal_status(&mut stats, AnalysisMode::Simple, "not started");
                     set_analysis_terminal_status(&mut stats, AnalysisMode::Detailed, "not started");

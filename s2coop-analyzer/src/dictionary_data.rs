@@ -83,14 +83,6 @@ pub struct LocalizedMutatorDescription {
 }
 
 transparent_json_wrapper!(MutatorsJson, IndexMap<String, LocalizedMutatorDescription>);
-
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-pub struct LocalizedMasteryNames {
-    pub en: Vec<String>,
-    pub ko: Vec<String>,
-}
-
-transparent_json_wrapper!(CommanderMasteryJson, IndexMap<String, LocalizedMasteryNames>);
 transparent_json_wrapper!(PrestigeNamesJson, IndexMap<String, LocalizedPrestigeNames>);
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -169,7 +161,6 @@ pub struct CacheGenerationData<'a> {
 
 #[derive(Clone, Copy, Debug)]
 pub struct TauriUiData<'a> {
-    pub commander_mastery: &'a CommanderMasteryJson,
     pub prestige_names_json: &'a PrestigeNamesJson,
     pub prestige_names: &'a HashMap<String, HashMap<i64, String>>,
     pub prestige_names_with_u64_levels: &'a HashMap<String, HashMap<u64, String>>,
@@ -186,7 +177,6 @@ pub struct TauriUiData<'a> {
 
 #[derive(Clone, Debug, Default)]
 pub struct Sc2DictionaryData {
-    pub commander_mastery: CommanderMasteryJson,
     pub prestige_names_json: PrestigeNamesJson,
     pub prestige_names: HashMap<String, HashMap<i64, String>>,
     pub prestige_names_with_u64_levels: HashMap<String, HashMap<u64, String>>,
@@ -265,7 +255,6 @@ impl Sc2DictionaryData {
 
     fn tauri_ui_data(&self) -> TauriUiData<'_> {
         TauriUiData {
-            commander_mastery: &self.commander_mastery,
             prestige_names_json: &self.prestige_names_json,
             prestige_names: &self.prestige_names,
             prestige_names_with_u64_levels: &self.prestige_names_with_u64_levels,
@@ -522,8 +511,6 @@ fn parse_weekly_mutations(data: &WeeklyMutationsJson) -> HashMap<String, WeeklyM
 fn load_shared_dictionary_data_impl(
     data_dir: &PathBuf,
 ) -> Result<Sc2DictionaryData, DictionaryDataError> {
-    let commander_mastery =
-        load_dictionary_json::<CommanderMasteryJson>(&data_dir, "commander_mastery.json")?;
     let prestige_names_json =
         load_dictionary_json::<PrestigeNamesJson>(&data_dir, "prestige_names.json")?;
     let prestige_names = parse_prestige_names_i64(&prestige_names_json)?;
@@ -612,7 +599,6 @@ fn load_shared_dictionary_data_impl(
     let map_id_to_english_lookup = build_map_id_to_english_lookup(&map_names);
 
     Ok(Sc2DictionaryData {
-        commander_mastery,
         prestige_names_json,
         prestige_names,
         prestige_names_with_u64_levels,
@@ -760,10 +746,6 @@ pub fn unit_names() -> &'static UnitNamesJson {
 
 pub fn unit_add_kills_to() -> &'static UnitAddKillsToJson {
     cache_generation_data_or_default().unit_add_kills_to
-}
-
-pub fn commander_mastery() -> &'static CommanderMasteryJson {
-    tauri_ui_data_or_default().commander_mastery
 }
 
 pub fn prestige_names() -> &'static PrestigeNamesJson {

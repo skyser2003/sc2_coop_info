@@ -20,7 +20,7 @@ export type OverlayPlayerInfoPayload = { data: { [key in string]?: OverlayPlayer
 
 export type OverlayPlayerInfoRow = { "kind": "no_games", note?: string, } | { "kind": "stats", wins: number, losses: number, apm: number, commander: string, frequency: number, kills: number, last_seen_relative: string, note?: string, };
 
-export type OverlayRandomizerCatalog = { commander_mastery: { [key in string]?: LocalizedLabels }, prestige_names: { [key in string]?: LocalizedLabels }, };
+export type OverlayRandomizerCatalog = { prestige_names: { [key in string]?: LocalizedLabels }, };
 
 export type OverlayReplayPayload = { file: string, map_name: string, main: string, ally: string, mainCommander: string, allyCommander: string, mainAPM: number, allyAPM: number, mainkills: number, allykills: number, result: string, difficulty: string, length: number, "B+": number, weekly: boolean, weekly_name?: string, extension: boolean, mainCommanderLevel: number, allyCommanderLevel: number, mainMasteries: Array<number>, allyMasteries: Array<number>, mainUnits: { [key in string]?: [number, number, number, number] }, allyUnits: { [key in string]?: [number, number, number, number] }, amon_units: { [key in string]?: [number, number, number, number] }, mainIcons: { [key in string]?: OverlayIconValue }, allyIcons: { [key in string]?: OverlayIconValue }, mutators: Array<string>, bonus: Array<number>, bonus_total?: number, player_stats?: { [key in string]?: ReplayPlayerSeries }, mainPrestige: string, allyPrestige: string, Victory?: number, Defeat?: number, Commander?: string, Prestige?: string, newReplay?: boolean, fastest?: boolean, comp: string, };
 
@@ -30,8 +30,6 @@ export type OverlayScreenshotResultPayload = { ok: boolean, path: string, messag
 
 export type PerformanceVisibilityPayload = { visible: boolean, };
 
-export type RandomizerMasteryRow = { points: bigint, label: string, };
-
-export type RandomizerResult = { commander: string, prestige: bigint, prestige_name: string, mastery: Array<RandomizerMasteryRow>, map_race: string, };
+export type RandomizerResult = { commander: string, prestige: bigint, mastery_indices: Array<bigint | null>, map_race: string, };
 
 export type ReplayPlayerSeries = { name: string, army: Array<number>, supply: Array<number>, killed: Array<number>, mining: Array<number>, };
