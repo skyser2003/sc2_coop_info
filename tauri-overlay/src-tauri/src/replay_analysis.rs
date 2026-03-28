@@ -7,6 +7,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
 use s2coop_analyzer::detailed_replay_analysis::{
     analyze_replay_file, cache_hidden_created_lost_units,
 };
+use s2coop_analyzer::dictionary_data;
 use s2coop_analyzer::tauri_replay_analysis_impl::{
     ParsedReplayMessage, ParsedReplayPlayer, ReplayReport,
 };
@@ -21,7 +22,6 @@ use std::sync::OnceLock;
 use std::sync::{Arc, Mutex, TryLockError};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use crate::dictionary_data;
 use crate::path_manager::get_cache_path;
 use crate::{
     build_amon_unit_data, build_commander_unit_data, canonicalize_coop_map_id,
@@ -174,7 +174,7 @@ fn record_prestige_count(target: &mut [u64; 4], raw_prestige: u64) {
 
 fn fastest_map_prestige_name(commander: &str, prestige: u64) -> String {
     let sanitized_commander = sanitize_replay_text(commander);
-    super::dictionary_data::prestige_name(&sanitized_commander, prestige)
+    dictionary_data::prestige_name(&sanitized_commander, prestige)
         .map(|value| value.to_string())
         .unwrap_or_else(|| format!("P{prestige}"))
 }

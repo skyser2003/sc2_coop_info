@@ -1,10 +1,10 @@
 use fastrand::Rng;
+use s2coop_analyzer::dictionary_data;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use ts_rs::TS;
 
-use crate::dictionary_data;
 use crate::shared_types::{LocalizedLabels, OverlayRandomizerCatalog};
 
 const RANDOMIZER_RACES: [&str; 3] = ["Terran", "Protoss", "Zerg"];

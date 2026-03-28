@@ -5,6 +5,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     GenerateCacheConfig,
 };
 use s2coop_analyzer::detailed_replay_analysis::calculate_replay_hash;
+use s2coop_analyzer::dictionary_data;
 use serde::Serialize;
 use serde_json::{self, Map, Value};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -30,7 +31,6 @@ use winreg::enums::HKEY_CURRENT_USER;
 use winreg::RegKey;
 
 mod app_settings;
-mod dictionary_data;
 pub mod logging;
 pub mod overlay_info;
 pub mod path_manager;
