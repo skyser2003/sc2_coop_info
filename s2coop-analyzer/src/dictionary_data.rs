@@ -60,6 +60,21 @@ transparent_json_wrapper!(UnitNamesJson, IndexMap<String, String>);
 transparent_json_wrapper!(UnitsInWavesJson, Vec<String>);
 transparent_json_wrapper!(UnitsToStatsJson, Vec<String>);
 
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct MutatorBrutalPlusRangeJson {
+    pub min: u64,
+    pub max: u64,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct MutatorBrutalPlusEntryJson {
+    pub brutal_plus: u8,
+    pub mutator_points: MutatorBrutalPlusRangeJson,
+    pub mutator_count: MutatorBrutalPlusRangeJson,
+}
+
+transparent_json_wrapper!(MutatorBrutalPlusJson, Vec<MutatorBrutalPlusEntryJson>);
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct LocalizedPrestigeNames {
     pub en: Vec<String>,
@@ -141,6 +156,7 @@ pub struct CacheGenerationData<'a> {
     pub mutators_ui: &'a Vec<String>,
     pub mutator_ids: &'a MutatorIdsJson,
     pub cached_mutators: &'a CachedMutatorsJson,
+    pub mutator_brutal_plus: &'a MutatorBrutalPlusJson,
     pub amon_player_ids: &'a AmonPlayerIdsJson,
     pub replay_analysis_data: &'a ReplayAnalysisDataJson,
     pub co_mastery_upgrades: &'a CoMasteryUpgradesJson,
@@ -200,6 +216,7 @@ pub struct Sc2DictionaryData {
     pub unit_base_costs_as_tuples: HashMap<String, HashMap<String, Vec<u64>>>,
     pub mutator_ids: MutatorIdsJson,
     pub cached_mutators: CachedMutatorsJson,
+    pub mutator_brutal_plus: MutatorBrutalPlusJson,
     pub weekly_mutations_json: WeeklyMutationsJson,
     pub weekly_mutation_date_json: WeeklyMutationDateJson,
     pub weekly_mutations_as_sets: HashMap<String, WeeklyMutation>,
@@ -234,6 +251,7 @@ impl Sc2DictionaryData {
             mutators_ui: &self.mutators_ui,
             mutator_ids: &self.mutator_ids,
             cached_mutators: &self.cached_mutators,
+            mutator_brutal_plus: &self.mutator_brutal_plus,
             amon_player_ids: &self.amon_player_ids,
             replay_analysis_data: &self.replay_analysis_data,
             co_mastery_upgrades: &self.co_mastery_upgrades,
@@ -508,6 +526,53 @@ fn parse_weekly_mutations(data: &WeeklyMutationsJson) -> HashMap<String, WeeklyM
         .collect()
 }
 
+fn validate_mutator_brutal_plus(data: &MutatorBrutalPlusJson) -> Result<(), DictionaryDataError> {
+    let mut expected_level: u8 = 1;
+
+    for entry in data.iter() {
+        if entry.brutal_plus != expected_level {
+            return Err(DictionaryDataError::InvalidDictionaryData {
+                file: "mutator_brutal_plus.json",
+                message: format!(
+                    "expected brutal_plus level {expected_level}, found {}",
+                    entry.brutal_plus
+                ),
+            });
+        }
+
+        if entry.mutator_points.min > entry.mutator_points.max {
+            return Err(DictionaryDataError::InvalidDictionaryData {
+                file: "mutator_brutal_plus.json",
+                message: format!(
+                    "B+{} mutator_points min {} exceeds max {}",
+                    entry.brutal_plus, entry.mutator_points.min, entry.mutator_points.max
+                ),
+            });
+        }
+
+        if entry.mutator_count.min > entry.mutator_count.max {
+            return Err(DictionaryDataError::InvalidDictionaryData {
+                file: "mutator_brutal_plus.json",
+                message: format!(
+                    "B+{} mutator_count min {} exceeds max {}",
+                    entry.brutal_plus, entry.mutator_count.min, entry.mutator_count.max
+                ),
+            });
+        }
+
+        expected_level = expected_level.saturating_add(1);
+    }
+
+    if expected_level != 7 {
+        return Err(DictionaryDataError::InvalidDictionaryData {
+            file: "mutator_brutal_plus.json",
+            message: format!("expected Brutal+ levels 1 through 6, found {}", data.len()),
+        });
+    }
+
+    Ok(())
+}
+
 fn load_shared_dictionary_data_impl(
     data_dir: &PathBuf,
 ) -> Result<Sc2DictionaryData, DictionaryDataError> {
@@ -545,6 +610,9 @@ fn load_shared_dictionary_data_impl(
     let mutator_ids = load_dictionary_json::<MutatorIdsJson>(&data_dir, "mutator_ids.json")?;
     let cached_mutators =
         load_dictionary_json::<CachedMutatorsJson>(&data_dir, "cached_mutators.json")?;
+    let mutator_brutal_plus =
+        load_dictionary_json::<MutatorBrutalPlusJson>(&data_dir, "mutator_brutal_plus.json")?;
+    validate_mutator_brutal_plus(&mutator_brutal_plus)?;
     let weekly_mutations_json =
         load_dictionary_json::<WeeklyMutationsJson>(&data_dir, "weekly_mutations.json")?;
     let weekly_mutation_date_json =
@@ -622,6 +690,7 @@ fn load_shared_dictionary_data_impl(
         unit_base_costs_as_tuples,
         mutator_ids,
         cached_mutators,
+        mutator_brutal_plus,
         weekly_mutations_json,
         weekly_mutation_date_json,
         weekly_mutations_as_sets,
@@ -677,6 +746,7 @@ fn add_default_data_dir_ancestors(
 fn required_dictionary_files_present(path: &Path) -> bool {
     path.is_dir()
         && path.join("mutators_exclude_ids.json").is_file()
+        && path.join("mutator_brutal_plus.json").is_file()
         && path.join("replay_analysis_data.json").is_file()
 }
 
@@ -877,6 +947,10 @@ pub fn mutator_ids() -> &'static MutatorIdsJson {
 
 pub fn cached_mutators() -> &'static CachedMutatorsJson {
     &shared_dictionary_data_or_default().cached_mutators
+}
+
+pub fn mutator_brutal_plus() -> &'static MutatorBrutalPlusJson {
+    &shared_dictionary_data_or_default().mutator_brutal_plus
 }
 
 pub fn weekly_mutations() -> &'static WeeklyMutationsJson {

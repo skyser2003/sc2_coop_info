@@ -1,0 +1,68 @@
+[
+  {
+    "brutal_plus": 1,
+    "mutator_points": {
+      "min": 4,
+      "max": 6
+    },
+    "mutator_count": {
+      "min": 2,
+      "max": 3
+    }
+  },
+  {
+    "brutal_plus": 2,
+    "mutator_points": {
+      "min": 7,
+      "max": 8
+    },
+    "mutator_count": {
+      "min": 2,
+      "max": 3
+    }
+  },
+  {
+    "brutal_plus": 3,
+    "mutator_points": {
+      "min": 9,
+      "max": 10
+    },
+    "mutator_count": {
+      "min": 2,
+      "max": 3
+    }
+  },
+  {
+    "brutal_plus": 4,
+    "mutator_points": {
+      "min": 11,
+      "max": 12
+    },
+    "mutator_count": {
+      "min": 2,
+      "max": 3
+    }
+  },
+  {
+    "brutal_plus": 5,
+    "mutator_points": {
+      "min": 15,
+      "max": 16
+    },
+    "mutator_count": {
+      "min": 2,
+      "max": 4
+    }
+  },
+  {
+    "brutal_plus": 6,
+    "mutator_points": {
+      "min": 19,
+      "max": 20
+    },
+    "mutator_count": {
+      "min": 2,
+      "max": 4
+    }
+  }
+]
