@@ -48,11 +48,40 @@ fn decode_html_entities(value: &str) -> String {
         .replace("&apos;", "'")
 }
 
-fn mutator_icon_name(name: &str) -> &str {
-    match name {
+fn mutator_icon_name(name_en: &str) -> &str {
+    match name_en {
         "Moment Of Silence" => "Moment of Silence",
-        _ => name,
+        _ => name_en,
     }
+}
+
+fn canonical_mutator_id(mutator: &str) -> String {
+    let canonical = if dictionary_data::mutator_data(mutator).is_some() {
+        mutator.to_string()
+    } else if let Some(mutator_id) = dictionary_data::mutator_id_from_name(mutator) {
+        mutator_id.to_string()
+    } else {
+        mutator.to_string()
+    };
+
+    match canonical.as_str() {
+        "HeroesfromtheStormOld" => "HeroesFromTheStorm".to_string(),
+        "AfraidOfTheDark" => "UberDarkness".to_string(),
+        _ => canonical,
+    }
+}
+
+fn mutator_display_name_en(mutator: &str) -> String {
+    let mutator_id = canonical_mutator_id(mutator);
+    dictionary_data::mutator_data(&mutator_id)
+        .map(|value| decode_html_entities(&value.name_en))
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            dictionary_data::mutator_ids()
+                .get(&mutator_id)
+                .map(|value| value.to_string())
+        })
+        .unwrap_or_default()
 }
 
 fn accurate_length_seconds_from_cache(value: &CacheNumericValue, fallback: u64) -> f64 {
@@ -218,6 +247,7 @@ fn report_value<T: serde::Serialize>(value: &T) -> Value {
 
 #[derive(Serialize)]
 struct ReplayAnalysisMutatorRow {
+    id: String,
     name: String,
     #[serde(rename = "nameEn")]
     name_en: String,
@@ -787,7 +817,7 @@ pub fn replay_info_from_cache_entry(entry: &CacheReplayEntry) -> ReplayInfo {
     let normalized_mutators = entry
         .mutators
         .iter()
-        .map(|mutator| normalize_mutator_name(mutator))
+        .map(|mutator| normalize_mutator_id(mutator))
         .collect::<Vec<_>>();
     let weekly_name = if entry.weekly {
         resolve_weekly_mutation_name(&entry.map_name, &normalized_mutators)
@@ -895,7 +925,7 @@ fn replay_info_from_report(path: &Path, report: &ReplayReport) -> ReplayInfo {
     let normalized_mutators = report
         .mutators
         .iter()
-        .map(|mutator| normalize_mutator_name(mutator))
+        .map(|mutator| normalize_mutator_id(mutator))
         .collect::<Vec<_>>();
     let weekly_name = if report.weekly {
         resolve_weekly_mutation_name(&report.map_name, &normalized_mutators)
@@ -2241,10 +2271,10 @@ impl ReplayAnalysis {
                 let mutators = weekly_data
                     .mutators
                     .iter()
-                    .map(|mutator_name| {
+                    .map(|mutator| {
+                        let mutator_id = canonical_mutator_id(mutator);
                         let (name_en, name_ko, description_en, description_ko) =
-                            dictionary_data::mutators()
-                                .get(mutator_name)
+                            dictionary_data::mutator_data(&mutator_id)
                                 .map(|value| {
                                     (
                                         decode_html_entities(&value.name_en),
@@ -2254,15 +2284,23 @@ impl ReplayAnalysis {
                                     )
                                 })
                                 .unwrap_or_default();
+                        let fallback_name_en = mutator_display_name_en(&mutator_id);
+                        let icon_name = if name_en.is_empty() {
+                            mutator_icon_name(&fallback_name_en).to_string()
+                        } else {
+                            mutator_icon_name(&name_en).to_string()
+                        };
+                        let display_name_en = if name_en.is_empty() {
+                            fallback_name_en
+                        } else {
+                            name_en
+                        };
                         report_value(&ReplayAnalysisMutatorRow {
-                            name: mutator_name.to_string(),
-                            name_en: if name_en.is_empty() {
-                                mutator_name.to_string()
-                            } else {
-                                name_en
-                            },
+                            id: mutator_id.clone(),
+                            name: display_name_en.clone(),
+                            name_en: display_name_en,
                             name_ko,
-                            icon_name: mutator_icon_name(mutator_name).to_string(),
+                            icon_name,
                             description_en,
                             description_ko,
                         })
@@ -3374,10 +3412,8 @@ fn normalize_lookup_key(value: &str) -> String {
         .collect()
 }
 
-fn normalize_mutator_name(mutator: &str) -> String {
-    mutator
-        .replace("Heroes from the Storm (old)", "Heroes from the Storm")
-        .replace("Extreme Caution", "Afraid of the Dark")
+fn normalize_mutator_id(mutator: &str) -> String {
+    canonical_mutator_id(mutator)
 }
 
 fn resolve_weekly_mutation_name(map_name: &str, mutators: &[String]) -> Option<String> {
@@ -3392,7 +3428,7 @@ fn resolve_weekly_mutation_name(map_name: &str, mutators: &[String]) -> Option<S
 
     let mutator_set: HashSet<String> = mutators
         .iter()
-        .map(|mutator| normalize_lookup_key(mutator))
+        .map(|mutator| normalize_lookup_key(&normalize_mutator_id(mutator)))
         .filter(|key| !key.is_empty())
         .collect();
     if mutator_set.is_empty() {

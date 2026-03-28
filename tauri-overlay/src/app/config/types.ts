@@ -128,6 +128,7 @@ export type LocalizedPrestigeNames = {
 export type PrestigeNameMap = Record<string, LocalizedPrestigeNames>;
 
 export type MutatorData = {
+    id?: string | null;
     name?: string | null;
     nameEn?: string | null;
     nameKo?: string | null;

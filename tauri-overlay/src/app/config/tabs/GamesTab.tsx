@@ -398,6 +398,7 @@ export default function GamesTab({
                 }
 
                 const mutatorSearch = rowMutators.flatMap((mutator) => [
+                    mutator.id,
                     mutator.name,
                     localizedMutatorName(
                         mutator,
@@ -773,6 +774,8 @@ export default function GamesTab({
                                                                 const iconName =
                                                                     asTableValue(
                                                                         mutator.iconName ||
+                                                                            mutator.nameEn ||
+                                                                            mutator.id ||
                                                                             mutator.name,
                                                                     );
                                                                 const displayName =
@@ -794,7 +797,7 @@ export default function GamesTab({
                                                                         : `${displayName}\n${description}`;
                                                                 return (
                                                                     <img
-                                                                        key={`${asTableValue(mutator.name)}-${mutatorIndex}`}
+                                                                        key={`${asTableValue(mutator.id || mutator.name)}-${mutatorIndex}`}
                                                                         className="games-mutator-icon"
                                                                         src={mutatorIconPath(
                                                                             iconName,

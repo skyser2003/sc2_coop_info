@@ -182,11 +182,34 @@ fn decode_html_entities(value: &str) -> String {
         .replace("&apos;", "'")
 }
 
-fn mutator_icon_name(name: &str) -> &str {
-    match name {
+fn mutator_icon_name(name_en: &str) -> &str {
+    match name_en {
         "Moment Of Silence" => "Moment of Silence",
-        _ => name,
+        _ => name_en,
     }
+}
+
+fn canonical_mutator_id(mutator: &str) -> String {
+    if dictionary_data::mutator_data(mutator).is_some() {
+        mutator.to_string()
+    } else if let Some(mutator_id) = dictionary_data::mutator_id_from_name(mutator) {
+        mutator_id.to_string()
+    } else {
+        mutator.to_string()
+    }
+}
+
+fn mutator_display_name_en(mutator: &str) -> String {
+    let mutator_id = canonical_mutator_id(mutator);
+    dictionary_data::mutator_data(&mutator_id)
+        .map(|value| decode_html_entities(&value.name_en))
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            dictionary_data::mutator_ids()
+                .get(&mutator_id)
+                .map(|value| value.to_string())
+        })
+        .unwrap_or_default()
 }
 
 pub fn sanitize_settings_value(value: Value) -> Value {
@@ -1041,6 +1064,7 @@ impl ReplayInfo {
         };
         #[derive(Serialize)]
         struct GamesRowMutator {
+            id: String,
             name: String,
             #[serde(rename = "nameEn")]
             name_en: String,
@@ -1082,10 +1106,10 @@ impl ReplayInfo {
         let mutators = sanitized
             .mutators
             .iter()
-            .map(|mutator_name| {
+            .map(|mutator| {
+                let mutator_id = canonical_mutator_id(mutator);
                 let (name_en, name_ko, description_en, description_ko) =
-                    dictionary_data::mutators()
-                        .get(mutator_name)
+                    dictionary_data::mutator_data(&mutator_id)
                         .map(|value| {
                             (
                                 decode_html_entities(&value.name_en),
@@ -1095,15 +1119,23 @@ impl ReplayInfo {
                             )
                         })
                         .unwrap_or_default();
+                let fallback_name_en = mutator_display_name_en(&mutator_id);
+                let icon_name = if name_en.is_empty() {
+                    mutator_icon_name(&fallback_name_en).to_string()
+                } else {
+                    mutator_icon_name(&name_en).to_string()
+                };
+                let display_name_en = if name_en.is_empty() {
+                    fallback_name_en
+                } else {
+                    name_en
+                };
                 GamesRowMutator {
-                    name: mutator_name.to_string(),
-                    name_en: if name_en.is_empty() {
-                        mutator_name.to_string()
-                    } else {
-                        name_en
-                    },
+                    id: mutator_id.clone(),
+                    name: display_name_en.clone(),
+                    name_en: display_name_en,
                     name_ko,
-                    icon_name: mutator_icon_name(mutator_name).to_string(),
+                    icon_name,
                     description_en,
                     description_ko,
                 }

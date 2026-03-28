@@ -2069,8 +2069,8 @@ fn identify_mutators_for_cache(
                 continue;
             }
             let mutator_key = upgrade_name.get(12..).unwrap_or_default();
-            if let Some(mutator) = mutator_ids.get(mutator_key) {
-                mutators.push(mutator.clone());
+            if mutator_ids.contains_key(mutator_key) {
+                mutators.push(mutator_key.to_string());
             }
         }
     }
@@ -2090,8 +2090,8 @@ fn identify_mutators_for_cache(
                 if cached.is_empty() {
                     continue;
                 }
-                if let Some(mutator) = cached_mutators.get(&cached) {
-                    mutators.push(mutator.clone());
+                if let Some(mutator_id) = cached_mutators.get(&cached) {
+                    mutators.push(mutator_id.clone());
                     weekly = true;
                 }
             }

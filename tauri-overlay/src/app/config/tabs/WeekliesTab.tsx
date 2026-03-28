@@ -405,6 +405,8 @@ export default function WeekliesTab({
                                             (mutator, index) => {
                                                 const iconName = asTableValue(
                                                     mutator.iconName ||
+                                                        mutator.nameEn ||
+                                                        mutator.id ||
                                                         mutator.name,
                                                 );
                                                 const displayName =
@@ -415,7 +417,7 @@ export default function WeekliesTab({
                                                     );
                                                 return (
                                                     <article
-                                                        key={`${asTableValue(mutator.name)}-${index}`}
+                                                        key={`${asTableValue(mutator.id || mutator.name)}-${index}`}
                                                         className="weeklies-mutator-card"
                                                     >
                                                         <img

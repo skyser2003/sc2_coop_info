@@ -77,6 +77,27 @@ fn as_u32_vec(values: &[u64]) -> Vec<u32> {
     values.iter().copied().map(as_u32).collect()
 }
 
+fn overlay_mutator_name(mutator_id: &str) -> String {
+    let canonical = if dictionary_data::mutator_data(mutator_id).is_some() {
+        mutator_id.to_string()
+    } else if let Some(mapped) = dictionary_data::mutator_id_from_name(mutator_id) {
+        mapped.to_string()
+    } else {
+        mutator_id.to_string()
+    };
+
+    dictionary_data::mutator_data(&canonical)
+        .map(|value| value.name_en.trim())
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .or_else(|| {
+            dictionary_data::mutator_ids()
+                .get(&canonical)
+                .map(|value| value.to_string())
+        })
+        .unwrap_or_default()
+}
+
 fn active_hotkey_reassign_path_slot() -> &'static Mutex<Option<String>> {
     static ACTIVE_HOTKEY_REASSIGN_PATH: OnceLock<Mutex<Option<String>>> = OnceLock::new();
     ACTIVE_HOTKEY_REASSIGN_PATH.get_or_init(|| Mutex::new(None))
@@ -215,7 +236,11 @@ impl OverlayReplayPayload {
             amon_units: unit_stats_map_from_value(&sanitized.amon_units),
             main_icons: overlay_icon_payload_from_value(&sanitized.main_icons),
             ally_icons: overlay_icon_payload_from_value(&sanitized.ally_icons),
-            mutators: sanitized.mutators,
+            mutators: sanitized
+                .mutators
+                .iter()
+                .map(|mutator_id| overlay_mutator_name(mutator_id))
+                .collect(),
             bonus: sanitized.bonus.iter().copied().map(as_u32).collect(),
             bonus_total: sanitized.bonus_total.map(as_u32),
             player_stats: Some(replay_data_record_from_value(&sanitized.player_stats)),

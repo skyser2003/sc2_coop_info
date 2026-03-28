@@ -902,6 +902,26 @@ pub fn mutators() -> &'static MutatorsJson {
     &shared_dictionary_data_or_default().mutators_json
 }
 
+pub fn mutator_data(mutator_id: &str) -> Option<&'static LocalizedMutatorDescription> {
+    shared_dictionary_data_or_default()
+        .mutators_json
+        .get(mutator_id)
+}
+
+pub fn mutator_id_from_name(mutator_name: &str) -> Option<&'static str> {
+    static CACHE: OnceLock<HashMap<String, String>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            shared_dictionary_data_or_default()
+                .mutator_ids
+                .iter()
+                .map(|(id, name)| (name.clone(), id.clone()))
+                .collect()
+        })
+        .get(mutator_name)
+        .map(String::as_str)
+}
+
 pub fn mutator_list_all() -> &'static Vec<String> {
     &shared_dictionary_data_or_default().mutators_all
 }
