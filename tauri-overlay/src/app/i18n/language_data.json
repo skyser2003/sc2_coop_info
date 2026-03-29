@@ -892,12 +892,12 @@
         "ko": "돌연변이원"
     },
     "ui_randomizer_mastery_mode": {
-        "en": "Mastery mode:",
-        "ko": "숙련도 모드:"
+        "en": "Mastery mode",
+        "ko": "마스터 힘 구성"
     },
     "ui_randomizer_mastery_mode_aria": {
         "en": "Mastery mode",
-        "ko": "숙련도 모드"
+        "ko": "마스터 힘 구성"
     },
     "ui_randomizer_mastery_all_in": {
         "en": "All points into one",
@@ -989,7 +989,7 @@
     },
     "ui_randomizer_empty_result": {
         "en": "Generate a commander, prestige, and mastery setup.",
-        "ko": "사령관, 위신, 숙련도 구성을 생성하세요."
+        "ko": "사령관, 위신, 마스터 힘 구성을 생성하세요."
     },
     "ui_randomizer_mutator_empty_result": {
         "en": "Generate a mutator list.",
