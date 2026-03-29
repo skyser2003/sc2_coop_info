@@ -24,7 +24,6 @@
     padding: 9px 12px;
     background: #1a2236;
     color: #9fb2c7;
-    white-space: nowrap;
 }
 
 .configPage :global(.tab-btn:hover) {
@@ -208,7 +207,6 @@
 .configPage :global(.table-pagination-btn) {
     min-inline-size: 8em;
     padding: 8px 12px;
-    background: #334155;
 }
 
 .configPage :global(.data-table) {
@@ -330,8 +328,6 @@
 .configPage :global(.games-icon-btn) {
     min-inline-size: 3em;
     padding: 8px 10px;
-    background: #505050;
-    border: 1px solid #6b6b6b;
 }
 
 .configPage :global(.games-table th),
@@ -625,8 +621,6 @@
 }
 
 .configPage :global(.games-row-btn) {
-    background: #5a5a5a;
-    border: 1px solid #7a7a7a;
     padding: 6px 12px;
     border-radius: 6px;
     min-inline-size: 7em;
@@ -743,14 +737,7 @@
     font-size: 13px;
 }
 
-.configPage
-    :global(
-        button:not(.table-sort-btn):not(.stats-sort-btn):not(
-                .randomizer-commander-toggle
-            ):not(.randomizer-header-toggle):not(.tab-btn):not(
-                .stats-subtab-btn
-            ):not(.players-expander-btn):not(.color-row-input-button)
-    ) {
+.configPage :global(.button-normal) {
     border: 0;
     border-radius: 8px;
     display: inline-flex;
@@ -766,16 +753,30 @@
     white-space: nowrap;
 }
 
-.configPage
-    :global(
-        button:not(.table-sort-btn):not(.stats-sort-btn):not(
-                .randomizer-commander-toggle
-            ):not(.randomizer-header-toggle):not(.tab-btn):not(
-                .stats-subtab-btn
-            ):not(.players-expander-btn):not(.color-row-input-button):disabled
-    ) {
+.configPage :global(.button-normal:disabled) {
     background: #475569;
     cursor: not-allowed;
+}
+
+.configPage :global(.button-tab) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.configPage :global(.button-randomizer-table) {
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    text-align: inherit;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
 }
 
 .configPage :global(.mini-btn) {
@@ -1153,14 +1154,10 @@
 }
 
 .configPage :global(.hotkey-action-btn) {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     background: #505050;
     border: 1px solid #6f6f6f;
     min-inline-size: 0;
     inline-size: 100%;
-    text-align: center;
 }
 
 .configPage :global(.hotkey-input) {
@@ -1429,7 +1426,6 @@
 }
 
 .configPage :global(.main-path-btn) {
-    display: inline;
     min-width: auto;
     width: 100%;
     text-align: left;
@@ -1791,20 +1787,6 @@
     block-size: 1rem;
 }
 
-.configPage :global(.randomizer-commander-toggle),
-.configPage :global(.randomizer-header-toggle) {
-    width: 100%;
-    border: 0;
-    border-radius: 0;
-    padding: 0;
-    background: transparent;
-    color: inherit;
-    text-align: inherit;
-    font: inherit;
-    font-weight: 700;
-    cursor: pointer;
-}
-
 .configPage :global(.randomizer-commander-toggle) {
     text-align: left;
 }
@@ -2031,8 +2013,6 @@
     display: block;
     margin-top: 18px;
     inline-size: 100%;
-    background: linear-gradient(180deg, #656565 0%, #4a4a4a 100%);
-    border: 1px solid #808080;
 }
 
 .configPage :global(.performance-tab-hotkey-block) {
@@ -2257,22 +2237,18 @@
     background: var(--config-accent-soft-strong);
 }
 
-.configPage.configPage :global(button) {
+.configPage.configPage :global(.button-normal) {
     background: var(--config-button-bg);
     color: var(--config-button-text);
 }
 
-.configPage.configPage :global(button:disabled) {
+.configPage.configPage :global(.button-normal:disabled) {
     background: var(--config-button-disabled-bg);
 }
 
-.configPage.configPage
-    :global(
-        .data-table
-            button:not(.games-row-btn):not(.mini-btn):not(
-                .table-pagination-btn
-            ):not(.players-expander-btn)
-    ) {
+.configPage.configPage :global(.data-table .table-sort-btn),
+.configPage.configPage :global(.data-table .stats-sort-btn),
+.configPage.configPage :global(.data-table .button-randomizer-table) {
     background: transparent;
     border: 0;
     color: inherit;
@@ -2280,12 +2256,13 @@
 }
 
 .configPage.configPage :global(.mini-btn),
-.configPage.configPage :global(.table-pagination-btn),
-.configPage.configPage :global(.games-icon-btn),
-.configPage.configPage :global(.games-row-btn),
+.configPage.configPage :global(.table-pagination-btn:not(.button-normal)),
+.configPage.configPage :global(.games-icon-btn:not(.button-normal)),
+.configPage.configPage :global(.games-row-btn:not(.button-normal)),
 .configPage.configPage :global(.players-expander-btn),
-.configPage.configPage :global(.stats-subtab-btn),
-.configPage.configPage :global(.performance-tab-position-btn),
+.configPage.configPage :global(.button-tab),
+.configPage.configPage
+    :global(.performance-tab-position-btn:not(.button-normal)),
 .configPage.configPage :global(.performance-tab-hotkey-row button) {
     background: var(--config-button-neutral-bg);
     color: var(--config-button-neutral-text);
@@ -2293,7 +2270,7 @@
 }
 
 .configPage.configPage :global(.mini-btn.is-active),
-.configPage.configPage :global(.stats-subtab-btn.is-active) {
+.configPage.configPage :global(.button-tab.is-active) {
     background: var(--config-button-selected-bg);
     color: var(--config-button-selected-text);
 }
@@ -2341,8 +2318,7 @@
     background: transparent;
 }
 
-.configPage.configPage :global(.randomizer-commander-toggle),
-.configPage.configPage :global(.randomizer-header-toggle) {
+.configPage.configPage :global(.button-randomizer-table) {
     background: transparent;
     border: 0;
     color: var(--config-page-text);

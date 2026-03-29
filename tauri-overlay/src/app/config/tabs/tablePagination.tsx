@@ -85,7 +85,7 @@ export function TablePagination({
             <div className="table-pagination-controls">
                 <button
                     type="button"
-                    className="table-pagination-btn"
+                    className="table-pagination-btn button-normal"
                     disabled={safePage <= 1}
                     onClick={() => onPageChange(safePage - 1)}
                 >
@@ -99,7 +99,7 @@ export function TablePagination({
                 </span>
                 <button
                     type="button"
-                    className="table-pagination-btn"
+                    className="table-pagination-btn button-normal"
                     disabled={safePage >= totalPages}
                     onClick={() => onPageChange(safePage + 1)}
                 >

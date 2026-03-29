@@ -512,7 +512,7 @@ export default function RandomizerTab({
                                                         >
                                                             <button
                                                                 type="button"
-                                                                className="randomizer-header-toggle"
+                                                                className="randomizer-header-toggle button-randomizer-table"
                                                                 aria-label={formatText(
                                                                     "ui_randomizer_toggle_prestige_all",
                                                                     {
@@ -538,7 +538,7 @@ export default function RandomizerTab({
                                                     <td className="randomizer-commander-cell">
                                                         <button
                                                             type="button"
-                                                            className="randomizer-commander-toggle"
+                                                            className="randomizer-commander-toggle button-randomizer-table"
                                                             aria-label={formatText(
                                                                 "ui_randomizer_toggle_all_prestiges",
                                                                 {
@@ -610,6 +610,7 @@ export default function RandomizerTab({
                                 <div className="randomizer-actions">
                                     <button
                                         type="button"
+                                        className="button-normal"
                                         onClick={onGenerateCommander}
                                         disabled={actions.isBusy}
                                     >
@@ -949,6 +950,7 @@ export default function RandomizerTab({
                                 <div className="randomizer-actions">
                                     <button
                                         type="button"
+                                        className="button-normal"
                                         onClick={onGenerateMutator}
                                         disabled={actions.isBusy}
                                     >

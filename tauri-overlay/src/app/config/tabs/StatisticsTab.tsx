@@ -979,6 +979,7 @@ function renderStatsMaps(
                         <div className="toolbar">
                             <button
                                 type="button"
+                                className="button-normal"
                                 onClick={() =>
                                     actions.revealReplay(fastest.file || "")
                                 }
@@ -990,6 +991,7 @@ function renderStatsMaps(
                             </button>
                             <button
                                 type="button"
+                                className="button-normal"
                                 onClick={() =>
                                     actions.showReplay(fastest.file || "")
                                 }
@@ -2390,6 +2392,7 @@ export default function StatisticsTab({
                             <div className="stats-side-actions">
                                 <button
                                     type="button"
+                                    className="button-normal"
                                     onClick={actions.startSimpleAnalysis}
                                     disabled={
                                         actions.isBusy ||
@@ -2408,6 +2411,7 @@ export default function StatisticsTab({
                                 </button>
                                 <button
                                     type="button"
+                                    className="button-normal"
                                     onClick={actions.dumpData}
                                     disabled={actions.isBusy || !payload.ready}
                                 >
@@ -2415,6 +2419,7 @@ export default function StatisticsTab({
                                 </button>
                                 <button
                                     type="button"
+                                    className="button-normal"
                                     onClick={actions.refreshStats}
                                     disabled={actions.isBusy}
                                 >
@@ -2436,7 +2441,7 @@ export default function StatisticsTab({
                         <button
                             key={item.id}
                             type="button"
-                            className={`stats-subtab-btn ${item.id === subtab ? "is-active" : ""}`}
+                            className={`stats-subtab-btn button-tab ${item.id === subtab ? "is-active" : ""}`}
                             onClick={() =>
                                 actions.setStatsState((current) => ({
                                     ...current,

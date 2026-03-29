@@ -2594,7 +2594,7 @@ function SettingsEditor({
                 <button
                     id="app-save"
                     type="button"
-                    className="submit"
+                    className="submit button-normal"
                     disabled={!dirty || isBusy || draft === null}
                     onClick={saveSettings}
                 >
@@ -2605,7 +2605,7 @@ function SettingsEditor({
                 <button
                     id="app-revert"
                     type="button"
-                    className="submit"
+                    className="submit button-normal"
                     disabled={!dirty || isBusy || draft === null}
                     onClick={resetSettings}
                 >
@@ -2614,7 +2614,7 @@ function SettingsEditor({
                 <button
                     id="app-reload"
                     type="button"
-                    className="submit"
+                    className="submit button-normal"
                     disabled={isBusy || draft === null}
                     onClick={loadSettings}
                 >

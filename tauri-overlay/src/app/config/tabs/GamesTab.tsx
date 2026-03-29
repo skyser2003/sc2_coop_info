@@ -566,7 +566,7 @@ export default function GamesTab({
                         />
                         <button
                             type="button"
-                            className="games-icon-btn"
+                            className="games-icon-btn button-normal"
                             onClick={state.refresh}
                             disabled={state.isBusy}
                             title={t("ui_common_refresh")}
@@ -816,7 +816,7 @@ export default function GamesTab({
                                             <td className="games-actions-cell">
                                                 <button
                                                     type="button"
-                                                    className="games-row-btn"
+                                                    className="games-row-btn button-normal"
                                                     disabled={!file}
                                                     onClick={(event) => {
                                                         event.stopPropagation();
@@ -829,7 +829,7 @@ export default function GamesTab({
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    className="games-row-btn"
+                                                    className="games-row-btn button-normal"
                                                     disabled={!file}
                                                     onClick={(event) => {
                                                         event.stopPropagation();
@@ -842,7 +842,7 @@ export default function GamesTab({
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    className="games-row-btn"
+                                                    className="games-row-btn button-normal"
                                                     disabled={!file}
                                                     onClick={(event) => {
                                                         event.stopPropagation();
@@ -892,7 +892,7 @@ export default function GamesTab({
                             </div>
                             <button
                                 type="button"
-                                className="games-row-btn chat-modal-close"
+                                className="games-row-btn chat-modal-close button-normal"
                                 onClick={closeChatModal}
                             >
                                 {t("ui_common_close")}

@@ -243,7 +243,7 @@ export default function WeekliesTab({
                     <div className="games-toolbar-actions">
                         <button
                             type="button"
-                            className="games-icon-btn"
+                            className="games-icon-btn button-normal"
                             onClick={onRefresh}
                             disabled={isBusy}
                             title={t("ui_common_refresh")}

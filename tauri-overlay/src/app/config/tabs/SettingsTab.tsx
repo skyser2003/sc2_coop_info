@@ -751,7 +751,7 @@ export default function SettingsTab({
                 <Grid size={4}>
                     <button
                         type="button"
-                        className="hotkey-action-btn"
+                        className="hotkey-action-btn button-normal"
                         onClick={() => actions.triggerOverlayAction(actionName)}
                         disabled={actions.isBusy}
                     >
@@ -991,6 +991,7 @@ export default function SettingsTab({
                                     <div className="toolbar">
                                         <button
                                             type="button"
+                                            className="button-normal"
                                             onClick={
                                                 actions.runDetailedAnalysis
                                             }
@@ -1008,6 +1009,7 @@ export default function SettingsTab({
                                         </button>
                                         <button
                                             type="button"
+                                            className="button-normal"
                                             onClick={
                                                 actions.startSimpleAnalysis
                                             }
@@ -1026,6 +1028,7 @@ export default function SettingsTab({
                                         </button>
                                         <button
                                             type="button"
+                                            className="button-normal"
                                             onClick={
                                                 actions.pauseDetailedAnalysis
                                             }
@@ -1038,6 +1041,7 @@ export default function SettingsTab({
                                         </button>
                                         <button
                                             type="button"
+                                            className="button-normal"
                                             onClick={actions.deleteParsedData}
                                             disabled={
                                                 actions.isBusy ||
@@ -1210,7 +1214,7 @@ export default function SettingsTab({
                                     <Grid>
                                         <button
                                             type="button"
-                                            className="main-path-btn"
+                                            className="main-path-btn button-normal"
                                             onClick={() =>
                                                 actions.promptPath(
                                                     ["account_folder"],
@@ -1227,7 +1231,7 @@ export default function SettingsTab({
                                     <Grid>
                                         <button
                                             type="button"
-                                            className="main-path-btn"
+                                            className="main-path-btn button-normal"
                                             style={{ marginLeft: "5px" }}
                                             onClick={() =>
                                                 actions.openFolderPath(
@@ -1263,7 +1267,7 @@ export default function SettingsTab({
                                     <Grid>
                                         <button
                                             type="button"
-                                            className="main-path-btn"
+                                            className="main-path-btn button-normal"
                                             onClick={() =>
                                                 actions.promptPath(
                                                     ["screenshot_folder"],
@@ -1280,7 +1284,7 @@ export default function SettingsTab({
                                     <Grid>
                                         <button
                                             type="button"
-                                            className="main-path-btn"
+                                            className="main-path-btn button-normal"
                                             style={{ marginLeft: "5px" }}
                                             onClick={() =>
                                                 actions.openFolderPath(
@@ -1381,6 +1385,7 @@ export default function SettingsTab({
                         <div className="main-settings-box main-bottom-left">
                             <button
                                 type="button"
+                                className="button-normal"
                                 onClick={actions.overlayScreenshot}
                                 disabled={actions.isBusy}
                             >
@@ -1388,6 +1393,7 @@ export default function SettingsTab({
                             </button>
                             <button
                                 type="button"
+                                className="button-normal"
                                 onClick={actions.parseReplayPrompt}
                                 disabled={actions.isBusy}
                             >
@@ -1395,18 +1401,24 @@ export default function SettingsTab({
                             </button>
                             <button
                                 type="button"
+                                className="button-normal"
                                 onClick={actions.createDesktopShortcut}
                                 disabled={actions.isBusy}
                             >
                                 {t("ui_settings_create_desktop_shortcut")}
                             </button>
-                            <button type="button" onClick={checkUpdate}>
+                            <button
+                                type="button"
+                                className="button-normal"
+                                onClick={checkUpdate}
+                            >
                                 {t("ui_settings_check_for_update")}
                             </button>
                         </div>
                         <div className="main-settings-box main-bottom-right">
                             <button
                                 type="button"
+                                className="button-normal"
                                 onClick={actions.resetMainSettings}
                                 disabled={
                                     actions.isBusy || !actions.hasPendingChanges
@@ -1416,6 +1428,7 @@ export default function SettingsTab({
                             </button>
                             <button
                                 type="button"
+                                className="button-normal"
                                 onClick={actions.applyMainSettings}
                                 disabled={
                                     actions.isBusy || !actions.hasPendingChanges

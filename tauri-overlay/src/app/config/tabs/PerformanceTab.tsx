@@ -78,7 +78,7 @@ export default function PerformanceTab({
 
                     <button
                         type="button"
-                        className="performance-tab-position-btn"
+                        className="performance-tab-position-btn button-normal"
                         disabled={actions.isBusy}
                         onClick={() =>
                             actions.triggerOverlayAction(
