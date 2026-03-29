@@ -552,6 +552,7 @@
     justify-content: center;
     inline-size: 1.5rem;
     block-size: 1.5rem;
+    min-block-size: 1.5rem;
     padding: 0;
     border: 1px solid rgba(148, 163, 184, 0.45);
     border-radius: 6px;
@@ -742,22 +743,43 @@
     font-size: 13px;
 }
 
-.configPage :global(button) {
+.configPage
+    :global(
+        button:not(.table-sort-btn):not(.stats-sort-btn):not(
+                .randomizer-commander-toggle
+            ):not(.randomizer-header-toggle):not(.tab-btn):not(
+                .stats-subtab-btn
+            ):not(.players-expander-btn):not(.color-row-input-button)
+    ) {
     border: 0;
     border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-block-size: 2.2rem;
     padding: 10px 14px;
     cursor: pointer;
     background: #2563eb;
     color: #ffffff;
     font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
 }
 
-.configPage :global(button:disabled) {
+.configPage
+    :global(
+        button:not(.table-sort-btn):not(.stats-sort-btn):not(
+                .randomizer-commander-toggle
+            ):not(.randomizer-header-toggle):not(.tab-btn):not(
+                .stats-subtab-btn
+            ):not(.players-expander-btn):not(.color-row-input-button):disabled
+    ) {
     background: #475569;
     cursor: not-allowed;
 }
 
 .configPage :global(.mini-btn) {
+    min-block-size: auto;
     padding: 6px 10px;
     border-radius: 6px;
     font-size: 12px;
@@ -1189,6 +1211,7 @@
     display: block;
     width: 100%;
     height: 42px;
+    min-block-size: 42px;
     padding: 4px;
     background: #0a1020;
     border: 1px solid #334155;
