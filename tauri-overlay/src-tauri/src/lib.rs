@@ -56,6 +56,7 @@ const SCO_REPLAY_SCAN_PROGRESS_EVENT: &str = "sco://replay-scan-progress";
 const WINDOWS_STARTUP_RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 const WINDOWS_STARTUP_VALUE_NAME: &str = "SCO Overlay";
 static ACTIVE_SETTINGS: OnceLock<Mutex<AppSettings>> = OnceLock::new();
+static DETAILED_CACHE_PERSIST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub(crate) struct OverlayActionResult {
@@ -364,6 +365,10 @@ pub(crate) fn read_saved_settings_file() -> AppSettings {
 
 fn active_settings_store() -> &'static Mutex<AppSettings> {
     ACTIVE_SETTINGS.get_or_init(|| Mutex::new(read_saved_settings_file()))
+}
+
+fn detailed_cache_persist_lock() -> &'static Mutex<()> {
+    DETAILED_CACHE_PERSIST_LOCK.get_or_init(|| Mutex::new(()))
 }
 
 pub fn replace_active_settings(value: &AppSettings) -> AppSettings {
@@ -3225,6 +3230,10 @@ pub fn persist_detailed_cache_entry_to_path(
     cache_path: &Path,
     entry: &CacheReplayEntry,
 ) -> Result<(), String> {
+    let _persist_guard = detailed_cache_persist_lock()
+        .lock()
+        .map_err(|_| "Failed to acquire detailed cache persistence lock".to_string())?;
+
     if let Some(parent) = cache_path.parent() {
         std::fs::create_dir_all(parent).map_err(|error| {
             format!(
@@ -3270,6 +3279,24 @@ pub fn persist_detailed_cache_entry_to_path(
 
 fn persist_detailed_cache_entry(entry: &CacheReplayEntry) -> Result<(), String> {
     persist_detailed_cache_entry_to_path(&get_cache_path(), entry)
+}
+
+fn spawn_detailed_cache_persist(entry: CacheReplayEntry, log_prefix: &'static str) {
+    thread::spawn(move || {
+        let replay_file = entry.file.clone();
+        if let Err(error) = persist_detailed_cache_entry(&entry) {
+            crate::sco_log!(
+                "[SCO/{log_prefix}] failed to persist detailed cache entry for '{}': {error}",
+                replay_file
+            );
+            return;
+        }
+
+        crate::sco_log!(
+            "[SCO/{log_prefix}] persisted detailed cache entry for '{}'",
+            replay_file
+        );
+    });
 }
 
 fn collect_sc2_replay_files(root: &Path) -> Vec<PathBuf> {
@@ -3382,12 +3409,6 @@ fn process_new_replay_path(
     );
     let state = app.state::<BackendState>();
     state.upsert_replay_in_memory_cache(&replay);
-    if let Err(error) = persist_detailed_cache_entry(&cache_entry) {
-        crate::sco_log!(
-            "[SCO/watch] failed to persist detailed cache entry for '{}': {error}",
-            replay.file
-        );
-    }
     state.record_session_result(&replay.result);
     let settings = read_settings_file();
     let show_replay_info_after_game = show_replay_info_after_game_from_settings(&settings);
@@ -3410,6 +3431,8 @@ fn process_new_replay_path(
             .overlay_replay_data_active
             .store(false, Ordering::Release);
     }
+
+    spawn_detailed_cache_persist(cache_entry, "watch");
 
     let invalidation_generation = DELAYED_REPLAY_WINRATE_GENERATION
         .fetch_add(1, Ordering::AcqRel)
@@ -3468,12 +3491,7 @@ fn process_replay_detailed(
     );
 
     state.upsert_replay_in_memory_cache(&replay);
-    if let Err(error) = persist_detailed_cache_entry(&cache_entry) {
-        crate::sco_log!(
-            "[SCO/show] failed to persist detailed cache entry for '{}': {error}",
-            replay.file
-        );
-    }
+    spawn_detailed_cache_persist(cache_entry, "show");
 
     (ReplayProcessOutcome::Processed, Some(replay))
 }
