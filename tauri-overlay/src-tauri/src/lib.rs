@@ -4259,21 +4259,26 @@ async fn config_request(
             let limit = parse_query_usize(&path, "limit", 300);
             let replay_state = state.get_replay_state();
 
-            let (replays, selected_replay_file) = tauri::async_runtime::spawn_blocking(move || {
-                let replay_state = replay_state.lock().ok();
-                let replays = replay_state
-                    .as_ref()
-                    .map(|state| state.sync_replay_cache_slots(limit))
-                    .unwrap_or_default();
-                let selected_replay_file = replay_state
-                    .as_ref()
-                    .and_then(|state| state.get_current_replay_file());
+            let (replays, total_replays, selected_replay_file) =
+                tauri::async_runtime::spawn_blocking(move || {
+                    let replay_state = replay_state.lock().ok();
+                    let all_replays = replay_state
+                        .as_ref()
+                        .map(|state| state.sync_full_replay_cache_slots())
+                        .unwrap_or_default();
+                    let total_replays = all_replays.len();
+                    let mut replays = all_replays;
+                    if limit > 0 && replays.len() > limit {
+                        replays.truncate(limit);
+                    }
+                    let selected_replay_file = replay_state
+                        .as_ref()
+                        .and_then(|state| state.get_current_replay_file());
 
-                (replays, selected_replay_file)
-            })
-            .await
-            .map_err(|error| format!("Failed to load /config/replays: {error}"))?;
-            let total_replays = replays.len();
+                    (replays, total_replays, selected_replay_file)
+                })
+                .await
+                .map_err(|error| format!("Failed to load /config/replays: {error}"))?;
 
             Ok(to_json_value(ConfigReplaysPayload {
                 status: "ok",
