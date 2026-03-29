@@ -46,6 +46,7 @@ transparent_json_wrapper!(HornersUnitsJson, Vec<String>);
 transparent_json_wrapper!(MapNamesJson, IndexMap<String, IndexMap<String, String>>);
 transparent_json_wrapper!(McUnitsJson, IndexMap<String, String>);
 transparent_json_wrapper!(MutatorIdsJson, IndexMap<String, String>);
+transparent_json_wrapper!(MutatorPointsJson, Vec<MutatorPointEntryJson>);
 transparent_json_wrapper!(MutatorsExcludeIdsJson, Vec<String>);
 transparent_json_wrapper!(OutlawsJson, Vec<String>);
 transparent_json_wrapper!(PrestigeUpgradesJson, IndexMap<String, IndexMap<String, String>>);
@@ -64,6 +65,12 @@ transparent_json_wrapper!(UnitsToStatsJson, Vec<String>);
 pub struct MutatorBrutalPlusRangeJson {
     pub min: u64,
     pub max: u64,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct MutatorPointEntryJson {
+    pub value: u64,
+    pub ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -215,6 +222,7 @@ pub struct Sc2DictionaryData {
     pub unit_base_costs: UnitBaseCostsJson,
     pub unit_base_costs_as_tuples: HashMap<String, HashMap<String, Vec<u64>>>,
     pub mutator_ids: MutatorIdsJson,
+    pub mutator_points: MutatorPointsJson,
     pub cached_mutators: CachedMutatorsJson,
     pub mutator_brutal_plus: MutatorBrutalPlusJson,
     pub weekly_mutations_json: WeeklyMutationsJson,
@@ -608,6 +616,8 @@ fn load_shared_dictionary_data_impl(
         load_dictionary_json::<UnitBaseCostsJson>(&data_dir, "unit_base_costs.json")?;
     let unit_base_costs_as_tuples = parse_unit_base_costs_as_tuples(&unit_base_costs);
     let mutator_ids = load_dictionary_json::<MutatorIdsJson>(&data_dir, "mutator_ids.json")?;
+    let mutator_points =
+        load_dictionary_json::<MutatorPointsJson>(&data_dir, "mutator_points.json")?;
     let cached_mutators =
         load_dictionary_json::<CachedMutatorsJson>(&data_dir, "cached_mutators.json")?;
     let mutator_brutal_plus =
@@ -689,6 +699,7 @@ fn load_shared_dictionary_data_impl(
         unit_base_costs,
         unit_base_costs_as_tuples,
         mutator_ids,
+        mutator_points,
         cached_mutators,
         mutator_brutal_plus,
         weekly_mutations_json,
@@ -963,6 +974,10 @@ pub fn unit_base_costs_as_tuples() -> &'static HashMap<String, HashMap<String, V
 
 pub fn mutator_ids() -> &'static MutatorIdsJson {
     &shared_dictionary_data_or_default().mutator_ids
+}
+
+pub fn mutator_points() -> &'static MutatorPointsJson {
+    &shared_dictionary_data_or_default().mutator_points
 }
 
 pub fn cached_mutators() -> &'static CachedMutatorsJson {

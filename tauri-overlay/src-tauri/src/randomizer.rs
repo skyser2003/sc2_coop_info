@@ -2,23 +2,48 @@ use fastrand::Rng;
 use s2coop_analyzer::dictionary_data;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use ts_rs::TS;
 
-use crate::shared_types::{LocalizedLabels, OverlayRandomizerCatalog};
+use crate::shared_types::{
+    LocalizedLabels, LocalizedText, OverlayRandomizerBrutalPlus, OverlayRandomizerCatalog,
+    OverlayRandomizerMutator, OverlayRandomizerRange,
+};
 
 const RANDOMIZER_RACES: [&str; 3] = ["Terran", "Protoss", "Zerg"];
 
+fn default_randomizer_mode() -> String {
+    "commander".to_string()
+}
+
 fn default_mastery_mode() -> String {
     "all_in".to_string()
+}
+
+fn default_mutator_mode() -> String {
+    "all_random".to_string()
 }
 
 fn default_true() -> bool {
     true
 }
 
+fn default_mutator_min() -> u64 {
+    1
+}
+
+fn default_mutator_max() -> u64 {
+    10
+}
+
+fn default_brutal_plus() -> u8 {
+    1
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct RandomizerRequest {
+    #[serde(default = "default_randomizer_mode")]
+    pub mode: String,
     #[serde(default)]
     pub rng_choices: Value,
     #[serde(default = "default_mastery_mode")]
@@ -27,22 +52,69 @@ pub struct RandomizerRequest {
     pub include_map: bool,
     #[serde(default = "default_true")]
     pub include_race: bool,
+    #[serde(default = "default_mutator_mode")]
+    pub mutator_mode: String,
+    #[serde(default = "default_mutator_min")]
+    pub mutator_min: u64,
+    #[serde(default = "default_mutator_max")]
+    pub mutator_max: u64,
+    #[serde(default = "default_brutal_plus")]
+    pub brutal_plus: u8,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, TS)]
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct RandomizerMutatorResult {
+    pub id: String,
+    pub name: LocalizedText,
+    #[serde(rename = "iconName")]
+    pub icon_name: String,
+    pub description: LocalizedText,
+    pub points: u64,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct RandomizerResult {
-    pub commander: String,
-    pub prestige: u64,
-    pub mastery_indices: Vec<Option<u64>>,
-    pub map_race: String,
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub commander: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub prestige: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub mastery_indices: Option<Vec<Option<u64>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub map_race: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mutators: Vec<RandomizerMutatorResult>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub mutator_total_points: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub mutator_count: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub brutal_plus: Option<u8>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RandomizerMutatorEntry {
+    id: String,
+    name: LocalizedText,
+    icon_name: String,
+    description: LocalizedText,
+    points: u64,
 }
 
 pub fn catalog_payload() -> OverlayRandomizerCatalog {
-    match dictionary_data::tauri_ui_data() {
-        Ok(data) => OverlayRandomizerCatalog {
-            prestige_names: data
-                .prestige_names_json
+    let prestige_names = dictionary_data::tauri_ui_data()
+        .map(|data| {
+            data.prestige_names_json
                 .iter()
                 .map(|(key, value)| {
                     (
@@ -53,9 +125,40 @@ pub fn catalog_payload() -> OverlayRandomizerCatalog {
                         },
                     )
                 })
-                .collect(),
-        },
-        Err(_) => OverlayRandomizerCatalog::default(),
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mutators = mutator_pool()
+        .into_iter()
+        .map(|entry| OverlayRandomizerMutator {
+            id: entry.id,
+            name: entry.name,
+            icon_name: entry.icon_name,
+            description: entry.description,
+            points: entry.points,
+        })
+        .collect();
+
+    let brutal_plus = dictionary_data::mutator_brutal_plus()
+        .iter()
+        .map(|entry| OverlayRandomizerBrutalPlus {
+            brutal_plus: entry.brutal_plus,
+            mutator_points: OverlayRandomizerRange {
+                min: entry.mutator_points.min,
+                max: entry.mutator_points.max,
+            },
+            mutator_count: OverlayRandomizerRange {
+                min: entry.mutator_count.min,
+                max: entry.mutator_count.max,
+            },
+        })
+        .collect();
+
+    OverlayRandomizerCatalog {
+        prestige_names,
+        mutators,
+        brutal_plus,
     }
 }
 
@@ -66,10 +169,15 @@ pub(crate) fn generate_from_body(body: Option<&Value>) -> Result<RandomizerResul
         .transpose()
         .map_err(|error| format!("Invalid randomizer payload: {error}"))?
         .unwrap_or(RandomizerRequest {
+            mode: default_randomizer_mode(),
             rng_choices: Value::Object(Default::default()),
             mastery_mode: default_mastery_mode(),
             include_map: true,
             include_race: true,
+            mutator_mode: default_mutator_mode(),
+            mutator_min: default_mutator_min(),
+            mutator_max: default_mutator_max(),
+            brutal_plus: default_brutal_plus(),
         });
 
     let mut rng = Rng::new();
@@ -77,6 +185,17 @@ pub(crate) fn generate_from_body(body: Option<&Value>) -> Result<RandomizerResul
 }
 
 pub fn generate_with_rng(
+    request: &RandomizerRequest,
+    rng: &mut Rng,
+) -> Result<RandomizerResult, String> {
+    match request.mode.as_str() {
+        "commander" => generate_commander_with_rng(request, rng),
+        "mutator" => generate_mutators_with_rng(request, rng),
+        other => Err(format!("Unsupported randomizer mode: {other}")),
+    }
+}
+
+fn generate_commander_with_rng(
     request: &RandomizerRequest,
     rng: &mut Rng,
 ) -> Result<RandomizerResult, String> {
@@ -105,10 +224,114 @@ pub fn generate_with_rng(
     }
 
     Ok(RandomizerResult {
-        commander: commander.clone(),
-        prestige,
-        mastery_indices: mastery_indices.into_iter().collect(),
-        map_race: map_race_parts.join(" | "),
+        kind: "commander".to_string(),
+        commander: Some(commander.clone()),
+        prestige: Some(prestige),
+        mastery_indices: Some(mastery_indices.into_iter().collect()),
+        map_race: Some(map_race_parts.join(" | ")),
+        mutators: Vec::new(),
+        mutator_total_points: None,
+        mutator_count: None,
+        brutal_plus: None,
+    })
+}
+
+fn generate_mutators_with_rng(
+    request: &RandomizerRequest,
+    rng: &mut Rng,
+) -> Result<RandomizerResult, String> {
+    let pool = mutator_pool();
+    if pool.is_empty() {
+        return Err("Mutator data is not available".to_string());
+    }
+
+    match request.mutator_mode.as_str() {
+        "all_random" => {
+            let count_min = usize::try_from(request.mutator_min)
+                .map_err(|_| "Mutator minimum is too large".to_string())?;
+            let count_max = usize::try_from(request.mutator_max)
+                .map_err(|_| "Mutator maximum is too large".to_string())?;
+            if count_min == 0 {
+                return Err("Mutator minimum must be at least 1".to_string());
+            }
+            if count_min > count_max {
+                return Err("Mutator minimum cannot exceed maximum".to_string());
+            }
+            let effective_max = count_max.min(pool.len());
+            if count_min > effective_max {
+                return Err(format!(
+                    "Mutator maximum exceeds available mutators ({})",
+                    pool.len()
+                ));
+            }
+
+            let count = if count_min == effective_max {
+                count_min
+            } else {
+                rng.usize(count_min..(effective_max + 1))
+            };
+            let chosen = choose_random_unique_mutators(&pool, count, rng);
+            build_mutator_result(chosen, None)
+        }
+        "brutal_plus" => {
+            let Some(bplus_entry) = dictionary_data::mutator_brutal_plus()
+                .iter()
+                .find(|entry| entry.brutal_plus == request.brutal_plus)
+            else {
+                return Err(format!(
+                    "Unsupported Brutal+ mutator level: {}",
+                    request.brutal_plus
+                ));
+            };
+
+            let combinations = build_brutal_plus_combinations(
+                &pool,
+                bplus_entry.mutator_count.min,
+                bplus_entry.mutator_count.max,
+                bplus_entry.mutator_points.min,
+                bplus_entry.mutator_points.max,
+            )?;
+            let selected = &combinations[rng.usize(0..combinations.len())];
+            let chosen = selected
+                .iter()
+                .map(|index| pool[*index].clone())
+                .collect::<Vec<_>>();
+            build_mutator_result(chosen, Some(request.brutal_plus))
+        }
+        other => Err(format!("Unsupported mutator mode: {other}")),
+    }
+}
+
+fn build_mutator_result(
+    mutators: Vec<RandomizerMutatorEntry>,
+    brutal_plus: Option<u8>,
+) -> Result<RandomizerResult, String> {
+    if mutators.is_empty() {
+        return Err("No mutators were generated".to_string());
+    }
+
+    let total_points = mutators.iter().map(|mutator| mutator.points).sum::<u64>();
+    let mutator_count = u64::try_from(mutators.len()).unwrap_or(0);
+
+    Ok(RandomizerResult {
+        kind: "mutator".to_string(),
+        commander: None,
+        prestige: None,
+        mastery_indices: None,
+        map_race: None,
+        mutators: mutators
+            .into_iter()
+            .map(|entry| RandomizerMutatorResult {
+                id: entry.id,
+                name: entry.name,
+                icon_name: entry.icon_name,
+                description: entry.description,
+                points: entry.points,
+            })
+            .collect(),
+        mutator_total_points: Some(total_points),
+        mutator_count: Some(mutator_count),
+        brutal_plus,
     })
 }
 
@@ -173,5 +396,171 @@ fn generate_mastery_indices(mastery_mode: &str, rng: &mut Rng) -> Result<[Option
         }
         "none" => Ok(mastery),
         _ => Err(format!("Unsupported mastery mode: {mastery_mode}")),
+    }
+}
+
+fn mutator_points_lookup() -> HashMap<String, u64> {
+    let mut out = HashMap::<String, u64>::new();
+    for entry in dictionary_data::mutator_points().iter() {
+        for id in &entry.ids {
+            out.insert(id.clone(), entry.value);
+        }
+    }
+    out
+}
+
+fn is_randomizer_excluded_mutator(mutator_id: &str) -> bool {
+    mutator_id == "Random"
+}
+
+fn mutator_pool() -> Vec<RandomizerMutatorEntry> {
+    let point_lookup = mutator_points_lookup();
+    dictionary_data::mutator_list()
+        .iter()
+        .filter(|mutator_id| !is_randomizer_excluded_mutator(mutator_id))
+        .map(|mutator_id| {
+            let data = dictionary_data::mutator_data(mutator_id);
+            let name = data
+                .map(|value| LocalizedText {
+                    en: decode_html_entities(&value.name.en),
+                    ko: decode_html_entities(&value.name.ko),
+                })
+                .unwrap_or_default();
+            let description = data
+                .map(|value| LocalizedText {
+                    en: decode_html_entities(&value.description.en),
+                    ko: decode_html_entities(&value.description.ko),
+                })
+                .unwrap_or_default();
+            let icon_name_source = if name.en.is_empty() {
+                dictionary_data::mutator_ids()
+                    .get(mutator_id)
+                    .cloned()
+                    .unwrap_or_else(|| mutator_id.clone())
+            } else {
+                name.en.clone()
+            };
+            let icon_name = mutator_icon_name(&icon_name_source);
+
+            RandomizerMutatorEntry {
+                id: mutator_id.clone(),
+                name,
+                icon_name: icon_name.to_string(),
+                description,
+                points: point_lookup.get(mutator_id).copied().unwrap_or(0),
+            }
+        })
+        .collect()
+}
+
+fn decode_html_entities(value: &str) -> String {
+    value
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+}
+
+fn mutator_icon_name(name_en: &str) -> &str {
+    match name_en {
+        "Moment Of Silence" => "Moment of Silence",
+        _ => name_en,
+    }
+}
+
+fn choose_random_unique_mutators(
+    pool: &[RandomizerMutatorEntry],
+    count: usize,
+    rng: &mut Rng,
+) -> Vec<RandomizerMutatorEntry> {
+    let mut indices = (0..pool.len()).collect::<Vec<_>>();
+    rng.shuffle(&mut indices);
+    let mut chosen = indices.into_iter().take(count).collect::<Vec<_>>();
+    chosen.sort_unstable();
+    chosen
+        .into_iter()
+        .map(|index| pool[index].clone())
+        .collect()
+}
+
+fn build_brutal_plus_combinations(
+    pool: &[RandomizerMutatorEntry],
+    count_min: u64,
+    count_max: u64,
+    points_min: u64,
+    points_max: u64,
+) -> Result<Vec<Vec<usize>>, String> {
+    let count_min = usize::try_from(count_min)
+        .map_err(|_| "B+ mutator count minimum is too large".to_string())?;
+    let count_max = usize::try_from(count_max)
+        .map_err(|_| "B+ mutator count maximum is too large".to_string())?;
+    if count_min == 0 || count_min > count_max {
+        return Err("Invalid Brutal+ mutator count range".to_string());
+    }
+
+    let max_count = count_max.min(pool.len());
+    if count_min > max_count {
+        return Err("Brutal+ mutator count range exceeds available mutators".to_string());
+    }
+
+    let mut combinations = Vec::<Vec<usize>>::new();
+    for count in count_min..=max_count {
+        let mut current = Vec::<usize>::new();
+        collect_point_matched_combinations(
+            pool,
+            count,
+            points_min,
+            points_max,
+            0,
+            &mut current,
+            0,
+            &mut combinations,
+        );
+    }
+
+    if combinations.is_empty() {
+        return Err("No mutator combinations match the selected Brutal+ level".to_string());
+    }
+
+    Ok(combinations)
+}
+
+fn collect_point_matched_combinations(
+    pool: &[RandomizerMutatorEntry],
+    target_count: usize,
+    points_min: u64,
+    points_max: u64,
+    start_index: usize,
+    current: &mut Vec<usize>,
+    current_points: u64,
+    combinations: &mut Vec<Vec<usize>>,
+) {
+    if current.len() == target_count {
+        if (points_min..=points_max).contains(&current_points) {
+            combinations.push(current.clone());
+        }
+        return;
+    }
+
+    for index in start_index..pool.len() {
+        let next_points = current_points.saturating_add(pool[index].points);
+        if next_points > points_max {
+            continue;
+        }
+
+        current.push(index);
+        collect_point_matched_combinations(
+            pool,
+            target_count,
+            points_min,
+            points_max,
+            index + 1,
+            current,
+            next_points,
+            combinations,
+        );
+        current.pop();
     }
 }

@@ -875,6 +875,22 @@
         "en": "Randomizer data is not available from the backend yet.",
         "ko": "백엔드에서 아직 랜덤 선택 데이터를 제공하지 않습니다."
     },
+    "ui_randomizer_mode": {
+        "en": "Mode:",
+        "ko": "모드:"
+    },
+    "ui_randomizer_mode_aria": {
+        "en": "Randomizer mode",
+        "ko": "랜덤 선택 모드"
+    },
+    "ui_randomizer_mode_commander": {
+        "en": "Commander",
+        "ko": "사령관"
+    },
+    "ui_randomizer_mode_mutator": {
+        "en": "Mutator",
+        "ko": "돌연변이원"
+    },
     "ui_randomizer_mastery_mode": {
         "en": "Mastery mode:",
         "ko": "숙련도 모드:"
@@ -919,6 +935,50 @@
         "en": "Toggle all prestiges for {{commander}}",
         "ko": "{{commander}}의 모든 위신 전환"
     },
+    "ui_randomizer_mutator_mode": {
+        "en": "Mode",
+        "ko": "모드"
+    },
+    "ui_randomizer_mutator_mode_aria": {
+        "en": "Mutator generation mode",
+        "ko": "돌연변이원 생성 모드"
+    },
+    "ui_randomizer_mutator_mode_all_random": {
+        "en": "All random",
+        "ko": "전체 무작위"
+    },
+    "ui_randomizer_mutator_mode_brutal_plus": {
+        "en": "Brutal+N generation",
+        "ko": "아주 어려움+N 생성"
+    },
+    "ui_randomizer_mutator_settings_title": {
+        "en": "Mutator generator",
+        "ko": "돌연변이원 생성"
+    },
+    "ui_randomizer_mutator_min_aria": {
+        "en": "Minimum mutators",
+        "ko": "최소 돌연변이원 수"
+    },
+    "ui_randomizer_mutator_max_aria": {
+        "en": "Maximum mutators",
+        "ko": "최대 돌연변이원 수"
+    },
+    "ui_randomizer_mutator_brutal_plus": {
+        "en": "Level",
+        "ko": "단계"
+    },
+    "ui_randomizer_mutator_brutal_plus_aria": {
+        "en": "Brutal+ level",
+        "ko": "아주 어려움+ 단계"
+    },
+    "ui_randomizer_mutator_all_random_summary": {
+        "en": "Select a random mutator count between {{min}}-{{max}}.",
+        "ko": "{{min}}-{{max}}개 사이로 돌연변이원 수를 무작위 선택합니다."
+    },
+    "ui_randomizer_mutator_pool_summary": {
+        "en": "Available mutators: {{count}}",
+        "ko": "사용 가능한 돌연변이원: {{count}}"
+    },
     "ui_randomizer_generate": {
         "en": "Generate",
         "ko": "생성"
@@ -930,6 +990,34 @@
     "ui_randomizer_empty_result": {
         "en": "Generate a commander, prestige, and mastery setup.",
         "ko": "사령관, 위신, 숙련도 구성을 생성하세요."
+    },
+    "ui_randomizer_mutator_empty_result": {
+        "en": "Generate a mutator list.",
+        "ko": "돌연변이원 목록을 생성하세요."
+    },
+    "ui_randomizer_mutator_points": {
+        "en": "Points",
+        "ko": "포인트"
+    },
+    "ui_randomizer_mutator_count": {
+        "en": "Count",
+        "ko": "개수"
+    },
+    "ui_randomizer_mutator_total_points": {
+        "en": "Total points",
+        "ko": "총 포인트"
+    },
+    "ui_randomizer_mutator_result_head_random": {
+        "en": "Random mutators ({{count}})",
+        "ko": "무작위 돌연변이원 ({{count}}개)"
+    },
+    "ui_randomizer_mutator_result_head_bplus": {
+        "en": "{{brutalPlus}} matching mutators",
+        "ko": "{{brutalPlus}} 맞춤 돌연변이원"
+    },
+    "ui_randomizer_mutator_point_value": {
+        "en": "{{points}} pt",
+        "ko": "{{points}}점"
     },
     "ui_table_rows_summary": {
         "en": "Rows {{start}}-{{end}} of {{total}}",

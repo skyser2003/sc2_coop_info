@@ -2404,10 +2404,60 @@ function SettingsEditor({
                         }
 
                         const randomizerResult = result.randomizer;
+                        if (randomizerResult.kind === "mutator") {
+                            return {
+                                kind: "mutator" as const,
+                                mutators: Array.isArray(
+                                    randomizerResult.mutators,
+                                )
+                                    ? randomizerResult.mutators.map(
+                                          (mutator) => ({
+                                              id: String(mutator.id),
+                                              name: {
+                                                  en: String(
+                                                      mutator.name?.en || "",
+                                                  ),
+                                                  ko: String(
+                                                      mutator.name?.ko || "",
+                                                  ),
+                                              },
+                                              iconName: String(
+                                                  mutator.iconName || "",
+                                              ),
+                                              description: {
+                                                  en: String(
+                                                      mutator.description?.en ||
+                                                          "",
+                                                  ),
+                                                  ko: String(
+                                                      mutator.description?.ko ||
+                                                          "",
+                                                  ),
+                                              },
+                                              points: Number(
+                                                  mutator.points || 0,
+                                              ),
+                                          }),
+                                      )
+                                    : [],
+                                mutator_total_points: Number(
+                                    randomizerResult.mutator_total_points || 0,
+                                ),
+                                mutator_count: Number(
+                                    randomizerResult.mutator_count || 0,
+                                ),
+                                brutal_plus:
+                                    randomizerResult.brutal_plus === null ||
+                                    randomizerResult.brutal_plus === undefined
+                                        ? null
+                                        : Number(randomizerResult.brutal_plus),
+                            };
+                        }
 
                         return {
-                            commander: String(randomizerResult.commander),
-                            prestige: Number(randomizerResult.prestige),
+                            kind: "commander" as const,
+                            commander: String(randomizerResult.commander || ""),
+                            prestige: Number(randomizerResult.prestige || 0),
                             mastery_indices: Array.isArray(
                                 randomizerResult.mastery_indices,
                             )
@@ -2416,7 +2466,7 @@ function SettingsEditor({
                                           value === null ? null : Number(value),
                                   )
                                 : [],
-                            map_race: String(randomizerResult.map_race),
+                            map_race: String(randomizerResult.map_race || ""),
                         };
                     },
                 },

@@ -14,6 +14,39 @@ pub struct LocalizedLabels {
     pub en: Vec<String>,
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct LocalizedText {
+    pub ko: String,
+    pub en: String,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct OverlayRandomizerRange {
+    pub min: u64,
+    pub max: u64,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct OverlayRandomizerMutator {
+    pub id: String,
+    pub name: LocalizedText,
+    #[serde(rename = "iconName")]
+    pub icon_name: String,
+    pub description: LocalizedText,
+    pub points: u64,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct OverlayRandomizerBrutalPlus {
+    pub brutal_plus: u8,
+    pub mutator_points: OverlayRandomizerRange,
+    pub mutator_count: OverlayRandomizerRange,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct EmptyPayload {}
@@ -29,6 +62,8 @@ pub struct MonitorOption {
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct OverlayRandomizerCatalog {
     pub prestige_names: BTreeMap<String, LocalizedLabels>,
+    pub mutators: Vec<OverlayRandomizerMutator>,
+    pub brutal_plus: Vec<OverlayRandomizerBrutalPlus>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
