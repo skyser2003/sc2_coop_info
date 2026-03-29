@@ -3,6 +3,7 @@ import type { LanguageManager } from "../../i18n/languageManager";
 import { PreviewManager } from "../../previews/PreviewManager";
 import type { PrestigeNameMap } from "../types";
 import SelectionPreview from "./SelectionPreview";
+import { Grid } from "@mui/material";
 
 type RandomizerChoices = Record<string, boolean>;
 type RandomizerDraft = {
@@ -430,61 +431,69 @@ export default function RandomizerTab({
                 <div className="randomizer-layout">
                     <div className="randomizer-pane randomizer-pane-left">
                         <div className="randomizer-controls">
-                            <label className="randomizer-inline-field">
-                                <span className="field-label">
-                                    {t("ui_randomizer_mastery_mode")}
-                                </span>
-                                <select
-                                    className="input randomizer-select"
-                                    aria-label={t(
-                                        "ui_randomizer_mastery_mode_aria",
-                                    )}
-                                    value={masteryMode}
-                                    onChange={(event) =>
-                                        setMasteryMode(
-                                            event.target
-                                                .value as CommanderGeneratePayload["mastery_mode"],
-                                        )
-                                    }
-                                >
-                                    {MASTERY_MODES.map((mode) => (
-                                        <option
-                                            key={mode.value}
-                                            value={mode.value}
-                                        >
-                                            {t(mode.labelId)}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
+                            <Grid
+                                container
+                                spacing={1}
+                                className="randomizer-inline-field"
+                            >
+                                <Grid>
+                                    <span className="field-label">
+                                        {t("ui_randomizer_mastery_mode")}
+                                    </span>
+                                </Grid>
+                                <Grid>
+                                    <select
+                                        className="input randomizer-select"
+                                        aria-label={t(
+                                            "ui_randomizer_mastery_mode_aria",
+                                        )}
+                                        value={masteryMode}
+                                        onChange={(event) =>
+                                            setMasteryMode(
+                                                event.target
+                                                    .value as CommanderGeneratePayload["mastery_mode"],
+                                            )
+                                        }
+                                    >
+                                        {MASTERY_MODES.map((mode) => (
+                                            <option
+                                                key={mode.value}
+                                                value={mode.value}
+                                            >
+                                                {t(mode.labelId)}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </Grid>
 
-                            <label className="randomizer-toggle">
-                                <input
-                                    type="checkbox"
-                                    checked={includeMap}
-                                    onChange={(event) =>
-                                        setIncludeMap(event.target.checked)
-                                    }
-                                />
-                                <span>{t("ui_randomizer_random_map")}</span>
-                            </label>
+                                <Grid className="randomizer-toggle">
+                                    <input
+                                        type="checkbox"
+                                        checked={includeMap}
+                                        onChange={(event) =>
+                                            setIncludeMap(event.target.checked)
+                                        }
+                                    />
+                                    <span>{t("ui_randomizer_random_map")}</span>
+                                </Grid>
 
-                            <label className="randomizer-toggle">
-                                <input
-                                    type="checkbox"
-                                    checked={includeRace}
-                                    onChange={(event) =>
-                                        setIncludeRace(event.target.checked)
-                                    }
-                                />
-                                <span>
-                                    {t("ui_randomizer_random_enemy_race")}
-                                </span>
-                            </label>
+                                <Grid className="randomizer-toggle">
+                                    <input
+                                        type="checkbox"
+                                        checked={includeRace}
+                                        onChange={(event) =>
+                                            setIncludeRace(event.target.checked)
+                                        }
+                                    />
+                                    <span>
+                                        {t("ui_randomizer_random_enemy_race")}
+                                    </span>
+                                </Grid>
+                            </Grid>
                         </div>
 
-                        <div className="randomizer-main-grid">
-                            <div className="randomizer-choice-box">
+                        <Grid container className="randomizer-main-grid">
+                            <Grid size={6} className="randomizer-choice-box">
                                 <h3>{t("ui_randomizer_choices_title")}</h3>
                                 <div className="randomizer-table-shell">
                                     <table className="data-table randomizer-choice-table">
@@ -607,9 +616,9 @@ export default function RandomizerTab({
                                         {t("ui_randomizer_generate")}
                                     </button>
                                 </div>
-                            </div>
+                            </Grid>
 
-                            <div className="randomizer-result-box">
+                            <Grid size={6} className="randomizer-result-box">
                                 <h3>{t("ui_randomizer_result")}</h3>
                                 {commanderResult ? (
                                     <>
@@ -697,159 +706,213 @@ export default function RandomizerTab({
                                         </div>
                                     </div>
                                 )}
-                            </div>
-                        </div>
+                            </Grid>
+                        </Grid>
                     </div>
                     <div className="randomizer-pane randomizer-pane-right">
-                        <div className="randomizer-main-grid">
-                            <div className="randomizer-choice-box">
+                        <Grid container className="randomizer-main-grid">
+                            <Grid size={4} className="randomizer-choice-box">
                                 <h3>
                                     {t("ui_randomizer_mutator_settings_title")}
                                 </h3>
                                 <div className="randomizer-mutator-settings">
                                     <div className="randomizer-controls">
-                                        <label className="randomizer-inline-field">
-                                            <span className="field-label">
-                                                {t(
-                                                    "ui_randomizer_mutator_mode",
-                                                )}
-                                            </span>
-                                            <select
-                                                className="input randomizer-select"
-                                                aria-label={t(
-                                                    "ui_randomizer_mutator_mode_aria",
-                                                )}
-                                                value={mutatorMode}
-                                                onChange={(event) =>
-                                                    setMutatorMode(
-                                                        event.target
-                                                            .value as MutatorGeneratePayload["mutator_mode"],
-                                                    )
-                                                }
-                                            >
-                                                {MUTATOR_MODES.map((mode) => (
-                                                    <option
-                                                        key={mode.value}
-                                                        value={mode.value}
-                                                    >
-                                                        {t(mode.labelId)}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </label>
-
-                                        {mutatorMode === "all_random" ? (
-                                            <div className="randomizer-range-group">
-                                                <label className="randomizer-inline-field">
-                                                    <span className="field-label">
-                                                        {t("ui_common_minimum")}
-                                                    </span>
-                                                    <input
-                                                        className="input randomizer-number-input"
-                                                        type="number"
-                                                        min={1}
-                                                        max={10}
-                                                        value={mutatorMinInput}
-                                                        aria-label={t(
-                                                            "ui_randomizer_mutator_min_aria",
-                                                        )}
-                                                        onChange={(event) =>
-                                                            setMutatorMinInput(
-                                                                event.target
-                                                                    .value,
-                                                            )
-                                                        }
-                                                        onBlur={(event) =>
-                                                            commitMutatorMin(
-                                                                event.target
-                                                                    .value,
-                                                            )
-                                                        }
-                                                        onKeyDown={(event) =>
-                                                            maybeCommitMutatorInput(
-                                                                event,
-                                                                commitMutatorMin,
-                                                            )
-                                                        }
-                                                    />
-                                                </label>
-                                                <label className="randomizer-inline-field">
-                                                    <span className="field-label">
-                                                        {t("ui_common_maximum")}
-                                                    </span>
-                                                    <input
-                                                        className="input randomizer-number-input"
-                                                        type="number"
-                                                        min={1}
-                                                        max={10}
-                                                        value={mutatorMaxInput}
-                                                        aria-label={t(
-                                                            "ui_randomizer_mutator_max_aria",
-                                                        )}
-                                                        onChange={(event) =>
-                                                            setMutatorMaxInput(
-                                                                event.target
-                                                                    .value,
-                                                            )
-                                                        }
-                                                        onBlur={(event) =>
-                                                            commitMutatorMax(
-                                                                event.target
-                                                                    .value,
-                                                            )
-                                                        }
-                                                        onKeyDown={(event) =>
-                                                            maybeCommitMutatorInput(
-                                                                event,
-                                                                commitMutatorMax,
-                                                            )
-                                                        }
-                                                    />
-                                                </label>
-                                            </div>
-                                        ) : (
-                                            <label className="randomizer-inline-field">
+                                        <Grid
+                                            container
+                                            className="randomizer-inline-field"
+                                        >
+                                            <Grid size={4}>
                                                 <span className="field-label">
                                                     {t(
-                                                        "ui_randomizer_mutator_brutal_plus",
+                                                        "ui_randomizer_mutator_mode",
                                                     )}
                                                 </span>
+                                            </Grid>
+                                            <Grid size={8}>
                                                 <select
                                                     className="input randomizer-select"
                                                     aria-label={t(
-                                                        "ui_randomizer_mutator_brutal_plus_aria",
+                                                        "ui_randomizer_mutator_mode_aria",
                                                     )}
-                                                    value={selectedBrutalPlus}
+                                                    value={mutatorMode}
                                                     onChange={(event) =>
-                                                        setSelectedBrutalPlus(
-                                                            Number(
-                                                                event.target
-                                                                    .value,
-                                                            ),
+                                                        setMutatorMode(
+                                                            event.target
+                                                                .value as MutatorGeneratePayload["mutator_mode"],
                                                         )
                                                     }
                                                 >
-                                                    {brutalPlusEntries.map(
-                                                        (entry) => (
+                                                    {MUTATOR_MODES.map(
+                                                        (mode) => (
                                                             <option
-                                                                key={
-                                                                    entry.brutal_plus
-                                                                }
+                                                                key={mode.value}
                                                                 value={
-                                                                    entry.brutal_plus
+                                                                    mode.value
                                                                 }
                                                             >
-                                                                {brutalPlusLabel(
-                                                                    t(
-                                                                        "difficulty_brutal_plus",
-                                                                    ),
-                                                                    entry.brutal_plus,
+                                                                {t(
+                                                                    mode.labelId,
                                                                 )}
                                                             </option>
                                                         ),
                                                     )}
                                                 </select>
-                                            </label>
+                                            </Grid>
+                                        </Grid>
+
+                                        {mutatorMode === "all_random" ? (
+                                            <Grid
+                                                container
+                                                rowSpacing={1}
+                                                className="randomizer-range-group"
+                                            >
+                                                <Grid
+                                                    container
+                                                    size={12}
+                                                    className="randomizer-inline-field"
+                                                >
+                                                    <Grid size={4}>
+                                                        <span className="field-label">
+                                                            {t(
+                                                                "ui_common_minimum",
+                                                            )}
+                                                        </span>
+                                                    </Grid>
+                                                    <Grid size={8}>
+                                                        <input
+                                                            className="input randomizer-number-input"
+                                                            type="number"
+                                                            min={1}
+                                                            max={10}
+                                                            value={
+                                                                mutatorMinInput
+                                                            }
+                                                            aria-label={t(
+                                                                "ui_randomizer_mutator_min_aria",
+                                                            )}
+                                                            onChange={(event) =>
+                                                                setMutatorMinInput(
+                                                                    event.target
+                                                                        .value,
+                                                                )
+                                                            }
+                                                            onBlur={(event) =>
+                                                                commitMutatorMin(
+                                                                    event.target
+                                                                        .value,
+                                                                )
+                                                            }
+                                                            onKeyDown={(
+                                                                event,
+                                                            ) =>
+                                                                maybeCommitMutatorInput(
+                                                                    event,
+                                                                    commitMutatorMin,
+                                                                )
+                                                            }
+                                                        />
+                                                    </Grid>
+                                                </Grid>
+                                                <Grid
+                                                    container
+                                                    size={12}
+                                                    className="randomizer-inline-field"
+                                                >
+                                                    <Grid size={4}>
+                                                        <span className="field-label">
+                                                            {t(
+                                                                "ui_common_maximum",
+                                                            )}
+                                                        </span>
+                                                    </Grid>
+                                                    <Grid size={8}>
+                                                        <input
+                                                            className="input randomizer-number-input"
+                                                            type="number"
+                                                            min={1}
+                                                            max={10}
+                                                            value={
+                                                                mutatorMaxInput
+                                                            }
+                                                            aria-label={t(
+                                                                "ui_randomizer_mutator_max_aria",
+                                                            )}
+                                                            onChange={(event) =>
+                                                                setMutatorMaxInput(
+                                                                    event.target
+                                                                        .value,
+                                                                )
+                                                            }
+                                                            onBlur={(event) =>
+                                                                commitMutatorMax(
+                                                                    event.target
+                                                                        .value,
+                                                                )
+                                                            }
+                                                            onKeyDown={(
+                                                                event,
+                                                            ) =>
+                                                                maybeCommitMutatorInput(
+                                                                    event,
+                                                                    commitMutatorMax,
+                                                                )
+                                                            }
+                                                        />
+                                                    </Grid>
+                                                </Grid>
+                                            </Grid>
+                                        ) : (
+                                            <Grid
+                                                container
+                                                className="randomizer-inline-field"
+                                            >
+                                                <Grid size={4}>
+                                                    <span className="field-label">
+                                                        {t(
+                                                            "ui_randomizer_mutator_brutal_plus",
+                                                        )}
+                                                    </span>
+                                                </Grid>
+                                                <Grid size={8}>
+                                                    <select
+                                                        className="input randomizer-select"
+                                                        aria-label={t(
+                                                            "ui_randomizer_mutator_brutal_plus_aria",
+                                                        )}
+                                                        value={
+                                                            selectedBrutalPlus
+                                                        }
+                                                        onChange={(event) =>
+                                                            setSelectedBrutalPlus(
+                                                                Number(
+                                                                    event.target
+                                                                        .value,
+                                                                ),
+                                                            )
+                                                        }
+                                                    >
+                                                        {brutalPlusEntries.map(
+                                                            (entry) => (
+                                                                <option
+                                                                    key={
+                                                                        entry.brutal_plus
+                                                                    }
+                                                                    value={
+                                                                        entry.brutal_plus
+                                                                    }
+                                                                >
+                                                                    {brutalPlusLabel(
+                                                                        t(
+                                                                            "difficulty_brutal_plus",
+                                                                        ),
+                                                                        entry.brutal_plus,
+                                                                    )}
+                                                                </option>
+                                                            ),
+                                                        )}
+                                                    </select>
+                                                </Grid>
+                                            </Grid>
                                         )}
                                     </div>
 
@@ -892,9 +955,9 @@ export default function RandomizerTab({
                                         {t("ui_randomizer_generate")}
                                     </button>
                                 </div>
-                            </div>
+                            </Grid>
 
-                            <div className="randomizer-result-box">
+                            <Grid size={8} className="randomizer-result-box">
                                 <h3>{t("ui_randomizer_result")}</h3>
                                 {mutatorResult ? (
                                     <>
@@ -982,8 +1045,8 @@ export default function RandomizerTab({
                                         </div>
                                     </div>
                                 )}
-                            </div>
-                        </div>
+                            </Grid>
+                        </Grid>
                     </div>
                 </div>
             </section>

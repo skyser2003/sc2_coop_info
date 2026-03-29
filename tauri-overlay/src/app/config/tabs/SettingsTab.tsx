@@ -740,73 +740,84 @@ export default function SettingsTab({
         const hotkeyPath = path.join(".");
 
         return (
-            <div className="hotkey-entry" key={id}>
-                <button
-                    type="button"
-                    className="hotkey-action-btn"
-                    onClick={() => actions.triggerOverlayAction(actionName)}
-                    disabled={actions.isBusy}
-                >
-                    {label}
-                </button>
-                <input
-                    type="text"
-                    className={`input hotkey-input ${actions.activeHotkeyPath === hotkeyPath ? "is-recording" : ""}`}
-                    readOnly
-                    value={String(read(path, "") || "")}
-                    placeholder={
-                        actions.activeHotkeyPath === hotkeyPath
-                            ? t("ui_settings_hotkey_recording")
-                            : t("ui_settings_hotkey_press_shortcut")
-                    }
-                    onMouseDown={(event) => {
-                        if (actions.activeHotkeyPath === hotkeyPath) {
-                            return;
+            <Grid
+                container
+                columns={10}
+                spacing={1.25}
+                alignItems="stretch"
+                className="hotkey-entry"
+                key={id}
+            >
+                <Grid size={4}>
+                    <button
+                        type="button"
+                        className="hotkey-action-btn"
+                        onClick={() => actions.triggerOverlayAction(actionName)}
+                        disabled={actions.isBusy}
+                    >
+                        {label}
+                    </button>
+                </Grid>
+                <Grid size={6}>
+                    <input
+                        type="text"
+                        className={`input hotkey-input ${actions.activeHotkeyPath === hotkeyPath ? "is-recording" : ""}`}
+                        readOnly
+                        value={String(read(path, "") || "")}
+                        placeholder={
+                            actions.activeHotkeyPath === hotkeyPath
+                                ? t("ui_settings_hotkey_recording")
+                                : t("ui_settings_hotkey_press_shortcut")
                         }
-                        event.preventDefault();
-                        const input = event.currentTarget;
-                        void actions.beginHotkeyCapture(hotkeyPath);
-                        window.requestAnimationFrame(() => {
-                            input.focus();
-                        });
-                    }}
-                    onFocus={() => {
-                        void actions.beginHotkeyCapture(hotkeyPath);
-                    }}
-                    onBlur={() => {
-                        void actions.endHotkeyCapture(hotkeyPath);
-                    }}
-                    onKeyDown={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
+                        onMouseDown={(event) => {
+                            if (actions.activeHotkeyPath === hotkeyPath) {
+                                return;
+                            }
+                            event.preventDefault();
+                            const input = event.currentTarget;
+                            void actions.beginHotkeyCapture(hotkeyPath);
+                            window.requestAnimationFrame(() => {
+                                input.focus();
+                            });
+                        }}
+                        onFocus={() => {
+                            void actions.beginHotkeyCapture(hotkeyPath);
+                        }}
+                        onBlur={() => {
+                            void actions.endHotkeyCapture(hotkeyPath);
+                        }}
+                        onKeyDown={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
 
-                        const input = event.currentTarget;
-                        const finishCapture = () => {
-                            void actions
-                                .endHotkeyCapture(hotkeyPath)
-                                .finally(() => {
-                                    input.blur();
-                                });
-                        };
+                            const input = event.currentTarget;
+                            const finishCapture = () => {
+                                void actions
+                                    .endHotkeyCapture(hotkeyPath)
+                                    .finally(() => {
+                                        input.blur();
+                                    });
+                            };
 
-                        if (actions.isHotkeyClearKey(event.key)) {
-                            onChange(path, "");
-                            finishCapture();
-                            return;
-                        }
+                            if (actions.isHotkeyClearKey(event.key)) {
+                                onChange(path, "");
+                                finishCapture();
+                                return;
+                            }
 
-                        if (actions.isHotkeyModifierKey(event.key)) {
-                            return;
-                        }
+                            if (actions.isHotkeyModifierKey(event.key)) {
+                                return;
+                            }
 
-                        const hotkey = hotkeyStringFromEvent(event);
-                        if (hotkey !== "") {
-                            onChange(path, hotkey);
-                            finishCapture();
-                        }
-                    }}
-                />
-            </div>
+                            const hotkey = hotkeyStringFromEvent(event);
+                            if (hotkey !== "") {
+                                onChange(path, hotkey);
+                                finishCapture();
+                            }
+                        }}
+                    />
+                </Grid>
+            </Grid>
         );
     };
 
@@ -1058,71 +1069,120 @@ export default function SettingsTab({
                                 <h3 className="main-settings-group-title">
                                     {t("ui_settings_etc")}
                                 </h3>
-                                <div className="main-settings-group-fields main-settings-inline-numbers">
-                                    <label className="main-number-row main-select-row">
-                                        <span className="main-row-label">
-                                            {t("ui_settings_language_label")}
-                                        </span>
-                                        <select
-                                            className="input main-fixed-select"
-                                            value={String(
-                                                read(["language"], "en") ||
-                                                    "en",
-                                            )}
-                                            onChange={(event) =>
-                                                onChange(
-                                                    ["language"],
-                                                    event.target.value,
-                                                )
-                                            }
+                                <Grid
+                                    container
+                                    className="main-settings-group-fields main-settings-inline-numbers"
+                                    spacing={1.25}
+                                >
+                                    <Grid size={12}>
+                                        <Grid
+                                            container
+                                            columns={10}
+                                            spacing={1.25}
+                                            alignItems="center"
+                                            className="main-settings-row-grid"
                                         >
-                                            <option value="en">
-                                                {t("ui_language_english")}
-                                            </option>
-                                            <option value="ko">
-                                                {t("ui_language_korean")}
-                                            </option>
-                                        </select>
-                                    </label>
-                                    <label className="main-number-row main-select-row">
-                                        <span className="main-row-label">
-                                            {t("ui_settings_monitor")}
-                                        </span>
-                                        <select
-                                            className="input main-fixed-select"
-                                            value={Number(
-                                                read(["monitor"], 1) || 1,
-                                            )}
-                                            onChange={(event) =>
-                                                onChange(
-                                                    ["monitor"],
-                                                    Math.max(
-                                                        1,
-                                                        Number(
+                                            <Grid size={4}>
+                                                <span className="main-row-label">
+                                                    {t(
+                                                        "ui_settings_language_label",
+                                                    )}
+                                                </span>
+                                            </Grid>
+                                            <Grid size={6}>
+                                                <select
+                                                    className="input main-fixed-select"
+                                                    value={String(
+                                                        read(
+                                                            ["language"],
+                                                            "en",
+                                                        ) || "en",
+                                                    )}
+                                                    onChange={(event) =>
+                                                        onChange(
+                                                            ["language"],
                                                             event.target.value,
-                                                        ) || 1,
-                                                    ),
-                                                )
-                                            }
-                                        >
-                                            {monitorOptions.map((option) => (
-                                                <option
-                                                    key={option.index}
-                                                    value={option.index}
+                                                        )
+                                                    }
                                                 >
-                                                    {option.label}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </label>
-                                    {boolField(
-                                        t("ui_settings_enable_logging"),
-                                        ["enable_logging"],
-                                    )}
-                                    {boolField(t("ui_settings_dark_theme"), [
-                                        "dark_theme",
-                                    ])}
-                                </div>
+                                                    <option value="en">
+                                                        {t(
+                                                            "ui_language_english",
+                                                        )}
+                                                    </option>
+                                                    <option value="ko">
+                                                        {t(
+                                                            "ui_language_korean",
+                                                        )}
+                                                    </option>
+                                                </select>
+                                            </Grid>
+                                        </Grid>
+                                    </Grid>
+                                    <Grid size={12}>
+                                        <Grid
+                                            container
+                                            columns={10}
+                                            spacing={1.25}
+                                            alignItems="center"
+                                            className="main-settings-row-grid"
+                                        >
+                                            <Grid size={4}>
+                                                <span className="main-row-label">
+                                                    {t("ui_settings_monitor")}
+                                                </span>
+                                            </Grid>
+                                            <Grid size={6}>
+                                                <select
+                                                    className="input main-fixed-select"
+                                                    value={Number(
+                                                        read(["monitor"], 1) ||
+                                                            1,
+                                                    )}
+                                                    onChange={(event) =>
+                                                        onChange(
+                                                            ["monitor"],
+                                                            Math.max(
+                                                                1,
+                                                                Number(
+                                                                    event.target
+                                                                        .value,
+                                                                ) || 1,
+                                                            ),
+                                                        )
+                                                    }
+                                                >
+                                                    {monitorOptions.map(
+                                                        (option) => (
+                                                            <option
+                                                                key={
+                                                                    option.index
+                                                                }
+                                                                value={
+                                                                    option.index
+                                                                }
+                                                            >
+                                                                {option.label}
+                                                            </option>
+                                                        ),
+                                                    )}
+                                                </select>
+                                            </Grid>
+                                        </Grid>
+                                    </Grid>
+                                    <Grid size={12}>
+                                        {boolField(
+                                            t("ui_settings_enable_logging"),
+                                            ["enable_logging"],
+                                        )}
+                                    </Grid>
+                                    <Grid size={12}>
+                                        {boolField(
+                                            t("ui_settings_dark_theme"),
+                                            ["dark_theme"],
+                                        )}
+                                    </Grid>
+                                </Grid>
                             </section>
                         </div>
                     </div>
@@ -1247,7 +1307,11 @@ export default function SettingsTab({
                                 <h3 className="main-settings-group-title">
                                     {t("ui_settings_hotkeys")}
                                 </h3>
-                                <div className="hotkeys-grid">
+                                <Grid
+                                    container
+                                    spacing={1.25}
+                                    className="hotkeys-grid"
+                                >
                                     {hotkeyEntry(
                                         "showhide",
                                         t("ui_settings_hotkey_show_hide"),
@@ -1290,7 +1354,7 @@ export default function SettingsTab({
                                         ["hotkey_winrates"],
                                         "overlay_player_info",
                                     )}
-                                </div>
+                                </Grid>
                             </div>
                             <div className="main-settings-group">
                                 <h3 className="main-settings-group-title">

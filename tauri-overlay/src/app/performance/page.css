@@ -18,8 +18,10 @@ body {
 }
 
 .performance-overlay-root {
-    width: max-content;
-    min-width: max-content;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    inline-size: 100%;
     min-height: 100%;
     padding: 16px 18px 12px;
     box-sizing: border-box;
@@ -28,9 +30,9 @@ body {
 }
 
 .performance-dragbar {
-    display: block;
+    display: inline-flex;
+    align-self: flex-start;
     margin-bottom: 10px;
-    width: fit-content;
     padding: 6px 10px;
     border: 1px solid rgb(255 255 255 / 16%);
     border-radius: 10px;
@@ -53,9 +55,9 @@ body {
 }
 
 .performance-card {
-    display: inline-block;
-    width: max-content;
-    min-width: 0;
+    display: block;
+    inline-size: 100%;
+    min-inline-size: 0;
     padding: 0;
     background: transparent;
     box-shadow: none;
@@ -63,14 +65,14 @@ body {
 
 .performance-columns {
     display: grid;
-    grid-template-columns: max-content max-content;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     column-gap: var(--performance-gap);
     align-items: start;
 }
 
 .performance-column {
     display: block;
-    width: max-content;
+    min-inline-size: 0;
 }
 
 .performance-column h1,
@@ -91,11 +93,11 @@ body {
 
 .performance-stat-grid {
     display: grid;
-    grid-template-columns: max-content max-content;
+    grid-template-columns: minmax(0, 1fr) auto;
     row-gap: 2px;
     column-gap: 12px;
     align-items: baseline;
-    width: max-content;
+    inline-size: 100%;
 }
 
 .performance-label,
@@ -120,10 +122,10 @@ body {
 .performance-process-cpu {
     margin-top: 32px;
     display: grid;
-    grid-template-columns: max-content max-content;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 12px;
     align-items: baseline;
-    width: max-content;
+    inline-size: 100%;
 }
 
 .performance-section-title {
@@ -132,12 +134,12 @@ body {
 
 .performance-cpu-list {
     margin-top: 32px;
-    width: max-content;
+    inline-size: 100%;
 }
 
 .performance-cpu-row {
     display: grid;
-    grid-template-columns: max-content max-content;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 10px;
     margin-top: 0;
     align-items: baseline;
@@ -145,14 +147,12 @@ body {
 
 .performance-cpu-label {
     color: var(--performance-text);
-    min-width: 50px;
     font-size: 16px;
     text-align: right;
     text-shadow: 0 2px 3px rgb(0 0 0 / 65%);
 }
 
 .performance-cpu-value {
-    min-width: 64px;
     text-align: left;
     color: var(--performance-dim);
     font-size: 16px;

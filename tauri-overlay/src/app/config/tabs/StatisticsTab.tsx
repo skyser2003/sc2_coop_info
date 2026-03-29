@@ -1,4 +1,5 @@
 import * as React from "react";
+import Grid from "@mui/material/Grid";
 import type { LanguageManager } from "../../i18n/languageManager";
 import { PreviewManager } from "../../previews/PreviewManager";
 import type {
@@ -2049,335 +2050,387 @@ export default function StatisticsTab({
     return (
         <div className="tab-content">
             <section className="card group stats-root">
-                <div className="stats-top-grid">
-                    <div className="stats-check-cols">
-                        <div className="stats-filter-group">
-                            <h4>{t("ui_stats_group_difficulty")}</h4>
-                            {filterCheckbox(
-                                languageManager.localize("Casual"),
-                                statsState.filters.difficulties.Casual,
-                                () => actions.toggleDifficulty("Casual"),
-                            )}
-                            {filterCheckbox(
-                                languageManager.localize("Normal"),
-                                statsState.filters.difficulties.Normal,
-                                () => actions.toggleDifficulty("Normal"),
-                            )}
-                            {filterCheckbox(
-                                languageManager.localize("Hard"),
-                                statsState.filters.difficulties.Hard,
-                                () => actions.toggleDifficulty("Hard"),
-                            )}
-                            {filterCheckbox(
-                                languageManager.localize("Brutal"),
-                                statsState.filters.difficulties.Brutal,
-                                () => actions.toggleDifficulty("Brutal"),
-                            )}
-                            {filterCheckbox(
-                                languageManager.localize("Brutal+1"),
-                                statsState.filters.difficulties.BrutalPlus1,
-                                () => actions.toggleDifficulty("BrutalPlus1"),
-                            )}
-                            {filterCheckbox(
-                                languageManager.localize("Brutal+2"),
-                                statsState.filters.difficulties.BrutalPlus2,
-                                () => actions.toggleDifficulty("BrutalPlus2"),
-                            )}
-                            {filterCheckbox(
-                                languageManager.localize("Brutal+3"),
-                                statsState.filters.difficulties.BrutalPlus3,
-                                () => actions.toggleDifficulty("BrutalPlus3"),
-                            )}
-                            {filterCheckbox(
-                                languageManager.localize("Brutal+4"),
-                                statsState.filters.difficulties.BrutalPlus4,
-                                () => actions.toggleDifficulty("BrutalPlus4"),
-                            )}
-                            {filterCheckbox(
-                                languageManager.localize("Brutal+5"),
-                                statsState.filters.difficulties.BrutalPlus5,
-                                () => actions.toggleDifficulty("BrutalPlus5"),
-                            )}
-                            {filterCheckbox(
-                                languageManager.localize("Brutal+6"),
-                                statsState.filters.difficulties.BrutalPlus6,
-                                () => actions.toggleDifficulty("BrutalPlus6"),
-                            )}
-                        </div>
-                        <div className="stats-filter-group">
-                            <h4>{t("ui_stats_group_region")}</h4>
-                            {filterCheckbox(
-                                t("ui_stats_region_americas"),
-                                statsState.filters.regions.NA,
-                                () => actions.toggleRegion("NA"),
-                            )}
-                            {filterCheckbox(
-                                t("ui_stats_region_europe"),
-                                statsState.filters.regions.EU,
-                                () => actions.toggleRegion("EU"),
-                            )}
-                            {filterCheckbox(
-                                t("ui_stats_region_asia"),
-                                statsState.filters.regions.KR,
-                                () => actions.toggleRegion("KR"),
-                            )}
-                            {filterCheckbox(
-                                t("ui_stats_region_china"),
-                                statsState.filters.regions.CN,
-                                () => actions.toggleRegion("CN"),
-                            )}
-                        </div>
-                        <div className="stats-filter-stack">
+                <Grid
+                    container
+                    spacing={2.25}
+                    alignItems="flex-start"
+                    className="stats-top-grid"
+                >
+                    <Grid size={8}>
+                        <div className="stats-check-cols">
                             <div className="stats-filter-group">
-                                <h4>{t("ui_stats_group_game_type")}</h4>
+                                <h4>{t("ui_stats_group_difficulty")}</h4>
                                 {filterCheckbox(
-                                    t("ui_stats_normal_games"),
-                                    statsState.filters.includeNormalGames,
-                                    () =>
-                                        actions.setStatsBool(
-                                            "includeNormalGames",
-                                        ),
+                                    languageManager.localize("Casual"),
+                                    statsState.filters.difficulties.Casual,
+                                    () => actions.toggleDifficulty("Casual"),
                                 )}
                                 {filterCheckbox(
-                                    t("ui_stats_mutations"),
-                                    statsState.filters.includeMutations,
+                                    languageManager.localize("Normal"),
+                                    statsState.filters.difficulties.Normal,
+                                    () => actions.toggleDifficulty("Normal"),
+                                )}
+                                {filterCheckbox(
+                                    languageManager.localize("Hard"),
+                                    statsState.filters.difficulties.Hard,
+                                    () => actions.toggleDifficulty("Hard"),
+                                )}
+                                {filterCheckbox(
+                                    languageManager.localize("Brutal"),
+                                    statsState.filters.difficulties.Brutal,
+                                    () => actions.toggleDifficulty("Brutal"),
+                                )}
+                                {filterCheckbox(
+                                    languageManager.localize("Brutal+1"),
+                                    statsState.filters.difficulties.BrutalPlus1,
                                     () =>
-                                        actions.setStatsBool(
-                                            "includeMutations",
-                                        ),
+                                        actions.toggleDifficulty("BrutalPlus1"),
+                                )}
+                                {filterCheckbox(
+                                    languageManager.localize("Brutal+2"),
+                                    statsState.filters.difficulties.BrutalPlus2,
+                                    () =>
+                                        actions.toggleDifficulty("BrutalPlus2"),
+                                )}
+                                {filterCheckbox(
+                                    languageManager.localize("Brutal+3"),
+                                    statsState.filters.difficulties.BrutalPlus3,
+                                    () =>
+                                        actions.toggleDifficulty("BrutalPlus3"),
+                                )}
+                                {filterCheckbox(
+                                    languageManager.localize("Brutal+4"),
+                                    statsState.filters.difficulties.BrutalPlus4,
+                                    () =>
+                                        actions.toggleDifficulty("BrutalPlus4"),
+                                )}
+                                {filterCheckbox(
+                                    languageManager.localize("Brutal+5"),
+                                    statsState.filters.difficulties.BrutalPlus5,
+                                    () =>
+                                        actions.toggleDifficulty("BrutalPlus5"),
+                                )}
+                                {filterCheckbox(
+                                    languageManager.localize("Brutal+6"),
+                                    statsState.filters.difficulties.BrutalPlus6,
+                                    () =>
+                                        actions.toggleDifficulty("BrutalPlus6"),
                                 )}
                             </div>
                             <div className="stats-filter-group">
-                                <h4>{t("ui_stats_group_game_result")}</h4>
+                                <h4>{t("ui_stats_group_region")}</h4>
                                 {filterCheckbox(
-                                    t("ui_stats_include_wins"),
-                                    statsState.filters.includeWins,
-                                    () => actions.setStatsBool("includeWins"),
+                                    t("ui_stats_region_americas"),
+                                    statsState.filters.regions.NA,
+                                    () => actions.toggleRegion("NA"),
                                 )}
                                 {filterCheckbox(
-                                    t("ui_stats_include_losses"),
-                                    statsState.filters.includeLosses,
-                                    () => actions.setStatsBool("includeLosses"),
+                                    t("ui_stats_region_europe"),
+                                    statsState.filters.regions.EU,
+                                    () => actions.toggleRegion("EU"),
+                                )}
+                                {filterCheckbox(
+                                    t("ui_stats_region_asia"),
+                                    statsState.filters.regions.KR,
+                                    () => actions.toggleRegion("KR"),
+                                )}
+                                {filterCheckbox(
+                                    t("ui_stats_region_china"),
+                                    statsState.filters.regions.CN,
+                                    () => actions.toggleRegion("CN"),
+                                )}
+                            </div>
+                            <div className="stats-filter-stack">
+                                <div className="stats-filter-group">
+                                    <h4>{t("ui_stats_group_game_type")}</h4>
+                                    {filterCheckbox(
+                                        t("ui_stats_normal_games"),
+                                        statsState.filters.includeNormalGames,
+                                        () =>
+                                            actions.setStatsBool(
+                                                "includeNormalGames",
+                                            ),
+                                    )}
+                                    {filterCheckbox(
+                                        t("ui_stats_mutations"),
+                                        statsState.filters.includeMutations,
+                                        () =>
+                                            actions.setStatsBool(
+                                                "includeMutations",
+                                            ),
+                                    )}
+                                </div>
+                                <div className="stats-filter-group">
+                                    <h4>{t("ui_stats_group_game_result")}</h4>
+                                    {filterCheckbox(
+                                        t("ui_stats_include_wins"),
+                                        statsState.filters.includeWins,
+                                        () =>
+                                            actions.setStatsBool("includeWins"),
+                                    )}
+                                    {filterCheckbox(
+                                        t("ui_stats_include_losses"),
+                                        statsState.filters.includeLosses,
+                                        () =>
+                                            actions.setStatsBool(
+                                                "includeLosses",
+                                            ),
+                                    )}
+                                </div>
+                            </div>
+                            <div className="stats-filter-stack">
+                                <div className="stats-filter-group">
+                                    <h4>{t("ui_stats_group_main_level")}</h4>
+                                    {filterCheckbox(
+                                        t("ui_stats_include_levels_1_14"),
+                                        statsState.filters.includeMainSub15,
+                                        () =>
+                                            actions.setStatsBool(
+                                                "includeMainSub15",
+                                            ),
+                                    )}
+                                    {filterCheckbox(
+                                        t("ui_stats_include_levels_15_plus"),
+                                        statsState.filters.includeMainOver15,
+                                        () =>
+                                            actions.setStatsBool(
+                                                "includeMainOver15",
+                                            ),
+                                    )}
+                                </div>
+                                <div className="stats-filter-group">
+                                    <h4>{t("ui_stats_group_main_mastery")}</h4>
+                                    {filterCheckbox(
+                                        t(
+                                            "ui_stats_include_normal_mastery_sum",
+                                        ),
+                                        statsState.filters
+                                            .includeMainNormalMastery,
+                                        () =>
+                                            actions.setStatsBool(
+                                                "includeMainNormalMastery",
+                                            ),
+                                    )}
+                                    {filterCheckbox(
+                                        t(
+                                            "ui_stats_include_abnormal_mastery_sum",
+                                        ),
+                                        statsState.filters
+                                            .includeMainAbnormalMastery,
+                                        () =>
+                                            actions.setStatsBool(
+                                                "includeMainAbnormalMastery",
+                                            ),
+                                    )}
+                                </div>
+                            </div>
+                            <div className="stats-filter-stack">
+                                <div className="stats-filter-group">
+                                    <h4>{t("ui_stats_group_ally_level")}</h4>
+                                    {filterCheckbox(
+                                        t("ui_stats_include_levels_1_14"),
+                                        statsState.filters.includeAllySub15,
+                                        () =>
+                                            actions.setStatsBool(
+                                                "includeAllySub15",
+                                            ),
+                                    )}
+                                    {filterCheckbox(
+                                        t("ui_stats_include_levels_15_plus"),
+                                        statsState.filters.includeAllyOver15,
+                                        () =>
+                                            actions.setStatsBool(
+                                                "includeAllyOver15",
+                                            ),
+                                    )}
+                                </div>
+                                <div className="stats-filter-group">
+                                    <h4>{t("ui_stats_group_ally_mastery")}</h4>
+                                    {filterCheckbox(
+                                        t(
+                                            "ui_stats_include_normal_mastery_sum",
+                                        ),
+                                        statsState.filters
+                                            .includeAllyNormalMastery,
+                                        () =>
+                                            actions.setStatsBool(
+                                                "includeAllyNormalMastery",
+                                            ),
+                                    )}
+                                    {filterCheckbox(
+                                        t(
+                                            "ui_stats_include_abnormal_mastery_sum",
+                                        ),
+                                        statsState.filters
+                                            .includeAllyAbnormalMastery,
+                                        () =>
+                                            actions.setStatsBool(
+                                                "includeAllyAbnormalMastery",
+                                            ),
+                                    )}
+                                </div>
+                            </div>
+                            <div className="stats-filter-group">
+                                <h4>{t("ui_stats_group_etc")}</h4>
+                                {filterCheckbox(
+                                    t("ui_stats_override_folder"),
+                                    statsState.filters.overrideFolderSelection,
+                                    () =>
+                                        actions.setStatsBool(
+                                            "overrideFolderSelection",
+                                        ),
+                                )}
+                                {filterCheckbox(
+                                    t("ui_stats_include_multibox"),
+                                    statsState.filters.includeMultiBox,
+                                    () =>
+                                        actions.setStatsBool("includeMultiBox"),
                                 )}
                             </div>
                         </div>
-                        <div className="stats-filter-stack">
-                            <div className="stats-filter-group">
-                                <h4>{t("ui_stats_group_main_level")}</h4>
-                                {filterCheckbox(
-                                    t("ui_stats_include_levels_1_14"),
-                                    statsState.filters.includeMainSub15,
-                                    () =>
-                                        actions.setStatsBool(
-                                            "includeMainSub15",
-                                        ),
-                                )}
-                                {filterCheckbox(
-                                    t("ui_stats_include_levels_15_plus"),
-                                    statsState.filters.includeMainOver15,
-                                    () =>
-                                        actions.setStatsBool(
-                                            "includeMainOver15",
-                                        ),
-                                )}
+                    </Grid>
+                    <Grid size={4}>
+                        <div className="stats-filters-side">
+                            <div className="stats-minmax">
+                                <h4>{t("ui_stats_game_length_minutes")}</h4>
+                                <Grid container spacing={1}>
+                                    <Grid size={4}>
+                                        <span>{t("ui_common_minimum")}</span>
+                                    </Grid>
+                                    <Grid size={8}>
+                                        <input
+                                            className="input"
+                                            type="number"
+                                            min={0}
+                                            max={1000}
+                                            value={statsState.filters.minLength}
+                                            onChange={(event) =>
+                                                actions.setStatsNumber(
+                                                    "minLength",
+                                                    event.target.value,
+                                                )
+                                            }
+                                        />
+                                    </Grid>
+                                </Grid>
+                                <Grid container spacing={1}>
+                                    <Grid size={4}>
+                                        <span>{t("ui_common_maximum")}</span>
+                                    </Grid>
+                                    <Grid size={8}>
+                                        <input
+                                            className="input"
+                                            type="number"
+                                            min={0}
+                                            max={1000}
+                                            value={statsState.filters.maxLength}
+                                            onChange={(event) =>
+                                                actions.setStatsNumber(
+                                                    "maxLength",
+                                                    event.target.value,
+                                                )
+                                            }
+                                        />
+                                    </Grid>
+                                </Grid>
                             </div>
-                            <div className="stats-filter-group">
-                                <h4>{t("ui_stats_group_main_mastery")}</h4>
-                                {filterCheckbox(
-                                    t("ui_stats_include_normal_mastery_sum"),
-                                    statsState.filters.includeMainNormalMastery,
-                                    () =>
-                                        actions.setStatsBool(
-                                            "includeMainNormalMastery",
-                                        ),
-                                )}
-                                {filterCheckbox(
-                                    t("ui_stats_include_abnormal_mastery_sum"),
-                                    statsState.filters
-                                        .includeMainAbnormalMastery,
-                                    () =>
-                                        actions.setStatsBool(
-                                            "includeMainAbnormalMastery",
-                                        ),
-                                )}
-                            </div>
-                        </div>
-                        <div className="stats-filter-stack">
-                            <div className="stats-filter-group">
-                                <h4>{t("ui_stats_group_ally_level")}</h4>
-                                {filterCheckbox(
-                                    t("ui_stats_include_levels_1_14"),
-                                    statsState.filters.includeAllySub15,
-                                    () =>
-                                        actions.setStatsBool(
-                                            "includeAllySub15",
-                                        ),
-                                )}
-                                {filterCheckbox(
-                                    t("ui_stats_include_levels_15_plus"),
-                                    statsState.filters.includeAllyOver15,
-                                    () =>
-                                        actions.setStatsBool(
-                                            "includeAllyOver15",
-                                        ),
-                                )}
-                            </div>
-                            <div className="stats-filter-group">
-                                <h4>{t("ui_stats_group_ally_mastery")}</h4>
-                                {filterCheckbox(
-                                    t("ui_stats_include_normal_mastery_sum"),
-                                    statsState.filters.includeAllyNormalMastery,
-                                    () =>
-                                        actions.setStatsBool(
-                                            "includeAllyNormalMastery",
-                                        ),
-                                )}
-                                {filterCheckbox(
-                                    t("ui_stats_include_abnormal_mastery_sum"),
-                                    statsState.filters
-                                        .includeAllyAbnormalMastery,
-                                    () =>
-                                        actions.setStatsBool(
-                                            "includeAllyAbnormalMastery",
-                                        ),
-                                )}
-                            </div>
-                        </div>
-                        <div className="stats-filter-group">
-                            <h4>{t("ui_stats_group_etc")}</h4>
-                            {filterCheckbox(
-                                t("ui_stats_override_folder"),
-                                statsState.filters.overrideFolderSelection,
-                                () =>
-                                    actions.setStatsBool(
-                                        "overrideFolderSelection",
-                                    ),
-                            )}
-                            {filterCheckbox(
-                                t("ui_stats_include_multibox"),
-                                statsState.filters.includeMultiBox,
-                                () => actions.setStatsBool("includeMultiBox"),
-                            )}
-                        </div>
-                    </div>
-                    <div className="stats-filters-side">
-                        <div className="stats-minmax">
-                            <h4>{t("ui_stats_game_length_minutes")}</h4>
-                            <label>
+                            <div className="stats-dates">
+                                <h4>{t("ui_stats_replay_date")}</h4>
+                                <Grid container>
+                                    <Grid size={4}>
+                                        <span>{t("ui_common_from")}</span>
+                                    </Grid>
+                                    <Grid size={8}>
+                                        <input
+                                            className="input"
+                                            type="date"
+                                            value={statsState.filters.fromDate}
+                                            onChange={(event) =>
+                                                actions.setStatsText(
+                                                    "fromDate",
+                                                    event.target.value,
+                                                )
+                                            }
+                                        />
+                                    </Grid>
+                                </Grid>
+                                <Grid container>
+                                    <Grid size={4}>
+                                        <span>{t("ui_common_to")}</span>
+                                    </Grid>
+                                    <Grid size={8}>
+                                        <input
+                                            className="input"
+                                            type="date"
+                                            value={statsState.filters.toDate}
+                                            onChange={(event) =>
+                                                actions.setStatsText(
+                                                    "toDate",
+                                                    event.target.value,
+                                                )
+                                            }
+                                        />
+                                    </Grid>
+                                </Grid>
                                 <input
                                     className="input"
-                                    type="number"
-                                    min={0}
-                                    max={1000}
-                                    value={statsState.filters.minLength}
-                                    onChange={(event) =>
-                                        actions.setStatsNumber(
-                                            "minLength",
-                                            event.target.value,
-                                        )
-                                    }
-                                />
-                                <span>{t("ui_common_minimum")}</span>
-                            </label>
-                            <label>
-                                <input
-                                    className="input"
-                                    type="number"
-                                    min={0}
-                                    max={1000}
-                                    value={statsState.filters.maxLength}
-                                    onChange={(event) =>
-                                        actions.setStatsNumber(
-                                            "maxLength",
-                                            event.target.value,
-                                        )
-                                    }
-                                />
-                                <span>{t("ui_common_maximum")}</span>
-                            </label>
-                        </div>
-                        <div className="stats-dates">
-                            <h4>{t("ui_stats_replay_date")}</h4>
-                            <label>
-                                <input
-                                    className="input"
-                                    type="date"
-                                    value={statsState.filters.fromDate}
+                                    type="text"
+                                    value={statsState.filters.player}
+                                    placeholder={t(
+                                        "ui_stats_filter_ally_player",
+                                    )}
                                     onChange={(event) =>
                                         actions.setStatsText(
-                                            "fromDate",
+                                            "player",
                                             event.target.value,
                                         )
                                     }
                                 />
-                                <span>{t("ui_common_from")}</span>
-                            </label>
-                            <label>
-                                <input
-                                    className="input"
-                                    type="date"
-                                    value={statsState.filters.toDate}
-                                    onChange={(event) =>
-                                        actions.setStatsText(
-                                            "toDate",
-                                            event.target.value,
+                            </div>
+                            <div className="stats-side-actions">
+                                <button
+                                    type="button"
+                                    onClick={actions.startSimpleAnalysis}
+                                    disabled={
+                                        actions.isBusy ||
+                                        Boolean(payload.ready) ||
+                                        Boolean(
+                                            payload.simple_analysis_running,
+                                        ) ||
+                                        Boolean(
+                                            payload.detailed_analysis_running,
                                         )
                                     }
-                                />
-                                <span>{t("ui_common_to")}</span>
-                            </label>
-                            <input
-                                className="input"
-                                type="text"
-                                value={statsState.filters.player}
-                                placeholder={t("ui_stats_filter_ally_player")}
-                                onChange={(event) =>
-                                    actions.setStatsText(
-                                        "player",
-                                        event.target.value,
-                                    )
-                                }
-                            />
+                                >
+                                    {payload.simple_analysis_running
+                                        ? t("ui_stats_simple_running")
+                                        : t("ui_stats_run_simple_analysis")}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={actions.dumpData}
+                                    disabled={actions.isBusy || !payload.ready}
+                                >
+                                    {t("ui_stats_dump_data")}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={actions.refreshStats}
+                                    disabled={actions.isBusy}
+                                >
+                                    {actions.isBusy
+                                        ? t("ui_common_loading")
+                                        : t("ui_common_refresh")}
+                                </button>
+                                <p>
+                                    {formatText("ui_stats_games_found", {
+                                        value: formatNumber(gamesFound),
+                                    })}
+                                </p>
+                            </div>
                         </div>
-                        <div className="stats-side-actions">
-                            <button
-                                type="button"
-                                onClick={actions.startSimpleAnalysis}
-                                disabled={
-                                    actions.isBusy ||
-                                    Boolean(payload.ready) ||
-                                    Boolean(payload.simple_analysis_running) ||
-                                    Boolean(payload.detailed_analysis_running)
-                                }
-                            >
-                                {payload.simple_analysis_running
-                                    ? t("ui_stats_simple_running")
-                                    : t("ui_stats_run_simple_analysis")}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={actions.dumpData}
-                                disabled={actions.isBusy || !payload.ready}
-                            >
-                                {t("ui_stats_dump_data")}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={actions.refreshStats}
-                                disabled={actions.isBusy}
-                            >
-                                {actions.isBusy
-                                    ? t("ui_common_loading")
-                                    : t("ui_common_refresh")}
-                            </button>
-                            <p>
-                                {formatText("ui_stats_games_found", {
-                                    value: formatNumber(gamesFound),
-                                })}
-                            </p>
-                        </div>
-                    </div>
-                </div>
+                    </Grid>
+                </Grid>
                 <nav className="stats-subtabs">
                     {STATS_SUBTABS.map((item) => (
                         <button

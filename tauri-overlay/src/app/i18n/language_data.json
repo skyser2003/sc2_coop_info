@@ -676,11 +676,11 @@
         "ko": "종료"
     },
     "ui_common_minimum": {
-        "en": "Minimum",
+        "en": "Min",
         "ko": "최소"
     },
     "ui_common_maximum": {
-        "en": "Maximum",
+        "en": "Max",
         "ko": "최대"
     },
     "ui_common_sum": {

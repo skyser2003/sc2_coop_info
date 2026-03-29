@@ -111,7 +111,7 @@
 }
 
 .configPage :global(.field-label) {
-    width: 260px;
+    flex: 0 1 18rem;
     font-size: 14px;
     color: #e2e8f0;
 }
@@ -123,9 +123,9 @@
     color: #e2e8f0;
     border-radius: 6px;
     padding: 8px;
-    min-width: 250px;
-    flex: 1;
-    max-width: 620px;
+    min-width: 0;
+    flex: 1 1 18rem;
+    inline-size: 100%;
 }
 
 .configPage :global(textarea.input) {
@@ -199,14 +199,14 @@
 }
 
 .configPage :global(.table-pagination-page) {
-    min-width: 86px;
+    min-inline-size: 7em;
     color: #e5e7eb;
     text-align: center;
     font-size: 13px;
 }
 
 .configPage :global(.table-pagination-btn) {
-    min-width: 96px;
+    min-inline-size: 8em;
     padding: 8px 12px;
     background: #334155;
 }
@@ -291,9 +291,8 @@
 }
 
 .configPage :global(.games-search) {
-    width: 320px;
-    min-width: 220px;
-    max-width: 360px;
+    flex: 1 1 18rem;
+    inline-size: 100%;
 }
 
 .configPage :global(.games-filters) {
@@ -329,7 +328,7 @@
 }
 
 .configPage :global(.games-icon-btn) {
-    min-width: 44px;
+    min-inline-size: 3em;
     padding: 8px 10px;
     background: #505050;
     border: 1px solid #6b6b6b;
@@ -345,12 +344,11 @@
 
 .configPage :global(.games-table th:nth-child(1)),
 .configPage :global(.games-table td:nth-child(1)) {
-    width: 1%;
-    min-width: max-content;
+    inline-size: auto;
 }
 
 .configPage :global(.games-player-cell) {
-    max-width: 420px;
+    max-inline-size: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
 }
@@ -366,12 +364,12 @@
     flex-wrap: nowrap;
     align-items: center;
     gap: 6px;
-    min-width: 48px;
+    min-inline-size: 3em;
 }
 
 .configPage :global(.games-mutator-icon) {
-    width: 28px;
-    height: 28px;
+    inline-size: 1.75rem;
+    block-size: 1.75rem;
     object-fit: contain;
     border-radius: 6px;
     background: rgba(2, 6, 23, 0.72);
@@ -385,7 +383,7 @@
 
 .configPage :global(.weeklies-layout) {
     display: grid;
-    grid-template-columns: minmax(520px, 1.15fr) minmax(340px, 0.85fr);
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
     gap: 14px;
     align-items: start;
 }
@@ -492,7 +490,7 @@
 
 .configPage :global(.weeklies-mutator-card) {
     display: grid;
-    grid-template-columns: 68px minmax(0, 1fr);
+    grid-template-columns: 4.25rem minmax(0, 1fr);
     gap: 12px;
     align-items: start;
     padding: 12px;
@@ -502,8 +500,8 @@
 }
 
 .configPage :global(.weeklies-mutator-icon) {
-    width: 68px;
-    height: 68px;
+    inline-size: 4.25rem;
+    block-size: 4.25rem;
     object-fit: contain;
     border-radius: 8px;
     background: rgba(2, 6, 23, 0.72);
@@ -552,8 +550,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
+    inline-size: 1.5rem;
+    block-size: 1.5rem;
     padding: 0;
     border: 1px solid rgba(148, 163, 184, 0.45);
     border-radius: 6px;
@@ -562,7 +560,7 @@
     font-size: 16px;
     line-height: 1;
     cursor: pointer;
-    flex: 0 0 24px;
+    flex: 0 0 1.5rem;
 }
 
 .configPage :global(.players-expander-btn:hover) {
@@ -630,7 +628,7 @@
     border: 1px solid #7a7a7a;
     padding: 6px 12px;
     border-radius: 6px;
-    min-width: 86px;
+    min-inline-size: 7em;
 }
 
 .configPage :global(.chat-modal-backdrop) {
@@ -646,7 +644,7 @@
 }
 
 .configPage :global(.chat-modal) {
-    width: min(960px, 100%);
+    inline-size: 100%;
     max-height: min(78vh, 860px);
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
@@ -698,7 +696,7 @@
 
 .configPage :global(.chat-row) {
     display: grid;
-    grid-template-columns: 74px minmax(140px, 220px) minmax(0, 1fr);
+    grid-template-columns: 5.5em minmax(10em, 0.9fr) minmax(0, 2.1fr);
     gap: 14px;
     align-items: start;
     padding: 9px 12px;
@@ -776,9 +774,7 @@
 }
 
 .configPage :global(.stats-top-grid) {
-    display: flex;
-    gap: 18px;
-    align-items: flex-start;
+    width: 100%;
 }
 
 .configPage :global(.stats-check-cols) {
@@ -822,7 +818,7 @@
 }
 
 .configPage :global(.stats-filters-side) {
-    width: 430px;
+    flex: 1 1 24rem;
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 12px;
@@ -838,6 +834,7 @@
     align-items: center;
     gap: 8px;
     margin-bottom: 6px;
+    white-space: nowrap;
 }
 
 .configPage :global(.stats-minmax .input),
@@ -894,7 +891,7 @@
 
 .configPage :global(.stats-commanders-split) {
     display: grid;
-    grid-template-columns: minmax(520px, 1fr) minmax(360px, 0.9fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
     gap: 12px;
     align-items: start;
 }
@@ -1130,26 +1127,33 @@
 }
 
 .configPage :global(.hotkey-entry) {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin: 6px 0;
+    width: 100%;
 }
 
 .configPage :global(.hotkey-action-btn) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: #505050;
     border: 1px solid #6f6f6f;
-    min-width: 150px;
+    min-inline-size: 0;
+    inline-size: 100%;
+    text-align: center;
 }
 
 .configPage :global(.hotkey-input) {
-    flex: 1;
-    max-width: 320px;
+    min-inline-size: 0;
+    inline-size: 100%;
+    max-inline-size: 100%;
 }
 
 .configPage :global(.hotkey-input.is-recording) {
     border-color: #60a5fa;
     box-shadow: 0 0 0 1px #60a5fa inset;
+}
+
+.configPage :global(.hotkeys-grid) {
+    width: 100%;
 }
 
 .configPage :global(.color-row) {
@@ -1161,14 +1165,14 @@
 }
 
 .configPage :global(.color-row-label) {
-    min-width: 90px;
+    flex: 0 1 7em;
     color: #e5e7eb;
     font-weight: 600;
 }
 
 .configPage :global(.color-row-input) {
-    width: 72px;
-    min-width: 72px;
+    inline-size: 4.5rem;
+    min-inline-size: 4.5rem;
     flex: 0 0 auto;
 }
 
@@ -1235,7 +1239,7 @@
 
 .configPage :global(.color-wheel-picker) {
     position: relative;
-    width: 220px;
+    inline-size: 16rem;
     aspect-ratio: 1;
     touch-action: none;
 }
@@ -1272,8 +1276,8 @@
 
 .configPage :global(.color-wheel-ring-marker) {
     position: absolute;
-    width: 16px;
-    height: 16px;
+    inline-size: 1rem;
+    block-size: 1rem;
     transform: translate(-50%, -50%);
     border-radius: 50%;
     border: 2px solid #ffffff;
@@ -1302,8 +1306,8 @@
 
 .configPage :global(.color-wheel-square-marker) {
     position: absolute;
-    width: 16px;
-    height: 16px;
+    inline-size: 1rem;
+    block-size: 1rem;
     transform: translate(-50%, -50%);
     border-radius: 50%;
     border: 2px solid #ffffff;
@@ -1368,33 +1372,32 @@
 }
 
 .configPage :global(.main-number-row) {
-    display: flex;
-    gap: 12px;
     align-items: center;
-    justify-content: space-between;
 }
 
 .configPage :global(.main-select-row) {
-    display: flex;
-    gap: 12px;
     align-items: center;
-    justify-content: space-between;
 }
 
 .configPage :global(.main-row-label) {
     color: #e5e7eb;
-    flex: 1 1 auto;
+    display: block;
+    width: 100%;
+}
+
+.configPage :global(.main-settings-row-grid) {
+    width: 100%;
 }
 
 .configPage :global(.main-number-row input) {
-    width: 120px;
+    inline-size: 8ch;
 }
 
 .configPage :global(.main-fixed-select) {
-    width: 160px;
-    min-width: 160px;
-    max-width: 160px;
-    flex: 0 0 160px;
+    inline-size: 100%;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    flex: 1 1 12rem;
 }
 
 .configPage :global(.main-paths-title) {
@@ -1528,7 +1531,7 @@
 }
 
 .configPage :global(.stats-commander-table-pct) {
-    width: 74px;
+    inline-size: 6ch;
     text-align: right;
     font-weight: 800;
     white-space: nowrap;
@@ -1554,7 +1557,7 @@
 
 .configPage :global(.stats-units-layout) {
     display: grid;
-    grid-template-columns: 420px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
     gap: 12px;
     align-items: start;
 }
@@ -1665,26 +1668,19 @@
     gap: 12px 18px;
 }
 
-.configPage :global(.randomizer-inline-field) {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
 .configPage :global(.randomizer-range-group) {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
+    width: 100%;
 }
 
-.configPage :global(.randomizer-inline-field .field-label) {
-    width: auto;
-    word-break: keep-all;
+.configPage :global(.randomizer-inline-field) {
+    align-items: center;
+    white-space: nowrap;
+    width: 100%;
 }
 
 .configPage :global(.randomizer-select) {
-    min-width: 240px;
-    max-width: 320px;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .configPage :global(.randomizer-toggle) {
@@ -1695,13 +1691,12 @@
 }
 
 .configPage :global(.randomizer-number-input) {
-    min-width: 90px;
-    max-width: 110px;
+    min-inline-size: 6em;
+    max-inline-size: 100%;
 }
 
 .configPage :global(.randomizer-choice-box) {
-    min-width: 0;
-    max-width: 100%;
+    padding: 5px;
 }
 
 .configPage :global(.randomizer-layout) {
@@ -1724,17 +1719,6 @@
 
 .configPage :global(.randomizer-pane-right) {
     min-height: 100%;
-}
-
-.configPage :global(.randomizer-main-grid) {
-    display: grid;
-    grid-template-columns: minmax(0, max-content) minmax(320px, 1fr);
-    gap: 16px;
-    align-items: start;
-}
-
-.configPage :global(.randomizer-pane-right .randomizer-main-grid) {
-    grid-template-columns: minmax(260px, 0.72fr) minmax(0, 1.28fr);
 }
 
 .configPage :global(.randomizer-choice-box h3),
@@ -1767,21 +1751,21 @@
 }
 
 .configPage :global(.randomizer-commander-cell) {
-    width: 108px;
-    min-width: 108px;
-    max-width: 108px;
+    inline-size: 10em;
+    min-inline-size: 10em;
+    max-inline-size: 10em;
     white-space: nowrap;
 }
 
 .configPage :global(.randomizer-checkbox-cell) {
-    width: 42px;
-    min-width: 42px;
+    inline-size: 3em;
+    min-inline-size: 3em;
     text-align: center;
 }
 
 .configPage :global(.randomizer-checkbox-cell input) {
-    width: 16px;
-    height: 16px;
+    inline-size: 1rem;
+    block-size: 1rem;
 }
 
 .configPage :global(.randomizer-commander-toggle),
@@ -1830,41 +1814,12 @@
 
 .configPage :global(.randomizer-result-box) {
     min-width: 0;
+    padding: 5px;
 }
 
 .configPage :global(.randomizer-mutator-settings) {
     display: grid;
     gap: 10px;
-}
-
-.configPage
-    :global(
-        .randomizer-mutator-settings
-            .randomizer-controls
-            > .randomizer-inline-field
-    ) {
-    display: grid;
-    grid-template-columns: minmax(0, 0.16fr) minmax(0, 0.84fr);
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-}
-
-.configPage
-    :global(
-        .randomizer-mutator-settings
-            .randomizer-controls
-            > .randomizer-inline-field
-            .field-label
-    ) {
-    width: auto;
-    min-width: 0;
-}
-
-.configPage :global(.randomizer-mutator-settings .randomizer-select) {
-    min-width: 0;
-    max-width: none;
-    width: 100%;
 }
 
 .configPage :global(.randomizer-result-head) {
@@ -1925,7 +1880,7 @@
 }
 
 .configPage :global(.randomizer-result-points) {
-    width: 24px;
+    inline-size: 2ch;
     text-align: right;
     font-variant-numeric: tabular-nums;
 }
@@ -1967,7 +1922,7 @@
 
 .configPage :global(.randomizer-mutator-card) {
     display: grid;
-    grid-template-columns: 68px minmax(0, 1fr);
+    grid-template-columns: 4.25rem minmax(0, 1fr);
     gap: 12px;
     align-items: start;
     padding: 12px;
@@ -1977,8 +1932,8 @@
 }
 
 .configPage :global(.randomizer-mutator-icon) {
-    width: 68px;
-    height: 68px;
+    inline-size: 4.25rem;
+    block-size: 4.25rem;
     object-fit: contain;
     border-radius: 8px;
     background: rgba(2, 6, 23, 0.72);
@@ -2019,7 +1974,7 @@
 }
 
 .configPage :global(.performance-tab-card) {
-    max-width: 1120px;
+    inline-size: 100%;
     background: #3c3c3c;
     border-color: #4d4d4d;
     padding: 24px 26px;
@@ -2034,7 +1989,7 @@
 
 .configPage :global(.performance-tab-copy p) {
     margin: 0 0 18px;
-    max-width: 850px;
+    max-inline-size: 100%;
     color: #f5f5f5;
     font-size: 20px;
     line-height: 1.35;
@@ -2052,13 +2007,13 @@
 .configPage :global(.performance-tab-position-btn) {
     display: block;
     margin-top: 18px;
-    min-width: 296px;
+    inline-size: 100%;
     background: linear-gradient(180deg, #656565 0%, #4a4a4a 100%);
     border: 1px solid #808080;
 }
 
 .configPage :global(.performance-tab-hotkey-block) {
-    margin-top: 92px;
+    margin-top: 3rem;
 }
 
 .configPage :global(.performance-tab-hotkey-row) {
@@ -2069,13 +2024,13 @@
 }
 
 .configPage :global(.performance-tab-hotkey-row .input) {
-    min-width: 220px;
-    max-width: 300px;
+    min-width: 0;
+    max-width: 100%;
     background: #1a1a1a;
 }
 
 .configPage :global(.performance-tab-hotkey-row button) {
-    min-width: 148px;
+    min-inline-size: 10em;
     background: linear-gradient(180deg, #656565 0%, #4a4a4a 100%);
     border: 1px solid #808080;
 }
@@ -2092,7 +2047,7 @@
 
 .configPage :global(.performance-tab-process-copy) {
     margin: 0 0 12px;
-    max-width: 720px;
+    max-inline-size: 100%;
     color: #d1d5db;
     font-size: 14px;
     line-height: 1.45;
@@ -2106,127 +2061,11 @@
 }
 
 .configPage :global(.performance-tab-process-input) {
-    min-width: 280px;
-    max-width: 360px;
+    min-width: 0;
+    max-width: 100%;
     min-height: 92px;
     font-family: "Courier New", monospace;
     white-space: pre-wrap;
-}
-
-@media (max-width: 1500px) {
-    .configPage :global(.stats-units-layout) {
-        grid-template-columns: 360px minmax(0, 1fr);
-    }
-
-    .configPage :global(.stats-unit-table h3) {
-        font-size: 30px;
-    }
-}
-
-@media (max-width: 1200px) {
-    .configPage :global(.main-settings-top) {
-        grid-template-columns: 1fr;
-    }
-
-    .configPage :global(.main-settings-left-cols) {
-        grid-template-columns: 1fr;
-    }
-
-    .configPage :global(.main-fixed-select) {
-        width: 100%;
-        min-width: 0;
-        max-width: none;
-        flex: 1 1 auto;
-    }
-
-    .configPage :global(.main-settings-bottom) {
-        grid-template-columns: 1fr;
-    }
-
-    .configPage :global(.stats-commander-bottom) {
-        grid-template-columns: 1fr;
-    }
-
-    .configPage :global(.stats-units-layout) {
-        grid-template-columns: 1fr;
-    }
-
-    .configPage :global(.stats-unit-table h3) {
-        font-size: 26px;
-    }
-
-    .configPage :global(.randomizer-controls) {
-        align-items: stretch;
-    }
-
-    .configPage :global(.randomizer-layout) {
-        grid-template-columns: 1fr;
-    }
-
-    .configPage :global(.randomizer-main-grid) {
-        grid-template-columns: 1fr;
-    }
-
-    .configPage :global(.randomizer-mutator-grid) {
-        grid-template-columns: 1fr;
-    }
-
-    .configPage :global(.randomizer-inline-field) {
-        width: 100%;
-    }
-
-    .configPage :global(.randomizer-select) {
-        min-width: 0;
-        width: 100%;
-        max-width: none;
-    }
-
-    .configPage :global(.randomizer-range-group) {
-        width: 100%;
-    }
-
-    .configPage :global(.performance-tab-hotkey-block) {
-        margin-top: 36px;
-    }
-
-    .configPage :global(.weeklies-layout) {
-        grid-template-columns: 1fr;
-    }
-
-    .configPage :global(.weeklies-detail-pane) {
-        position: static;
-        top: auto;
-    }
-
-    .configPage :global(.weeklies-detail-card) {
-        max-height: none;
-        overflow: visible;
-    }
-}
-
-@media (max-width: 720px) {
-    .configPage :global(.color-picker-popup) {
-        left: 0;
-        transform: none;
-    }
-
-    .configPage :global(.color-wheel-picker) {
-        width: min(72vw, 260px);
-    }
-
-    .configPage :global(.chat-modal-backdrop) {
-        padding: 12px;
-    }
-
-    .configPage :global(.chat-modal-header) {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    .configPage :global(.chat-row) {
-        grid-template-columns: 1fr;
-        gap: 6px;
-    }
 }
 
 /* ThemeProvider-driven surface overrides */
