@@ -51,7 +51,7 @@ jobs:
               with:
                   tagName: v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
                   releaseName: "SC2_Coop_Info v__VERSION__"
-                  releaseBody: "Feature: Added random mutator generation mode"
+                  releaseBody: "Bug fix: Games tab filtering bug fixed"
                   releaseDraft: false
                   prerelease: false
                   projectPath: "./tauri-overlay"
