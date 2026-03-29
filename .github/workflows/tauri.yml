@@ -51,7 +51,7 @@ jobs:
               with:
                   tagName: v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
                   releaseName: "SC2_Coop_Info v__VERSION__"
-                  releaseBody: "Feature: Adjusted filters for statistics tab\nBug fix: Fixed Han & Horner not displaying mastery names correctly in statistics tab"
+                  releaseBody: "Feature: Added random mutator generation mode"
                   releaseDraft: false
                   prerelease: false
                   projectPath: "./tauri-overlay"
