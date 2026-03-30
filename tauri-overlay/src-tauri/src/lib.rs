@@ -957,7 +957,6 @@ pub fn orient_replay_for_main_names(
     replay
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Serialize, Default, PartialEq)]
 pub struct ReplayChatMessage {
     pub player: u8,
@@ -976,7 +975,6 @@ pub struct ReplayChatPayload {
     pub messages: Vec<ReplayChatMessage>,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Default)]
 pub struct ReplayInfo {
     pub file: String,
@@ -1503,7 +1501,6 @@ struct PlayerAggregate {
     commander_counts: HashMap<String, u64>,
 }
 
-#[allow(dead_code)]
 #[derive(Default)]
 struct MapAggregate {
     wins: u64,

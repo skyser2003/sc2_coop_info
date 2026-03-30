@@ -135,7 +135,6 @@ fn set_active_hotkey_reassign_binding(binding: Option<ResolvedHotkeyBinding>) {
     }
 }
 
-#[allow(dead_code)]
 pub(crate) struct OverlayPlacement {
     monitor: usize,
     width: f64,
@@ -273,7 +272,6 @@ impl OverlayReplayPayload {
     }
 }
 
-#[allow(dead_code)]
 fn default_overlay_placement() -> OverlayPlacement {
     OverlayPlacement {
         monitor: 1,

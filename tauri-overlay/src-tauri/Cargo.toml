@@ -16,7 +16,7 @@ tauri = { version = "2", features = ["tray-icon"] }
 display-info = { version = "0.5.9" }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde = { version = "1", features = ["derive"] }
-ts-rs = "10"
+ts-rs = "12.0.1"
 tauri-plugin-global-shortcut = "2"
 rayon = "1.10.0"
 notify = "6"
