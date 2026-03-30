@@ -275,7 +275,11 @@ impl BackendState {
     }
 
     pub fn replay_count_for_launch_detector(&self) -> usize {
-        self.replay_cache_snapshot().len()
+        self.replay_state
+            .lock()
+            .ok()
+            .and_then(|state| state.replays.lock().ok().map(|replays| replays.len()))
+            .unwrap_or_default()
     }
 }
 
