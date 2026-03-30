@@ -6,21 +6,28 @@ use sco_tauri_overlay::overlay_info::{
     overlay_payload_from_replay, player_note_from_settings_value,
 };
 use sco_tauri_overlay::shared_types::OverlayReplayPayload;
-use sco_tauri_overlay::ReplayInfo;
+use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo};
 use serde_json::json;
 
 fn sample_replay() -> ReplayInfo {
-    ReplayInfo {
-        file: test_replay_path("example.SC2Replay"),
-        p1: "MainPlayer".to_string(),
-        p2: "AllyPlayer".to_string(),
-        main_commander: "Abathur".to_string(),
-        ally_commander: "Swann".to_string(),
-        main_prestige: 1,
-        ally_prestige: 2,
-        result: "Victory".to_string(),
-        ..ReplayInfo::default()
-    }
+    let mut replay = ReplayInfo::with_players(
+        ReplayPlayerInfo {
+            name: "MainPlayer".to_string(),
+            commander: "Abathur".to_string(),
+            prestige: 1,
+            ..ReplayPlayerInfo::default()
+        },
+        ReplayPlayerInfo {
+            name: "AllyPlayer".to_string(),
+            commander: "Swann".to_string(),
+            prestige: 2,
+            ..ReplayPlayerInfo::default()
+        },
+        0,
+    );
+    replay.file = test_replay_path("example.SC2Replay");
+    replay.result = "Victory".to_string();
+    replay
 }
 
 #[test]

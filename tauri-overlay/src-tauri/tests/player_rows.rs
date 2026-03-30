@@ -1,5 +1,5 @@
 use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
-use sco_tauri_overlay::ReplayInfo;
+use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo};
 use serde_json::json;
 
 fn replay_for_player_rows(
@@ -20,22 +20,29 @@ fn replay_for_player_rows_with_handle(
     date: u64,
     handle: &str,
 ) -> ReplayInfo {
-    ReplayInfo {
-        p1: player_name.to_string(),
-        p2: "Teammate".to_string(),
-        p1_handle: handle.to_string(),
-        p2_handle: "1-S2-1-999".to_string(),
-        main_commander: commander.to_string(),
-        ally_commander: "Abathur".to_string(),
-        main_apm: apm,
-        ally_apm: 50,
-        main_kills: 8,
-        ally_kills: 2,
-        result: result.to_string(),
-        date,
-        map: "Void Launch".to_string(),
-        ..ReplayInfo::default()
-    }
+    let mut replay = ReplayInfo::with_players(
+        ReplayPlayerInfo {
+            name: player_name.to_string(),
+            handle: handle.to_string(),
+            commander: commander.to_string(),
+            apm,
+            kills: 8,
+            ..ReplayPlayerInfo::default()
+        },
+        ReplayPlayerInfo {
+            name: "Teammate".to_string(),
+            handle: "1-S2-1-999".to_string(),
+            commander: "Abathur".to_string(),
+            apm: 50,
+            kills: 2,
+            ..ReplayPlayerInfo::default()
+        },
+        0,
+    );
+    replay.result = result.to_string();
+    replay.date = date;
+    replay.map = "Void Launch".to_string();
+    replay
 }
 
 #[test]

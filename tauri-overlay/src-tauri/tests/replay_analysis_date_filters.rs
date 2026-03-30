@@ -5,7 +5,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
 use sco_tauri_overlay::replay_analysis::{
     parse_replay_timestamp_seconds, replay_info_from_cache_entry, ReplayAnalysis,
 };
-use sco_tauri_overlay::ReplayInfo;
+use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -106,22 +106,29 @@ fn sample_cache_entry(file: &Path, date: &str) -> CacheReplayEntry {
 }
 
 fn replay_for_date_filter(date: &str, file_suffix: &str) -> ReplayInfo {
-    ReplayInfo {
-        file: format!("fixtures/replays/{file_suffix}.SC2Replay"),
-        date: parse_replay_timestamp_seconds(date).expect("date should parse"),
-        map: "Void Launch".to_string(),
-        result: "Victory".to_string(),
-        difficulty: "Brutal".to_string(),
-        p1: "Main".to_string(),
-        p2: "Ally".to_string(),
-        p1_handle: "1-S2-1-111".to_string(),
-        p2_handle: "1-S2-1-222".to_string(),
-        main_commander: "Dehaka".to_string(),
-        ally_commander: "Karax".to_string(),
-        main_commander_level: 15,
-        ally_commander_level: 15,
-        ..ReplayInfo::default()
-    }
+    let mut replay = ReplayInfo::with_players(
+        ReplayPlayerInfo {
+            name: "Main".to_string(),
+            handle: "1-S2-1-111".to_string(),
+            commander: "Dehaka".to_string(),
+            commander_level: 15,
+            ..ReplayPlayerInfo::default()
+        },
+        ReplayPlayerInfo {
+            name: "Ally".to_string(),
+            handle: "1-S2-1-222".to_string(),
+            commander: "Karax".to_string(),
+            commander_level: 15,
+            ..ReplayPlayerInfo::default()
+        },
+        0,
+    );
+    replay.file = format!("fixtures/replays/{file_suffix}.SC2Replay");
+    replay.date = parse_replay_timestamp_seconds(date).expect("date should parse");
+    replay.map = "Void Launch".to_string();
+    replay.result = "Victory".to_string();
+    replay.difficulty = "Brutal".to_string();
+    replay
 }
 
 #[test]

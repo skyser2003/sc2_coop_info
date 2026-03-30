@@ -1,5 +1,5 @@
 use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
-use sco_tauri_overlay::{canonicalize_coop_map_id, ReplayInfo};
+use sco_tauri_overlay::{canonicalize_coop_map_id, ReplayInfo, ReplayPlayerInfo};
 use serde_json::json;
 use serde_json::Value;
 
@@ -7,37 +7,51 @@ fn test_map_id(raw: &str) -> String {
     canonicalize_coop_map_id(raw).expect("map id should resolve")
 }
 
+fn replay_with_players(result: &str, main: ReplayPlayerInfo, ally: ReplayPlayerInfo) -> ReplayInfo {
+    let mut replay = ReplayInfo::with_players(main, ally, 0);
+    replay.map = test_map_id("Void Launch");
+    replay.result = result.to_string();
+    replay.difficulty = "Brutal".to_string();
+    replay
+}
+
 #[test]
 fn ally_commander_data_includes_sum_row() {
     let replays = vec![
-        ReplayInfo {
-            map: test_map_id("Void Launch"),
-            result: "Victory".to_string(),
-            difficulty: "Brutal".to_string(),
-            p1: "Main".to_string(),
-            p2: "Ally".to_string(),
-            main_commander: "Raynor".to_string(),
-            ally_commander: "Karax".to_string(),
-            main_apm: 120,
-            ally_apm: 90,
-            main_kills: 20,
-            ally_kills: 10,
-            ..ReplayInfo::default()
-        },
-        ReplayInfo {
-            map: test_map_id("Void Launch"),
-            result: "Defeat".to_string(),
-            difficulty: "Brutal".to_string(),
-            p1: "Main".to_string(),
-            p2: "Ally".to_string(),
-            main_commander: "Raynor".to_string(),
-            ally_commander: "Stukov".to_string(),
-            main_apm: 80,
-            ally_apm: 70,
-            main_kills: 8,
-            ally_kills: 12,
-            ..ReplayInfo::default()
-        },
+        replay_with_players(
+            "Victory",
+            ReplayPlayerInfo {
+                name: "Main".to_string(),
+                commander: "Raynor".to_string(),
+                apm: 120,
+                kills: 20,
+                ..ReplayPlayerInfo::default()
+            },
+            ReplayPlayerInfo {
+                name: "Ally".to_string(),
+                commander: "Karax".to_string(),
+                apm: 90,
+                kills: 10,
+                ..ReplayPlayerInfo::default()
+            },
+        ),
+        replay_with_players(
+            "Defeat",
+            ReplayPlayerInfo {
+                name: "Main".to_string(),
+                commander: "Raynor".to_string(),
+                apm: 80,
+                kills: 8,
+                ..ReplayPlayerInfo::default()
+            },
+            ReplayPlayerInfo {
+                name: "Ally".to_string(),
+                commander: "Stukov".to_string(),
+                apm: 70,
+                kills: 12,
+                ..ReplayPlayerInfo::default()
+            },
+        ),
     ];
 
     let snapshot = ReplayAnalysis::build_rebuild_snapshot(&replays, false);
@@ -60,42 +74,51 @@ fn ally_commander_data_includes_sum_row() {
 #[test]
 fn ally_commander_frequency_matches_wx_preference_correction_rule() {
     let replays = vec![
-        ReplayInfo {
-            map: test_map_id("Void Launch"),
-            result: "Victory".to_string(),
-            difficulty: "Brutal".to_string(),
-            p1: "Main".to_string(),
-            p2: "Ally".to_string(),
-            p1_handle: "1-S2-1-111".to_string(),
-            p2_handle: "2-S2-1-222".to_string(),
-            main_commander: "Raynor".to_string(),
-            ally_commander: "Karax".to_string(),
-            ..ReplayInfo::default()
-        },
-        ReplayInfo {
-            map: test_map_id("Void Launch"),
-            result: "Victory".to_string(),
-            difficulty: "Brutal".to_string(),
-            p1: "Main".to_string(),
-            p2: "Ally".to_string(),
-            p1_handle: "1-S2-1-111".to_string(),
-            p2_handle: "2-S2-1-223".to_string(),
-            main_commander: "Raynor".to_string(),
-            ally_commander: "Stukov".to_string(),
-            ..ReplayInfo::default()
-        },
-        ReplayInfo {
-            map: test_map_id("Void Launch"),
-            result: "Victory".to_string(),
-            difficulty: "Brutal".to_string(),
-            p1: "Main".to_string(),
-            p2: "Ally".to_string(),
-            p1_handle: "1-S2-1-111".to_string(),
-            p2_handle: "2-S2-1-224".to_string(),
-            main_commander: "Karax".to_string(),
-            ally_commander: "Stukov".to_string(),
-            ..ReplayInfo::default()
-        },
+        replay_with_players(
+            "Victory",
+            ReplayPlayerInfo {
+                name: "Main".to_string(),
+                handle: "1-S2-1-111".to_string(),
+                commander: "Raynor".to_string(),
+                ..ReplayPlayerInfo::default()
+            },
+            ReplayPlayerInfo {
+                name: "Ally".to_string(),
+                handle: "2-S2-1-222".to_string(),
+                commander: "Karax".to_string(),
+                ..ReplayPlayerInfo::default()
+            },
+        ),
+        replay_with_players(
+            "Victory",
+            ReplayPlayerInfo {
+                name: "Main".to_string(),
+                handle: "1-S2-1-111".to_string(),
+                commander: "Raynor".to_string(),
+                ..ReplayPlayerInfo::default()
+            },
+            ReplayPlayerInfo {
+                name: "Ally".to_string(),
+                handle: "2-S2-1-223".to_string(),
+                commander: "Stukov".to_string(),
+                ..ReplayPlayerInfo::default()
+            },
+        ),
+        replay_with_players(
+            "Victory",
+            ReplayPlayerInfo {
+                name: "Main".to_string(),
+                handle: "1-S2-1-111".to_string(),
+                commander: "Karax".to_string(),
+                ..ReplayPlayerInfo::default()
+            },
+            ReplayPlayerInfo {
+                name: "Ally".to_string(),
+                handle: "2-S2-1-224".to_string(),
+                commander: "Stukov".to_string(),
+                ..ReplayPlayerInfo::default()
+            },
+        ),
     ];
 
     let snapshot = ReplayAnalysis::build_rebuild_snapshot(&replays, false);

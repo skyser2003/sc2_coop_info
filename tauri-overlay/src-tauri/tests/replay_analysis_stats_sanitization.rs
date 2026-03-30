@@ -1,36 +1,43 @@
 use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
-use sco_tauri_overlay::{canonicalize_coop_map_id, ReplayInfo};
+use sco_tauri_overlay::{canonicalize_coop_map_id, ReplayInfo, ReplayPlayerInfo};
 use serde_json::{json, Value};
 
 fn sanitized_stats_replay() -> ReplayInfo {
-    ReplayInfo {
-        file: "fixtures/replays/example.SC2Replay".to_string(),
-        date: 1_741_510_400,
-        map: canonicalize_coop_map_id("Void Launch").expect("map id should resolve"),
-        result: "Victory".to_string(),
-        difficulty: "<b>Brutal</b>".to_string(),
-        p1: "<b>Main Player</b>".to_string(),
-        p2: "<i>Ally Player</i>".to_string(),
-        enemy: "<span>Zerg</span>".to_string(),
-        p1_handle: "1-S2-1-111".to_string(),
-        p2_handle: "2-S2-1-222".to_string(),
-        accurate_length: 600.0,
-        main_apm: 150,
-        ally_apm: 120,
-        main_kills: 30,
-        ally_kills: 10,
-        main_commander: "<b>Raynor</b>".to_string(),
-        ally_commander: "<i>Karax</i>".to_string(),
-        main_commander_level: 15,
-        ally_commander_level: 15,
-        main_mastery_level: 90,
-        ally_mastery_level: 90,
-        main_masteries: vec![30, 60, 30, 60, 30, 60],
-        ally_masteries: vec![60, 30, 60, 30, 60, 30],
-        weekly: true,
-        weekly_name: Some("<b>Mutation #1</b>".to_string()),
-        ..ReplayInfo::default()
-    }
+    let mut replay = ReplayInfo::with_players(
+        ReplayPlayerInfo {
+            name: "<b>Main Player</b>".to_string(),
+            handle: "1-S2-1-111".to_string(),
+            apm: 150,
+            kills: 30,
+            commander: "<b>Raynor</b>".to_string(),
+            commander_level: 15,
+            mastery_level: 90,
+            masteries: vec![30, 60, 30, 60, 30, 60],
+            ..ReplayPlayerInfo::default()
+        },
+        ReplayPlayerInfo {
+            name: "<i>Ally Player</i>".to_string(),
+            handle: "2-S2-1-222".to_string(),
+            apm: 120,
+            kills: 10,
+            commander: "<i>Karax</i>".to_string(),
+            commander_level: 15,
+            mastery_level: 90,
+            masteries: vec![60, 30, 60, 30, 60, 30],
+            ..ReplayPlayerInfo::default()
+        },
+        0,
+    );
+    replay.file = "fixtures/replays/example.SC2Replay".to_string();
+    replay.date = 1_741_510_400;
+    replay.map = canonicalize_coop_map_id("Void Launch").expect("map id should resolve");
+    replay.result = "Victory".to_string();
+    replay.difficulty = "<b>Brutal</b>".to_string();
+    replay.enemy = "<span>Zerg</span>".to_string();
+    replay.accurate_length = 600.0;
+    replay.weekly = true;
+    replay.weekly_name = Some("<b>Mutation #1</b>".to_string());
+    replay
 }
 
 #[test]

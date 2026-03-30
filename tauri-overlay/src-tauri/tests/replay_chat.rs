@@ -1,34 +1,37 @@
 mod common;
 
 use common::test_replay_path;
-use sco_tauri_overlay::{ReplayChatMessage, ReplayInfo};
+use sco_tauri_overlay::{ReplayChatMessage, ReplayInfo, ReplayPlayerInfo};
 
 #[test]
 fn replay_chat_payload_uses_slot_names_and_sanitizes_messages() {
-    let replay = ReplayInfo {
-        file: test_replay_path("chat.SC2Replay"),
-        date: 1_710_000_000,
-        map: "Void Launch".to_string(),
-        result: "Victory".to_string(),
-        p1: "Main".to_string(),
-        p2: "Ally".to_string(),
-        slot1_name: "Slot One".to_string(),
-        slot2_name: "Slot Two".to_string(),
-        messages: vec![
-            ReplayChatMessage {
-                player: 1,
-                text: "<span>Hello</span>".to_string(),
-                time: 15.9,
-            },
-            ReplayChatMessage {
-                player: 2,
-                text: "gg".to_string(),
-                time: -5.0,
-            },
-        ],
-        ..ReplayInfo::default()
-    };
-
+    let mut replay = ReplayInfo::with_players(
+        ReplayPlayerInfo {
+            name: "Slot One".to_string(),
+            ..ReplayPlayerInfo::default()
+        },
+        ReplayPlayerInfo {
+            name: "Slot Two".to_string(),
+            ..ReplayPlayerInfo::default()
+        },
+        0,
+    );
+    replay.file = test_replay_path("chat.SC2Replay");
+    replay.date = 1_710_000_000;
+    replay.map = "Void Launch".to_string();
+    replay.result = "Victory".to_string();
+    replay.messages = vec![
+        ReplayChatMessage {
+            player: 1,
+            text: "<span>Hello</span>".to_string(),
+            time: 15.9,
+        },
+        ReplayChatMessage {
+            player: 2,
+            text: "gg".to_string(),
+            time: -5.0,
+        },
+    ];
     let payload = replay.chat_payload();
 
     assert_eq!(payload.slot1_name, "Slot One");
@@ -41,21 +44,25 @@ fn replay_chat_payload_uses_slot_names_and_sanitizes_messages() {
 }
 
 #[test]
-fn replay_chat_payload_falls_back_to_player_names_when_slot_names_are_missing() {
-    let replay = ReplayInfo {
-        file: test_replay_path("fallback.SC2Replay"),
-        p1: "Fallback Main".to_string(),
-        p2: "Fallback Ally".to_string(),
-        messages: vec![ReplayChatMessage {
-            player: 1,
-            text: "ready".to_string(),
-            time: 1.0,
-        }],
-        ..ReplayInfo::default()
-    };
+fn replay_chat_payload_returns_empty_slot_names_when_slot_names_are_missing() {
+    let mut replay = ReplayInfo::with_players(
+        ReplayPlayerInfo {
+            ..ReplayPlayerInfo::default()
+        },
+        ReplayPlayerInfo {
+            ..ReplayPlayerInfo::default()
+        },
+        0,
+    );
+    replay.file = test_replay_path("fallback.SC2Replay");
+    replay.messages = vec![ReplayChatMessage {
+        player: 1,
+        text: "ready".to_string(),
+        time: 1.0,
+    }];
 
     let payload = replay.chat_payload();
 
-    assert_eq!(payload.slot1_name, "Fallback Main");
-    assert_eq!(payload.slot2_name, "Fallback Ally");
+    assert_eq!(payload.slot1_name, "");
+    assert_eq!(payload.slot2_name, "");
 }

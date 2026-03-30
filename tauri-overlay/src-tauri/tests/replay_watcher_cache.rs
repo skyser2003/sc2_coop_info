@@ -146,32 +146,48 @@ fn upsert_replay_in_memory_cache_refreshes_ready_stats_with_detailed_data() {
         date: 100,
         map: canonicalize_coop_map_id("Void Launch").expect("map id should resolve"),
         result: "Victory".to_string(),
-        p1: "Existing Main".to_string(),
-        p2: "Existing Ally".to_string(),
-        p1_handle: "1-S2-1-111".to_string(),
-        p2_handle: "1-S2-1-222".to_string(),
-        main_commander: "Raynor".to_string(),
-        ally_commander: "Karax".to_string(),
-        main_units: json!({
-            "Marine": [3, 1, 9, 0.5]
-        }),
-        ..ReplayInfo::default()
+        ..ReplayInfo::with_players(
+            ReplayPlayerInfo {
+                name: "Existing Main".to_string(),
+                handle: "1-S2-1-111".to_string(),
+                commander: "Raynor".to_string(),
+                units: json!({
+                    "Marine": [3, 1, 9, 0.5]
+                }),
+                ..ReplayPlayerInfo::default()
+            },
+            ReplayPlayerInfo {
+                name: "Existing Ally".to_string(),
+                handle: "1-S2-1-222".to_string(),
+                commander: "Karax".to_string(),
+                ..ReplayPlayerInfo::default()
+            },
+            0,
+        )
     };
     let updated_replay = ReplayInfo {
         file: test_replay_path("new_detailed.SC2Replay"),
         date: 200,
         map: canonicalize_coop_map_id("Void Launch").expect("map id should resolve"),
         result: "Victory".to_string(),
-        p1: "Updated Main".to_string(),
-        p2: "Updated Ally".to_string(),
-        p1_handle: "1-S2-1-333".to_string(),
-        p2_handle: "1-S2-1-444".to_string(),
-        main_commander: "Fenix".to_string(),
-        ally_commander: "Karax".to_string(),
-        main_units: json!({
-            "Adept": [6, 1, 23, 0.5]
-        }),
-        ..ReplayInfo::default()
+        ..ReplayInfo::with_players(
+            ReplayPlayerInfo {
+                name: "Updated Main".to_string(),
+                handle: "1-S2-1-333".to_string(),
+                commander: "Fenix".to_string(),
+                units: json!({
+                    "Adept": [6, 1, 23, 0.5]
+                }),
+                ..ReplayPlayerInfo::default()
+            },
+            ReplayPlayerInfo {
+                name: "Updated Ally".to_string(),
+                handle: "1-S2-1-444".to_string(),
+                commander: "Karax".to_string(),
+                ..ReplayPlayerInfo::default()
+            },
+            0,
+        )
     };
 
     {

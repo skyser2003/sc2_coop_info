@@ -199,42 +199,42 @@ impl OverlayReplayPayload {
     fn from_replay(replay: &crate::ReplayInfo, language: &str) -> Self {
         let sanitized = replay.sanitized_for_client();
         let main_prestige = Self::localized_prestige_text(
-            &sanitized.main_commander,
-            sanitized.main_prestige,
+            sanitized.main_commander(),
+            sanitized.main_prestige(),
             language,
         );
         let ally_prestige = Self::localized_prestige_text(
-            &sanitized.ally_commander,
-            sanitized.ally_prestige,
+            sanitized.ally_commander(),
+            sanitized.ally_prestige(),
             language,
         );
         Self {
-            file: sanitized.file,
-            map_name: sanitized.map,
-            main: sanitized.p1,
-            ally: sanitized.p2,
-            main_commander: sanitized.main_commander,
-            ally_commander: sanitized.ally_commander,
-            main_apm: as_u32(sanitized.main_apm),
-            ally_apm: as_u32(sanitized.ally_apm),
-            mainkills: as_u32(sanitized.main_kills),
-            allykills: as_u32(sanitized.ally_kills),
-            result: sanitized.result,
-            difficulty: sanitized.difficulty,
+            file: sanitized.file.clone(),
+            map_name: sanitized.map.clone(),
+            main: sanitized.main().name.clone(),
+            ally: sanitized.ally().name.clone(),
+            main_commander: sanitized.main_commander().to_string(),
+            ally_commander: sanitized.ally_commander().to_string(),
+            main_apm: as_u32(sanitized.main_apm()),
+            ally_apm: as_u32(sanitized.ally_apm()),
+            mainkills: as_u32(sanitized.main_kills()),
+            allykills: as_u32(sanitized.ally_kills()),
+            result: sanitized.result.clone(),
+            difficulty: sanitized.difficulty.clone(),
             length: as_u32(sanitized.length),
             brutal_plus: as_u32(sanitized.brutal_plus),
             weekly: sanitized.weekly,
-            weekly_name: sanitized.weekly_name,
+            weekly_name: sanitized.weekly_name.clone(),
             extension: sanitized.extension,
-            main_commander_level: as_u32(sanitized.main_commander_level),
-            ally_commander_level: as_u32(sanitized.ally_commander_level),
-            main_masteries: as_u32_vec(&sanitized.main_masteries),
-            ally_masteries: as_u32_vec(&sanitized.ally_masteries),
-            main_units: unit_stats_map_from_value(&sanitized.main_units),
-            ally_units: unit_stats_map_from_value(&sanitized.ally_units),
+            main_commander_level: as_u32(sanitized.main_commander_level()),
+            ally_commander_level: as_u32(sanitized.ally_commander_level()),
+            main_masteries: as_u32_vec(sanitized.main_masteries()),
+            ally_masteries: as_u32_vec(sanitized.ally_masteries()),
+            main_units: unit_stats_map_from_value(sanitized.main_units()),
+            ally_units: unit_stats_map_from_value(sanitized.ally_units()),
             amon_units: unit_stats_map_from_value(&sanitized.amon_units),
-            main_icons: overlay_icon_payload_from_value(&sanitized.main_icons),
-            ally_icons: overlay_icon_payload_from_value(&sanitized.ally_icons),
+            main_icons: overlay_icon_payload_from_value(sanitized.main_icons()),
+            ally_icons: overlay_icon_payload_from_value(sanitized.ally_icons()),
             mutators: sanitized
                 .mutators
                 .iter()
@@ -1285,17 +1285,17 @@ fn build_overlay_player_info_payload(state: &BackendState) -> OverlayPlayerInfoP
     let main_handles = configured_main_handles();
     let player_info = select_other_player_from_replay(&selected, &main_names, &main_handles)
         .or_else(|| {
-            let ally = selected.p2.trim();
+            let ally = selected.ally().name.trim();
             if !ally.is_empty() {
-                Some((selected.p2_handle.to_string(), ally.to_string()))
+                Some((selected.ally().handle.clone(), ally.to_string()))
             } else {
                 None
             }
         })
         .or_else(|| {
-            let main = selected.p1.trim();
+            let main = selected.main().name.trim();
             if !main.is_empty() {
-                Some((selected.p1_handle.to_string(), main.to_string()))
+                Some((selected.main().handle.clone(), main.to_string()))
             } else {
                 None
             }
@@ -1313,25 +1313,25 @@ fn select_other_player_from_replay(
     main_names: &HashSet<String>,
     main_handles: &HashSet<String>,
 ) -> Option<(String, String)> {
-    let p1 = replay.p1.trim();
-    let p2 = replay.p2.trim();
+    let p1 = replay.main().name.trim();
+    let p2 = replay.ally().name.trim();
 
     if p1.is_empty() && p2.is_empty() {
         return None;
     }
 
-    let p1_handle = replay.p1_handle.to_string();
-    let p2_handle = replay.p2_handle.to_string();
+    let p1_handle = replay.main().handle.clone();
+    let p2_handle = replay.ally().handle.clone();
 
     let p1_is_main = ReplayAnalysis::is_main_player_identity(
-        &replay.p1,
-        &replay.p1_handle,
+        &replay.main().name,
+        &replay.main().handle,
         main_names,
         main_handles,
     );
     let p2_is_main = ReplayAnalysis::is_main_player_identity(
-        &replay.p2,
-        &replay.p2_handle,
+        &replay.ally().name,
+        &replay.ally().handle,
         main_names,
         main_handles,
     );

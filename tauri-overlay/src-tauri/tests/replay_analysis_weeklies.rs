@@ -5,14 +5,13 @@ use sco_tauri_overlay::ReplayInfo;
 use serde_json::json;
 
 fn weekly_replay(weekly_name: &str, result: &str) -> ReplayInfo {
-    ReplayInfo {
-        file: format!("fixtures/replays/{weekly_name}.SC2Replay"),
-        result: result.to_string(),
-        difficulty: "Brutal".to_string(),
-        weekly: true,
-        weekly_name: Some(weekly_name.to_string()),
-        ..ReplayInfo::default()
-    }
+    let mut replay = ReplayInfo::default();
+    replay.file = format!("fixtures/replays/{weekly_name}.SC2Replay");
+    replay.result = result.to_string();
+    replay.difficulty = "Brutal".to_string();
+    replay.weekly = true;
+    replay.weekly_name = Some(weekly_name.to_string());
+    replay
 }
 
 #[test]

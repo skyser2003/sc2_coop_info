@@ -3,7 +3,9 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     ProtocolBuildValue, ReplayBuildInfo,
 };
 use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
-use sco_tauri_overlay::{canonicalize_coop_map_id, ReplayInfo, UNLIMITED_REPLAY_LIMIT};
+use sco_tauri_overlay::{
+    canonicalize_coop_map_id, ReplayInfo, ReplayPlayerInfo, UNLIMITED_REPLAY_LIMIT,
+};
 use serde_json::json;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -11,6 +13,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 fn test_map_id(raw: &str) -> String {
     canonicalize_coop_map_id(raw).expect("map id should resolve")
+}
+
+fn sample_replay(file: &str, main: ReplayPlayerInfo, ally: ReplayPlayerInfo) -> ReplayInfo {
+    let mut replay = ReplayInfo::with_players(main, ally, 0);
+    replay.file = file.to_string();
+    replay.map = test_map_id("Void Launch");
+    replay.result = "Victory".to_string();
+    replay.difficulty = "Brutal".to_string();
+    replay
 }
 
 fn unique_temp_path(label: &str) -> PathBuf {
@@ -177,23 +188,25 @@ fn stats_response_prefers_detailed_analysis_cache_when_unit_data_is_enabled() {
         .expect("cache should serialize");
     std::fs::write(&cache_path, payload).expect("cache file should be written");
 
-    let stale_replay = ReplayInfo {
-        file: replay_path.display().to_string(),
-        map: test_map_id("Void Launch"),
-        result: "Victory".to_string(),
-        difficulty: "Brutal".to_string(),
-        p1: "Stale Main".to_string(),
-        p2: "Stale Ally".to_string(),
-        p1_handle: "1-S2-1-111".to_string(),
-        p2_handle: "1-S2-1-222".to_string(),
-        main_commander: "Dehaka".to_string(),
-        ally_commander: "Abathur".to_string(),
-        main_units: json!({
-            "Primal Hydralisk": [1, 0, 1, 1.0]
-        }),
-        ally_units: json!({}),
-        ..ReplayInfo::default()
-    };
+    let stale_replay = sample_replay(
+        &replay_path.display().to_string(),
+        ReplayPlayerInfo {
+            name: "Stale Main".to_string(),
+            handle: "1-S2-1-111".to_string(),
+            commander: "Dehaka".to_string(),
+            units: json!({
+                "Primal Hydralisk": [1, 0, 1, 1.0]
+            }),
+            ..ReplayPlayerInfo::default()
+        },
+        ReplayPlayerInfo {
+            name: "Stale Ally".to_string(),
+            handle: "1-S2-1-222".to_string(),
+            commander: "Abathur".to_string(),
+            units: json!({}),
+            ..ReplayPlayerInfo::default()
+        },
+    );
 
     let stale_replays = [stale_replay];
     let replays = ReplayAnalysis::stats_replays_for_response_from_path(
@@ -205,10 +218,10 @@ fn stats_response_prefers_detailed_analysis_cache_when_unit_data_is_enabled() {
     );
 
     assert_eq!(replays.len(), 1);
-    assert_eq!(replays[0].main_commander, "Raynor");
-    assert_eq!(replays[0].ally_commander, "Karax");
-    assert_eq!(replays[0].main_units["Marine"], json!([8, 2, 99, 0.75]));
-    assert!(replays[0].main_units.get("Primal Hydralisk").is_none());
+    assert_eq!(replays[0].main_commander(), "Raynor");
+    assert_eq!(replays[0].ally_commander(), "Karax");
+    assert_eq!(replays[0].main_units()["Marine"], json!([8, 2, 99, 0.75]));
+    assert!(replays[0].main_units().get("Primal Hydralisk").is_none());
 
     let _ = std::fs::remove_file(&cache_path);
     let _ = std::fs::remove_file(&replay_path);
@@ -217,30 +230,32 @@ fn stats_response_prefers_detailed_analysis_cache_when_unit_data_is_enabled() {
 
 #[test]
 fn stats_replays_for_response_prefers_in_memory_stats_cache() {
-    let resident_replay = ReplayInfo {
-        file: "fixtures/replays/resident.SC2Replay".to_string(),
-        map: test_map_id("Void Launch"),
-        result: "Victory".to_string(),
-        difficulty: "Brutal".to_string(),
-        p1: "Resident Main".to_string(),
-        p2: "Resident Ally".to_string(),
-        p1_handle: "1-S2-1-111".to_string(),
-        p2_handle: "1-S2-1-222".to_string(),
-        main_commander: "Fenix".to_string(),
-        ally_commander: "Karax".to_string(),
-        main_units: json!({
-            "Adept": [6, 1, 23, 0.5]
-        }),
-        ally_units: json!({}),
-        ..ReplayInfo::default()
-    };
+    let resident_replay = sample_replay(
+        "fixtures/replays/resident.SC2Replay",
+        ReplayPlayerInfo {
+            name: "Resident Main".to_string(),
+            handle: "1-S2-1-111".to_string(),
+            commander: "Fenix".to_string(),
+            units: json!({
+                "Adept": [6, 1, 23, 0.5]
+            }),
+            ..ReplayPlayerInfo::default()
+        },
+        ReplayPlayerInfo {
+            name: "Resident Ally".to_string(),
+            handle: "1-S2-1-222".to_string(),
+            commander: "Karax".to_string(),
+            units: json!({}),
+            ..ReplayPlayerInfo::default()
+        },
+    );
 
     let resident_replays = [resident_replay];
     let replays = ReplayAnalysis::stats_replays_for_response(true, &resident_replays);
 
     assert_eq!(replays.len(), 1);
-    assert_eq!(replays[0].main_commander, "Fenix");
-    assert_eq!(replays[0].main_units["Adept"], json!([6, 1, 23, 0.5]));
+    assert_eq!(replays[0].main_commander(), "Fenix");
+    assert_eq!(replays[0].main_units()["Adept"], json!([6, 1, 23, 0.5]));
 }
 
 #[test]
@@ -255,19 +270,21 @@ fn merge_cached_detailed_replays_replaces_matching_simple_entries() {
         .expect("cache should serialize");
     std::fs::write(&cache_path, payload).expect("cache file should be written");
 
-    let simple_replay = ReplayInfo {
-        file: replay_path.display().to_string(),
-        map: test_map_id("Void Launch"),
-        result: "Victory".to_string(),
-        difficulty: "Brutal".to_string(),
-        p1: "Simple Main".to_string(),
-        p2: "Simple Ally".to_string(),
-        main_commander: "Artanis".to_string(),
-        ally_commander: "Swann".to_string(),
-        main_units: json!({}),
-        ally_units: json!({}),
-        ..ReplayInfo::default()
-    };
+    let simple_replay = sample_replay(
+        &replay_path.display().to_string(),
+        ReplayPlayerInfo {
+            name: "Simple Main".to_string(),
+            commander: "Artanis".to_string(),
+            units: json!({}),
+            ..ReplayPlayerInfo::default()
+        },
+        ReplayPlayerInfo {
+            name: "Simple Ally".to_string(),
+            commander: "Swann".to_string(),
+            units: json!({}),
+            ..ReplayPlayerInfo::default()
+        },
+    );
 
     let merged = merge_cached_detailed_replays_from_path(
         &[simple_replay],
@@ -277,9 +294,9 @@ fn merge_cached_detailed_replays_replaces_matching_simple_entries() {
     );
 
     assert_eq!(merged.len(), 1);
-    assert_eq!(merged[0].main_commander, "Raynor");
-    assert_eq!(merged[0].ally_commander, "Karax");
-    assert_eq!(merged[0].main_units["Marine"], json!([8, 2, 99, 0.75]));
+    assert_eq!(merged[0].main_commander(), "Raynor");
+    assert_eq!(merged[0].ally_commander(), "Karax");
+    assert_eq!(merged[0].main_units()["Marine"], json!([8, 2, 99, 0.75]));
 
     let _ = std::fs::remove_file(&cache_path);
     let _ = std::fs::remove_file(&replay_path);
@@ -288,14 +305,10 @@ fn merge_cached_detailed_replays_replaces_matching_simple_entries() {
 
 #[test]
 fn stats_source_replays_for_response_matches_wx_show_all_behavior() {
-    let current_replay = ReplayInfo {
-        file: "fixtures/replays/current.SC2Replay".to_string(),
-        ..ReplayInfo::default()
-    };
-    let historic_replay = ReplayInfo {
-        file: "fixtures/replays/historic.SC2Replay".to_string(),
-        ..ReplayInfo::default()
-    };
+    let mut current_replay = ReplayInfo::default();
+    current_replay.file = "fixtures/replays/current.SC2Replay".to_string();
+    let mut historic_replay = ReplayInfo::default();
+    historic_replay.file = "fixtures/replays/historic.SC2Replay".to_string();
     let current_files = HashSet::from([current_replay.file.clone()]);
 
     let selected_replays = [current_replay.clone(), historic_replay.clone()];
@@ -318,24 +331,23 @@ fn stats_source_replays_for_response_matches_wx_show_all_behavior() {
 
 #[test]
 fn detailed_stats_counts_only_replays_with_unit_payloads() {
-    let detailed_replay = ReplayInfo {
-        file: "fixtures/replays/detailed.SC2Replay".to_string(),
-        main_units: json!({
-            "Marine": [6, 1, 9, 0.5]
-        }),
-        ..ReplayInfo::default()
-    };
-    let simple_replay = ReplayInfo {
-        file: "fixtures/replays/simple.SC2Replay".to_string(),
-        ..ReplayInfo::default()
-    };
-    let amon_only_replay = ReplayInfo {
-        file: "fixtures/replays/amon.SC2Replay".to_string(),
-        amon_units: json!({
-            "Zergling": [20, 20, 3, 0.1]
-        }),
-        ..ReplayInfo::default()
-    };
+    let detailed_replay = sample_replay(
+        "fixtures/replays/detailed.SC2Replay",
+        ReplayPlayerInfo {
+            units: json!({
+                "Marine": [6, 1, 9, 0.5]
+            }),
+            ..ReplayPlayerInfo::default()
+        },
+        ReplayPlayerInfo::default(),
+    );
+    let mut simple_replay = ReplayInfo::default();
+    simple_replay.file = "fixtures/replays/simple.SC2Replay".to_string();
+    let mut amon_only_replay = ReplayInfo::default();
+    amon_only_replay.file = "fixtures/replays/amon.SC2Replay".to_string();
+    amon_only_replay.amon_units = json!({
+        "Zergling": [20, 20, 3, 0.1]
+    });
 
     let filtered_replays = vec![&detailed_replay, &simple_replay, &amon_only_replay];
     let (detailed_parsed_count, total_valid_files) =

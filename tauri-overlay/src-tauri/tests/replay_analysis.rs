@@ -7,7 +7,7 @@ use sco_tauri_overlay::replay_analysis::{
 use sco_tauri_overlay::{
     canonicalize_coop_map_id, configured_main_handles_from_settings,
     configured_main_names_from_settings, merge_settings_with_defaults, sanitize_unit_map,
-    AppSettings, ReplayInfo,
+    AppSettings, ReplayInfo, ReplayPlayerInfo,
 };
 use serde_json::json;
 use serde_json::Value;
@@ -16,6 +16,21 @@ use std::path::PathBuf;
 
 fn test_map_id(raw: &str) -> String {
     canonicalize_coop_map_id(raw).expect("map id should resolve")
+}
+
+fn sample_replay(
+    file: &str,
+    result: &str,
+    difficulty: &str,
+    main: ReplayPlayerInfo,
+    ally: ReplayPlayerInfo,
+) -> ReplayInfo {
+    let mut replay = ReplayInfo::with_players(main, ally, 0);
+    replay.file = file.to_string();
+    replay.map = test_map_id("Void Launch");
+    replay.result = result.to_string();
+    replay.difficulty = difficulty.to_string();
+    replay
 }
 
 fn replay_analysis_fixture_paths() -> Option<(PathBuf, AppSettings)> {
@@ -69,17 +84,21 @@ fn rebuild_snapshot_returns_empty_payload() {
 
 #[test]
 fn rebuild_snapshot_without_detailed_data_uses_null_unit_data() {
-    let replays = vec![ReplayInfo {
-        file: "simple.SC2Replay".to_string(),
-        map: test_map_id("Void Launch"),
-        result: "Victory".to_string(),
-        difficulty: "Brutal".to_string(),
-        p1: "Main".to_string(),
-        p2: "Ally".to_string(),
-        main_commander: "Raynor".to_string(),
-        ally_commander: "Karax".to_string(),
-        ..ReplayInfo::default()
-    }];
+    let replays = vec![sample_replay(
+        "simple.SC2Replay",
+        "Victory",
+        "Brutal",
+        ReplayPlayerInfo {
+            name: "Main".to_string(),
+            commander: "Raynor".to_string(),
+            ..ReplayPlayerInfo::default()
+        },
+        ReplayPlayerInfo {
+            name: "Ally".to_string(),
+            commander: "Karax".to_string(),
+            ..ReplayPlayerInfo::default()
+        },
+    )];
 
     let snapshot = ReplayAnalysis::build_rebuild_snapshot(&replays, false);
 
@@ -91,10 +110,8 @@ fn rebuild_snapshot_without_detailed_data_uses_null_unit_data() {
 
 #[test]
 fn filter_replays_for_stats_excludes_unparsed_replays() {
-    let replay = ReplayInfo {
-        result: "Unparsed".to_string(),
-        ..ReplayInfo::default()
-    };
+    let mut replay = ReplayInfo::default();
+    replay.result = "Unparsed".to_string();
 
     let filtered = ReplayAnalysis::filter_replays_for_stats("/config/stats", &[replay]);
     assert!(filtered.is_empty());
@@ -127,31 +144,45 @@ fn sanitize_unit_map_preserves_negative_counts() {
 #[test]
 fn map_times_use_accurate_length_like_wx_version() {
     let replays = vec![
-        ReplayInfo {
-            file: "a.SC2Replay".to_string(),
-            map: test_map_id("Void Launch"),
-            result: "Victory".to_string(),
-            difficulty: "Brutal".to_string(),
-            p1: "Main".to_string(),
-            p2: "Ally".to_string(),
-            main_commander: "Raynor".to_string(),
-            ally_commander: "Karax".to_string(),
-            length: 590,
-            accurate_length: 600.5,
-            ..ReplayInfo::default()
+        {
+            let mut replay = sample_replay(
+                "a.SC2Replay",
+                "Victory",
+                "Brutal",
+                ReplayPlayerInfo {
+                    name: "Main".to_string(),
+                    commander: "Raynor".to_string(),
+                    ..ReplayPlayerInfo::default()
+                },
+                ReplayPlayerInfo {
+                    name: "Ally".to_string(),
+                    commander: "Karax".to_string(),
+                    ..ReplayPlayerInfo::default()
+                },
+            );
+            replay.length = 590;
+            replay.accurate_length = 600.5;
+            replay
         },
-        ReplayInfo {
-            file: "b.SC2Replay".to_string(),
-            map: test_map_id("Void Launch"),
-            result: "Victory".to_string(),
-            difficulty: "Brutal".to_string(),
-            p1: "Main".to_string(),
-            p2: "Ally".to_string(),
-            main_commander: "Raynor".to_string(),
-            ally_commander: "Karax".to_string(),
-            length: 600,
-            accurate_length: 610.25,
-            ..ReplayInfo::default()
+        {
+            let mut replay = sample_replay(
+                "b.SC2Replay",
+                "Victory",
+                "Brutal",
+                ReplayPlayerInfo {
+                    name: "Main".to_string(),
+                    commander: "Raynor".to_string(),
+                    ..ReplayPlayerInfo::default()
+                },
+                ReplayPlayerInfo {
+                    name: "Ally".to_string(),
+                    commander: "Karax".to_string(),
+                    ..ReplayPlayerInfo::default()
+                },
+            );
+            replay.length = 600;
+            replay.accurate_length = 610.25;
+            replay
         },
     ];
 
@@ -182,30 +213,37 @@ fn map_times_use_accurate_length_like_wx_version() {
 #[test]
 fn map_fastest_payload_includes_player_metadata() {
     let fastest_date = 1_700_000_000;
-    let replays = vec![ReplayInfo {
-        file: "fastest.SC2Replay".to_string(),
-        date: fastest_date,
-        map: test_map_id("Void Launch"),
-        result: "Victory".to_string(),
-        difficulty: "Brutal".to_string(),
-        enemy: "Zerg".to_string(),
-        p1: "Main".to_string(),
-        p2: "Ally".to_string(),
-        p1_handle: "1-S2-1-111".to_string(),
-        p2_handle: "1-S2-1-222".to_string(),
-        main_apm: 143,
-        ally_apm: 98,
-        main_commander: "Raynor".to_string(),
-        ally_commander: "Karax".to_string(),
-        main_mastery_level: 90,
-        ally_mastery_level: 76,
-        main_prestige: 0,
-        ally_prestige: 2,
-        main_masteries: vec![30, 0, 20, 10, 0, 30],
-        ally_masteries: vec![15, 15, 0, 30, 20, 10],
-        length: 590,
-        accurate_length: 600.5,
-        ..ReplayInfo::default()
+    let replays = vec![{
+        let mut replay = sample_replay(
+            "fastest.SC2Replay",
+            "Victory",
+            "Brutal",
+            ReplayPlayerInfo {
+                name: "Main".to_string(),
+                handle: "1-S2-1-111".to_string(),
+                apm: 143,
+                commander: "Raynor".to_string(),
+                mastery_level: 90,
+                prestige: 0,
+                masteries: vec![30, 0, 20, 10, 0, 30],
+                ..ReplayPlayerInfo::default()
+            },
+            ReplayPlayerInfo {
+                name: "Ally".to_string(),
+                handle: "1-S2-1-222".to_string(),
+                apm: 98,
+                commander: "Karax".to_string(),
+                mastery_level: 76,
+                prestige: 2,
+                masteries: vec![15, 15, 0, 30, 20, 10],
+                ..ReplayPlayerInfo::default()
+            },
+        );
+        replay.date = fastest_date;
+        replay.enemy = "Zerg".to_string();
+        replay.length = 590;
+        replay.accurate_length = 600.5;
+        replay
     }];
 
     let snapshot = ReplayAnalysis::build_rebuild_snapshot(&replays, false);
@@ -257,43 +295,57 @@ fn map_fastest_payload_includes_player_metadata() {
 #[test]
 fn map_fastest_prefers_oldest_replay_when_lengths_tie() {
     let replays = vec![
-        ReplayInfo {
-            file: "newer_fastest.SC2Replay".to_string(),
-            date: parse_replay_timestamp_seconds("2020:01:02:03:04:05")
-                .expect("newer replay timestamp should parse"),
-            map: test_map_id("Void Launch"),
-            result: "Victory".to_string(),
-            difficulty: "Brutal".to_string(),
-            enemy: "Zerg".to_string(),
-            p1: "Main".to_string(),
-            p2: "Ally".to_string(),
-            p1_handle: "1-S2-1-111".to_string(),
-            p2_handle: "1-S2-1-222".to_string(),
-            main_commander: "Raynor".to_string(),
-            ally_commander: "Karax".to_string(),
-            main_apm: 143,
-            ally_apm: 98,
-            accurate_length: 600.5,
-            ..ReplayInfo::default()
+        {
+            let mut replay = sample_replay(
+                "newer_fastest.SC2Replay",
+                "Victory",
+                "Brutal",
+                ReplayPlayerInfo {
+                    name: "Main".to_string(),
+                    handle: "1-S2-1-111".to_string(),
+                    apm: 143,
+                    commander: "Raynor".to_string(),
+                    ..ReplayPlayerInfo::default()
+                },
+                ReplayPlayerInfo {
+                    name: "Ally".to_string(),
+                    handle: "1-S2-1-222".to_string(),
+                    apm: 98,
+                    commander: "Karax".to_string(),
+                    ..ReplayPlayerInfo::default()
+                },
+            );
+            replay.date = parse_replay_timestamp_seconds("2020:01:02:03:04:05")
+                .expect("newer replay timestamp should parse");
+            replay.enemy = "Zerg".to_string();
+            replay.accurate_length = 600.5;
+            replay
         },
-        ReplayInfo {
-            file: "older_fastest.SC2Replay".to_string(),
-            date: parse_replay_timestamp_seconds("2019:01:02:03:04:05")
-                .expect("older replay timestamp should parse"),
-            map: test_map_id("Void Launch"),
-            result: "Victory".to_string(),
-            difficulty: "Normal".to_string(),
-            enemy: "Terran".to_string(),
-            p1: "Older Main".to_string(),
-            p2: "Older Ally".to_string(),
-            p1_handle: "1-S2-1-333".to_string(),
-            p2_handle: "1-S2-1-444".to_string(),
-            main_commander: "Artanis".to_string(),
-            ally_commander: "Swann".to_string(),
-            main_apm: 77,
-            ally_apm: 66,
-            accurate_length: 600.5,
-            ..ReplayInfo::default()
+        {
+            let mut replay = sample_replay(
+                "older_fastest.SC2Replay",
+                "Victory",
+                "Normal",
+                ReplayPlayerInfo {
+                    name: "Older Main".to_string(),
+                    handle: "1-S2-1-333".to_string(),
+                    apm: 77,
+                    commander: "Artanis".to_string(),
+                    ..ReplayPlayerInfo::default()
+                },
+                ReplayPlayerInfo {
+                    name: "Older Ally".to_string(),
+                    handle: "1-S2-1-444".to_string(),
+                    apm: 66,
+                    commander: "Swann".to_string(),
+                    ..ReplayPlayerInfo::default()
+                },
+            );
+            replay.date = parse_replay_timestamp_seconds("2019:01:02:03:04:05")
+                .expect("older replay timestamp should parse");
+            replay.enemy = "Terran".to_string();
+            replay.accurate_length = 600.5;
+            replay
         },
     ];
 
@@ -328,19 +380,28 @@ fn map_fastest_prefers_oldest_replay_when_lengths_tie() {
 
 #[test]
 fn collect_main_identity_lists_tracks_p2_main_handle_for_fastest_maps() {
-    let replays = vec![ReplayInfo {
-        file: "fastest.SC2Replay".to_string(),
-        map: test_map_id("Miner Evacuation"),
-        result: "Victory".to_string(),
-        difficulty: "Normal".to_string(),
-        p1: "Teammate".to_string(),
-        p2: "Main".to_string(),
-        p1_handle: "1-S2-1-111".to_string(),
-        p2_handle: "1-S2-1-222".to_string(),
-        main_commander: "Swann".to_string(),
-        ally_commander: "Abathur".to_string(),
-        accurate_length: 1041.75,
-        ..ReplayInfo::default()
+    let replays = vec![{
+        let mut replay = ReplayInfo::with_players(
+            ReplayPlayerInfo {
+                name: "Teammate".to_string(),
+                handle: "1-S2-1-111".to_string(),
+                commander: "Swann".to_string(),
+                ..ReplayPlayerInfo::default()
+            },
+            ReplayPlayerInfo {
+                name: "Main".to_string(),
+                handle: "1-S2-1-222".to_string(),
+                commander: "Abathur".to_string(),
+                ..ReplayPlayerInfo::default()
+            },
+            1,
+        );
+        replay.file = "fastest.SC2Replay".to_string();
+        replay.result = "Victory".to_string();
+        replay.difficulty = "Normal".to_string();
+        replay.map = test_map_id("Miner Evacuation");
+        replay.accurate_length = 1041.75;
+        replay
     }];
     let main_names = HashSet::new();
     let main_handles = HashSet::from(["1-s2-1-222".to_string()]);

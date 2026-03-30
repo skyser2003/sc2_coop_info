@@ -164,10 +164,10 @@ fn load_detailed_analysis_replays_snapshot_from_path_uses_cache_entries() {
     assert_eq!(replays[0].map, test_map_id("Void Launch"));
     assert_eq!(replays[0].difficulty, "Brutal");
     assert_eq!(replays[0].length, 610);
-    assert_eq!(replays[0].main_commander, "Raynor");
-    assert_eq!(replays[0].ally_commander, "Karax");
-    assert_eq!(replays[0].main_units["Marine"], json!([3, 1, 12, 0.48]));
-    assert_eq!(replays[0].ally_units["Zealot"], json!([2, 0, 7, 0.28]));
+    assert_eq!(replays[0].main_commander(), "Raynor");
+    assert_eq!(replays[0].ally_commander(), "Karax");
+    assert_eq!(replays[0].main_units()["Marine"], json!([3, 1, 12, 0.48]));
+    assert_eq!(replays[0].ally_units()["Zealot"], json!([2, 0, 7, 0.28]));
     assert_eq!(replays[0].bonus, vec![1, 1]);
     assert_eq!(
         replays[0].bonus_total,

@@ -1,5 +1,22 @@
 use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
-use sco_tauri_overlay::ReplayInfo;
+use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo};
+
+fn replay_with_players(
+    file_name: &str,
+    result: &str,
+    difficulty: &str,
+    brutal_plus: u64,
+    slot1: ReplayPlayerInfo,
+    slot2: ReplayPlayerInfo,
+) -> ReplayInfo {
+    let mut replay = ReplayInfo::with_players(slot1, slot2, 0);
+    replay.file = format!("fixtures/replays/{file_name}.SC2Replay");
+    replay.map = "Void Launch".to_string();
+    replay.result = result.to_string();
+    replay.difficulty = difficulty.to_string();
+    replay.brutal_plus = brutal_plus;
+    replay
+}
 
 fn replay_for_checkbox_filter(
     file_name: &str,
@@ -7,22 +24,26 @@ fn replay_for_checkbox_filter(
     brutal_plus: u64,
     p1_handle: &str,
 ) -> ReplayInfo {
-    ReplayInfo {
-        file: format!("fixtures/replays/{file_name}.SC2Replay"),
-        map: "Void Launch".to_string(),
-        result: "Victory".to_string(),
-        difficulty: difficulty.to_string(),
-        p1: "Main".to_string(),
-        p2: "Ally".to_string(),
-        p1_handle: p1_handle.to_string(),
-        p2_handle: "1-S2-1-999".to_string(),
-        main_commander: "Raynor".to_string(),
-        ally_commander: "Karax".to_string(),
-        main_commander_level: 15,
-        ally_commander_level: 15,
+    replay_with_players(
+        file_name,
+        "Victory",
+        difficulty,
         brutal_plus,
-        ..ReplayInfo::default()
-    }
+        ReplayPlayerInfo {
+            name: "Main".to_string(),
+            handle: p1_handle.to_string(),
+            commander: "Raynor".to_string(),
+            commander_level: 15,
+            ..ReplayPlayerInfo::default()
+        },
+        ReplayPlayerInfo {
+            name: "Ally".to_string(),
+            handle: "1-S2-1-999".to_string(),
+            commander: "Karax".to_string(),
+            commander_level: 15,
+            ..ReplayPlayerInfo::default()
+        },
+    )
 }
 
 fn replay_for_mastery_filter(
@@ -37,61 +58,76 @@ fn replay_for_mastery_filter(
         vec![first, 0, second, 0, third, 0]
     }
 
-    ReplayInfo {
-        file: format!("fixtures/replays/{file_name}.SC2Replay"),
-        map: "Void Launch".to_string(),
-        result: "Victory".to_string(),
-        difficulty: "Brutal".to_string(),
-        p1: "Main".to_string(),
-        p2: "Ally".to_string(),
-        p1_handle: "1-S2-1-111".to_string(),
-        p2_handle: "1-S2-1-999".to_string(),
-        main_commander: "Raynor".to_string(),
-        ally_commander: "Karax".to_string(),
-        main_commander_level: 15,
-        ally_commander_level: 15,
-        main_mastery_level: main_mastery_points,
-        ally_mastery_level: ally_mastery_points,
-        main_masteries: mastery_distribution(main_mastery_points),
-        ally_masteries: mastery_distribution(ally_mastery_points),
-        ..ReplayInfo::default()
-    }
+    replay_with_players(
+        file_name,
+        "Victory",
+        "Brutal",
+        0,
+        ReplayPlayerInfo {
+            name: "Main".to_string(),
+            handle: "1-S2-1-111".to_string(),
+            commander: "Raynor".to_string(),
+            commander_level: 15,
+            mastery_level: main_mastery_points,
+            masteries: mastery_distribution(main_mastery_points),
+            ..ReplayPlayerInfo::default()
+        },
+        ReplayPlayerInfo {
+            name: "Ally".to_string(),
+            handle: "1-S2-1-999".to_string(),
+            commander: "Karax".to_string(),
+            commander_level: 15,
+            mastery_level: ally_mastery_points,
+            masteries: mastery_distribution(ally_mastery_points),
+            ..ReplayPlayerInfo::default()
+        },
+    )
 }
 
 fn replay_for_result_filter(file_name: &str, result: &str) -> ReplayInfo {
-    ReplayInfo {
-        file: format!("fixtures/replays/{file_name}.SC2Replay"),
-        map: "Void Launch".to_string(),
-        result: result.to_string(),
-        difficulty: "Brutal".to_string(),
-        p1: "Main".to_string(),
-        p2: "Ally".to_string(),
-        p1_handle: "1-S2-1-111".to_string(),
-        p2_handle: "1-S2-1-999".to_string(),
-        main_commander: "Raynor".to_string(),
-        ally_commander: "Karax".to_string(),
-        main_commander_level: 15,
-        ally_commander_level: 15,
-        ..ReplayInfo::default()
-    }
+    replay_with_players(
+        file_name,
+        result,
+        "Brutal",
+        0,
+        ReplayPlayerInfo {
+            name: "Main".to_string(),
+            handle: "1-S2-1-111".to_string(),
+            commander: "Raynor".to_string(),
+            commander_level: 15,
+            ..ReplayPlayerInfo::default()
+        },
+        ReplayPlayerInfo {
+            name: "Ally".to_string(),
+            handle: "1-S2-1-999".to_string(),
+            commander: "Karax".to_string(),
+            commander_level: 15,
+            ..ReplayPlayerInfo::default()
+        },
+    )
 }
 
 fn replay_for_ally_level_filter(file_name: &str, ally_commander_level: u64) -> ReplayInfo {
-    ReplayInfo {
-        file: format!("fixtures/replays/{file_name}.SC2Replay"),
-        map: "Void Launch".to_string(),
-        result: "Victory".to_string(),
-        difficulty: "Brutal".to_string(),
-        p1: "Main".to_string(),
-        p2: "Ally".to_string(),
-        p1_handle: "1-S2-1-111".to_string(),
-        p2_handle: "1-S2-1-999".to_string(),
-        main_commander: "Raynor".to_string(),
-        ally_commander: "Karax".to_string(),
-        main_commander_level: 15,
-        ally_commander_level,
-        ..ReplayInfo::default()
-    }
+    replay_with_players(
+        file_name,
+        "Victory",
+        "Brutal",
+        0,
+        ReplayPlayerInfo {
+            name: "Main".to_string(),
+            handle: "1-S2-1-111".to_string(),
+            commander: "Raynor".to_string(),
+            commander_level: 15,
+            ..ReplayPlayerInfo::default()
+        },
+        ReplayPlayerInfo {
+            name: "Ally".to_string(),
+            handle: "1-S2-1-999".to_string(),
+            commander: "Karax".to_string(),
+            commander_level: ally_commander_level,
+            ..ReplayPlayerInfo::default()
+        },
+    )
 }
 
 #[test]
@@ -202,57 +238,72 @@ fn filter_replays_for_stats_can_limit_results_to_ally_levels_1_14() {
 #[test]
 fn filter_replays_for_stats_uses_or_logic_within_main_level_group() {
     let replays = vec![
-        ReplayInfo {
-            file: "fixtures/replays/main_group_level_match.SC2Replay".to_string(),
-            map: "Void Launch".to_string(),
-            result: "Victory".to_string(),
-            difficulty: "Brutal".to_string(),
-            p1: "Main".to_string(),
-            p2: "Ally".to_string(),
-            p1_handle: "1-S2-1-111".to_string(),
-            p2_handle: "1-S2-1-999".to_string(),
-            main_commander: "Raynor".to_string(),
-            ally_commander: "Karax".to_string(),
-            main_commander_level: 10,
-            ally_commander_level: 15,
-            main_masteries: vec![30, 30, 30, 0, 0, 0],
-            ally_masteries: vec![0, 0, 0, 0, 0, 0],
-            ..ReplayInfo::default()
-        },
-        ReplayInfo {
-            file: "fixtures/replays/main_group_high_level_match.SC2Replay".to_string(),
-            map: "Void Launch".to_string(),
-            result: "Victory".to_string(),
-            difficulty: "Brutal".to_string(),
-            p1: "Main".to_string(),
-            p2: "Ally".to_string(),
-            p1_handle: "1-S2-1-111".to_string(),
-            p2_handle: "1-S2-1-999".to_string(),
-            main_commander: "Raynor".to_string(),
-            ally_commander: "Karax".to_string(),
-            main_commander_level: 15,
-            ally_commander_level: 15,
-            main_masteries: vec![30, 30, 30, 0, 0, 0],
-            ally_masteries: vec![0, 0, 0, 0, 0, 0],
-            ..ReplayInfo::default()
-        },
-        ReplayInfo {
-            file: "fixtures/replays/main_group_no_match.SC2Replay".to_string(),
-            map: "Void Launch".to_string(),
-            result: "Victory".to_string(),
-            difficulty: "Brutal".to_string(),
-            p1: "Main".to_string(),
-            p2: "Ally".to_string(),
-            p1_handle: "1-S2-1-111".to_string(),
-            p2_handle: "1-S2-1-999".to_string(),
-            main_commander: "Raynor".to_string(),
-            ally_commander: "Karax".to_string(),
-            main_commander_level: 15,
-            ally_commander_level: 15,
-            main_masteries: vec![91, 91, 91, 0, 0, 0],
-            ally_masteries: vec![0, 0, 0, 0, 0, 0],
-            ..ReplayInfo::default()
-        },
+        replay_with_players(
+            "main_group_level_match",
+            "Victory",
+            "Brutal",
+            0,
+            ReplayPlayerInfo {
+                name: "Main".to_string(),
+                handle: "1-S2-1-111".to_string(),
+                commander: "Raynor".to_string(),
+                commander_level: 10,
+                masteries: vec![30, 30, 30, 0, 0, 0],
+                ..ReplayPlayerInfo::default()
+            },
+            ReplayPlayerInfo {
+                name: "Ally".to_string(),
+                handle: "1-S2-1-999".to_string(),
+                commander: "Karax".to_string(),
+                commander_level: 15,
+                masteries: vec![0, 0, 0, 0, 0, 0],
+                ..ReplayPlayerInfo::default()
+            },
+        ),
+        replay_with_players(
+            "main_group_high_level_match",
+            "Victory",
+            "Brutal",
+            0,
+            ReplayPlayerInfo {
+                name: "Main".to_string(),
+                handle: "1-S2-1-111".to_string(),
+                commander: "Raynor".to_string(),
+                commander_level: 15,
+                masteries: vec![30, 30, 30, 0, 0, 0],
+                ..ReplayPlayerInfo::default()
+            },
+            ReplayPlayerInfo {
+                name: "Ally".to_string(),
+                handle: "1-S2-1-999".to_string(),
+                commander: "Karax".to_string(),
+                commander_level: 15,
+                masteries: vec![0, 0, 0, 0, 0, 0],
+                ..ReplayPlayerInfo::default()
+            },
+        ),
+        replay_with_players(
+            "main_group_no_match",
+            "Victory",
+            "Brutal",
+            0,
+            ReplayPlayerInfo {
+                name: "Main".to_string(),
+                handle: "1-S2-1-111".to_string(),
+                commander: "Raynor".to_string(),
+                commander_level: 15,
+                masteries: vec![91, 91, 91, 0, 0, 0],
+                ..ReplayPlayerInfo::default()
+            },
+            ReplayPlayerInfo {
+                name: "Ally".to_string(),
+                handle: "1-S2-1-999".to_string(),
+                commander: "Karax".to_string(),
+                commander_level: 15,
+                masteries: vec![0, 0, 0, 0, 0, 0],
+                ..ReplayPlayerInfo::default()
+            },
+        ),
     ];
 
     let filtered = ReplayAnalysis::filter_replays_for_stats(
@@ -274,45 +325,61 @@ fn filter_replays_for_stats_uses_or_logic_within_main_level_group() {
 #[test]
 fn abnormal_main_mastery_filter_updates_fastest_map_payload() {
     let replays = vec![
-        ReplayInfo {
-            file: "fixtures/replays/excluded_fastest.SC2Replay".to_string(),
-            map: "Void Launch".to_string(),
-            result: "Victory".to_string(),
-            difficulty: "Brutal".to_string(),
-            p1: "Main".to_string(),
-            p2: "Ally".to_string(),
-            p1_handle: "1-S2-1-111".to_string(),
-            p2_handle: "1-S2-1-999".to_string(),
-            main_commander: "Raynor".to_string(),
-            ally_commander: "Karax".to_string(),
-            main_commander_level: 15,
-            ally_commander_level: 15,
-            main_mastery_level: 90,
-            ally_mastery_level: 200,
-            main_masteries: vec![30, 0, 30, 0, 30, 0],
-            ally_masteries: vec![30, 0, 30, 0, 140, 0],
-            accurate_length: 500.0,
-            ..ReplayInfo::default()
+        {
+            let mut replay = replay_with_players(
+                "excluded_fastest",
+                "Victory",
+                "Brutal",
+                0,
+                ReplayPlayerInfo {
+                    name: "Main".to_string(),
+                    handle: "1-S2-1-111".to_string(),
+                    commander: "Raynor".to_string(),
+                    commander_level: 15,
+                    mastery_level: 90,
+                    masteries: vec![30, 0, 30, 0, 30, 0],
+                    ..ReplayPlayerInfo::default()
+                },
+                ReplayPlayerInfo {
+                    name: "Ally".to_string(),
+                    handle: "1-S2-1-999".to_string(),
+                    commander: "Karax".to_string(),
+                    commander_level: 15,
+                    mastery_level: 200,
+                    masteries: vec![30, 0, 30, 0, 140, 0],
+                    ..ReplayPlayerInfo::default()
+                },
+            );
+            replay.accurate_length = 500.0;
+            replay
         },
-        ReplayInfo {
-            file: "fixtures/replays/included_fastest.SC2Replay".to_string(),
-            map: "Void Launch".to_string(),
-            result: "Victory".to_string(),
-            difficulty: "Brutal".to_string(),
-            p1: "Legacy Main".to_string(),
-            p2: "Legacy Ally".to_string(),
-            p1_handle: "1-S2-1-222".to_string(),
-            p2_handle: "1-S2-1-333".to_string(),
-            main_commander: "Raynor".to_string(),
-            ally_commander: "Karax".to_string(),
-            main_commander_level: 15,
-            ally_commander_level: 15,
-            main_mastery_level: 91,
-            ally_mastery_level: 0,
-            main_masteries: vec![30, 0, 30, 0, 31, 0],
-            ally_masteries: vec![0, 0, 0, 0, 0, 0],
-            accurate_length: 600.0,
-            ..ReplayInfo::default()
+        {
+            let mut replay = replay_with_players(
+                "included_fastest",
+                "Victory",
+                "Brutal",
+                0,
+                ReplayPlayerInfo {
+                    name: "Legacy Main".to_string(),
+                    handle: "1-S2-1-222".to_string(),
+                    commander: "Raynor".to_string(),
+                    commander_level: 15,
+                    mastery_level: 91,
+                    masteries: vec![30, 0, 30, 0, 31, 0],
+                    ..ReplayPlayerInfo::default()
+                },
+                ReplayPlayerInfo {
+                    name: "Legacy Ally".to_string(),
+                    handle: "1-S2-1-333".to_string(),
+                    commander: "Karax".to_string(),
+                    commander_level: 15,
+                    mastery_level: 0,
+                    masteries: vec![0, 0, 0, 0, 0, 0],
+                    ..ReplayPlayerInfo::default()
+                },
+            );
+            replay.accurate_length = 600.0;
+            replay
         },
     ];
 

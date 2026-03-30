@@ -7,10 +7,9 @@ use sco_tauri_overlay::overlay_info::{
 use sco_tauri_overlay::ReplayInfo;
 
 fn sample_replay(file: &str) -> ReplayInfo {
-    ReplayInfo {
-        file: file.to_string(),
-        ..ReplayInfo::default()
-    }
+    let mut replay = ReplayInfo::default();
+    replay.file = file.to_string();
+    replay
 }
 
 #[test]

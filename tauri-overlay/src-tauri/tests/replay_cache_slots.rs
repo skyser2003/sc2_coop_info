@@ -8,11 +8,9 @@ use std::sync::{Arc, Mutex};
 fn update_analysis_replay_cache_slots_populates_shared_and_stats_caches() {
     let replays = Arc::new(Mutex::new(Vec::<ReplayInfo>::new()));
     let stats_replays = Arc::new(Mutex::new(Vec::<ReplayInfo>::new()));
-    let replay = ReplayInfo {
-        file: test_replay_path("cached.SC2Replay"),
-        result: "Victory".to_string(),
-        ..ReplayInfo::default()
-    };
+    let mut replay = ReplayInfo::default();
+    replay.file = test_replay_path("cached.SC2Replay");
+    replay.result = "Victory".to_string();
 
     update_analysis_replay_cache_slots(&[replay.clone()], &replays, &stats_replays);
 

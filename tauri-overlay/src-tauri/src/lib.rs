@@ -884,11 +884,13 @@ fn replay_should_swap_main_and_ally(
     main_names: &HashSet<String>,
     main_handles: &HashSet<String>,
 ) -> bool {
-    let p1_handle = ReplayAnalysis::normalized_handle_key(&replay.p1_handle);
-    let p2_handle = ReplayAnalysis::normalized_handle_key(&replay.p2_handle);
+    let p1_handle = ReplayAnalysis::normalized_handle_key(&replay.main().handle);
+    let p2_handle = ReplayAnalysis::normalized_handle_key(&replay.ally().handle);
     if !main_handles.is_empty() && (!p1_handle.is_empty() || !p2_handle.is_empty()) {
-        let p1_is_main = ReplayAnalysis::is_main_player_by_handle(&replay.p1_handle, main_handles);
-        let p2_is_main = ReplayAnalysis::is_main_player_by_handle(&replay.p2_handle, main_handles);
+        let p1_is_main =
+            ReplayAnalysis::is_main_player_by_handle(&replay.main().handle, main_handles);
+        let p2_is_main =
+            ReplayAnalysis::is_main_player_by_handle(&replay.ally().handle, main_handles);
         if p1_is_main != p2_is_main {
             return !p1_is_main && p2_is_main;
         }
@@ -903,8 +905,8 @@ fn replay_should_swap_main_and_ally(
     }
 
     if !main_names.is_empty() {
-        let p1_is_main = ReplayAnalysis::is_main_player_by_name(&replay.p1, main_names);
-        let p2_is_main = ReplayAnalysis::is_main_player_by_name(&replay.p2, main_names);
+        let p1_is_main = ReplayAnalysis::is_main_player_by_name(&replay.main().name, main_names);
+        let p2_is_main = ReplayAnalysis::is_main_player_by_name(&replay.ally().name, main_names);
         if p1_is_main != p2_is_main {
             return !p1_is_main && p2_is_main;
         }
@@ -936,23 +938,7 @@ pub fn orient_replay_for_main_names(
         return replay;
     }
 
-    std::mem::swap(&mut replay.p1, &mut replay.p2);
-    std::mem::swap(&mut replay.p1_handle, &mut replay.p2_handle);
-    std::mem::swap(&mut replay.main_apm, &mut replay.ally_apm);
-    std::mem::swap(&mut replay.main_kills, &mut replay.ally_kills);
-    std::mem::swap(&mut replay.main_commander, &mut replay.ally_commander);
-    std::mem::swap(
-        &mut replay.main_commander_level,
-        &mut replay.ally_commander_level,
-    );
-    std::mem::swap(
-        &mut replay.main_mastery_level,
-        &mut replay.ally_mastery_level,
-    );
-    std::mem::swap(&mut replay.main_prestige, &mut replay.ally_prestige);
-    std::mem::swap(&mut replay.main_masteries, &mut replay.ally_masteries);
-    std::mem::swap(&mut replay.main_units, &mut replay.ally_units);
-    std::mem::swap(&mut replay.main_icons, &mut replay.ally_icons);
+    replay.main_slot = replay.ally_index();
     swap_player_stats_sides(&mut replay.player_stats);
     replay
 }
@@ -982,38 +968,13 @@ pub struct ReplayInfo {
     pub map: String,
     pub result: String,
     pub difficulty: String,
-    pub p1: String,
-    pub p2: String,
-    pub slot1_name: String,
-    pub slot2_name: String,
     pub enemy: String,
-    pub p1_handle: String,
-    pub p2_handle: String,
-    pub slot1_handle: String,
-    pub slot2_handle: String,
     pub length: u64,
     pub accurate_length: f64,
-    pub main_apm: u64,
-    pub ally_apm: u64,
-    pub main_kills: u64,
-    pub ally_kills: u64,
-    pub main_commander: String,
-    pub ally_commander: String,
-    pub slot1_commander: String,
-    pub slot2_commander: String,
-    pub main_commander_level: u64,
-    pub ally_commander_level: u64,
-    pub main_mastery_level: u64,
-    pub ally_mastery_level: u64,
-    pub main_prestige: u64,
-    pub ally_prestige: u64,
-    pub main_masteries: Vec<u64>,
-    pub ally_masteries: Vec<u64>,
-    pub main_units: Value,
-    pub ally_units: Value,
+    slot1: ReplayPlayerInfo,
+    slot2: ReplayPlayerInfo,
+    main_slot: usize,
     pub amon_units: Value,
-    pub main_icons: Value,
-    pub ally_icons: Value,
     pub player_stats: Value,
     pub extension: bool,
     pub brutal_plus: u64,
@@ -1027,44 +988,159 @@ pub struct ReplayInfo {
     pub is_detailed: bool,
 }
 
-struct ReplayPlayerInfo {
-    name: String,
-    handle: String,
-    apm: u64,
-    kills: u64,
-    commander: String,
-    commander_level: u64,
-    mastery_level: u64,
-    prestige: u64,
-    masteries: Vec<u64>,
-    units: Value,
-    icons: Value,
-    stats: Value,
+#[derive(Clone, Default)]
+pub struct ReplayPlayerInfo {
+    pub name: String,
+    pub handle: String,
+    pub apm: u64,
+    pub kills: u64,
+    pub commander: String,
+    pub commander_level: u64,
+    pub mastery_level: u64,
+    pub prestige: u64,
+    pub masteries: Vec<u64>,
+    pub units: Value,
+    pub icons: Value,
+}
+
+impl ReplayPlayerInfo {
+    fn sanitized_for_client(&self) -> Self {
+        Self {
+            name: sanitize_replay_text(&self.name),
+            handle: self.handle.clone(),
+            apm: self.apm,
+            kills: self.kills,
+            commander: sanitize_replay_text(&self.commander),
+            commander_level: self.commander_level,
+            mastery_level: self.mastery_level,
+            prestige: self.prestige,
+            masteries: normalize_mastery_values(&self.masteries),
+            units: sanitize_unit_map(&self.units),
+            icons: sanitize_icon_map(&self.icons),
+        }
+    }
 }
 
 impl ReplayInfo {
+    pub fn with_players(
+        slot1: ReplayPlayerInfo,
+        slot2: ReplayPlayerInfo,
+        main_slot: usize,
+    ) -> Self {
+        Self {
+            slot1,
+            slot2,
+            main_slot: main_slot.min(1),
+            ..Self::default()
+        }
+    }
+
+    fn slot(&self, index: usize) -> &ReplayPlayerInfo {
+        match index {
+            0 => &self.slot1,
+            1 => &self.slot2,
+            _ => &self.slot1,
+        }
+    }
+
+    pub fn slot1(&self) -> &ReplayPlayerInfo {
+        &self.slot1
+    }
+
+    pub fn slot2(&self) -> &ReplayPlayerInfo {
+        &self.slot2
+    }
+
+    pub fn main_index(&self) -> usize {
+        self.main_slot.min(1)
+    }
+
+    pub fn ally_index(&self) -> usize {
+        1 - self.main_index()
+    }
+
+    pub fn main(&self) -> &ReplayPlayerInfo {
+        self.slot(self.main_index())
+    }
+
+    pub fn ally(&self) -> &ReplayPlayerInfo {
+        self.slot(self.ally_index())
+    }
+
+    pub fn main_apm(&self) -> u64 {
+        self.main().apm
+    }
+
+    pub fn ally_apm(&self) -> u64 {
+        self.ally().apm
+    }
+
+    pub fn main_kills(&self) -> u64 {
+        self.main().kills
+    }
+
+    pub fn ally_kills(&self) -> u64 {
+        self.ally().kills
+    }
+
+    pub fn main_commander(&self) -> &str {
+        &self.main().commander
+    }
+
+    pub fn ally_commander(&self) -> &str {
+        &self.ally().commander
+    }
+
+    pub fn main_commander_level(&self) -> u64 {
+        self.main().commander_level
+    }
+
+    pub fn ally_commander_level(&self) -> u64 {
+        self.ally().commander_level
+    }
+
+    pub fn main_mastery_level(&self) -> u64 {
+        self.main().mastery_level
+    }
+
+    pub fn ally_mastery_level(&self) -> u64 {
+        self.ally().mastery_level
+    }
+
+    pub fn main_prestige(&self) -> u64 {
+        self.main().prestige
+    }
+
+    pub fn ally_prestige(&self) -> u64 {
+        self.ally().prestige
+    }
+
+    pub fn main_masteries(&self) -> &[u64] {
+        &self.main().masteries
+    }
+
+    pub fn ally_masteries(&self) -> &[u64] {
+        &self.ally().masteries
+    }
+
+    pub fn main_units(&self) -> &Value {
+        &self.main().units
+    }
+
+    pub fn ally_units(&self) -> &Value {
+        &self.ally().units
+    }
+
+    pub fn main_icons(&self) -> &Value {
+        &self.main().icons
+    }
+
+    pub fn ally_icons(&self) -> &Value {
+        &self.ally().icons
+    }
+
     pub fn as_games_row(&self) -> Value {
         let sanitized = self.sanitized_for_client();
-        let p1 = if sanitized.slot1_name.trim().is_empty() {
-            sanitized.p1.clone()
-        } else {
-            sanitized.slot1_name.clone()
-        };
-        let p2 = if sanitized.slot2_name.trim().is_empty() {
-            sanitized.p2.clone()
-        } else {
-            sanitized.slot2_name.clone()
-        };
-        let p1_commander = if sanitized.slot1_commander.trim().is_empty() {
-            sanitized.main_commander.clone()
-        } else {
-            sanitized.slot1_commander.clone()
-        };
-        let p2_commander = if sanitized.slot2_commander.trim().is_empty() {
-            sanitized.ally_commander.clone()
-        } else {
-            sanitized.slot2_commander.clone()
-        };
         #[derive(Serialize)]
         struct LocalizedTextValue {
             en: String,
@@ -1147,21 +1223,21 @@ impl ReplayInfo {
             })
             .collect::<Vec<_>>();
         to_json_value(GamesRowPayload {
-            file: sanitized.file,
+            file: sanitized.file.clone(),
             date: sanitized.date,
-            map: sanitized.map,
-            result: sanitized.result,
-            difficulty: sanitized.difficulty,
-            p1,
-            p2,
-            enemy: sanitized.enemy,
-            main_commander: p1_commander,
-            ally_commander: p2_commander,
+            map: sanitized.map.clone(),
+            result: sanitized.result.clone(),
+            difficulty: sanitized.difficulty.clone(),
+            p1: sanitized.slot1().name.clone(),
+            p2: sanitized.slot2().name.clone(),
+            enemy: sanitized.enemy.clone(),
+            main_commander: sanitized.main().commander.clone(),
+            ally_commander: sanitized.ally().commander.clone(),
             length: sanitized.length,
-            main_apm: sanitized.main_apm,
-            ally_apm: sanitized.ally_apm,
-            main_kills: sanitized.main_kills,
-            ally_kills: sanitized.ally_kills,
+            main_apm: sanitized.main().apm,
+            ally_apm: sanitized.ally().apm,
+            main_kills: sanitized.main().kills,
+            ally_kills: sanitized.ally().kills,
             extension: sanitized.extension,
             brutal_plus: sanitized.brutal_plus,
             weekly: sanitized.weekly,
@@ -1173,25 +1249,15 @@ impl ReplayInfo {
 
     pub fn chat_payload(&self) -> ReplayChatPayload {
         let sanitized = self.sanitized_for_client();
-        let slot1_name = if sanitized.slot1_name.trim().is_empty() {
-            sanitized.p1.clone()
-        } else {
-            sanitized.slot1_name.clone()
-        };
-        let slot2_name = if sanitized.slot2_name.trim().is_empty() {
-            sanitized.p2.clone()
-        } else {
-            sanitized.slot2_name.clone()
-        };
 
         ReplayChatPayload {
-            file: sanitized.file,
+            file: sanitized.file.clone(),
             date: sanitized.date,
-            map: sanitized.map,
-            result: sanitized.result,
-            slot1_name,
-            slot2_name,
-            messages: sanitized.messages,
+            map: sanitized.map.clone(),
+            result: sanitized.result.clone(),
+            slot1_name: sanitized.slot1().name.clone(),
+            slot2_name: sanitized.slot2().name.clone(),
+            messages: sanitized.messages.clone(),
         }
     }
 
@@ -1207,38 +1273,13 @@ impl ReplayInfo {
             map: sanitize_replay_text(&map_display_name(&self.map)),
             result: client_result,
             difficulty: sanitize_replay_text(&self.difficulty),
-            p1: sanitize_replay_text(&self.p1),
-            p2: sanitize_replay_text(&self.p2),
-            slot1_name: sanitize_replay_text(&self.slot1_name),
-            slot2_name: sanitize_replay_text(&self.slot2_name),
             enemy: sanitize_replay_text(&self.enemy),
-            p1_handle: self.p1_handle.clone(),
-            p2_handle: self.p2_handle.clone(),
-            slot1_handle: self.slot1_handle.clone(),
-            slot2_handle: self.slot2_handle.clone(),
             length: self.length,
             accurate_length: self.accurate_length,
-            main_apm: self.main_apm,
-            ally_apm: self.ally_apm,
-            main_kills: self.main_kills,
-            ally_kills: self.ally_kills,
-            main_commander: sanitize_replay_text(&self.main_commander),
-            ally_commander: sanitize_replay_text(&self.ally_commander),
-            slot1_commander: sanitize_replay_text(&self.slot1_commander),
-            slot2_commander: sanitize_replay_text(&self.slot2_commander),
-            main_commander_level: self.main_commander_level,
-            ally_commander_level: self.ally_commander_level,
-            main_mastery_level: self.main_mastery_level,
-            ally_mastery_level: self.ally_mastery_level,
-            main_prestige: self.main_prestige,
-            ally_prestige: self.ally_prestige,
-            main_masteries: normalize_mastery_values(&self.main_masteries),
-            ally_masteries: normalize_mastery_values(&self.ally_masteries),
-            main_units: sanitize_unit_map(&self.main_units),
-            ally_units: sanitize_unit_map(&self.ally_units),
+            slot1: self.slot1.sanitized_for_client(),
+            slot2: self.slot2.sanitized_for_client(),
+            main_slot: self.main_index(),
             amon_units: sanitize_unit_map(&self.amon_units),
-            main_icons: sanitize_icon_map(&self.main_icons),
-            ally_icons: sanitize_icon_map(&self.ally_icons),
             player_stats: sanitize_player_stats_payload(&self.player_stats),
             extension: self.extension,
             brutal_plus: self.brutal_plus,
@@ -3189,10 +3230,10 @@ fn parse_new_replay_with_retries(path: &Path) -> Option<(ReplayInfo, CacheReplay
                 attempt_num,
                 MAX_ATTEMPTS,
                 replay.result,
-                replay.p1,
-                replay.p2,
-                replay.main_commander,
-                replay.ally_commander,
+                replay.main().name,
+                replay.ally().name,
+                replay.main_commander(),
+                replay.ally_commander(),
                 replay.map,
                 replay.length
             );
@@ -3384,10 +3425,10 @@ fn process_new_replay_path(
     let main_names = configured_main_names();
     let main_handles = configured_main_handles();
     let replay = orient_replay_for_main_names(parsed, &main_names, &main_handles);
-    if replay.main_commander.trim().is_empty() && replay.ally_commander.trim().is_empty() {
+    if replay.main_commander().trim().is_empty() && replay.ally_commander().trim().is_empty() {
         crate::sco_log!(
             "[SCO/watch] parsed replay ignored file='{}' reason=missing_commanders main='{}' ally='{}'",
-            replay.file, replay.main_commander, replay.ally_commander
+            replay.file, replay.main_commander(), replay.ally_commander()
         );
         handled_files.insert(file);
         return ReplayProcessOutcome::Ignored;
@@ -3399,10 +3440,10 @@ fn process_new_replay_path(
         replay.file,
         replay.date,
         replay.result,
-        replay.p1,
-        replay.p2,
-        replay.main_commander,
-        replay.ally_commander
+        replay.main().name,
+        replay.ally().name,
+        replay.main_commander(),
+        replay.ally_commander()
     );
     let state = app.state::<BackendState>();
     state.upsert_replay_in_memory_cache(&replay);
@@ -3481,10 +3522,10 @@ fn process_replay_detailed(
         replay.file,
         replay.date,
         replay.result,
-        replay.p1,
-        replay.p2,
-        replay.main_commander,
-        replay.ally_commander
+        replay.main().name,
+        replay.ally().name,
+        replay.main_commander(),
+        replay.ally_commander()
     );
 
     state.upsert_replay_in_memory_cache(&replay);

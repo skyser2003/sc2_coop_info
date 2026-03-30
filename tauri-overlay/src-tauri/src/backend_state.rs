@@ -247,11 +247,11 @@ impl BackendState {
             .and_then(|file| replays.iter().find(|replay| &replay.file == file))
             .or_else(|| replays.first());
         if let Some(seed) = seed {
-            let normalized_name = ReplayAnalysis::normalized_player_key(&seed.p1);
+            let normalized_name = ReplayAnalysis::normalized_player_key(&seed.main().name);
             if !normalized_name.is_empty() {
                 main_names.insert(normalized_name);
             }
-            let normalized_handle = ReplayAnalysis::normalized_handle_key(&seed.p1_handle);
+            let normalized_handle = ReplayAnalysis::normalized_handle_key(&seed.main().handle);
             if !normalized_handle.is_empty() {
                 main_handles.insert(normalized_handle);
             }

@@ -32,8 +32,9 @@ use crate::{
     parse_query_bool, parse_query_csv, parse_query_i64, parse_query_value, ratio,
     replay_scan_progress, resolve_replay_root, result_is_victory, sanitize_replay_text,
     ymd_from_unix_seconds, Aggregate, CommanderAggregate, CommanderUnitRollup, MapAggregate,
-    PlayerAggregate, RegionAggregate, ReplayChatMessage, ReplayInfo, ScanInFlightGuard,
-    StatsSnapshot, StatsState, UnitStatsRollup, REPLAY_SCAN_IN_FLIGHT, UNLIMITED_REPLAY_LIMIT,
+    PlayerAggregate, RegionAggregate, ReplayChatMessage, ReplayInfo, ReplayPlayerInfo,
+    ScanInFlightGuard, StatsSnapshot, StatsState, UnitStatsRollup, REPLAY_SCAN_IN_FLIGHT,
+    UNLIMITED_REPLAY_LIMIT,
 };
 
 const PRESTIGE_TRACKING_START_YMD: u32 = 20200726;
@@ -306,38 +307,38 @@ where
         replay.result != "Unparsed" && canonicalize_coop_map_id(&replay.map).is_some()
     }) {
         let p1_is_main = ReplayAnalysis::is_main_player_identity(
-            &replay.p1,
-            &replay.p1_handle,
+            &replay.main().name,
+            &replay.main().handle,
             main_names,
             main_handles,
         );
         let p2_is_main = ReplayAnalysis::is_main_player_identity(
-            &replay.p2,
-            &replay.p2_handle,
+            &replay.ally().name,
+            &replay.ally().handle,
             main_names,
             main_handles,
         );
         let should_take_p1 = p1_is_main || (!has_known_identity && !p2_is_main);
 
         if should_take_p1 {
-            let name = replay.p1.trim();
+            let name = replay.main().name.trim();
             if !name.is_empty() {
                 player_names.insert(name.to_string());
             }
 
-            let handle = replay.p1_handle.trim();
+            let handle = replay.main().handle.trim();
             if !handle.is_empty() {
                 player_handles.insert(handle.to_string());
             }
         }
 
         if p2_is_main {
-            let name = replay.p2.trim();
+            let name = replay.ally().name.trim();
             if !name.is_empty() {
                 player_names.insert(name.to_string());
             }
 
-            let handle = replay.p2_handle.trim();
+            let handle = replay.ally().handle.trim();
             if !handle.is_empty() {
                 player_handles.insert(handle.to_string());
             }
@@ -807,12 +808,40 @@ pub fn append_player_units_to_rollups(
 pub fn replay_info_from_cache_entry(entry: &CacheReplayEntry) -> ReplayInfo {
     let player_one = cache_player(entry, 1);
     let player_two = cache_player(entry, 2);
-    let slot1_name = cache_player_text(player_one, |player| player.name.as_ref());
-    let slot2_name = cache_player_text(player_two, |player| player.name.as_ref());
-    let slot1_handle = cache_player_text(player_one, |player| player.handle.as_ref());
-    let slot2_handle = cache_player_text(player_two, |player| player.handle.as_ref());
-    let slot1_commander = cache_player_text(player_one, |player| player.commander.as_ref());
-    let slot2_commander = cache_player_text(player_two, |player| player.commander.as_ref());
+    let slot1 = ReplayPlayerInfo {
+        name: cache_player_text(player_one, |player| player.name.as_ref()),
+        handle: cache_player_text(player_one, |player| player.handle.as_ref()),
+        apm: cache_player_u64(player_one, |player| player.apm.map(u64::from)),
+        kills: cache_player_u64(player_one, |player| player.kills),
+        commander: cache_player_text(player_one, |player| player.commander.as_ref()),
+        commander_level: cache_player_u64(player_one, |player| {
+            player.commander_level.map(u64::from)
+        }),
+        mastery_level: cache_player_u64(player_one, |player| {
+            player.commander_mastery_level.map(u64::from)
+        }),
+        prestige: cache_player_u64(player_one, |player| player.prestige.map(u64::from)),
+        masteries: cache_player_masteries(player_one),
+        units: cache_player_units(player_one),
+        icons: cache_player_icons(player_one),
+    };
+    let slot2 = ReplayPlayerInfo {
+        name: cache_player_text(player_two, |player| player.name.as_ref()),
+        handle: cache_player_text(player_two, |player| player.handle.as_ref()),
+        apm: cache_player_u64(player_two, |player| player.apm.map(u64::from)),
+        kills: cache_player_u64(player_two, |player| player.kills),
+        commander: cache_player_text(player_two, |player| player.commander.as_ref()),
+        commander_level: cache_player_u64(player_two, |player| {
+            player.commander_level.map(u64::from)
+        }),
+        mastery_level: cache_player_u64(player_two, |player| {
+            player.commander_mastery_level.map(u64::from)
+        }),
+        prestige: cache_player_u64(player_two, |player| player.prestige.map(u64::from)),
+        masteries: cache_player_masteries(player_two),
+        units: cache_player_units(player_two),
+        icons: cache_player_icons(player_two),
+    };
     let normalized_mutators = entry
         .mutators
         .iter()
@@ -845,55 +874,22 @@ pub fn replay_info_from_cache_entry(entry: &CacheReplayEntry) -> ReplayInfo {
         map: canonicalize_coop_map_id(&entry.map_name).unwrap_or_else(|| entry.map_name.clone()),
         result: entry.result.clone(),
         difficulty,
-        p1: slot1_name.clone(),
-        p2: slot2_name.clone(),
-        slot1_name,
-        slot2_name,
         enemy: entry
             .enemy_race
             .as_ref()
             .filter(|value| !value.trim().is_empty())
             .cloned()
             .unwrap_or_else(|| "Unknown".to_string()),
-        p1_handle: slot1_handle.clone(),
-        p2_handle: slot2_handle.clone(),
-        slot1_handle,
-        slot2_handle,
         length: display_length_seconds(accurate_length),
         accurate_length,
-        main_apm: cache_player_u64(player_one, |player| player.apm.map(u64::from)),
-        ally_apm: cache_player_u64(player_two, |player| player.apm.map(u64::from)),
-        main_kills: cache_player_u64(player_one, |player| player.kills),
-        ally_kills: cache_player_u64(player_two, |player| player.kills),
-        main_commander: slot1_commander.clone(),
-        ally_commander: slot2_commander.clone(),
-        slot1_commander,
-        slot2_commander,
-        main_commander_level: cache_player_u64(player_one, |player| {
-            player.commander_level.map(u64::from)
-        }),
-        ally_commander_level: cache_player_u64(player_two, |player| {
-            player.commander_level.map(u64::from)
-        }),
-        main_mastery_level: cache_player_u64(player_one, |player| {
-            player.commander_mastery_level.map(u64::from)
-        }),
-        ally_mastery_level: cache_player_u64(player_two, |player| {
-            player.commander_mastery_level.map(u64::from)
-        }),
-        main_prestige: cache_player_u64(player_one, |player| player.prestige.map(u64::from)),
-        ally_prestige: cache_player_u64(player_two, |player| player.prestige.map(u64::from)),
-        main_masteries: cache_player_masteries(player_one),
-        ally_masteries: cache_player_masteries(player_two),
-        main_units: cache_player_units(player_one),
-        ally_units: cache_player_units(player_two),
+        slot1,
+        slot2,
+        main_slot: 0,
         amon_units: entry
             .amon_units
             .as_ref()
             .map(cache_json_value)
             .unwrap_or_else(|| Value::Object(Default::default())),
-        main_icons: cache_player_icons(player_one),
-        ally_icons: cache_player_icons(player_two),
         player_stats: entry
             .player_stats
             .as_ref()
@@ -936,14 +932,196 @@ fn replay_info_from_report(path: &Path, report: &ReplayReport) -> ReplayInfo {
         .and_then(bonus_objective_total_for_map_id);
     let slot1_player = report_player(report, 1);
     let slot2_player = report_player(report, 2);
-    let main_player = report_main_player(report);
-    let ally_player = report_ally_player(report);
     let accurate_length =
         if report.parser.accurate_length.is_finite() && report.parser.accurate_length > 0.0 {
             report.parser.accurate_length
         } else {
             report.length.max(0.0)
         };
+    let main_slot = match report.positions.main {
+        2 => 1,
+        _ => 0,
+    };
+    let slot_player = |slot_index: usize,
+                       player: Option<&ParsedReplayPlayer>,
+                       commander: &str,
+                       commander_level: u64,
+                       mastery_level: u64,
+                       prestige: u64,
+                       masteries: Vec<u64>,
+                       units: Value,
+                       icons: Value,
+                       kills: u64|
+     -> ReplayPlayerInfo {
+        let fallback_name = if slot_index == 0 {
+            report.main.clone()
+        } else {
+            report.ally.clone()
+        };
+        ReplayPlayerInfo {
+            name: player
+                .map(|value| value.name.clone())
+                .unwrap_or_else(|| fallback_name),
+            handle: player.map(|value| value.handle.clone()).unwrap_or_default(),
+            apm: player.map(|value| u64::from(value.apm)).unwrap_or(0),
+            kills,
+            commander: player
+                .map(|value| value.commander.clone())
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| commander.to_string()),
+            commander_level: player
+                .map(|value| u64::from(value.commander_level))
+                .unwrap_or(commander_level),
+            mastery_level: player
+                .map(|value| u64::from(value.commander_mastery_level))
+                .unwrap_or(mastery_level),
+            prestige: player
+                .map(|value| u64::from(value.prestige))
+                .unwrap_or(prestige),
+            masteries: player
+                .map(|value| {
+                    value
+                        .masteries
+                        .iter()
+                        .map(|entry| u64::from(*entry))
+                        .collect()
+                })
+                .unwrap_or(masteries),
+            units,
+            icons,
+        }
+    };
+    let slot1_is_main = main_slot == 0;
+    let slot1 = slot_player(
+        0,
+        slot1_player,
+        if slot1_is_main {
+            &report.main_commander
+        } else {
+            &report.ally_commander
+        },
+        if slot1_is_main {
+            u64::from(report.main_commander_level)
+        } else {
+            u64::from(report.ally_commander_level)
+        },
+        slot1_player
+            .map(|value| u64::from(value.commander_mastery_level))
+            .unwrap_or(0),
+        slot1_player
+            .map(|value| u64::from(value.prestige))
+            .unwrap_or(0),
+        if slot1_is_main {
+            report
+                .main_masteries
+                .iter()
+                .map(|value| u64::from(*value))
+                .collect()
+        } else {
+            report
+                .ally_masteries
+                .iter()
+                .map(|value| u64::from(*value))
+                .collect()
+        },
+        sanitize_hidden_unit_stats(report_value(if slot1_is_main {
+            &report.main_units
+        } else {
+            &report.ally_units
+        })),
+        with_outlaw_icons(
+            report_value(if slot1_is_main {
+                &report.main_icons
+            } else {
+                &report.ally_icons
+            }),
+            if slot1_is_main {
+                &report.main_commander
+            } else {
+                &report.ally_commander
+            },
+            if (if slot1_is_main {
+                &report.main_commander
+            } else {
+                &report.ally_commander
+            }) == "Tychus"
+            {
+                report.outlaw_order.as_ref()
+            } else {
+                None
+            },
+        ),
+        if slot1_is_main {
+            report.main_kills
+        } else {
+            report.ally_kills
+        },
+    );
+    let slot2 = slot_player(
+        1,
+        slot2_player,
+        if slot1_is_main {
+            &report.ally_commander
+        } else {
+            &report.main_commander
+        },
+        if slot1_is_main {
+            u64::from(report.ally_commander_level)
+        } else {
+            u64::from(report.main_commander_level)
+        },
+        slot2_player
+            .map(|value| u64::from(value.commander_mastery_level))
+            .unwrap_or(0),
+        slot2_player
+            .map(|value| u64::from(value.prestige))
+            .unwrap_or(0),
+        if slot1_is_main {
+            report
+                .ally_masteries
+                .iter()
+                .map(|value| u64::from(*value))
+                .collect()
+        } else {
+            report
+                .main_masteries
+                .iter()
+                .map(|value| u64::from(*value))
+                .collect()
+        },
+        sanitize_hidden_unit_stats(report_value(if slot1_is_main {
+            &report.ally_units
+        } else {
+            &report.main_units
+        })),
+        with_outlaw_icons(
+            report_value(if slot1_is_main {
+                &report.ally_icons
+            } else {
+                &report.main_icons
+            }),
+            if slot1_is_main {
+                &report.ally_commander
+            } else {
+                &report.main_commander
+            },
+            if (if slot1_is_main {
+                &report.ally_commander
+            } else {
+                &report.main_commander
+            }) == "Tychus"
+            {
+                report.outlaw_order.as_ref()
+            } else {
+                None
+            },
+        ),
+        if slot1_is_main {
+            report.ally_kills
+        } else {
+            report.main_kills
+        },
+    );
 
     ReplayInfo {
         file: path.display().to_string(),
@@ -952,90 +1130,17 @@ fn replay_info_from_report(path: &Path, report: &ReplayReport) -> ReplayInfo {
         map: canonicalize_coop_map_id(&report.map_name).unwrap_or_else(|| report.map_name.clone()),
         result: report.result.clone(),
         difficulty: report.difficulty.clone(),
-        p1: report.main.clone(),
-        p2: report.ally.clone(),
-        slot1_name: slot1_player
-            .map(|player| player.name.clone())
-            .unwrap_or_default(),
-        slot2_name: slot2_player
-            .map(|player| player.name.clone())
-            .unwrap_or_default(),
         enemy: if report.parser.enemy_race.trim().is_empty() {
             "Unknown".to_string()
         } else {
             report.parser.enemy_race.clone()
         },
-        p1_handle: main_player
-            .map(|player| player.handle.clone())
-            .unwrap_or_default(),
-        p2_handle: ally_player
-            .map(|player| player.handle.clone())
-            .unwrap_or_default(),
-        slot1_handle: slot1_player
-            .map(|player| player.handle.clone())
-            .unwrap_or_default(),
-        slot2_handle: slot2_player
-            .map(|player| player.handle.clone())
-            .unwrap_or_default(),
         length: display_length_seconds(accurate_length),
         accurate_length,
-        main_apm: u64::from(report.main_apm),
-        ally_apm: u64::from(report.ally_apm),
-        main_kills: report.main_kills,
-        ally_kills: report.ally_kills,
-        main_commander: report.main_commander.clone(),
-        ally_commander: report.ally_commander.clone(),
-        slot1_commander: slot1_player
-            .map(|player| player.commander.clone())
-            .unwrap_or_default(),
-        slot2_commander: slot2_player
-            .map(|player| player.commander.clone())
-            .unwrap_or_default(),
-        main_commander_level: u64::from(report.main_commander_level),
-        ally_commander_level: u64::from(report.ally_commander_level),
-        main_mastery_level: main_player
-            .map(|player| u64::from(player.commander_mastery_level))
-            .unwrap_or(0),
-        ally_mastery_level: ally_player
-            .map(|player| u64::from(player.commander_mastery_level))
-            .unwrap_or(0),
-        main_prestige: main_player
-            .map(|player| u64::from(player.prestige))
-            .unwrap_or(0),
-        ally_prestige: ally_player
-            .map(|player| u64::from(player.prestige))
-            .unwrap_or(0),
-        main_masteries: report
-            .main_masteries
-            .iter()
-            .map(|value| u64::from(*value))
-            .collect(),
-        ally_masteries: report
-            .ally_masteries
-            .iter()
-            .map(|value| u64::from(*value))
-            .collect(),
-        main_units: sanitize_hidden_unit_stats(report_value(&report.main_units)),
-        ally_units: sanitize_hidden_unit_stats(report_value(&report.ally_units)),
+        slot1,
+        slot2,
+        main_slot,
         amon_units: report_value(&report.amon_units),
-        main_icons: with_outlaw_icons(
-            report_value(&report.main_icons),
-            &report.main_commander,
-            if report.main_commander == "Tychus" {
-                report.outlaw_order.as_ref()
-            } else {
-                None
-            },
-        ),
-        ally_icons: with_outlaw_icons(
-            report_value(&report.ally_icons),
-            &report.ally_commander,
-            if report.ally_commander == "Tychus" {
-                report.outlaw_order.as_ref()
-            } else {
-                None
-            },
-        ),
         player_stats: report_value(&report.player_stats),
         extension: report.extension,
         brutal_plus: u64::from(report.brutal_plus),
@@ -1286,10 +1391,10 @@ impl ReplayAnalysis {
             let Some(map_key) = canonicalize_coop_map_id(&replay.map) else {
                 continue;
             };
-            let main_player_name = sanitize_replay_text(&replay.p1);
-            let ally_player_name = sanitize_replay_text(&replay.p2);
-            let main_commander_text = sanitize_replay_text(&replay.main_commander);
-            let ally_commander_text = sanitize_replay_text(&replay.ally_commander);
+            let main_player_name = sanitize_replay_text(&replay.main().name);
+            let ally_player_name = sanitize_replay_text(&replay.ally().name);
+            let main_commander_text = sanitize_replay_text(replay.main_commander());
+            let ally_commander_text = sanitize_replay_text(replay.ally_commander());
             let map_bonus_total = replay
                 .bonus_total
                 .or_else(|| bonus_objective_total_for_map_id(&map_key));
@@ -1309,7 +1414,7 @@ impl ReplayAnalysis {
                 }
             };
 
-            let main_kill_fraction = kill_fraction(replay.main_kills, replay.ally_kills);
+            let main_kill_fraction = kill_fraction(replay.main_kills(), replay.ally_kills());
             let ally_kill_fraction = 1.0 - main_kill_fraction;
             let main_commander_name =
                 normalized_commander_name(&main_commander_text, &main_player_name);
@@ -1358,20 +1463,20 @@ impl ReplayAnalysis {
                     map_entry.fastest_date = replay.date;
                     map_entry.fastest_difficulty = replay.difficulty.clone();
                     map_entry.fastest_enemy_race = replay.enemy.clone();
-                    map_entry.fastest_p1 = replay.p1.clone();
-                    map_entry.fastest_p2 = replay.p2.clone();
-                    map_entry.fastest_p1_handle = replay.p1_handle.clone();
-                    map_entry.fastest_p2_handle = replay.p2_handle.clone();
+                    map_entry.fastest_p1 = replay.main().name.clone();
+                    map_entry.fastest_p2 = replay.ally().name.clone();
+                    map_entry.fastest_p1_handle = replay.main().handle.clone();
+                    map_entry.fastest_p2_handle = replay.ally().handle.clone();
                     map_entry.fastest_p1_commander = main_commander_name.clone();
                     map_entry.fastest_p2_commander = ally_commander_name.clone();
-                    map_entry.fastest_p1_apm = replay.main_apm;
-                    map_entry.fastest_p2_apm = replay.ally_apm;
-                    map_entry.fastest_p1_mastery_level = replay.main_mastery_level;
-                    map_entry.fastest_p2_mastery_level = replay.ally_mastery_level;
-                    map_entry.fastest_p1_masteries = replay.main_masteries.clone();
-                    map_entry.fastest_p2_masteries = replay.ally_masteries.clone();
-                    map_entry.fastest_p1_prestige = replay.main_prestige;
-                    map_entry.fastest_p2_prestige = replay.ally_prestige;
+                    map_entry.fastest_p1_apm = replay.main_apm();
+                    map_entry.fastest_p2_apm = replay.ally_apm();
+                    map_entry.fastest_p1_mastery_level = replay.main_mastery_level();
+                    map_entry.fastest_p2_mastery_level = replay.ally_mastery_level();
+                    map_entry.fastest_p1_masteries = replay.main_masteries().to_vec();
+                    map_entry.fastest_p2_masteries = replay.ally_masteries().to_vec();
+                    map_entry.fastest_p1_prestige = replay.main_prestige();
+                    map_entry.fastest_p2_prestige = replay.ally_prestige();
                 }
             }
             if replay_is_victory {
@@ -1380,8 +1485,8 @@ impl ReplayAnalysis {
                 map_entry.losses += 1;
             }
 
-            let normalized_p1_handle = Self::normalized_handle_key(&replay.p1_handle);
-            let normalized_p2_handle = Self::normalized_handle_key(&replay.p2_handle);
+            let normalized_p1_handle = Self::normalized_handle_key(&replay.main().handle);
+            let normalized_p2_handle = Self::normalized_handle_key(&replay.ally().handle);
             let mut p1_is_main = if has_known_main_handles {
                 !normalized_p1_handle.is_empty() && main_handles.contains(&normalized_p1_handle)
             } else {
@@ -1397,12 +1502,12 @@ impl ReplayAnalysis {
             }
 
             let region = if p1_is_main {
-                infer_region_from_handle(&replay.p1_handle)
+                infer_region_from_handle(&replay.main().handle)
             } else if p2_is_main {
-                infer_region_from_handle(&replay.p2_handle)
+                infer_region_from_handle(&replay.ally().handle)
             } else {
-                infer_region_from_handle(&replay.p1_handle)
-                    .or_else(|| infer_region_from_handle(&replay.p2_handle))
+                infer_region_from_handle(&replay.main().handle)
+                    .or_else(|| infer_region_from_handle(&replay.ally().handle))
             }
             .unwrap_or_else(|| "Unknown".to_string());
             let replay_difficulty = replay.difficulty.trim();
@@ -1423,14 +1528,14 @@ impl ReplayAnalysis {
                 region_entry.losses += 1;
             }
             if p1_is_main {
-                if replay.main_mastery_level > region_entry.max_asc {
-                    region_entry.max_asc = replay.main_mastery_level;
+                if replay.main_mastery_level() > region_entry.max_asc {
+                    region_entry.max_asc = replay.main_mastery_level();
                 }
-                if replay.main_commander_level == 15 && !main_commander_text.is_empty() {
+                if replay.main_commander_level() == 15 && !main_commander_text.is_empty() {
                     region_entry.max_com.insert(main_commander_text.clone());
                 }
                 if !main_commander_name.is_empty() {
-                    let value = replay.main_prestige.min(3);
+                    let value = replay.main_prestige().min(3);
                     region_entry
                         .prestiges
                         .entry(main_commander_name.clone())
@@ -1439,14 +1544,14 @@ impl ReplayAnalysis {
                 }
             }
             if p2_is_main {
-                if replay.ally_mastery_level > region_entry.max_asc {
-                    region_entry.max_asc = replay.ally_mastery_level;
+                if replay.ally_mastery_level() > region_entry.max_asc {
+                    region_entry.max_asc = replay.ally_mastery_level();
                 }
-                if replay.ally_commander_level == 15 && !ally_commander_text.is_empty() {
+                if replay.ally_commander_level() == 15 && !ally_commander_text.is_empty() {
                     region_entry.max_com.insert(ally_commander_text.clone());
                 }
                 if !ally_commander_name.is_empty() {
-                    let value = replay.ally_prestige.min(3);
+                    let value = replay.ally_prestige().min(3);
                     region_entry
                         .prestiges
                         .entry(ally_commander_name.clone())
@@ -1472,8 +1577,8 @@ impl ReplayAnalysis {
                 _sum_ally_losses += 1;
             }
 
-            let main_mastery_normalized = normalize_mastery_vector(&replay.main_masteries);
-            let ally_mastery_normalized = normalize_mastery_vector(&replay.ally_masteries);
+            let main_mastery_normalized = normalize_mastery_vector(replay.main_masteries());
+            let ally_mastery_normalized = normalize_mastery_vector(replay.ally_masteries());
             let include_prestige = should_count_prestige(replay.date);
 
             let main = main_commander
@@ -1490,8 +1595,8 @@ impl ReplayAnalysis {
                 main.losses += 1;
             }
 
-            main.apm_values.push(replay.main_apm);
-            sum_main_apm.push(replay.main_apm);
+            main.apm_values.push(replay.main_apm());
+            sum_main_apm.push(replay.main_apm());
 
             if replay.is_detailed {
                 main.kill_fractions.push(main_kill_fraction);
@@ -1500,20 +1605,20 @@ impl ReplayAnalysis {
 
             record_command_mastery_counts(&mut main.mastery_counts, &main_mastery_normalized);
             if include_prestige {
-                record_prestige_count(&mut main.prestige_counts, replay.main_prestige);
+                record_prestige_count(&mut main.prestige_counts, replay.main_prestige());
             }
             record_command_mastery_counts(&mut sum_main_mastery_counts, &main_mastery_normalized);
             if include_prestige {
-                record_prestige_count(&mut sum_main_prestige_counts, replay.main_prestige);
+                record_prestige_count(&mut sum_main_prestige_counts, replay.main_prestige());
             }
             record_command_mastery_by_prestige(
                 &mut main.mastery_by_prestige_counts,
-                replay.main_prestige,
+                replay.main_prestige(),
                 &main_mastery_normalized,
             );
             record_command_mastery_by_prestige(
                 &mut sum_main_mastery_by_prestige_counts,
-                replay.main_prestige,
+                replay.main_prestige(),
                 &main_mastery_normalized,
             );
 
@@ -1531,8 +1636,8 @@ impl ReplayAnalysis {
                 ally.losses += 1;
             }
 
-            ally.apm_values.push(replay.ally_apm);
-            sum_ally_apm.push(replay.ally_apm);
+            ally.apm_values.push(replay.ally_apm());
+            sum_ally_apm.push(replay.ally_apm());
 
             if replay.is_detailed {
                 ally.kill_fractions.push(ally_kill_fraction);
@@ -1541,20 +1646,20 @@ impl ReplayAnalysis {
 
             record_command_mastery_counts(&mut ally.mastery_counts, &ally_mastery_normalized);
             if include_prestige {
-                record_prestige_count(&mut ally.prestige_counts, replay.ally_prestige);
+                record_prestige_count(&mut ally.prestige_counts, replay.ally_prestige());
             }
             record_command_mastery_counts(&mut sum_ally_mastery_counts, &ally_mastery_normalized);
             if include_prestige {
-                record_prestige_count(&mut sum_ally_prestige_counts, replay.ally_prestige);
+                record_prestige_count(&mut sum_ally_prestige_counts, replay.ally_prestige());
             }
             record_command_mastery_by_prestige(
                 &mut ally.mastery_by_prestige_counts,
-                replay.ally_prestige,
+                replay.ally_prestige(),
                 &ally_mastery_normalized,
             );
             record_command_mastery_by_prestige(
                 &mut sum_ally_mastery_by_prestige_counts,
-                replay.ally_prestige,
+                replay.ally_prestige(),
                 &ally_mastery_normalized,
             );
 
@@ -1562,11 +1667,11 @@ impl ReplayAnalysis {
                 let p1 = player_values.entry(main_player_name).or_default();
                 record_player_aggregate(
                     p1,
-                    &replay.p1,
-                    &replay.p1_handle,
+                    &replay.main().name,
+                    &replay.main().handle,
                     &main_commander_text,
                     replay_is_victory,
-                    replay.main_apm,
+                    replay.main_apm(),
                     main_kill_fraction,
                     replay.date,
                 );
@@ -1576,11 +1681,11 @@ impl ReplayAnalysis {
                 let p2 = player_values.entry(ally_player_name).or_default();
                 record_player_aggregate(
                     p2,
-                    &replay.p2,
-                    &replay.p2_handle,
+                    &replay.ally().name,
+                    &replay.ally().handle,
                     &ally_commander_text,
                     replay_is_victory,
-                    replay.ally_apm,
+                    replay.ally_apm(),
                     ally_kill_fraction,
                     replay.date,
                 );
@@ -1989,19 +2094,19 @@ impl ReplayAnalysis {
                 append_player_units_to_rollups(
                     &mut main_rollup,
                     &mut ally_rollup,
-                    &replay.main_commander,
-                    &replay.main_units,
-                    replay.main_kills,
-                    &replay.p1_handle,
+                    replay.main_commander(),
+                    replay.main_units(),
+                    replay.main_kills(),
+                    &replay.main().handle,
                     &main_handles,
                 );
                 append_player_units_to_rollups(
                     &mut main_rollup,
                     &mut ally_rollup,
-                    &replay.ally_commander,
-                    &replay.ally_units,
-                    replay.ally_kills,
-                    &replay.p2_handle,
+                    replay.ally_commander(),
+                    replay.ally_units(),
+                    replay.ally_kills(),
+                    &replay.ally().handle,
                     &main_handles,
                 );
                 append_amon_units(&replay.amon_units);
@@ -2061,37 +2166,37 @@ impl ReplayAnalysis {
                 Some(result) => result,
                 None => continue,
             };
-            let main_kill_fraction = kill_fraction(replay.main_kills, replay.ally_kills);
+            let main_kill_fraction = kill_fraction(replay.main_kills(), replay.ally_kills());
             let ally_kill_fraction = 1.0 - main_kill_fraction;
-            let p1_name = sanitize_replay_text(&replay.p1);
-            let p2_name = sanitize_replay_text(&replay.p2);
-            let main_commander = sanitize_replay_text(&replay.main_commander);
-            let ally_commander = sanitize_replay_text(&replay.ally_commander);
+            let p1_name = sanitize_replay_text(&replay.main().name);
+            let p2_name = sanitize_replay_text(&replay.ally().name);
+            let main_commander = sanitize_replay_text(replay.main_commander());
+            let ally_commander = sanitize_replay_text(replay.ally_commander());
             if !p1_name.is_empty() {
-                let p1_handle_key = ReplayAnalysis::normalized_handle_key(&replay.p1_handle);
+                let p1_handle_key = ReplayAnalysis::normalized_handle_key(&replay.main().handle);
                 let p1 = player_values.entry(p1_handle_key).or_default();
                 record_player_aggregate(
                     p1,
                     &p1_name,
-                    &replay.p1_handle,
+                    &replay.main().handle,
                     &main_commander,
                     replay_is_victory,
-                    replay.main_apm,
+                    replay.main_apm(),
                     main_kill_fraction,
                     replay.date,
                 );
             }
 
             if !p2_name.is_empty() {
-                let p2_handle_key = ReplayAnalysis::normalized_handle_key(&replay.p2_handle);
+                let p2_handle_key = ReplayAnalysis::normalized_handle_key(&replay.ally().handle);
                 let p2 = player_values.entry(p2_handle_key).or_default();
                 record_player_aggregate(
                     p2,
                     &p2_name,
-                    &replay.p2_handle,
+                    &replay.ally().handle,
                     &ally_commander,
                     replay_is_victory,
-                    replay.ally_apm,
+                    replay.ally_apm(),
                     ally_kill_fraction,
                     replay.date,
                 );
@@ -2731,12 +2836,12 @@ impl ReplayAnalysis {
                     file_label,
                     replay.map,
                     replay.result,
-                    replay.p1,
-                    replay.p2,
-                    replay.main_kills,
-                    replay.ally_kills,
-                    replay.main_apm,
-                    replay.ally_apm,
+                    replay.main().name,
+                    replay.ally().name,
+                    replay.main_kills(),
+                    replay.ally_kills(),
+                    replay.main_apm(),
+                    replay.ally_apm(),
                     parse_started_at.elapsed().as_millis()
                 );
                 replay
@@ -3108,20 +3213,20 @@ impl ReplayAnalysis {
             }
         }
 
-        if !include_sub_15 && replay.main_commander_level < 15 {
+        if !include_sub_15 && replay.main_commander_level() < 15 {
             return false;
         }
-        if !include_over_15 && replay.main_commander_level >= 15 {
+        if !include_over_15 && replay.main_commander_level() >= 15 {
             return false;
         }
-        if !include_ally_sub_15 && replay.ally_commander_level < 15 {
+        if !include_ally_sub_15 && replay.ally_commander_level() < 15 {
             return false;
         }
-        if !include_ally_over_15 && replay.ally_commander_level >= 15 {
+        if !include_ally_over_15 && replay.ally_commander_level() >= 15 {
             return false;
         }
-        let main_mastery_points = mastery_points_invested(&replay.main_masteries);
-        let ally_mastery_points = mastery_points_invested(&replay.ally_masteries);
+        let main_mastery_points = mastery_points_invested(replay.main_masteries());
+        let ally_mastery_points = mastery_points_invested(replay.ally_masteries());
         if !include_main_normal_mastery && main_mastery_points <= 90 {
             return false;
         }
@@ -3136,16 +3241,18 @@ impl ReplayAnalysis {
         }
 
         if has_main_handles && !include_both_main {
-            let p1_is_main = main_handles.contains(&Self::normalized_handle_key(&replay.p1_handle));
-            let p2_is_main = main_handles.contains(&Self::normalized_handle_key(&replay.p2_handle));
+            let p1_is_main =
+                main_handles.contains(&Self::normalized_handle_key(&replay.main().handle));
+            let p2_is_main =
+                main_handles.contains(&Self::normalized_handle_key(&replay.ally().handle));
             if p1_is_main && p2_is_main {
                 return false;
             }
         }
 
         if !player_filter.is_empty() {
-            let p1 = replay.p1.to_ascii_lowercase();
-            let p2 = replay.p2.to_ascii_lowercase();
+            let p1 = replay.main().name.to_ascii_lowercase();
+            let p2 = replay.ally().name.to_ascii_lowercase();
             if !wildcard_match(&player_filter, &p1) && !wildcard_match(&player_filter, &p2) {
                 return false;
             }
@@ -3171,8 +3278,8 @@ impl ReplayAnalysis {
         }
 
         if !region_filter.is_empty() {
-            let region = infer_region_from_handle(&replay.p1_handle)
-                .or_else(|| infer_region_from_handle(&replay.p2_handle))
+            let region = infer_region_from_handle(&replay.main().handle)
+                .or_else(|| infer_region_from_handle(&replay.ally().handle))
                 .unwrap_or_else(|| "Unknown".to_string())
                 .to_ascii_uppercase();
             if !matches!(region.as_str(), "NA" | "EU" | "KR" | "CN" | "PTR") {
@@ -3207,11 +3314,11 @@ impl ReplayAnalysis {
 
     pub(crate) fn replay_has_detailed_unit_stats(replay: &ReplayInfo) -> bool {
         replay
-            .main_units
+            .main_units()
             .as_object()
             .is_some_and(|units| !units.is_empty())
             || replay
-                .ally_units
+                .ally_units()
                 .as_object()
                 .is_some_and(|units| !units.is_empty())
             || replay
