@@ -927,31 +927,41 @@ export default function SettingsTab({
                                     {t("ui_settings_overlay_options")}
                                 </h3>
                                 <div className="main-settings-group-fields">
-                                    <label className="main-number-row">
-                                        <span className="main-row-label">
-                                            {t("ui_settings_duration")}
-                                        </span>
-                                        <input
-                                            className="input"
-                                            type="number"
-                                            min={1}
-                                            max={9999}
-                                            value={Number(
-                                                read(["duration"], 60) || 60,
-                                            )}
-                                            onChange={(event) =>
-                                                onChange(
-                                                    ["duration"],
-                                                    Math.max(
-                                                        1,
-                                                        Number(
-                                                            event.target.value,
-                                                        ) || 60,
-                                                    ),
-                                                )
-                                            }
-                                        />
-                                    </label>
+                                    <Grid
+                                        container
+                                        spacing={1}
+                                        className="main-number-row"
+                                    >
+                                        <Grid>
+                                            <span className="main-row-label">
+                                                {t("ui_settings_duration")}
+                                            </span>
+                                        </Grid>
+                                        <Grid>
+                                            <input
+                                                className="input"
+                                                type="number"
+                                                min={1}
+                                                max={9999}
+                                                value={Number(
+                                                    read(["duration"], 60) ||
+                                                        60,
+                                                )}
+                                                onChange={(event) =>
+                                                    onChange(
+                                                        ["duration"],
+                                                        Math.max(
+                                                            1,
+                                                            Number(
+                                                                event.target
+                                                                    .value,
+                                                            ) || 60,
+                                                        ),
+                                                    )
+                                                }
+                                            />
+                                        </Grid>
+                                    </Grid>
                                     {boolField(
                                         t(
                                             "ui_settings_show_player_winrates_and_notes",
