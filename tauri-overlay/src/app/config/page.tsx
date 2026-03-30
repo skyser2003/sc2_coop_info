@@ -122,11 +122,6 @@ export default function ConfigPage({ onThemeModeChange }: ConfigPageProps) {
                 SC2 Coop Info v{appVersion}
                 {isDev ? " Dev" : ""}
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-                Editing settings applies changes immediately to the running
-                overlay backend. settings.json is updated only when you press
-                Save.
-            </Typography>
 
             <ConfigRoute onThemeModeChange={onThemeModeChange} />
         </Container>
