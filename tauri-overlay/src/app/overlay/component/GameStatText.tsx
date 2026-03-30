@@ -616,7 +616,7 @@ export default function GameStatText({
             },
             {
                 idPrefix: "CM3",
-                name: "Amon",
+                name: overlayLocalize("ui_settings_amon"),
                 icons: [],
                 prestige: overlayLocalize(statsPayload.comp),
                 prestigeColor: amonColor,
