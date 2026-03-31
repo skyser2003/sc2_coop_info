@@ -1,9 +1,9 @@
-use sco_tauri_overlay::{merge_settings_with_defaults, update_settings_player_note};
+use sco_tauri_overlay::{update_settings_player_note, AppSettings};
 use serde_json::json;
 
 #[test]
 fn update_settings_player_note_only_changes_player_notes_branch() {
-    let mut settings = merge_settings_with_defaults(json!({
+    let mut settings = AppSettings::merge_settings_with_defaults(json!({
         "show_charts": true,
         "player_notes": {
             "1-S2-1-111": "old note"
@@ -22,7 +22,7 @@ fn update_settings_player_note_only_changes_player_notes_branch() {
 
 #[test]
 fn update_settings_player_note_removes_case_insensitive_match_when_cleared() {
-    let mut settings = merge_settings_with_defaults(json!({
+    let mut settings = AppSettings::merge_settings_with_defaults(json!({
         "player_notes": {
             "1-S2-1-111": "old note",
             "1-S2-1-222": "keep me"

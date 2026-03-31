@@ -343,7 +343,7 @@ pub fn overlay_window_bounds_for_monitor(
 }
 
 pub fn parse_runtime_flags() -> RuntimeFlags {
-    let settings = crate::read_settings_file();
+    let settings = crate::read_settings_memory();
     let minimize_to_tray = settings.minimize_to_tray;
     let start_minimized = if minimize_to_tray {
         settings.start_minimized
@@ -360,7 +360,7 @@ pub fn parse_runtime_flags() -> RuntimeFlags {
 }
 
 pub(crate) fn apply_overlay_placement(window: &tauri::WebviewWindow) -> Result<(), String> {
-    apply_overlay_placement_from_settings(window, &crate::read_settings_file())
+    apply_overlay_placement_from_settings(window, &crate::read_settings_memory())
 }
 
 pub(crate) fn apply_overlay_placement_from_settings(
@@ -600,7 +600,7 @@ fn resolved_overlay_hotkey_bindings_from_settings(
     let mut bindings = Vec::new();
 
     for (path, action) in OVERLAY_HOTKEY_BINDINGS {
-        let configured = crate::settings_field_value(settings_value, path);
+        let configured = AppSettings::settings_field_value(settings_value, path);
         let using_default =
             configured.is_none() || matches!(configured.as_ref(), Some(Value::Null));
         let shortcut = match configured.as_ref() {
@@ -668,7 +668,7 @@ fn resolved_overlay_hotkey_bindings_from_settings(
 }
 
 fn resolved_overlay_hotkey_bindings() -> Vec<ResolvedHotkeyBinding> {
-    resolved_overlay_hotkey_bindings_from_settings(&crate::read_settings_file())
+    resolved_overlay_hotkey_bindings_from_settings(&crate::read_settings_memory())
 }
 
 pub fn resolve_hotkey_binding_for_reassign_end(
@@ -681,8 +681,8 @@ pub fn resolve_hotkey_binding_for_reassign_end(
         return Some(binding);
     }
 
-    let configured_value = crate::settings_field_value(settings_value, path);
-    let explicitly_disabled = if !crate::settings_has_explicit_key(settings_value, path) {
+    let configured_value = AppSettings::settings_field_value(settings_value, path);
+    let explicitly_disabled = if !settings_value.has(path) {
         false
     } else {
         match configured_value.as_ref() {
@@ -849,7 +849,7 @@ pub(crate) fn end_hotkey_reassign(app: &tauri::AppHandle<Wry>, path: &str) -> Re
         set_active_hotkey_reassign_path(None);
     }
 
-    let settings_value = crate::read_settings_file();
+    let settings_value = crate::read_settings_memory();
     let fallback_binding = active_hotkey_reassign_binding();
     let Some(binding) =
         resolve_hotkey_binding_for_reassign_end(&settings_value, path, fallback_binding.as_ref())
@@ -892,7 +892,7 @@ pub fn overlay_payload_from_replay(
 ) -> OverlayReplayPayload {
     let main_names = configured_main_names();
     let main_handles = configured_main_handles();
-    let settings = crate::read_settings_file();
+    let settings = crate::read_settings_memory();
     let language = overlay_language_from_settings(&settings);
     let mut payload = OverlayReplayPayload::from_replay(replay, language);
     if replay_should_swap_main_and_ally(replay, &main_names, &main_handles) {
@@ -924,7 +924,7 @@ pub(crate) fn emit_replay_to_overlay_from_replay(
         .flatten()
         .unwrap_or_else(|| replay.clone());
 
-    let settings = crate::read_settings_file();
+    let settings = crate::read_settings_memory();
     let show_session = settings.show_session;
     let (session_victories, session_defeats) = state.session_counts();
     let payload = overlay_payload_from_replay(
@@ -1384,7 +1384,7 @@ pub fn player_note_from_settings_value(
 }
 
 fn player_note_from_settings(player_handle: &str) -> Option<String> {
-    let settings = crate::read_settings_file();
+    let settings = crate::read_settings_memory();
     player_note_from_settings_value(&settings, player_handle)
 }
 
@@ -1531,7 +1531,7 @@ pub fn overlay_screenshot_output_path_from_settings(
 }
 
 fn overlay_screenshot_output_path() -> Result<PathBuf, String> {
-    overlay_screenshot_output_path_from_settings(&crate::read_settings_file(), SystemTime::now())
+    overlay_screenshot_output_path_from_settings(&crate::read_settings_memory(), SystemTime::now())
 }
 
 fn request_overlay_screenshot(app: &tauri::AppHandle<Wry>) -> Result<String, String> {
@@ -1700,7 +1700,7 @@ pub fn open_folder_in_explorer(folder: &str) -> Result<(), String> {
 }
 
 fn overlay_setting_string(settings: &AppSettings, key: &str) -> Option<String> {
-    crate::settings_field_value(settings, key)
+    AppSettings::settings_field_value(settings, key)
         .and_then(|value| value.as_str().map(ToString::to_string))
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
@@ -1748,7 +1748,7 @@ pub fn overlay_runtime_settings_payload(
 }
 
 pub(crate) fn sync_overlay_runtime_settings<R: Runtime>(app: &tauri::AppHandle<R>) {
-    let settings = crate::read_settings_file();
+    let settings = crate::read_settings_memory();
     let state = app.state::<crate::BackendState>();
     let (session_victories, session_defeats) = state.session_counts();
     let payload = overlay_runtime_settings_payload(&settings, session_victories, session_defeats);

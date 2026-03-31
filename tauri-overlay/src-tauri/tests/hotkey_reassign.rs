@@ -1,4 +1,4 @@
-use sco_tauri_overlay::{merge_settings_with_defaults, overlay_info};
+use sco_tauri_overlay::{overlay_info, AppSettings};
 use serde_json::json;
 
 #[test]
@@ -27,7 +27,7 @@ fn reassign_end_uses_cached_binding_when_current_settings_do_not_resolve_path() 
     };
 
     let resolved = overlay_info::resolve_hotkey_binding_for_reassign_end(
-        &merge_settings_with_defaults(json!({ "hotkey_show/hide": "Ctrl+Shift+*" })),
+        &AppSettings::merge_settings_with_defaults(json!({ "hotkey_show/hide": "Ctrl+Shift+*" })),
         "performance_hotkey",
         Some(&fallback),
     )
@@ -49,7 +49,7 @@ fn reassign_end_reuses_cached_binding_when_hotkey_is_null() {
     };
 
     let resolved = overlay_info::resolve_hotkey_binding_for_reassign_end(
-        &merge_settings_with_defaults(json!({ "performance_hotkey": null })),
+        &AppSettings::merge_settings_with_defaults(json!({ "performance_hotkey": null })),
         "performance_hotkey",
         Some(&fallback),
     );
@@ -69,7 +69,7 @@ fn reassign_end_does_not_restore_explicitly_cleared_hotkey() {
     };
 
     let resolved = overlay_info::resolve_hotkey_binding_for_reassign_end(
-        &merge_settings_with_defaults(json!({ "performance_hotkey": "" })),
+        &AppSettings::merge_settings_with_defaults(json!({ "performance_hotkey": "" })),
         "performance_hotkey",
         Some(&fallback),
     );
@@ -80,7 +80,7 @@ fn reassign_end_does_not_restore_explicitly_cleared_hotkey() {
 #[test]
 fn reassign_end_uses_builtin_default_when_overlay_hotkey_is_null() {
     let resolved = overlay_info::resolve_hotkey_binding_for_reassign_end(
-        &merge_settings_with_defaults(json!({ "hotkey_show/hide": null })),
+        &AppSettings::merge_settings_with_defaults(json!({ "hotkey_show/hide": null })),
         "hotkey_show/hide",
         None,
     )

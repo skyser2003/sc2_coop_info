@@ -1,4 +1,4 @@
-use sco_tauri_overlay::{merge_settings_with_defaults, overlay_info};
+use sco_tauri_overlay::{overlay_info, AppSettings};
 use serde_json::json;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -21,7 +21,7 @@ fn unique_temp_dir(name: &str) -> PathBuf {
 fn overlay_screenshot_output_path_uses_configured_folder_and_timestamp() {
     let captured_at = UNIX_EPOCH + Duration::from_secs(1_234_567);
     let path = overlay_info::overlay_screenshot_output_path_from_settings(
-        &merge_settings_with_defaults(json!({
+        &AppSettings::merge_settings_with_defaults(json!({
             "screenshot_folder": "shots",
         })),
         captured_at,

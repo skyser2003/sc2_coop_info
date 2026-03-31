@@ -1,17 +1,14 @@
 mod common;
 
 use common::test_config_path;
-use sco_tauri_overlay::{
-    logging_enabled_from_settings, merge_settings_with_defaults, sanitize_settings_value,
-    session_counter_delta,
-};
+use sco_tauri_overlay::{logging_enabled_from_settings, session_counter_delta, AppSettings};
 use serde_json::json;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
 #[test]
 fn sanitize_settings_value_removes_deleted_overlay_settings() {
-    let sanitized = sanitize_settings_value(json!({
+    let sanitized = AppSettings::sanitize_settings_value(json!({
         "enable_logging": true,
         "fast_expand": true,
         "force_hide_overlay": true,
@@ -37,17 +34,17 @@ fn logs_file_path_from_settings_path(settings_path: &Path) -> PathBuf {
 #[test]
 fn logging_enabled_from_settings_respects_boolean_flag() {
     assert!(logging_enabled_from_settings(
-        &merge_settings_with_defaults(json!({
+        &AppSettings::merge_settings_with_defaults(json!({
             "enable_logging": true,
         }))
     ));
     assert!(!logging_enabled_from_settings(
-        &merge_settings_with_defaults(json!({
+        &AppSettings::merge_settings_with_defaults(json!({
             "enable_logging": false,
         }))
     ));
     assert!(logging_enabled_from_settings(
-        &merge_settings_with_defaults(json!({}))
+        &AppSettings::merge_settings_with_defaults(json!({}))
     ));
 }
 

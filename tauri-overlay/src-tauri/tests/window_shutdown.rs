@@ -1,6 +1,6 @@
 use sco_tauri_overlay::{
-    merge_settings_with_defaults, overlay_info, read_settings_file, replace_active_settings,
-    window_close_action, WindowCloseAction,
+    overlay_info, read_settings_memory, replace_active_settings, window_close_action, AppSettings,
+    WindowCloseAction,
 };
 use serde_json::json;
 
@@ -48,9 +48,9 @@ fn shutdown_path_allows_windows_to_close() {
 
 #[test]
 fn runtime_flags_follow_active_settings_before_save() {
-    let previous_settings = read_settings_file();
+    let previous_settings = read_settings_memory();
 
-    replace_active_settings(&merge_settings_with_defaults(json!({
+    replace_active_settings(&AppSettings::merge_settings_with_defaults(json!({
         "start_minimized": true,
         "minimize_to_tray": false,
     })));
@@ -58,7 +58,7 @@ fn runtime_flags_follow_active_settings_before_save() {
     assert!(!disabled_flags.start_minimized);
     assert!(!disabled_flags.minimize_to_tray);
 
-    replace_active_settings(&merge_settings_with_defaults(json!({
+    replace_active_settings(&AppSettings::merge_settings_with_defaults(json!({
         "start_minimized": false,
         "minimize_to_tray": true,
     })));

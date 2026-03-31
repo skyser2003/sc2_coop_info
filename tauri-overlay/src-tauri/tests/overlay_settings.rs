@@ -1,13 +1,11 @@
-use sco_tauri_overlay::{
-    merge_settings_with_defaults, overlay_info, show_replay_info_after_game_from_settings,
-};
+use sco_tauri_overlay::{overlay_info, show_replay_info_after_game_from_settings, AppSettings};
 use serde_json::json;
 use serde_json::Value;
 
 #[test]
 fn overlay_runtime_settings_defaults_to_visible_charts() {
     let payload = overlay_info::overlay_runtime_settings_payload(
-        &merge_settings_with_defaults(json!({})),
+        &AppSettings::merge_settings_with_defaults(json!({})),
         0,
         0,
     );
@@ -44,7 +42,7 @@ fn overlay_runtime_settings_defaults_to_visible_charts() {
 #[test]
 fn overlay_runtime_settings_preserve_saved_chart_visibility_and_colors() {
     let payload = overlay_info::overlay_runtime_settings_payload(
-        &merge_settings_with_defaults(json!({
+        &AppSettings::merge_settings_with_defaults(json!({
             "duration": 90,
             "show_session": true,
             "show_charts": false,
@@ -89,19 +87,19 @@ fn overlay_runtime_settings_preserve_saved_chart_visibility_and_colors() {
 #[test]
 fn replay_overlay_after_game_defaults_to_enabled() {
     assert!(show_replay_info_after_game_from_settings(
-        &merge_settings_with_defaults(json!({}))
+        &AppSettings::merge_settings_with_defaults(json!({}))
     ));
 }
 
 #[test]
 fn replay_overlay_after_game_uses_saved_setting() {
     assert!(!show_replay_info_after_game_from_settings(
-        &merge_settings_with_defaults(json!({
+        &AppSettings::merge_settings_with_defaults(json!({
             "show_replay_info_after_game": false,
         }))
     ));
     assert!(show_replay_info_after_game_from_settings(
-        &merge_settings_with_defaults(json!({
+        &AppSettings::merge_settings_with_defaults(json!({
             "show_replay_info_after_game": true,
         }))
     ));

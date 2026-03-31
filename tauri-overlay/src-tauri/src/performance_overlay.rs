@@ -86,11 +86,11 @@ fn normalized_geometry(mut geometry: PerformanceGeometry) -> PerformanceGeometry
 }
 
 fn performance_show_enabled() -> bool {
-    crate::read_settings_file().performance_show
+    crate::read_settings_memory().performance_show
 }
 
 fn performance_process_names() -> Vec<String> {
-    let names = crate::read_settings_file()
+    let names = crate::read_settings_memory()
         .performance_processes
         .into_iter()
         .map(|value| value.trim().to_string())
@@ -111,7 +111,7 @@ fn persist_setting_value(key: &str, value: Value) -> Result<(), String> {
 }
 
 fn parse_saved_geometry() -> Option<PerformanceGeometry> {
-    let geometry = crate::read_settings_file().performance_geometry?;
+    let geometry = crate::read_settings_memory().performance_geometry?;
     let x = geometry[0];
     let y = geometry[1];
     let width = u32::try_from(geometry[2]).ok()?;
@@ -127,7 +127,7 @@ fn parse_saved_geometry() -> Option<PerformanceGeometry> {
 }
 
 fn default_geometry(window: &tauri::WebviewWindow<Wry>) -> Result<PerformanceGeometry, String> {
-    let monitor_setting = crate::read_settings_file().monitor.max(1);
+    let monitor_setting = crate::read_settings_memory().monitor.max(1);
     let monitor_index = monitor_setting.saturating_sub(1);
     let monitors = window.available_monitors().unwrap_or_default();
     if monitors.is_empty() {

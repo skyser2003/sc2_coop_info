@@ -213,17 +213,6 @@ fn mutator_display_name_en(mutator: &str) -> String {
         .unwrap_or_default()
 }
 
-pub fn sanitize_settings_value(value: Value) -> Value {
-    match value {
-        Value::Object(mut map) => {
-            map.remove("fast_expand");
-            map.remove("force_hide_overlay");
-            Value::Object(map)
-        }
-        other => other,
-    }
-}
-
 fn get_system_language() -> String {
     let default = "en";
     let locale = sys_locale::get_locale();
@@ -249,177 +238,45 @@ fn get_system_language() -> String {
     language.to_string()
 }
 
-pub fn default_settings_value() -> AppSettings {
-    let mut settings = AppSettings {
-        start_with_windows: false,
-        minimize_to_tray: true,
-        start_minimized: false,
-        auto_update: true,
-        duration: 30,
-        show_player_winrates: true,
-        show_replay_info_after_game: true,
-        show_session: true,
-        show_charts: true,
-        account_folder: get_default_accounts_folder(),
-        screenshot_folder: String::new(),
-        color_player1: "#0080F8".to_string(),
-        color_player2: "#00D532".to_string(),
-        color_amon: "#FF0000".to_string(),
-        color_mastery: "#FFDC87".to_string(),
-        hotkey_show_hide: None,
-        hotkey_show: None,
-        hotkey_hide: None,
-        hotkey_newer: None,
-        hotkey_older: None,
-        hotkey_winrates: None,
-        enable_logging: true,
-        dark_theme: true,
-        language: get_system_language(),
-        monitor: 1,
-        performance_show: false,
-        performance_hotkey: None,
-        performance_processes: Vec::new(),
-        performance_geometry: None,
-        rng_choices: Default::default(),
-        player_notes: Default::default(),
-        main_names: Vec::new(),
-        detailed_analysis_atstart: false,
-        present_keys: Default::default(),
-    };
-    initialize_unset_hotkeys(&mut settings);
-    settings
-}
-
-fn initialize_unset_hotkeys(settings: &mut AppSettings) {
-    if settings.hotkey_show_hide.is_none() {
-        settings.hotkey_show_hide = Some("Ctrl+Shift+8".to_string());
-    }
-    if settings.hotkey_newer.is_none() {
-        settings.hotkey_newer = Some("Ctrl+Alt+/".to_string());
-    }
-    if settings.hotkey_older.is_none() {
-        settings.hotkey_older = Some("Ctrl+Alt+8".to_string());
-    }
-    if settings.hotkey_winrates.is_none() {
-        settings.hotkey_winrates = Some("Ctrl+Alt+-".to_string());
-    }
-}
-
-pub(crate) fn app_settings_as_value(settings: &AppSettings) -> Value {
-    serde_json::to_value(settings).unwrap_or_else(|_| Value::Object(Default::default()))
-}
-
-pub(crate) fn settings_field_value(settings: &AppSettings, key: &str) -> Option<Value> {
-    app_settings_as_value(settings).get(key).cloned()
-}
-
-pub(crate) fn settings_has_explicit_key(settings: &AppSettings, key: &str) -> bool {
-    settings.present_keys.contains(key)
-}
-
-fn settings_from_value(value: Value) -> Result<AppSettings, String> {
-    serde_json::from_value(value).map_err(|error| format!("Invalid settings payload: {error}"))
-}
-
-pub fn merge_settings_with_defaults(value: Value) -> AppSettings {
-    let sanitized = sanitize_settings_value(value);
-    let present_keys = match &sanitized {
-        Value::Object(settings) => settings.keys().cloned().collect(),
-        _ => Default::default(),
-    };
-    let mut merged = match app_settings_as_value(&default_settings_value()) {
-        Value::Object(defaults) => defaults,
-        _ => Map::new(),
-    };
-
-    if let Value::Object(settings) = sanitized {
-        merged.extend(settings);
-    }
-
-    let mut settings =
-        settings_from_value(Value::Object(merged)).unwrap_or_else(|_| default_settings_value());
-    initialize_unset_hotkeys(&mut settings);
-    settings.present_keys = present_keys;
-    settings
-}
-
-pub fn read_saved_settings_file_from_path(path: &Path, create_if_missing: bool) -> AppSettings {
-    let defaults = default_settings_value();
-    if !path.exists() {
-        if create_if_missing {
-            let _ = write_saved_settings_file_to_path(path, &defaults);
-        }
-        return defaults;
-    }
-
-    let text = std::fs::read_to_string(path).unwrap_or_else(|_| "{}".to_string());
-    let parsed = serde_json::from_str(&text).unwrap_or(Value::Object(Default::default()));
-    merge_settings_with_defaults(parsed)
-}
-
-pub(crate) fn read_saved_settings_file() -> AppSettings {
-    let path = path_manager::get_settings_path();
-
-    read_saved_settings_file_from_path(&path, !cfg!(test))
-}
-
 fn active_settings_store() -> &'static Mutex<AppSettings> {
-    ACTIVE_SETTINGS.get_or_init(|| Mutex::new(read_saved_settings_file()))
+    ACTIVE_SETTINGS.get_or_init(|| Mutex::new(AppSettings::from_saved_file()))
 }
 
 fn detailed_cache_persist_lock() -> &'static Mutex<()> {
     DETAILED_CACHE_PERSIST_LOCK.get_or_init(|| Mutex::new(()))
 }
 
-pub fn replace_active_settings(value: &AppSettings) -> AppSettings {
-    let sanitized = merge_settings_with_defaults(app_settings_as_value(value));
-    if let Ok(mut cached_settings) = active_settings_store().lock() {
-        *cached_settings = sanitized.clone();
-    }
-    sanitized
-}
-
-pub fn read_settings_file() -> AppSettings {
+pub fn read_settings_memory() -> AppSettings {
     active_settings_store()
         .lock()
         .map(|settings| settings.clone())
-        .unwrap_or_else(|_| read_saved_settings_file())
+        .unwrap_or_else(|_| AppSettings::from_saved_file())
 }
 
-fn write_saved_settings_file_to_path(
-    path: &Path,
-    value: &AppSettings,
-) -> Result<AppSettings, String> {
-    let sanitized = merge_settings_with_defaults(app_settings_as_value(value));
-    let text = serde_json::to_string_pretty(&sanitized)
-        .map_err(|error| format!("Failed to serialize settings: {error}"))?;
-    if let Some(parent) = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        std::fs::create_dir_all(parent)
-            .map_err(|error| format!("Failed to create settings directory: {error}"))?;
+pub fn replace_active_settings(value: &AppSettings) -> AppSettings {
+    let sanitized = AppSettings::merge_settings_with_defaults(value.to_value());
+
+    if let Ok(mut cached_settings) = active_settings_store().lock() {
+        *cached_settings = sanitized.clone();
     }
-    std::fs::write(path, text).map_err(|error| format!("Failed to write settings: {error}"))?;
-    Ok(sanitized)
-}
 
-fn write_saved_settings_file(value: &AppSettings) -> Result<AppSettings, String> {
-    let path = path_manager::get_settings_path();
-
-    write_saved_settings_file_to_path(&path, value)
+    sanitized
 }
 
 fn write_settings_file(value: &AppSettings) -> Result<(), String> {
-    let previous_start_with_windows = start_with_windows_enabled(&read_settings_file());
-    let sanitized = write_saved_settings_file(value)?;
+    let previous_start_with_windows = read_settings_memory().start_with_windows;
+    let sanitized = value.write_saved_settings_file()?;
+
     replace_active_settings(&sanitized);
-    let new_start_with_windows = start_with_windows_enabled(&sanitized);
+
+    let new_start_with_windows = sanitized.start_with_windows;
+
     if previous_start_with_windows != new_start_with_windows {
         if let Err(error) = sync_start_with_windows_setting(&sanitized) {
             crate::sco_log!("[SCO/settings] Failed to sync start_with_windows: {error}");
         }
     }
+
     Ok(())
 }
 
@@ -524,38 +381,26 @@ const PERFORMANCE_RUNTIME_SETTING_KEYS: [&str; 4] = [
     "monitor",
 ];
 
-fn setting_value_changed(
-    previous_settings: &AppSettings,
-    next_settings: &AppSettings,
-    key: &str,
-) -> bool {
-    settings_field_value(previous_settings, key) != settings_field_value(next_settings, key)
-}
-
-pub fn any_setting_changed(
-    previous_settings: &AppSettings,
-    next_settings: &AppSettings,
-    keys: &[&str],
-) -> bool {
-    keys.iter()
-        .any(|key| setting_value_changed(previous_settings, next_settings, key))
-}
-
 pub(crate) fn persist_single_setting_value(key: &str, value: Value) -> Result<(), String> {
-    let mut saved_map = match app_settings_as_value(&read_saved_settings_file()) {
+    let previous_settings = AppSettings::from_saved_file();
+    let mut saved_map = match previous_settings.to_value() {
         Value::Object(map) => map,
         _ => Map::new(),
     };
     saved_map.insert(key.to_string(), value.clone());
-    let saved_settings = merge_settings_with_defaults(Value::Object(saved_map));
-    write_saved_settings_file(&saved_settings)?;
 
-    let mut active_map = match app_settings_as_value(&read_settings_file()) {
+    let saved_settings = AppSettings::merge_settings_with_defaults(Value::Object(saved_map));
+    saved_settings.write_saved_settings_file()?;
+
+    let current_settings = read_settings_memory();
+
+    let mut active_map = match current_settings.to_value() {
         Value::Object(map) => map,
         _ => Map::new(),
     };
     active_map.insert(key.to_string(), value);
-    let active_settings = merge_settings_with_defaults(Value::Object(active_map));
+
+    let active_settings = AppSettings::merge_settings_with_defaults(Value::Object(active_map));
     replace_active_settings(&active_settings);
     Ok(())
 }
@@ -567,22 +412,22 @@ fn apply_runtime_settings(
 ) {
     let next_settings = replace_active_settings(next_settings);
     logging::refresh_from_settings(&next_settings);
-    let overlay_runtime_changed = any_setting_changed(
+    let overlay_runtime_changed = AppSettings::any_setting_changed(
         previous_settings,
         &next_settings,
         &OVERLAY_RUNTIME_SETTING_KEYS,
     );
-    let overlay_hotkeys_changed = any_setting_changed(
+    let overlay_hotkeys_changed = AppSettings::any_setting_changed(
         previous_settings,
         &next_settings,
         &OVERLAY_HOTKEY_SETTING_KEYS,
     );
-    let overlay_placement_changed = any_setting_changed(
+    let overlay_placement_changed = AppSettings::any_setting_changed(
         previous_settings,
         &next_settings,
         &OVERLAY_PLACEMENT_SETTING_KEYS,
     );
-    let performance_runtime_changed = any_setting_changed(
+    let performance_runtime_changed = AppSettings::any_setting_changed(
         previous_settings,
         &next_settings,
         &PERFORMANCE_RUNTIME_SETTING_KEYS,
@@ -848,7 +693,7 @@ pub fn configured_main_names_from_settings(settings: &AppSettings) -> HashSet<St
 }
 
 fn configured_main_names() -> HashSet<String> {
-    configured_main_names_from_settings(&read_settings_file())
+    configured_main_names_from_settings(&read_settings_memory())
 }
 
 pub fn configured_main_handles_from_settings(settings: &AppSettings) -> HashSet<String> {
@@ -876,7 +721,7 @@ pub fn configured_main_handles_from_settings(settings: &AppSettings) -> HashSet<
 }
 
 fn configured_main_handles() -> HashSet<String> {
-    configured_main_handles_from_settings(&read_settings_file())
+    configured_main_handles_from_settings(&read_settings_memory())
 }
 
 fn replay_should_swap_main_and_ally(
@@ -2177,7 +2022,7 @@ fn build_replay_root_candidates(raw: &str) -> Vec<PathBuf> {
 }
 
 fn resolve_replay_root() -> Option<PathBuf> {
-    let settings = read_settings_file();
+    let settings = read_settings_memory();
     let account_folder = settings.account_folder.trim();
     if !account_folder.is_empty() {
         let candidates = build_replay_root_candidates(account_folder);
@@ -2190,7 +2035,7 @@ fn resolve_replay_root() -> Option<PathBuf> {
 }
 
 fn replay_watch_root_from_settings() -> Option<PathBuf> {
-    let settings = read_settings_file();
+    let settings = read_settings_memory();
     let account_folder = settings.account_folder.trim();
     if account_folder.is_empty() {
         return None;
@@ -3448,7 +3293,7 @@ fn process_new_replay_path(
     let state = app.state::<BackendState>();
     state.upsert_replay_in_memory_cache(&replay);
     state.record_session_result(&replay.result);
-    let settings = read_settings_file();
+    let settings = read_settings_memory();
     let show_replay_info_after_game = show_replay_info_after_game_from_settings(&settings);
 
     if show_replay_info_after_game {
@@ -3812,7 +3657,7 @@ fn spawn_game_launch_winrate_task(app: tauri::AppHandle<Wry>) {
         loop {
             thread::sleep(Duration::from_millis(500));
 
-            let settings = read_settings_file();
+            let settings = read_settings_memory();
             let show_player_winrates = settings.show_player_winrates;
             if !show_player_winrates {
                 continue;
@@ -3911,7 +3756,7 @@ fn spawn_protocol_store_warmup() {
 
 fn persist_setting_bool(key: &str, value: bool) {
     match persist_single_setting_value(key, Value::Bool(value)) {
-        Ok(()) => logging::refresh_from_settings(&read_settings_file()),
+        Ok(()) => logging::refresh_from_settings(&read_settings_memory()),
         Err(error) => {
             crate::sco_log!("[SCO/settings] Failed to save {key}: {error}");
         }
@@ -4140,7 +3985,7 @@ impl Default for StatsState {
 impl StatsState {
     fn from_settings() -> Self {
         let mut state = Self::default();
-        let settings = read_settings_file();
+        let settings = read_settings_memory();
         state.detailed_analysis_atstart = settings.detailed_analysis_atstart;
         state
     }
@@ -4277,16 +4122,17 @@ async fn config_request(
     match (method.as_str(), route) {
         ("get", "/config") => Ok(to_json_value(ConfigPayload {
             status: "ok",
-            settings: read_saved_settings_file(),
-            active_settings: read_settings_file(),
+            settings: AppSettings::from_saved_file(),
+            active_settings: read_settings_memory(),
             randomizer_catalog: randomizer::catalog_payload(),
             monitor_catalog: overlay_info::available_monitor_catalog(&app),
         })),
         ("post", "/config") => {
             if let Some(payload) = body {
                 if let Some(settings) = payload.get("settings") {
-                    let mut next_settings = merge_settings_with_defaults(settings.clone());
-                    let previous_settings = read_settings_file();
+                    let mut next_settings =
+                        AppSettings::merge_settings_with_defaults(settings.clone());
+                    let previous_settings = read_settings_memory();
                     let persist = payload
                         .get("persist")
                         .and_then(Value::as_bool)
@@ -4302,8 +4148,8 @@ async fn config_request(
                 }
                 Ok(to_json_value(ConfigPayload {
                     status: "ok",
-                    settings: read_saved_settings_file(),
-                    active_settings: read_settings_file(),
+                    settings: AppSettings::from_saved_file(),
+                    active_settings: read_settings_memory(),
                     randomizer_catalog: randomizer::catalog_payload(),
                     monitor_catalog: overlay_info::available_monitor_catalog(&app),
                 }))
@@ -4480,11 +4326,11 @@ async fn config_request(
                         .and_then(Value::as_str)
                         .unwrap_or("");
 
-                    let mut saved_settings = read_saved_settings_file();
+                    let mut saved_settings = AppSettings::from_saved_file();
                     update_settings_player_note(&mut saved_settings, player_name, note_value)?;
-                    write_saved_settings_file(&saved_settings)?;
+                    saved_settings.write_saved_settings_file()?;
 
-                    let mut active_settings = read_settings_file();
+                    let mut active_settings = read_settings_memory();
                     update_settings_player_note(&mut active_settings, player_name, note_value)?;
                     replace_active_settings(&active_settings);
 
@@ -4783,7 +4629,7 @@ async fn auto_update(handle: tauri::AppHandle) -> tauri_plugin_updater::Result<(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let settings = read_settings_file();
+    let settings = read_settings_memory();
     logging::refresh_from_settings(&settings);
 
     let data_dir = get_json_data_dir();
@@ -4926,7 +4772,7 @@ pub fn run() {
                 }
             }
 
-            let startup_settings = read_settings_file();
+            let startup_settings = read_settings_memory();
             if let Err(error) = sync_start_with_windows_setting(&startup_settings) {
                 crate::sco_log!("[SCO/settings] Failed to initialize start_with_windows: {error}");
             }
