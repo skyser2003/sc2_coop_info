@@ -359,14 +359,6 @@ fn report_player(report: &ReplayReport, pid: u8) -> Option<&ParsedReplayPlayer> 
         .find(|player| player.pid == pid)
 }
 
-fn report_main_player(report: &ReplayReport) -> Option<&ParsedReplayPlayer> {
-    report_player(report, report.positions.main)
-}
-
-fn report_ally_player(report: &ReplayReport) -> Option<&ParsedReplayPlayer> {
-    report_player(report, report.positions.ally)
-}
-
 fn with_outlaw_icons(
     mut icons: Value,
     commander: &str,
