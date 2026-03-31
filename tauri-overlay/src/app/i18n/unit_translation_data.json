@@ -1075,6 +1075,10 @@
         "en": "Stalker",
         "ko": "추적자"
     },
+    "Slayer": {
+        "en": "Slayer",
+        "ko": "학살자"
+    },
     "Stank": {
         "en": "Stank",
         "ko": "구리구리스크"
@@ -1322,6 +1326,10 @@
     "Sentinel": {
         "en": "Sentinel",
         "ko": "파수병"
+    },
+    "Legionnaire": {
+        "en": "Legionnaire",
+        "ko": "군단병"
     },
     "Widow Mine": {
         "en": "Widow Mine",
