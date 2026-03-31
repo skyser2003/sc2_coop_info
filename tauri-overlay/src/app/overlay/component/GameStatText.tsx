@@ -274,6 +274,7 @@ function renderUnitRows(
     unitRows: UnitRow[],
     color: string,
     killsLabel: string,
+    overlayText: (id: string) => string,
 ): ReactNode {
     if (unitRows.length === 0) {
         return <span className="unitkills" />;
@@ -284,8 +285,12 @@ function renderUnitRows(
             <span className="unitkills">
                 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{killsLabel}
             </span>
-            <span className="unitcreated header">created</span>
-            <span className="unitdied header">lost</span>
+            <span className="unitcreated header">
+                {overlayText("ui_stats_created")}
+            </span>
+            <span className="unitdied header">
+                {overlayText("ui_stats_lost")}
+            </span>
             <br />
             {unitRows.map((row) => (
                 <Fragment key={row.key}>
@@ -896,6 +901,7 @@ export default function GameStatText({
                                 section.unitRows,
                                 section.unitColor,
                                 killsLabel,
+                                overlayText,
                             )}
                         </div>
                     </div>
