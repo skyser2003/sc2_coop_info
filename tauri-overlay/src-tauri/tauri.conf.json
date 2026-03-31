@@ -41,8 +41,8 @@
             {
                 "label": "performance",
                 "title": "SC2 Performance",
-                "width": 780,
-                "height": 860,
+                "width": 400,
+                "height": 600,
                 "visible": false,
                 "url": "/#/performance",
                 "transparent": true,
