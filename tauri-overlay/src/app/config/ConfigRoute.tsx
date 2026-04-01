@@ -2466,8 +2466,9 @@ function SettingsEditor({
                                                           "",
                                                   ),
                                               },
-                                              points:
-                                                  mutator.points ?? BigInt(0),
+                                              points: Number(
+                                                  mutator.points ?? 0,
+                                              ),
                                           }),
                                       )
                                     : [],

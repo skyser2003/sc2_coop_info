@@ -70,7 +70,7 @@ pub struct RandomizerMutatorResult {
     #[serde(rename = "iconName")]
     pub icon_name: String,
     pub description: LocalizedText,
-    pub points: u64,
+    pub points: u32,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
@@ -82,10 +82,10 @@ pub struct RandomizerResult {
     pub commander: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
-    pub prestige: Option<u64>,
+    pub prestige: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
-    pub mastery_indices: Option<Vec<Option<u64>>>,
+    pub mastery_indices: Option<Vec<Option<u32>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub map_race: Option<String>,
@@ -93,10 +93,10 @@ pub struct RandomizerResult {
     pub mutators: Vec<RandomizerMutatorResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
-    pub mutator_total_points: Option<u64>,
+    pub mutator_total_points: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
-    pub mutator_count: Option<u64>,
+    pub mutator_count: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub brutal_plus: Option<u8>,
@@ -108,7 +108,7 @@ struct RandomizerMutatorEntry {
     name: LocalizedText,
     icon_name: String,
     description: LocalizedText,
-    points: u64,
+    points: u32,
 }
 
 pub fn catalog_payload() -> OverlayRandomizerCatalog {
@@ -145,12 +145,12 @@ pub fn catalog_payload() -> OverlayRandomizerCatalog {
         .map(|entry| OverlayRandomizerBrutalPlus {
             brutal_plus: entry.brutal_plus,
             mutator_points: OverlayRandomizerRange {
-                min: entry.mutator_points.min,
-                max: entry.mutator_points.max,
+                min: u32::try_from(entry.mutator_points.min).unwrap_or(u32::MAX),
+                max: u32::try_from(entry.mutator_points.max).unwrap_or(u32::MAX),
             },
             mutator_count: OverlayRandomizerRange {
-                min: entry.mutator_count.min,
-                max: entry.mutator_count.max,
+                min: u32::try_from(entry.mutator_count.min).unwrap_or(u32::MAX),
+                max: u32::try_from(entry.mutator_count.max).unwrap_or(u32::MAX),
             },
         })
         .collect();
@@ -310,8 +310,8 @@ fn build_mutator_result(
         return Err("No mutators were generated".to_string());
     }
 
-    let total_points = mutators.iter().map(|mutator| mutator.points).sum::<u64>();
-    let mutator_count = u64::try_from(mutators.len()).unwrap_or(0);
+    let total_points = mutators.iter().map(|mutator| mutator.points).sum::<u32>();
+    let mutator_count = u32::try_from(mutators.len()).unwrap_or(u32::MAX);
 
     Ok(RandomizerResult {
         kind: "mutator".to_string(),
@@ -335,13 +335,13 @@ fn build_mutator_result(
     })
 }
 
-fn effective_commander_choices(saved: &Value) -> BTreeMap<String, Vec<u64>> {
+fn effective_commander_choices(saved: &Value) -> BTreeMap<String, Vec<u32>> {
     let saved_object = saved.as_object();
     let has_saved = saved_object.is_some_and(|value| !value.is_empty());
-    let mut out = BTreeMap::<String, Vec<u64>>::new();
+    let mut out = BTreeMap::<String, Vec<u32>>::new();
 
     for commander in commander_names() {
-        let mut prestiges = Vec::<u64>::new();
+        let mut prestiges = Vec::<u32>::new();
         for prestige in 0..=3 {
             let is_selected = if has_saved {
                 saved_object
@@ -378,7 +378,7 @@ fn random_map_name(rng: &mut Rng) -> String {
     }
 }
 
-fn generate_mastery_indices(mastery_mode: &str, rng: &mut Rng) -> Result<[Option<u64>; 3], String> {
+fn generate_mastery_indices(mastery_mode: &str, rng: &mut Rng) -> Result<[Option<u32>; 3], String> {
     let mut mastery = [None; 3];
     match mastery_mode {
         "all_in" => {
@@ -390,7 +390,7 @@ fn generate_mastery_indices(mastery_mode: &str, rng: &mut Rng) -> Result<[Option
         }
         "random" => {
             for pair_index in 0..3 {
-                mastery[pair_index] = Some(rng.usize(0..31) as u64);
+                mastery[pair_index] = Some(rng.usize(0..31) as u32);
             }
             Ok(mastery)
         }
@@ -399,8 +399,8 @@ fn generate_mastery_indices(mastery_mode: &str, rng: &mut Rng) -> Result<[Option
     }
 }
 
-fn mutator_points_lookup() -> HashMap<String, u64> {
-    let mut out = HashMap::<String, u64>::new();
+fn mutator_points_lookup() -> HashMap<String, u32> {
+    let mut out = HashMap::<String, u32>::new();
     for entry in dictionary_data::mutator_points().iter() {
         for id in &entry.ids {
             out.insert(id.clone(), entry.value);
@@ -487,10 +487,10 @@ fn choose_random_unique_mutators(
 
 fn build_brutal_plus_combinations(
     pool: &[RandomizerMutatorEntry],
-    count_min: u64,
-    count_max: u64,
-    points_min: u64,
-    points_max: u64,
+    count_min: u32,
+    count_max: u32,
+    points_min: u32,
+    points_max: u32,
 ) -> Result<Vec<Vec<usize>>, String> {
     let count_min = usize::try_from(count_min)
         .map_err(|_| "B+ mutator count minimum is too large".to_string())?;
@@ -530,11 +530,11 @@ fn build_brutal_plus_combinations(
 fn collect_point_matched_combinations(
     pool: &[RandomizerMutatorEntry],
     target_count: usize,
-    points_min: u64,
-    points_max: u64,
+    points_min: u32,
+    points_max: u32,
     start_index: usize,
     current: &mut Vec<usize>,
-    current_points: u64,
+    current_points: u32,
     combinations: &mut Vec<Vec<usize>>,
 ) {
     if current.len() == target_count {

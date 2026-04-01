@@ -28,9 +28,9 @@ export type OverlayRandomizerBrutalPlus = { brutal_plus: number, mutator_points:
 
 export type OverlayRandomizerCatalog = { prestige_names: { [key in string]: LocalizedLabels }, mutators: Array<OverlayRandomizerMutator>, brutal_plus: Array<OverlayRandomizerBrutalPlus>, };
 
-export type OverlayRandomizerMutator = { id: string, name: LocalizedText, iconName: string, description: LocalizedText, points: bigint, };
+export type OverlayRandomizerMutator = { id: string, name: LocalizedText, iconName: string, description: LocalizedText, points: number, };
 
-export type OverlayRandomizerRange = { min: bigint, max: bigint, };
+export type OverlayRandomizerRange = { min: number, max: number, };
 
 export type OverlayReplayPayload = { file: string, map_name: string, main: string, ally: string, mainCommander: string, allyCommander: string, mainAPM: number, allyAPM: number, mainkills: number, allykills: number, result: string, difficulty: string, length: number, "B+": number, weekly: boolean, weekly_name?: string, extension: boolean, mainCommanderLevel: number, allyCommanderLevel: number, mainMasteries: Array<number>, allyMasteries: Array<number>, mainUnits: { [key in string]: [number, number, number, number] }, allyUnits: { [key in string]: [number, number, number, number] }, amon_units: { [key in string]: [number, number, number, number] }, mainIcons: { [key in string]: OverlayIconValue }, allyIcons: { [key in string]: OverlayIconValue }, mutators: Array<string>, bonus: Array<number>, bonus_total?: number, player_stats?: { [key in string]: ReplayPlayerSeries }, mainPrestige: string, allyPrestige: string, Victory?: number, Defeat?: number, Commander?: string, Prestige?: string, newReplay?: boolean, fastest?: boolean, comp: string, };
 
@@ -42,9 +42,9 @@ export type PerformanceVisibilityPayload = { visible: boolean, };
 
 export type PlayerRowPayload = { handle: string, player: string, player_names: Array<string>, wins: number, losses: number, winrate: number, apm: number, commander: string, frequency: number, kills: number, last_seen: number, };
 
-export type RandomizerMutatorResult = { id: string, name: LocalizedText, iconName: string, description: LocalizedText, points: bigint, };
+export type RandomizerMutatorResult = { id: string, name: LocalizedText, iconName: string, description: LocalizedText, points: number, };
 
-export type RandomizerResult = { kind: string, commander?: string, prestige?: bigint, mastery_indices?: Array<bigint | null>, map_race?: string, mutators?: Array<RandomizerMutatorResult>, mutator_total_points?: bigint, mutator_count?: bigint, brutal_plus?: number, };
+export type RandomizerResult = { kind: string, commander?: string, prestige?: number, mastery_indices?: Array<number | null>, map_race?: string, mutators?: Array<RandomizerMutatorResult>, mutator_total_points?: number, mutator_count?: number, brutal_plus?: number, };
 
 export type ReplayChatMessage = { player: number, text: string, time: number, };
 

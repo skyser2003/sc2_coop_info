@@ -63,13 +63,13 @@ transparent_json_wrapper!(UnitsToStatsJson, Vec<String>);
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct MutatorBrutalPlusRangeJson {
-    pub min: u64,
-    pub max: u64,
+    pub min: u32,
+    pub max: u32,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct MutatorPointEntryJson {
-    pub value: u64,
+    pub value: u32,
     pub ids: Vec<String>,
 }
 

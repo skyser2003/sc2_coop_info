@@ -7,12 +7,12 @@ fn brutal_plus_mutator_ranges_match_expected_budgets() {
     assert_eq!(entries.len(), 6, "expected Brutal+ levels 1 through 6");
 
     let expected = [
-        (1_u8, 4_u64, 6_u64, 2_u64, 3_u64),
-        (2_u8, 7_u64, 8_u64, 2_u64, 3_u64),
-        (3_u8, 9_u64, 10_u64, 2_u64, 3_u64),
-        (4_u8, 11_u64, 12_u64, 2_u64, 3_u64),
-        (5_u8, 15_u64, 16_u64, 2_u64, 4_u64),
-        (6_u8, 19_u64, 20_u64, 2_u64, 4_u64),
+        (1_u8, 4_u32, 6_u32, 2_u32, 3_u32),
+        (2_u8, 7_u32, 8_u32, 2_u32, 3_u32),
+        (3_u8, 9_u32, 10_u32, 2_u32, 3_u32),
+        (4_u8, 11_u32, 12_u32, 2_u32, 3_u32),
+        (5_u8, 15_u32, 16_u32, 2_u32, 4_u32),
+        (6_u8, 19_u32, 20_u32, 2_u32, 4_u32),
     ];
 
     for (entry, expected_entry) in entries.iter().zip(expected) {
