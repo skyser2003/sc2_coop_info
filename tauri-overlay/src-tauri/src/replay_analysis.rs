@@ -21,8 +21,10 @@ use std::sync::atomic::Ordering;
 use std::sync::OnceLock;
 use std::sync::{Arc, Mutex, TryLockError};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use ts_rs::TS;
 
 use crate::path_manager::get_cache_path;
+use crate::shared_types::{LocalizedText, UiMutatorRow};
 use crate::{
     build_amon_unit_data, build_commander_unit_data, canonicalize_coop_map_id,
     commander_mind_control_unit, configured_main_handles, configured_main_names,
@@ -246,19 +248,51 @@ fn report_value<T: serde::Serialize>(value: &T) -> Value {
     serde_json::to_value(value).unwrap_or_else(|_| Value::Object(Default::default()))
 }
 
-#[derive(Serialize)]
-struct LocalizedTextValue {
-    en: String,
-    ko: String,
+#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct PlayerRowPayload {
+    pub handle: String,
+    pub player: String,
+    pub player_names: Vec<String>,
+    #[ts(type = "number")]
+    pub wins: u64,
+    #[ts(type = "number")]
+    pub losses: u64,
+    pub winrate: f64,
+    pub apm: f64,
+    pub commander: String,
+    pub frequency: f64,
+    pub kills: f64,
+    #[ts(type = "number")]
+    pub last_seen: u64,
 }
 
-#[derive(Serialize)]
-struct ReplayAnalysisMutatorRow {
-    id: String,
-    name: LocalizedTextValue,
-    #[serde(rename = "iconName")]
-    icon_name: String,
-    description: LocalizedTextValue,
+#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct WeeklyRowPayload {
+    pub mutation: String,
+    #[serde(rename = "nameEn")]
+    pub name_en: String,
+    #[serde(rename = "nameKo")]
+    pub name_ko: String,
+    pub map: String,
+    pub mutators: Vec<UiMutatorRow>,
+    #[serde(rename = "mutationOrder")]
+    #[ts(type = "number")]
+    pub mutation_order: usize,
+    #[serde(rename = "isCurrent")]
+    pub is_current: bool,
+    #[serde(rename = "nextDurationDays")]
+    #[ts(type = "number")]
+    pub next_duration_days: i64,
+    #[serde(rename = "nextDuration")]
+    pub next_duration: String,
+    pub difficulty: String,
+    #[ts(type = "number")]
+    pub wins: u64,
+    #[ts(type = "number")]
+    pub losses: u64,
+    pub winrate: f64,
 }
 
 fn hidden_unit_stats_names() -> &'static HashSet<String> {
@@ -2135,21 +2169,6 @@ impl ReplayAnalysis {
     }
 
     pub fn rebuild_player_rows_fast(replays: &[ReplayInfo]) -> Vec<Value> {
-        #[derive(Serialize)]
-        struct PlayerRow {
-            handle: String,
-            player: String,
-            player_names: Vec<String>,
-            wins: u64,
-            losses: u64,
-            winrate: f64,
-            apm: f64,
-            commander: String,
-            frequency: f64,
-            kills: f64,
-            last_seen: u64,
-        }
-
         let mut player_values: std::collections::BTreeMap<String, PlayerAggregate> =
             std::collections::BTreeMap::new();
 
@@ -2218,7 +2237,7 @@ impl ReplayAnalysis {
                 .first()
                 .cloned()
                 .unwrap_or_else(|| handle.clone());
-            rows.push(report_value(&PlayerRow {
+            rows.push(report_value(&PlayerRowPayload {
                 handle,
                 player,
                 player_names,
@@ -2257,35 +2276,12 @@ impl ReplayAnalysis {
         replays: &[ReplayInfo],
         current_date: NaiveDate,
     ) -> Vec<Value> {
-        #[derive(Serialize)]
-        struct WeeklyRow {
-            mutation: String,
-            #[serde(rename = "nameEn")]
-            name_en: String,
-            #[serde(rename = "nameKo")]
-            name_ko: String,
-            map: String,
-            mutators: Vec<Value>,
-            #[serde(rename = "mutationOrder")]
-            mutation_order: usize,
-            #[serde(rename = "isCurrent")]
-            is_current: bool,
-            #[serde(rename = "nextDurationDays")]
-            next_duration_days: i64,
-            #[serde(rename = "nextDuration")]
-            next_duration: String,
-            difficulty: String,
-            wins: u64,
-            losses: u64,
-            winrate: f64,
-        }
-
         #[derive(Default)]
         struct WeeklyMutatorUi<'a> {
             name_en: &'a str,
             name_ko: &'a str,
             map: &'a str,
-            mutators: Vec<Value>,
+            mutators: Vec<UiMutatorRow>,
         }
 
         #[derive(Default)]
@@ -2391,18 +2387,18 @@ impl ReplayAnalysis {
                         } else {
                             name_en
                         };
-                        report_value(&ReplayAnalysisMutatorRow {
+                        UiMutatorRow {
                             id: mutator_id.clone(),
-                            name: LocalizedTextValue {
+                            name: LocalizedText {
                                 en: display_name_en,
                                 ko: name_ko,
                             },
                             icon_name,
-                            description: LocalizedTextValue {
+                            description: LocalizedText {
                                 en: description_en,
                                 ko: description_ko,
                             },
-                        })
+                        }
                     })
                     .collect::<Vec<_>>();
                 (
@@ -2471,7 +2467,7 @@ impl ReplayAnalysis {
             let next_duration_days = schedule_status
                 .map(|status| status.next_duration_days)
                 .unwrap_or(i64::MAX);
-            rows.push(report_value(&WeeklyRow {
+            rows.push(report_value(&WeeklyRowPayload {
                 mutation: mutation.clone(),
                 name_en: weekly_details
                     .map(|value| value.name_en.to_string())
@@ -2510,7 +2506,7 @@ impl ReplayAnalysis {
 
         for (mutation, aggregate) in aggregates {
             let total = aggregate.wins + aggregate.losses;
-            rows.push(report_value(&WeeklyRow {
+            rows.push(report_value(&WeeklyRowPayload {
                 mutation: mutation.clone(),
                 name_en: mutation,
                 name_ko: String::new(),

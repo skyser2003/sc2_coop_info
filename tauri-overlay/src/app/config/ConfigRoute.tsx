@@ -5,13 +5,17 @@ import { listen, emit } from "@tauri-apps/api/event";
 import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
 import type {
     AppSettings,
+    GamesRowPayload,
     MonitorOption,
     OverlayColorPreviewPayload,
     OverlayLanguagePreviewPayload,
     OverlayRandomizerCatalog,
     OverlayScreenshotResultPayload,
     PerformanceVisibilityPayload,
+    PlayerRowPayload,
     RandomizerResult,
+    ReplayChatPayload,
+    WeeklyRowPayload,
 } from "../../bindings/overlay";
 
 import { createLanguageManager } from "../i18n/languageManager";
@@ -41,14 +45,10 @@ import WeekliesTab from "./tabs/WeekliesTab";
 
 const { useEffect, useMemo, useRef, useState } = React;
 
-type GamesRows = NonNullable<React.ComponentProps<typeof GamesTab>["rows"]>;
-type PlayerRows = NonNullable<React.ComponentProps<typeof PlayersTab>["rows"]>;
-type WeekliesRows = NonNullable<
-    React.ComponentProps<typeof WeekliesTab>["rows"]
->;
-type GamesChatPayload = Awaited<
-    ReturnType<React.ComponentProps<typeof GamesTab>["state"]["loadChat"]>
->;
+type GamesRows = readonly GamesRowPayload[];
+type PlayerRows = readonly PlayerRowPayload[];
+type WeekliesRows = readonly WeeklyRowPayload[];
+type GamesChatPayload = ReplayChatPayload | null;
 type GamesPayload = {
     rows: GamesRows;
     totalRows: number;
@@ -148,7 +148,7 @@ type ConfigResponsePayload = {
     players?: PlayerRows;
     weeklies?: WeekliesRows;
     stats?: StatisticsPayload | null;
-    chat?: JsonValue;
+    chat?: ReplayChatPayload;
     result?: {
         ok?: boolean;
         path?: string;
@@ -2466,9 +2466,8 @@ function SettingsEditor({
                                                           "",
                                                   ),
                                               },
-                                              points: Number(
-                                                  mutator.points || 0,
-                                              ),
+                                              points:
+                                                  mutator.points ?? BigInt(0),
                                           }),
                                       )
                                     : [],

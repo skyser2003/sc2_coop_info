@@ -23,6 +23,16 @@ pub struct LocalizedText {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct UiMutatorRow {
+    pub id: String,
+    pub name: LocalizedText,
+    #[serde(rename = "iconName")]
+    pub icon_name: String,
+    pub description: LocalizedText,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct OverlayRandomizerRange {
     pub min: u64,
     pub max: u64,

@@ -1,4 +1,5 @@
 import * as React from "react";
+import type { PlayerRowPayload } from "../../../bindings/overlay";
 import type { LanguageManager } from "../../i18n/languageManager";
 import type { DisplayValue } from "../types";
 import {
@@ -14,24 +15,10 @@ import {
     TablePagination,
 } from "./tablePagination";
 
-type PlayersTabRow = {
-    handle?: string | null;
-    player?: string | null;
-    player_names?: readonly string[] | null;
-    wins?: number | string | null;
-    losses?: number | string | null;
-    winrate?: number | string | null;
-    apm?: number | string | null;
-    commander?: string | null;
-    frequency?: number | string | null;
-    kills?: number | string | null;
-    last_seen?: number | string | null;
-};
-
 type PlayerNotes = Readonly<Record<string, string>>;
 
 type PlayersTabProps = {
-    rows: readonly PlayersTabRow[] | null;
+    rows: readonly PlayerRowPayload[] | null;
     onRefresh: () => void;
     noteValues: PlayerNotes;
     onNoteChange: (handle: string, note: string) => void;
@@ -42,7 +29,7 @@ type PlayersTabProps = {
     languageManager: LanguageManager;
 };
 
-type PlayersTableRow = PlayersTabRow & {
+type PlayersTableRow = PlayerRowPayload & {
     readonly resolvedNote: string;
     readonly handleKey: string;
     readonly playerNamesList: readonly string[];

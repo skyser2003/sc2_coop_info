@@ -1,4 +1,10 @@
 import * as React from "react";
+import type {
+    GamesRowPayload,
+    LocalizedText,
+    ReplayChatPayload,
+    UiMutatorRow,
+} from "../../../bindings/overlay";
 import type { LanguageManager } from "../../i18n/languageManager";
 import {
     nextSortState,
@@ -17,48 +23,8 @@ import type {
     DisplayValue,
     DifficultyFilterKey,
     DifficultyFilters,
-    JsonValue,
-    LocalizedText,
     MutatorData,
 } from "../types";
-
-type GamesTabRow = {
-    map?: string | null;
-    result?: string | null;
-    p1?: string | null;
-    p2?: string | null;
-    slot1_commander?: string | null;
-    slot2_commander?: string | null;
-    main_commander?: string | null;
-    ally_commander?: string | null;
-    difficulty?: string | null;
-    enemy?: string | null;
-    enemy_race?: string | null;
-    file?: string | null;
-    length?: number | string | null;
-    date?: number | string | null;
-    brutal_plus?: number | string | null;
-    extension?: boolean | null;
-    weekly?: boolean | null;
-    is_mutation?: boolean | null;
-    mutators?: readonly MutatorData[] | null;
-};
-
-type GamesTabChatMessage = {
-    player?: number | null;
-    text?: string | null;
-    time?: number | null;
-};
-
-type GamesTabChatPayload = {
-    file?: string | null;
-    date?: number | string | null;
-    map?: string | null;
-    result?: string | null;
-    slot1_name?: string | null;
-    slot2_name?: string | null;
-    messages?: readonly GamesTabChatMessage[] | null;
-};
 
 type GamesTabState = {
     isBusy: boolean;
@@ -72,12 +38,12 @@ type GamesTabState = {
     ensureRowsForPage?: (page: number, rowsPerPage: number) => Promise<void>;
     refresh: () => void;
     showReplay: (file: string) => void;
-    loadChat: (file: string) => Promise<GamesTabChatPayload | null>;
+    loadChat: (file: string) => Promise<ReplayChatPayload | null>;
     revealFile: (file: string) => void;
 };
 
 type GamesTabProps = {
-    rows: readonly GamesTabRow[] | null;
+    rows: readonly GamesRowPayload[] | null;
     state: GamesTabState;
     asTableValue: (value: DisplayValue) => string;
     formatDurationSeconds: (value: DisplayValue) => string;
@@ -110,15 +76,13 @@ function mutatorIconPath(iconName: string): string {
     return `/overlay/Mutator Icons/${encodeURIComponent(iconName)}.png`;
 }
 
-function isGamesTabMutator(value: JsonValue): value is MutatorData {
-    return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function readMutators(value: DisplayValue): readonly MutatorData[] {
+function readMutators(
+    value: readonly UiMutatorRow[] | null | undefined,
+): readonly UiMutatorRow[] {
     if (!Array.isArray(value)) {
         return [];
     }
-    return value.filter(isGamesTabMutator);
+    return value;
 }
 
 function localizedMutatorName(
@@ -145,7 +109,7 @@ function localizedMutatorDescription(
     );
 }
 
-function difficultyFilterKeyForRow(row: GamesTabRow): DifficultyFilterKey {
+function difficultyFilterKeyForRow(row: GamesRowPayload): DifficultyFilterKey {
     const brutalPlus = Number(row.brutal_plus ?? 0);
     if (Number.isFinite(brutalPlus) && brutalPlus > 0) {
         switch (brutalPlus) {
@@ -192,7 +156,7 @@ function difficultyFilterKeyForRow(row: GamesTabRow): DifficultyFilterKey {
 }
 
 function difficultyDisplayLabel(
-    row: GamesTabRow,
+    row: GamesRowPayload,
     languageManager: LanguageManager,
 ): string {
     const brutalPlus = Number(row.brutal_plus ?? 0);
@@ -226,7 +190,7 @@ export default function GamesTab({
                 text.split(`{{${key}}}`).join(String(value)),
             t(id),
         );
-    const data: readonly GamesTabRow[] = Array.isArray(rows) ? rows : [];
+    const data: readonly GamesRowPayload[] = Array.isArray(rows) ? rows : [];
     const searchText = (state.searchText || "").trim().toLowerCase();
     const [sortState, setSortState] = React.useState<SortState>({
         key: "time",
@@ -254,7 +218,7 @@ export default function GamesTab({
     const [chatLoading, setChatLoading] = React.useState<boolean>(false);
     const [chatError, setChatError] = React.useState<string>("");
     const [chatPayload, setChatPayload] =
-        React.useState<GamesTabChatPayload | null>(null);
+        React.useState<ReplayChatPayload | null>(null);
     const chatRequestSeq = React.useRef<number>(0);
 
     const formatReplayTime = (value: DisplayValue) => {
@@ -290,7 +254,7 @@ export default function GamesTab({
     };
 
     const chatPlayerLabel = (
-        payload: GamesTabChatPayload,
+        payload: ReplayChatPayload,
         playerValue: DisplayValue,
     ) => {
         const player = Number(playerValue);
@@ -424,9 +388,7 @@ export default function GamesTab({
                     row.difficulty,
                     difficultyDisplayLabel(row, languageManager),
                     row.enemy,
-                    languageManager.localize(
-                        row.enemy || row.enemy_race || "Unknown",
-                    ),
+                    languageManager.localize(row.enemy || "Unknown"),
                     row.file,
                     ...mutatorSearch,
                 ]
@@ -456,9 +418,7 @@ export default function GamesTab({
                 if (key === "p2")
                     return `${asTableValue(row.p2)} ${languageManager.localize(row.slot2_commander)}`;
                 if (key === "enemy") {
-                    return languageManager.localize(
-                        row.enemy || row.enemy_race || "Unknown",
-                    );
+                    return languageManager.localize(row.enemy || "Unknown");
                 }
                 if (key === "length") return Number(row.length || 0);
                 if (key === "difficulty")
@@ -740,9 +700,7 @@ export default function GamesTab({
                                             <td>
                                                 {asTableValue(
                                                     languageManager.localize(
-                                                        row.enemy ||
-                                                            row.enemy_race ||
-                                                            "Unknown",
+                                                        row.enemy || "Unknown",
                                                     ),
                                                 )}
                                             </td>

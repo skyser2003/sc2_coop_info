@@ -19,6 +19,7 @@ use std::sync::{Arc, Mutex, TryLockError};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri_plugin_updater::UpdaterExt;
+use ts_rs::TS;
 
 use tauri::{tray::TrayIconBuilder, AppHandle, Emitter, Manager, State, Wry};
 
@@ -788,22 +789,61 @@ pub fn orient_replay_for_main_names(
     replay
 }
 
-#[derive(Clone, Serialize, Default, PartialEq)]
+#[derive(Clone, Serialize, Default, PartialEq, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct ReplayChatMessage {
     pub player: u8,
     pub text: String,
     pub time: f64,
 }
 
-#[derive(Clone, Serialize, Default, PartialEq)]
+#[derive(Clone, Serialize, Default, PartialEq, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct ReplayChatPayload {
     pub file: String,
+    #[ts(type = "number")]
     pub date: u64,
     pub map: String,
     pub result: String,
     pub slot1_name: String,
     pub slot2_name: String,
     pub messages: Vec<ReplayChatMessage>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct GamesRowPayload {
+    pub file: String,
+    #[ts(type = "number")]
+    pub date: u64,
+    pub map: String,
+    pub result: String,
+    pub difficulty: String,
+    pub p1: String,
+    pub p2: String,
+    pub slot1_commander: String,
+    pub slot2_commander: String,
+    pub enemy: String,
+    pub main_commander: String,
+    pub ally_commander: String,
+    #[ts(type = "number")]
+    pub length: u64,
+    #[ts(type = "number")]
+    pub main_apm: u64,
+    #[ts(type = "number")]
+    pub ally_apm: u64,
+    #[ts(type = "number")]
+    pub main_kills: u64,
+    #[ts(type = "number")]
+    pub ally_kills: u64,
+    pub extension: bool,
+    #[ts(type = "number")]
+    pub brutal_plus: u64,
+    pub weekly: bool,
+    #[ts(optional)]
+    pub weekly_name: Option<String>,
+    pub mutators: Vec<shared_types::UiMutatorRow>,
+    pub is_mutation: bool,
 }
 
 #[derive(Clone, Default)]
@@ -986,48 +1026,6 @@ impl ReplayInfo {
 
     pub fn as_games_row(&self) -> Value {
         let sanitized = self.sanitized_for_client();
-        #[derive(Serialize)]
-        struct LocalizedTextValue {
-            en: String,
-            ko: String,
-        }
-
-        #[derive(Serialize)]
-        struct GamesRowMutator {
-            id: String,
-            name: LocalizedTextValue,
-            #[serde(rename = "iconName")]
-            icon_name: String,
-            description: LocalizedTextValue,
-        }
-
-        #[derive(Serialize)]
-        struct GamesRowPayload {
-            file: String,
-            date: u64,
-            map: String,
-            result: String,
-            difficulty: String,
-            p1: String,
-            p2: String,
-            slot1_commander: String,
-            slot2_commander: String,
-            enemy: String,
-            main_commander: String,
-            ally_commander: String,
-            length: u64,
-            main_apm: u64,
-            ally_apm: u64,
-            main_kills: u64,
-            ally_kills: u64,
-            extension: bool,
-            brutal_plus: u64,
-            weekly: bool,
-            weekly_name: Option<String>,
-            mutators: Vec<GamesRowMutator>,
-            is_mutation: bool,
-        }
-
         let mutators = sanitized
             .mutators
             .iter()
@@ -1055,14 +1053,14 @@ impl ReplayInfo {
                 } else {
                     name_en
                 };
-                GamesRowMutator {
+                shared_types::UiMutatorRow {
                     id: mutator_id.clone(),
-                    name: LocalizedTextValue {
+                    name: shared_types::LocalizedText {
                         en: display_name_en,
                         ko: name_ko,
                     },
                     icon_name,
-                    description: LocalizedTextValue {
+                    description: shared_types::LocalizedText {
                         en: description_en,
                         ko: description_ko,
                     },

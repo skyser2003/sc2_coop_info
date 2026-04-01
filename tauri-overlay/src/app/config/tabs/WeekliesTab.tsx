@@ -1,11 +1,7 @@
 import * as React from "react";
+import type { UiMutatorRow, WeeklyRowPayload } from "../../../bindings/overlay";
 import type { LanguageManager } from "../../i18n/languageManager";
-import type {
-    DisplayValue,
-    JsonValue,
-    LocalizedText,
-    MutatorData,
-} from "../types";
+import type { DisplayValue } from "../types";
 import {
     nextSortState,
     sortIndicator,
@@ -13,24 +9,8 @@ import {
     type SortState,
 } from "./tableSort";
 
-type WeekliesTabRow = {
-    mutation?: string | null;
-    nameEn?: string | null;
-    nameKo?: string | null;
-    map?: string | null;
-    mutators?: readonly MutatorData[] | null;
-    mutationOrder?: number | string | null;
-    isCurrent?: boolean | null;
-    nextDuration?: string | null;
-    nextDurationDays?: number | string | null;
-    difficulty?: string | null;
-    wins?: number | string | null;
-    losses?: number | string | null;
-    winrate?: number | string | null;
-};
-
 type WeekliesTabProps = {
-    rows: readonly WeekliesTabRow[] | null;
+    rows: readonly WeeklyRowPayload[] | null;
     onRefresh: () => void;
     isBusy: boolean;
     asTableValue?: (value: DisplayValue) => string;
@@ -57,24 +37,21 @@ function mutatorIconPath(iconName: string): string {
     return `/overlay/Mutator Icons/${encodeURIComponent(iconName)}.png`;
 }
 
-function isWeekliesTabMutator(value: JsonValue): value is MutatorData {
-    return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function readMutators(value: DisplayValue): readonly MutatorData[] {
+function readMutators(
+    value: readonly UiMutatorRow[] | null | undefined,
+): readonly UiMutatorRow[] {
     if (!Array.isArray(value)) {
         return [];
     }
-
-    return value.filter(isWeekliesTabMutator);
+    return value;
 }
 
-function mutationKeyForRow(row: WeekliesTabRow): string {
+function mutationKeyForRow(row: WeeklyRowPayload): string {
     return typeof row.mutation === "string" ? row.mutation : "";
 }
 
 function localizedWeeklyMutationName(
-    row: WeekliesTabRow,
+    row: WeeklyRowPayload,
     languageManager: LanguageManager,
     asTableValue: (value: DisplayValue) => string,
 ): string {
@@ -91,27 +68,19 @@ function localizedWeeklyMutationName(
 }
 
 function localizedMutatorDescription(
-    mutator: MutatorData,
+    mutator: UiMutatorRow,
     languageManager: LanguageManager,
     asTableValue: (value: DisplayValue) => string,
 ): string {
-    return asTableValue(
-        languageManager.localizedValue(
-            mutator.description as LocalizedText | null | undefined,
-        ),
-    );
+    return asTableValue(languageManager.localizedValue(mutator.description));
 }
 
 function localizedMutatorName(
-    mutator: MutatorData,
+    mutator: UiMutatorRow,
     languageManager: LanguageManager,
     asTableValue: (value: DisplayValue) => string,
 ): string {
-    return asTableValue(
-        languageManager.localizedValue(
-            mutator.name as LocalizedText | null | undefined,
-        ),
-    );
+    return asTableValue(languageManager.localizedValue(mutator.name));
 }
 
 function localizeWeeklyDuration(
@@ -154,7 +123,7 @@ export default function WeekliesTab({
     languageManager,
 }: WeekliesTabProps) {
     const t = (id: string): string => languageManager.translate(id);
-    const data: readonly WeekliesTabRow[] = Array.isArray(rows) ? rows : [];
+    const data: readonly WeeklyRowPayload[] = Array.isArray(rows) ? rows : [];
     const [sortState, setSortState] = React.useState<SortState>({
         key: "nextDuration",
         direction: "asc",
