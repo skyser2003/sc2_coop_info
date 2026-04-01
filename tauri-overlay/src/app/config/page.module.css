@@ -2125,6 +2125,11 @@
     background: var(--config-surface);
     border-color: var(--config-border);
     color: var(--config-page-text);
+    position: absolute;
+    right: 50px;
+    top: 70px;
+    width: 200px;
+    height: 50px;
 }
 
 .configPage.configPage :global(.card),
