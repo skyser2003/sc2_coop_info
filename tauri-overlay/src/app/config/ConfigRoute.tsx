@@ -69,6 +69,8 @@ type LoadTabOptions = {
 };
 type SettingsEditorProps = {
     onThemeModeChange: (darkThemeEnabled: boolean) => void;
+    appVersion: string;
+    isDev: boolean;
 };
 type LanguageManagerInstance = ReturnType<typeof createLanguageManager>;
 type TabId =
@@ -1076,6 +1078,8 @@ function renderTabContent(
 
 function SettingsEditor({
     onThemeModeChange,
+    appVersion,
+    isDev,
 }: SettingsEditorProps): React.ReactNode {
     const location = useLocation();
     const navigate = useNavigate();
@@ -2597,6 +2601,19 @@ function SettingsEditor({
 
     return (
         <section id="app-content">
+            <div className="config-header">
+                <h1>
+                    SC2 Coop Info v{appVersion}
+                    {isDev ? " Dev" : ""}
+                </h1>
+                <p
+                    id="app-status"
+                    className="status"
+                    data-busy={String(isBusy)}
+                >
+                    {status}
+                </p>
+            </div>
             <Tabs
                 id="app-tab-nav"
                 className="tabs"
@@ -2621,9 +2638,6 @@ function SettingsEditor({
                     />
                 ))}
             </Tabs>
-            <p id="app-status" className="status" data-busy={String(isBusy)}>
-                {status}
-            </p>
             {tabContent}
             <div
                 id="app-footer"

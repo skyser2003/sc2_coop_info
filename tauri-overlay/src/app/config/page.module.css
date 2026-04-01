@@ -6,6 +6,15 @@
     margin: 0 0 10px;
 }
 
+.configPage :global(.config-header) {
+    position: relative;
+    padding-right: 25rem;
+}
+
+.configPage :global(.config-header h1) {
+    margin: 0;
+}
+
 .configPage :global(.tabs) {
     display: flex;
     align-items: center;
@@ -43,13 +52,25 @@
 }
 
 .configPage :global(.status) {
-    margin-top: 6px;
+    margin: 0;
     color: #f1f5f9;
-    min-height: 1.2em;
+    min-height: 2.75rem;
     background: #111827;
     border: 1px solid #243245;
-    padding: 8px 10px;
-    border-radius: 8px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    position: absolute;
+    top: 0;
+    right: 0;
+    inline-size: 24rem;
+    max-inline-size: calc(100vw - 48px);
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    box-shadow: 0 12px 28px rgb(15 23 42 / 0.18);
+    backdrop-filter: blur(10px);
+    overflow-wrap: anywhere;
+    z-index: 1;
 }
 
 .configPage :global(.note) {
@@ -2125,11 +2146,21 @@
     background: var(--config-surface);
     border-color: var(--config-border);
     color: var(--config-page-text);
-    position: absolute;
-    right: 50px;
-    top: 70px;
-    width: 200px;
-    height: 50px;
+    box-shadow: var(--config-shadow);
+}
+
+@media (max-width: 900px) {
+    .configPage :global(.config-header) {
+        min-block-size: 0;
+        padding-right: 0;
+    }
+
+    .configPage :global(.status) {
+        position: static;
+        inline-size: 100%;
+        margin-bottom: 10px;
+        max-inline-size: none;
+    }
 }
 
 .configPage.configPage :global(.card),

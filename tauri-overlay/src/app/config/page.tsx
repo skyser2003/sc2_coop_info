@@ -1,4 +1,4 @@
-import { Container, Typography } from "@mui/material";
+import { Container } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import ConfigRoute from "./ConfigRoute";
 import styles from "./page.module.css";
@@ -118,12 +118,11 @@ export default function ConfigPage({ onThemeModeChange }: ConfigPageProps) {
                 };
             }}
         >
-            <Typography variant="h4" component="h1" gutterBottom>
-                SC2 Coop Info v{appVersion}
-                {isDev ? " Dev" : ""}
-            </Typography>
-
-            <ConfigRoute onThemeModeChange={onThemeModeChange} />
+            <ConfigRoute
+                onThemeModeChange={onThemeModeChange}
+                appVersion={appVersion}
+                isDev={isDev}
+            />
         </Container>
     );
 }
