@@ -92,6 +92,7 @@ type SettingsTabActions = React.ComponentProps<typeof SettingsTab>["actions"];
 type RandomizerTabActions = React.ComponentProps<
     typeof RandomizerTab
 >["actions"];
+type RandomizerCatalog = React.ComponentProps<typeof RandomizerTab>["catalog"];
 type PerformanceTabActions = React.ComponentProps<
     typeof PerformanceTab
 >["actions"];
@@ -111,7 +112,7 @@ type ExtraState = {
     onPlayerNoteChange: (handle: string, note: string) => void;
     onPlayerNoteCommit: (handle: string, note: string) => Promise<void>;
     refreshWeeklies: () => void;
-    randomizerCatalog: OverlayRandomizerCatalog | null;
+    randomizerCatalog: RandomizerCatalog;
     randomizerActions: RandomizerTabActions;
     performanceActions: PerformanceTabActions;
     performanceDisplayVisible: boolean;
@@ -327,6 +328,40 @@ const STATS_DEFAULT_FILTERS: StatisticsFilters = {
 
 function cloneJson<T>(value: T): T {
     return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function bigintToNumber(value: bigint): number {
+    return Number(value);
+}
+
+function normalizeRandomizerCatalog(
+    catalog: OverlayRandomizerCatalog | null | undefined,
+): RandomizerCatalog {
+    if (!catalog) {
+        return null;
+    }
+
+    return {
+        prestige_names: catalog.prestige_names,
+        mutators: catalog.mutators.map((mutator) => ({
+            id: mutator.id,
+            name: mutator.name,
+            iconName: mutator.iconName,
+            description: mutator.description,
+            points: bigintToNumber(mutator.points),
+        })),
+        brutal_plus: catalog.brutal_plus.map((entry) => ({
+            brutal_plus: entry.brutal_plus,
+            mutator_points: {
+                min: bigintToNumber(entry.mutator_points.min),
+                max: bigintToNumber(entry.mutator_points.max),
+            },
+            mutator_count: {
+                min: bigintToNumber(entry.mutator_count.min),
+                max: bigintToNumber(entry.mutator_count.max),
+            },
+        })),
+    };
 }
 
 function getAtPath(
@@ -1338,7 +1373,10 @@ function SettingsEditor({
         })
             .then((payload) => {
                 setRandomizerCatalog(
-                    (current) => payload.randomizer_catalog || current,
+                    (current) =>
+                        normalizeRandomizerCatalog(
+                            payload.randomizer_catalog,
+                        ) || current,
                 );
                 setMonitorCatalog(payload.monitor_catalog || []);
                 if (requestSeq === latestLiveApplySeqRef.current) {
@@ -1401,7 +1439,9 @@ function SettingsEditor({
             const activeSettings = payload.active_settings || payload.settings;
             setSettings(payload.settings);
             replaceDraft(activeSettings);
-            setRandomizerCatalog(payload.randomizer_catalog || null);
+            setRandomizerCatalog(
+                normalizeRandomizerCatalog(payload.randomizer_catalog),
+            );
             setMonitorCatalog(payload.monitor_catalog || []);
             setStatus("Settings loaded");
         } catch (error) {
@@ -1770,7 +1810,10 @@ function SettingsEditor({
                 setSettings(payload.settings);
                 replaceDraft(activeSettings);
                 setRandomizerCatalog(
-                    (current) => payload.randomizer_catalog || current,
+                    (current) =>
+                        normalizeRandomizerCatalog(
+                            payload.randomizer_catalog,
+                        ) || current,
                 );
                 setMonitorCatalog(payload.monitor_catalog || []);
                 setStatus("Saved to settings.json");
