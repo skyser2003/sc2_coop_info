@@ -352,7 +352,7 @@ fn sync_start_with_windows_setting(settings: &AppSettings) -> Result<(), String>
     sync_windows_startup_registration(start_with_windows_enabled(settings))
 }
 
-pub const OVERLAY_RUNTIME_SETTING_KEYS: [&str; 8] = [
+pub const OVERLAY_RUNTIME_SETTING_KEYS: [&str; 9] = [
     "color_player1",
     "color_player2",
     "color_amon",
@@ -360,6 +360,7 @@ pub const OVERLAY_RUNTIME_SETTING_KEYS: [&str; 8] = [
     "duration",
     "show_session",
     "show_charts",
+    "hide_nicknames_in_overlay",
     "language",
 ];
 

@@ -48,6 +48,10 @@
         "en": "Show charts",
         "ko": "차트 표시"
     },
+    "ui_settings_hide_nicknames_in_overlay": {
+        "en": "Hide nicknames in overlay",
+        "ko": "오버레이에서 닉네임 숨기기"
+    },
     "ui_settings_dark_theme": {
         "en": "Dark theme",
         "ko": "다크 테마"
@@ -353,6 +357,14 @@
     "ui_overlay_no_player_data": {
         "en": "No player data available",
         "ko": "플레이어 데이터가 없습니다"
+    },
+    "ui_overlay_my_commander_placeholder": {
+        "en": "[Me]",
+        "ko": "[나]"
+    },
+    "ui_overlay_ally_commander_placeholder": {
+        "en": "[Ally]",
+        "ko": "[동맹]"
     },
     "ui_overlay_note": {
         "en": "Player note",

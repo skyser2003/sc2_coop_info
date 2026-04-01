@@ -983,6 +983,12 @@ export default function SettingsTab({
                                         ["show_charts"],
                                         true,
                                     )}
+                                    {boolField(
+                                        t(
+                                            "ui_settings_hide_nicknames_in_overlay",
+                                        ),
+                                        ["hide_nicknames_in_overlay"],
+                                    )}
                                 </div>
                             </section>
                             <section className="main-settings-group">

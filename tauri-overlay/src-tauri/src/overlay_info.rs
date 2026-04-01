@@ -1718,6 +1718,10 @@ fn overlay_show_session_from_settings(settings: &AppSettings) -> bool {
     settings.show_session
 }
 
+fn overlay_hide_nicknames_from_settings(settings: &AppSettings) -> bool {
+    settings.hide_nicknames_in_overlay
+}
+
 fn overlay_language_from_settings(settings: &AppSettings) -> &'static str {
     match settings.language.as_str() {
         "ko" => "ko",
@@ -1740,6 +1744,7 @@ pub fn overlay_runtime_settings_payload(
         duration: overlay_duration_from_settings(settings),
         show_charts: overlay_show_charts_from_settings(settings),
         show_session: overlay_show_session_from_settings(settings),
+        hide_nicknames_in_overlay: overlay_hide_nicknames_from_settings(settings),
         session_victory: as_u32(session_victories),
         session_defeat: as_u32(session_defeats),
         language: overlay_language_from_settings(settings).to_string(),

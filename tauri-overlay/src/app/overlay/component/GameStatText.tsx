@@ -357,6 +357,7 @@ export default function GameStatText({
     overlayCommanderMasteryCatalog,
     overlayPrestigeNameCatalog,
     language,
+    hideNicknamesInOverlay,
     overlayLanguageManager,
     reportOverlayReplayDataState,
 }: {
@@ -373,6 +374,7 @@ export default function GameStatText({
     overlayCommanderMasteryCatalog: CommanderMasteryData;
     overlayPrestigeNameCatalog: OverlayPrestigeNameCatalog;
     language: string;
+    hideNicknamesInOverlay: boolean;
     overlayLanguageManager: LanguageManager;
     reportOverlayReplayDataState: (active: boolean) => void;
 }) {
@@ -566,6 +568,12 @@ export default function GameStatText({
         const displayPercent2 = show_player_total_kills
             ? `${percent2} (${readNumber(statsPayload.allykills)})`
             : percent2;
+        const mainDisplayName = hideNicknamesInOverlay
+            ? overlayText("ui_overlay_my_commander_placeholder")
+            : readString(statsPayload.main);
+        const allyDisplayName = hideNicknamesInOverlay
+            ? overlayText("ui_overlay_ally_commander_placeholder")
+            : readString(statsPayload.ally);
 
         const mainCommanderKey = overlayEnglish(statsPayload.mainCommander);
         const allyCommanderKey = overlayEnglish(statsPayload.allyCommander);
@@ -573,7 +581,7 @@ export default function GameStatText({
         const commanderSections: CommanderSection[] = [
             {
                 idPrefix: "CM1",
-                name: readString(statsPayload.main),
+                name: mainDisplayName,
                 icons: buildIconNodes(statsPayload.mainIcons),
                 prestige: localizePrestige(
                     statsPayload.mainCommander,
@@ -597,7 +605,7 @@ export default function GameStatText({
             },
             {
                 idPrefix: "CM2",
-                name: readString(statsPayload.ally),
+                name: allyDisplayName,
                 icons: buildIconNodes(statsPayload.allyIcons),
                 prestige: localizePrestige(
                     statsPayload.allyCommander,
@@ -663,8 +671,8 @@ export default function GameStatText({
             allyCommanderImage,
             bonusText,
             localizedMapName,
-            mainName: readString(statsPayload.main),
-            allyName: readString(statsPayload.ally),
+            mainName: mainDisplayName,
+            allyName: allyDisplayName,
             mainCommanderLabel: buildCommanderLabel(
                 "left",
                 statsPayload.mainCommander,
@@ -701,6 +709,7 @@ export default function GameStatText({
         overlayLocalize,
         overlayPrestigeNameCatalog,
         overlayText,
+        hideNicknamesInOverlay,
         p1Color,
         p2Color,
         statsPayload,

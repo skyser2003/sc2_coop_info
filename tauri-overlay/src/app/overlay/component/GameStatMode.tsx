@@ -26,6 +26,7 @@ export default function GameStatMode({
     overlayCommanderMasteryCatalog,
     overlayPrestigeNameCatalog,
     language,
+    hideNicknamesInOverlay,
     overlayLanguageManager,
     reportOverlayReplayDataState,
 }: {
@@ -43,6 +44,7 @@ export default function GameStatMode({
     overlayCommanderMasteryCatalog: CommanderMasteryData;
     overlayPrestigeNameCatalog: OverlayPrestigeNameCatalog;
     language: string;
+    hideNicknamesInOverlay: boolean;
     overlayLanguageManager: LanguageManager;
     reportOverlayReplayDataState: (active: boolean) => void;
 }) {
@@ -68,6 +70,7 @@ export default function GameStatMode({
                 overlayCommanderMasteryCatalog={overlayCommanderMasteryCatalog}
                 overlayPrestigeNameCatalog={overlayPrestigeNameCatalog}
                 language={language}
+                hideNicknamesInOverlay={hideNicknamesInOverlay}
                 overlayLanguageManager={overlayLanguageManager}
                 reportOverlayReplayDataState={reportOverlayReplayDataState}
             />

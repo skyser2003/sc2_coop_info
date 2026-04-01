@@ -174,6 +174,7 @@ const TABS: ConfigTabDefinition[] = [
                     ["show_player_winrates"],
                     ["show_session"],
                     ["show_charts"],
+                    ["hide_nicknames_in_overlay"],
                     ["dark_theme"],
                 ],
             },

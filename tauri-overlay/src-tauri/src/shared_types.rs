@@ -102,6 +102,7 @@ pub struct OverlayInitColorsDurationPayload {
     pub duration: u32,
     pub show_charts: bool,
     pub show_session: bool,
+    pub hide_nicknames_in_overlay: bool,
     pub session_victory: u32,
     pub session_defeat: u32,
     pub language: String,

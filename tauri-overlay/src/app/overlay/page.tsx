@@ -203,6 +203,8 @@ export default function OverlayPage() {
     const [chartVisibleFromConfig, setChartVisibleFromConfig] =
         useState<boolean>(true);
     const [showSessionStats, setShowSessionStats] = useState<boolean>(false);
+    const [hideNicknamesInOverlay, setHideNicknamesInOverlay] =
+        useState<boolean>(false);
     const [sessionVictoryCount, setSessionVictoryCount] = useState<number>(0);
     const [sessionDefeatCount, setSessionDefeatCount] = useState<number>(0);
     const [playerStatPayload, setPlayerStatPayload] =
@@ -511,6 +513,7 @@ export default function OverlayPage() {
         applyOverlayLanguage(payload.language);
         setChartVisibleFromConfig(payload.show_charts);
         setShowSessionStats(payload.show_session);
+        setHideNicknamesInOverlay(payload.hide_nicknames_in_overlay);
         setSessionVictoryCount(payload.session_victory);
         setSessionDefeatCount(payload.session_defeat);
         setColors(
@@ -854,6 +857,7 @@ export default function OverlayPage() {
                 overlayCommanderMasteryCatalog={overlayLanguageManager.commanderMasteryData()}
                 overlayPrestigeNameCatalog={overlayPrestigeNameCatalog}
                 language={language}
+                hideNicknamesInOverlay={hideNicknamesInOverlay}
                 overlayLanguageManager={overlayLanguageManager}
                 reportOverlayReplayDataState={reportOverlayReplayDataState}
             />
