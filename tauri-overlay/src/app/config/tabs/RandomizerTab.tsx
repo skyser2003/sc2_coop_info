@@ -1,4 +1,5 @@
 import * as React from "react";
+import type { OverlayRandomizerCatalog } from "../../../bindings/overlay";
 import type { LanguageManager } from "../../i18n/languageManager";
 import { PreviewManager } from "../../previews/PreviewManager";
 import type { PrestigeNameMap } from "../types";
@@ -15,31 +16,10 @@ type LocalizedText = {
     ko: string;
 };
 
-type MutatorCatalogEntry = {
-    id: string;
-    name: LocalizedText;
-    iconName: string;
-    description: LocalizedText;
-    points: number;
-};
-
-type BrutalPlusCatalogEntry = {
-    brutal_plus: number;
-    mutator_points: {
-        min: number;
-        max: number;
-    };
-    mutator_count: {
-        min: number;
-        max: number;
-    };
-};
-
-type RandomizerCatalog = {
-    prestige_names: PrestigeNameMap;
-    mutators: MutatorCatalogEntry[];
-    brutal_plus: BrutalPlusCatalogEntry[];
-};
+type MutatorCatalogEntry =
+    NonNullable<OverlayRandomizerCatalog>["mutators"][number];
+type BrutalPlusCatalogEntry =
+    NonNullable<OverlayRandomizerCatalog>["brutal_plus"][number];
 
 type CommanderRandomizerResult = {
     kind: "commander";
@@ -81,7 +61,7 @@ type RandomizerGeneratePayload =
 
 type RandomizerTabProps = {
     draft: RandomizerDraft | null;
-    catalog: RandomizerCatalog | null;
+    catalog: OverlayRandomizerCatalog | null;
     onChange: (path: string[], value: RandomizerChoices) => void;
     languageManager: LanguageManager;
     actions: {
@@ -229,6 +209,10 @@ function localizedMutatorText(
 
 function brutalPlusLabel(brutalPlusText: string, level: number): string {
     return `${brutalPlusText}${level}`;
+}
+
+function numericCatalogValue(value: bigint | number): number {
+    return Number(value);
 }
 
 export default function RandomizerTab({
@@ -930,10 +914,10 @@ export default function RandomizerTab({
                                     ) : selectedBrutalPlusEntry ? (
                                         <div className="randomizer-mutator-budget">
                                             <div className="randomizer-mutator-chip">
-                                                {`${t("ui_randomizer_mutator_count")}: ${selectedBrutalPlusEntry.mutator_count.min}-${selectedBrutalPlusEntry.mutator_count.max}`}
+                                                {`${t("ui_randomizer_mutator_count")}: ${numericCatalogValue(selectedBrutalPlusEntry.mutator_count.min)}-${numericCatalogValue(selectedBrutalPlusEntry.mutator_count.max)}`}
                                             </div>
                                             <div className="randomizer-mutator-chip">
-                                                {`${t("ui_randomizer_mutator_points")}: ${selectedBrutalPlusEntry.mutator_points.min}-${selectedBrutalPlusEntry.mutator_points.max}`}
+                                                {`${t("ui_randomizer_mutator_points")}: ${numericCatalogValue(selectedBrutalPlusEntry.mutator_points.min)}-${numericCatalogValue(selectedBrutalPlusEntry.mutator_points.max)}`}
                                             </div>
                                         </div>
                                     ) : null}
@@ -1021,7 +1005,9 @@ export default function RandomizerTab({
                                                                     {formatText(
                                                                         "ui_randomizer_mutator_point_value",
                                                                         {
-                                                                            points: mutator.points,
+                                                                            points: numericCatalogValue(
+                                                                                mutator.points,
+                                                                            ),
                                                                         },
                                                                     )}
                                                                 </span>
