@@ -98,7 +98,6 @@ body {
 .unitcreated,
 .unitdied,
 .icontext {
-    display: inline-block;
     height: 1em;
     line-height: 1;
     overflow: visible;
@@ -305,9 +304,11 @@ body {
 }
 
 .prestige {
+    display: block;
     opacity: 1;
     font-size: 1.5vh;
     text-shadow: 0.1vh 0.1vh 0.1vh black;
+    margin-top: 0.2vh;
 }
 
 #comp {
@@ -438,22 +439,23 @@ body {
     font-weight: bold;
 }
 
-.commstats div:first-child {
-    display: inline-block;
+.commander-header {
+    display: flex;
+    align-items: center;
+    gap: 1.2vh;
+    min-height: 4vh;
 }
 
 .icons {
-    display: inline-block;
-    padding-left: 1.5vh;
+    display: inline-flex;
+    align-items: center;
     color: #ccc;
-    height: 2vh;
     overflow: visible;
 }
 
 .icons img {
+    display: block;
     height: 4vh;
-    margin-top: -0.5vh;
-    vertical-align: middle;
 }
 
 .icontext {

@@ -867,19 +867,24 @@ export default function GameStatText({
                                 : "none",
                         }}
                     >
-                        <div
-                            id={`CMname${index + 1}`}
-                            style={{
-                                color: section.prestigeColor ?? undefined,
-                            }}
-                        >
-                            {section.name}
-                        </div>
-                        {index < 2 ? (
-                            <div id={`CMicons${index + 1}`} className="icons">
-                                {section.icons}
+                        <div className="commander-header">
+                            <div
+                                id={`CMname${index + 1}`}
+                                style={{
+                                    color: section.prestigeColor ?? undefined,
+                                }}
+                            >
+                                {section.name}
                             </div>
-                        ) : null}
+                            {index < 2 ? (
+                                <div
+                                    id={`CMicons${index + 1}`}
+                                    className="icons"
+                                >
+                                    {section.icons}
+                                </div>
+                            ) : null}
+                        </div>
                         <div
                             id={index < 2 ? `CMtalent${index + 1}` : "comp"}
                             className={index < 2 ? "prestige" : undefined}
