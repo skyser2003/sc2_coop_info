@@ -22,7 +22,7 @@ export default function Page() {
         <HashRouter>
             <Routes>
                 <Route
-                    path="/config"
+                    path="/config/*"
                     element={
                         <ThemeProvider theme={theme}>
                             <CssBaseline />
@@ -38,8 +38,14 @@ export default function Page() {
                 />
                 <Route path="/overlay" element={<OverlayPage />} />
                 <Route path="/performance" element={<PerformancePage />} />
-                <Route path="/" element={<Navigate to="/config" replace />} />
-                <Route path="*" element={<Navigate to="/config" replace />} />
+                <Route
+                    path="/"
+                    element={<Navigate to="/config/settings" replace />}
+                />
+                <Route
+                    path="*"
+                    element={<Navigate to="/config/settings" replace />}
+                />
             </Routes>
         </HashRouter>
     );

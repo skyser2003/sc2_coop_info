@@ -1,6 +1,8 @@
 import * as React from "react";
+import { Tab, Tabs } from "@mui/material";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
+import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
 import type {
     AppSettings,
     MonitorOption,
@@ -277,6 +279,7 @@ const SCO_PERFORMANCE_VISIBILITY_EVENT = "sco://performance-visibility";
 const SCO_OVERLAY_COLOR_PREVIEW_EVENT = "sco://overlay-color-preview";
 const SCO_OVERLAY_LANGUAGE_PREVIEW_EVENT = "sco://overlay-language-preview";
 const SCO_OVERLAY_SCREENSHOT_RESULT_EVENT = "sco://overlay-screenshot-result";
+const DEFAULT_TAB_ID: TabId = "settings";
 type StatsRefreshMode = "debounced" | "immediate";
 type StatsQueryState = {
     activeQuery: string;
@@ -362,6 +365,23 @@ function normalizeRandomizerCatalog(
             },
         })),
     };
+}
+
+function getTabRoute(tabId: TabId): string {
+    return `/config/${tabId}`;
+}
+
+function isTabId(value: string): value is TabId {
+    return TABS.some((tab) => tab.id === value);
+}
+
+function getTabIdFromPathname(pathname: string): TabId | null {
+    const parts = pathname.split("/").filter((part) => part.length > 0);
+    if (parts.length < 2 || parts[0] !== "config") {
+        return null;
+    }
+    const candidate = parts[1];
+    return isTabId(candidate) ? candidate : null;
 }
 
 function getAtPath(
@@ -1091,11 +1111,12 @@ function renderTabContent(
 function SettingsEditor({
     onThemeModeChange,
 }: SettingsEditorProps): React.ReactNode {
+    const location = useLocation();
+    const navigate = useNavigate();
     const [settings, setSettings] = useState<AppSettings | null>(null);
     const [draft, setDraft] = useState<AppSettings | null>(null);
     const [status, setStatus] = useState("Loading settings...");
     const [isBusy, setIsBusy] = useState(false);
-    const [activeTab, setActiveTab] = useState("settings");
     const [tabData, setTabData] = useState<TabDataState>({
         games: null,
         players: null,
@@ -1110,7 +1131,7 @@ function SettingsEditor({
     const activeHotkeyPathRef = useRef<string>("");
     const hotkeyTransitionRef = useRef<Promise<void>>(Promise.resolve());
     const [randomizerCatalog, setRandomizerCatalog] =
-        useState<OverlayRandomizerCatalog | null>(null);
+        useState<RandomizerCatalog>(null);
     const [monitorCatalog, setMonitorCatalog] = useState<Array<MonitorOption>>(
         [],
     );
@@ -1152,6 +1173,10 @@ function SettingsEditor({
     const latestLiveApplySeqRef = useRef<number>(0);
     const liveApplyInFlightRef = useRef<boolean>(false);
     const queuedLiveApplyRef = useRef<QueuedLiveApply | null>(null);
+    const activeTab = useMemo<TabId>(
+        () => getTabIdFromPathname(location.pathname) ?? DEFAULT_TAB_ID,
+        [location.pathname],
+    );
     draftRef.current = draft;
     activeHotkeyPathRef.current = activeHotkeyPath;
 
@@ -1172,6 +1197,13 @@ function SettingsEditor({
     useEffect(() => {
         statsFiltersRef.current = statsState.filters;
     }, [statsState.filters]);
+
+    useEffect(() => {
+        if (getTabIdFromPathname(location.pathname) !== null) {
+            return;
+        }
+        navigate(getTabRoute(DEFAULT_TAB_ID), { replace: true });
+    }, [location.pathname, navigate]);
 
     useEffect(() => {
         return () => {
@@ -2607,23 +2639,30 @@ function SettingsEditor({
 
     return (
         <section id="app-content">
-            <div id="app-tab-nav" className="tabs">
+            <Tabs
+                id="app-tab-nav"
+                className="tabs"
+                value={activeTab}
+                variant="scrollable"
+                scrollButtons="auto"
+                allowScrollButtonsMobile
+                onChange={(_event, value: TabId) => {
+                    refreshDataTabOnClick(value);
+                }}
+            >
                 {TABS.map((tab) => (
-                    <button
+                    <Tab
                         key={tab.id}
-                        type="button"
+                        value={tab.id}
                         className={`tab-btn${tab.id === activeTab ? " is-active" : ""}`}
-                        data-tab={tab.id}
+                        label={languageManager.translate(tab.titleId)}
+                        component={RouterLink}
+                        to={getTabRoute(tab.id)}
+                        sx={{ marginRight: "7px" }}
                         disabled={draft === null}
-                        onClick={() => {
-                            setActiveTab(tab.id);
-                            refreshDataTabOnClick(tab.id);
-                        }}
-                    >
-                        {languageManager.translate(tab.titleId)}
-                    </button>
+                    />
                 ))}
-            </div>
+            </Tabs>
             <p id="app-status" className="status" data-busy={String(isBusy)}>
                 {status}
             </p>
