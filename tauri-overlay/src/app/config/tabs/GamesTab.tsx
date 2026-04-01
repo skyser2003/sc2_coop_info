@@ -27,6 +27,8 @@ type GamesTabRow = {
     result?: string | null;
     p1?: string | null;
     p2?: string | null;
+    slot1_commander?: string | null;
+    slot2_commander?: string | null;
     main_commander?: string | null;
     ally_commander?: string | null;
     difficulty?: string | null;
@@ -411,6 +413,10 @@ export default function GamesTab({
                     languageManager.localize(row.result),
                     row.p1,
                     row.p2,
+                    row.slot1_commander,
+                    languageManager.localize(row.slot1_commander),
+                    row.slot2_commander,
+                    languageManager.localize(row.slot2_commander),
                     row.main_commander,
                     languageManager.localize(row.main_commander),
                     row.ally_commander,
@@ -446,9 +452,9 @@ export default function GamesTab({
                 if (key === "result")
                     return languageManager.localize(row.result);
                 if (key === "p1")
-                    return `${asTableValue(row.p1)} ${languageManager.localize(row.main_commander)}`;
+                    return `${asTableValue(row.p1)} ${languageManager.localize(row.slot1_commander)}`;
                 if (key === "p2")
-                    return `${asTableValue(row.p2)} ${languageManager.localize(row.ally_commander)}`;
+                    return `${asTableValue(row.p2)} ${languageManager.localize(row.slot2_commander)}`;
                 if (key === "enemy") {
                     return languageManager.localize(
                         row.enemy || row.enemy_race || "Unknown",
@@ -682,12 +688,12 @@ export default function GamesTab({
                                     const p2 = asTableValue(row.p2);
                                     const p1Commander = asTableValue(
                                         languageManager.localize(
-                                            row.main_commander,
+                                            row.slot1_commander,
                                         ),
                                     );
                                     const p2Commander = asTableValue(
                                         languageManager.localize(
-                                            row.ally_commander,
+                                            row.slot2_commander,
                                         ),
                                     );
                                     const p1Label = p1Commander

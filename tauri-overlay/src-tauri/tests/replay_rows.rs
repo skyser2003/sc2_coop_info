@@ -35,6 +35,8 @@ fn games_rows_keep_true_slot_order_when_main_player_is_slot_two() {
 
     assert_eq!(row.get("p1"), Some(&json!("Teammate")));
     assert_eq!(row.get("p2"), Some(&json!("Main")));
+    assert_eq!(row.get("slot1_commander"), Some(&json!("Swann")));
+    assert_eq!(row.get("slot2_commander"), Some(&json!("Abathur")));
     assert_eq!(row.get("main_commander"), Some(&json!("Abathur")));
     assert_eq!(row.get("ally_commander"), Some(&json!("Swann")));
 }
