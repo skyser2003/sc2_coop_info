@@ -40,6 +40,10 @@
         "en": "Overlay duration (seconds)",
         "ko": "오버레이 표시 시간 (초)"
     },
+    "ui_settings_analysis_worker_threads": {
+        "en": "Worker core count",
+        "ko": "작업 코어 개수"
+    },
     "ui_settings_monitor": {
         "en": "Monitor",
         "ko": "모니터"

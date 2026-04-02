@@ -173,6 +173,18 @@ function formatDurationSeconds(totalSeconds: number) {
     return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+function getLogicalCoreCount() {
+    if (typeof navigator === "undefined") {
+        return 1;
+    }
+
+    return Math.max(1, Math.trunc(navigator.hardwareConcurrency || 1));
+}
+
+function getDefaultAnalysisWorkerThreads() {
+    return Math.max(1, Math.floor(getLogicalCoreCount() / 2));
+}
+
 function renderAnalysisProgress(
     progressInput: Record<string, JsonValue> | null | undefined,
     languageManager: LanguageManager,
@@ -730,6 +742,26 @@ export default function SettingsTab({
                       label: `${t("ui_settings_monitor")} ${Number(read(["monitor"], 1) || 1)}`,
                   },
               ];
+    const logicalCoreCount = getLogicalCoreCount();
+    const defaultAnalysisWorkerThreads = getDefaultAnalysisWorkerThreads();
+    const analysisWorkerThreads = clamp(
+        Number(
+            read(["analysis_worker_threads"], defaultAnalysisWorkerThreads) ||
+                defaultAnalysisWorkerThreads,
+        ),
+        1,
+        logicalCoreCount,
+    );
+    const updateAnalysisWorkerThreads = (value: number) => {
+        onChange(
+            ["analysis_worker_threads"],
+            clamp(
+                Math.round(value || defaultAnalysisWorkerThreads),
+                1,
+                logicalCoreCount,
+            ),
+        );
+    };
 
     const hotkeyEntry = (
         id: string,
@@ -1004,6 +1036,59 @@ export default function SettingsTab({
                                     <p className="note">
                                         {t("ui_stats_detailed_warning")}
                                     </p>
+                                    <Grid container className="main-range-row">
+                                        <Grid
+                                            size={4}
+                                            className="main-range-header"
+                                        >
+                                            <span className="main-row-label">
+                                                {t(
+                                                    "ui_settings_analysis_worker_threads",
+                                                )}
+                                            </span>
+                                        </Grid>
+                                        <Grid
+                                            size={8}
+                                            className="main-range-controls"
+                                        >
+                                            <input
+                                                type="range"
+                                                className="main-range-input"
+                                                min={1}
+                                                max={logicalCoreCount}
+                                                step={1}
+                                                value={analysisWorkerThreads}
+                                                aria-label={t(
+                                                    "ui_settings_analysis_worker_threads",
+                                                )}
+                                                onChange={(event) =>
+                                                    updateAnalysisWorkerThreads(
+                                                        Number(
+                                                            event.target.value,
+                                                        ),
+                                                    )
+                                                }
+                                            />
+                                            <input
+                                                type="number"
+                                                className="input main-range-number"
+                                                min={1}
+                                                max={logicalCoreCount}
+                                                step={1}
+                                                value={analysisWorkerThreads}
+                                                aria-label={t(
+                                                    "ui_settings_analysis_worker_threads",
+                                                )}
+                                                onChange={(event) =>
+                                                    updateAnalysisWorkerThreads(
+                                                        Number(
+                                                            event.target.value,
+                                                        ),
+                                                    )
+                                                }
+                                            />
+                                        </Grid>
+                                    </Grid>
                                     <div className="toolbar">
                                         <button
                                             type="button"

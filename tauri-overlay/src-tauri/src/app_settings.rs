@@ -50,12 +50,27 @@ pub struct AppSettings {
     pub player_notes: PlayerNotes,
     pub main_names: Vec<String>,
     pub detailed_analysis_atstart: bool,
+    pub analysis_worker_threads: usize,
     #[serde(skip)]
     #[ts(skip)]
     pub present_keys: BTreeSet<String>,
 }
 
 impl AppSettings {
+    pub fn logical_core_count() -> usize {
+        std::thread::available_parallelism()
+            .map(std::num::NonZeroUsize::get)
+            .unwrap_or(1)
+    }
+
+    pub fn default_analysis_worker_threads() -> usize {
+        (Self::logical_core_count() / 2).max(1)
+    }
+
+    pub fn clamp_analysis_worker_threads(value: usize) -> usize {
+        value.clamp(1, Self::logical_core_count())
+    }
+
     pub fn from_value(value: Value) -> Result<Self, String> {
         serde_json::from_value(value).map_err(|error| format!("Invalid settings payload: {error}"))
     }
@@ -99,6 +114,8 @@ impl AppSettings {
 
         let mut settings = Self::from_value(Value::Object(merged)).unwrap_or_else(|_| settings);
         settings.initialize_unset_hotkeys();
+        settings.analysis_worker_threads =
+            Self::clamp_analysis_worker_threads(settings.analysis_worker_threads);
         settings.present_keys = present_keys;
 
         settings
@@ -174,6 +191,10 @@ impl AppSettings {
     pub fn has(&self, key: &str) -> bool {
         self.present_keys.contains(key)
     }
+
+    pub fn normalized_analysis_worker_threads(&self) -> usize {
+        Self::clamp_analysis_worker_threads(self.analysis_worker_threads)
+    }
 }
 
 impl Default for AppSettings {
@@ -213,6 +234,7 @@ impl Default for AppSettings {
             player_notes: Default::default(),
             main_names: Vec::new(),
             detailed_analysis_atstart: false,
+            analysis_worker_threads: Self::default_analysis_worker_threads(),
             present_keys: Default::default(),
         };
 

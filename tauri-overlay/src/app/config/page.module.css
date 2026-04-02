@@ -1434,6 +1434,42 @@
     inline-size: 8ch;
 }
 
+.configPage :global(.main-range-header) {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.configPage :global(.main-range-value) {
+    color: #93c5fd;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+}
+
+.configPage :global(.main-range-input) {
+    inline-size: 100%;
+    margin: 0;
+    accent-color: #38bdf8;
+}
+
+.configPage :global(.main-range-controls) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+}
+
+.configPage :global(.main-range-number) {
+    inline-size: 7ch;
+    text-align: right;
+}
+
+.configPage :global(.main-range-note) {
+    margin-bottom: 0;
+}
+
 .configPage :global(.main-fixed-select) {
     inline-size: 100%;
     min-inline-size: 0;
