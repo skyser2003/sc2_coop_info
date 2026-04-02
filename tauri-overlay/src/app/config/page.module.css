@@ -1,3 +1,7 @@
+:global(body) {
+    overflow-y: scroll;
+}
+
 .configPage {
     color: var(--config-page-text);
 }
