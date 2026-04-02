@@ -21,7 +21,7 @@ type SettingsActions = {
     overlayScreenshot: () => Promise<void> | void;
     runDetailedAnalysis: () => Promise<void> | void;
     startSimpleAnalysis: () => Promise<void> | void;
-    pauseDetailedAnalysis: () => Promise<void> | void;
+    stopDetailedAnalysis: () => Promise<void> | void;
     deleteParsedData: () => Promise<void> | void;
     applyMainSettings: () => Promise<void> | void;
     resetMainSettings: () => void;
@@ -209,12 +209,12 @@ function renderAnalysisProgress(
               ? Number(totalValidFiles)
               : Math.max(total - failed, 0);
     const settledDetailedCount = Math.max(Number(detailedParsedCount ?? 0), 0);
+    const preferredCompleted = preferProgressTotal
+        ? Math.max(Math.max(completed, 0), settledDetailedCount)
+        : settledDetailedCount;
     const safeCompleted = Math.min(
-        preferProgressTotal ? Math.max(completed, 0) : settledDetailedCount,
-        safeTotal ||
-            (preferProgressTotal
-                ? Math.max(completed, 0)
-                : settledDetailedCount),
+        preferredCompleted,
+        safeTotal || preferredCompleted,
     );
     const progressPercent =
         safeTotal > 0 ? Math.min((safeCompleted / safeTotal) * 100, 100) : 0;
@@ -711,6 +711,12 @@ export default function SettingsTab({
     const normalizedDetailedAnalysisStatus = asTableValue(
         detailedAnalysisStatus,
     ).trim();
+    const normalizedDetailedAnalysisStatusLower =
+        normalizedDetailedAnalysisStatus.toLocaleLowerCase();
+    const preferDetailedProgressTotal =
+        detailedAnalysisRunning ||
+        normalizedDetailedAnalysisStatusLower.includes("stopping") ||
+        normalizedDetailedAnalysisStatusLower.includes("stopped");
     const showAnalysisMessage =
         normalizedAnalysisMessage.length > 0 &&
         normalizedAnalysisMessage !== normalizedSimpleAnalysisStatus &&
@@ -1094,16 +1100,17 @@ export default function SettingsTab({
                                             type="button"
                                             className="button-normal"
                                             onClick={
-                                                actions.runDetailedAnalysis
+                                                detailedAnalysisRunning
+                                                    ? actions.stopDetailedAnalysis
+                                                    : actions.runDetailedAnalysis
                                             }
                                             disabled={
                                                 actions.isBusy ||
-                                                detailedAnalysisRunning ||
                                                 simpleAnalysisRunning
                                             }
                                         >
                                             {detailedAnalysisRunning
-                                                ? t("ui_stats_detailed_running")
+                                                ? t("ui_stats_stop_analyzing")
                                                 : t(
                                                       "ui_stats_run_detailed_analysis",
                                                   )}
@@ -1126,19 +1133,6 @@ export default function SettingsTab({
                                                 : t(
                                                       "ui_stats_run_simple_analysis",
                                                   )}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className="button-normal"
-                                            onClick={
-                                                actions.pauseDetailedAnalysis
-                                            }
-                                            disabled={
-                                                actions.isBusy ||
-                                                !detailedAnalysisRunning
-                                            }
-                                        >
-                                            {t("ui_stats_pause")}
                                         </button>
                                         <button
                                             type="button"
@@ -1166,7 +1160,7 @@ export default function SettingsTab({
                                         languageManager,
                                         analysisTotalValidFiles,
                                         analysisDetailedParsedCount,
-                                        detailedAnalysisRunning,
+                                        preferDetailedProgressTotal,
                                     )}
                                 </div>
                             </section>

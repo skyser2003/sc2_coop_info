@@ -7,6 +7,7 @@ use std::{
     thread,
 };
 
+use s2coop_analyzer::cache_overall_stats_generator::GenerateCacheStopController;
 use serde_json::Value;
 use tauri::{tray::TrayIcon, Wry};
 
@@ -24,6 +25,7 @@ pub struct BackendState {
     pub overlay_replay_data_active: AtomicBool,
     pub session_victories: AtomicU64,
     pub session_defeats: AtomicU64,
+    detailed_analysis_stop_controller: Arc<Mutex<Option<Arc<GenerateCacheStopController>>>>,
     replay_state: Arc<Mutex<ReplayState>>,
 }
 
@@ -86,6 +88,7 @@ impl BackendState {
             overlay_replay_data_active: AtomicBool::new(false),
             session_victories: AtomicU64::new(0),
             session_defeats: AtomicU64::new(0),
+            detailed_analysis_stop_controller: Arc::new(Mutex::new(None)),
             replay_state: Arc::new(Mutex::new(ReplayState {
                 replays: Arc::new(Mutex::new(HashMap::new())),
                 selected_replay_file: Arc::new(Mutex::new(None)),
@@ -151,6 +154,33 @@ impl BackendState {
         if let Ok(replay_state) = self.replay_state.lock() {
             replay_state.clear_replay_cache_slots();
         }
+    }
+
+    pub fn set_detailed_analysis_stop_controller(
+        &self,
+        controller: Option<Arc<GenerateCacheStopController>>,
+    ) {
+        if let Ok(mut slot) = self.detailed_analysis_stop_controller.lock() {
+            *slot = controller;
+        }
+    }
+
+    pub fn request_detailed_analysis_stop(&self) -> bool {
+        self.detailed_analysis_stop_controller
+            .lock()
+            .ok()
+            .and_then(|slot| slot.as_ref().cloned())
+            .map(|controller| {
+                controller.request_stop();
+                true
+            })
+            .unwrap_or(false)
+    }
+
+    pub fn detailed_analysis_stop_controller_slot(
+        &self,
+    ) -> Arc<Mutex<Option<Arc<GenerateCacheStopController>>>> {
+        self.detailed_analysis_stop_controller.clone()
     }
 
     pub fn record_session_result(&self, result: &str) {

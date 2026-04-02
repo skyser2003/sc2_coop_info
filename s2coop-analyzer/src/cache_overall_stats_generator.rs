@@ -20,7 +20,7 @@ use std::io;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{
-    atomic::{AtomicUsize, Ordering as AtomicOrdering},
+    atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering},
     Arc, OnceLock,
 };
 use std::time::{Duration, Instant};
@@ -179,6 +179,32 @@ pub struct GenerateCacheConfig {
 pub struct GenerateCacheSummary {
     pub scanned_replays: usize,
     pub output_file: PathBuf,
+    pub completed: bool,
+}
+
+#[derive(Debug, Default)]
+pub struct GenerateCacheStopController {
+    stop_requested: AtomicBool,
+}
+
+impl GenerateCacheStopController {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn request_stop(&self) {
+        self.stop_requested.store(true, AtomicOrdering::Release);
+    }
+
+    pub fn stop_requested(&self) -> bool {
+        self.stop_requested.load(AtomicOrdering::Acquire)
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct GenerateCacheRuntimeOptions {
+    pub worker_count: Option<usize>,
+    pub stop_controller: Option<Arc<GenerateCacheStopController>>,
 }
 
 #[derive(Debug, Error)]
@@ -610,19 +636,32 @@ pub struct CandidateReplay {
 pub fn generate_cache_overall_stats(
     config: &GenerateCacheConfig,
 ) -> Result<GenerateCacheSummary, GenerateCacheError> {
-    generate_cache_overall_stats_impl(config, None)
+    generate_cache_overall_stats_impl(config, None, &GenerateCacheRuntimeOptions::default())
 }
 
 pub fn generate_cache_overall_stats_with_logger(
     config: &GenerateCacheConfig,
     logger: &(dyn Fn(String) + Send + Sync),
 ) -> Result<GenerateCacheSummary, GenerateCacheError> {
-    generate_cache_overall_stats_impl(config, Some(logger))
+    generate_cache_overall_stats_impl(
+        config,
+        Some(logger),
+        &GenerateCacheRuntimeOptions::default(),
+    )
+}
+
+pub fn generate_cache_overall_stats_with_runtime_and_logger(
+    config: &GenerateCacheConfig,
+    logger: &(dyn Fn(String) + Send + Sync),
+    runtime: &GenerateCacheRuntimeOptions,
+) -> Result<GenerateCacheSummary, GenerateCacheError> {
+    generate_cache_overall_stats_impl(config, Some(logger), runtime)
 }
 
 fn generate_cache_overall_stats_impl(
     config: &GenerateCacheConfig,
     logger: Option<&(dyn Fn(String) + Send + Sync + '_)>,
+    runtime: &GenerateCacheRuntimeOptions,
 ) -> Result<GenerateCacheSummary, GenerateCacheError> {
     if !config.account_dir.is_dir() {
         return Err(GenerateCacheError::InvalidAccountDirectory(
@@ -650,20 +689,36 @@ fn generate_cache_overall_stats_impl(
     let temp_entries = load_temp_detailed_analysis_cache(&temp_file_path, logger);
     existing_detailed_analysis_entries.extend(temp_entries);
 
+    let stop_controller = runtime.stop_controller.clone();
+    let stop_requested = Arc::new(AtomicBool::new(false));
     let entries = if replay_files.is_empty() {
         let progress = GenerateCacheProgressReporter::new(0, 0, logger, temp_file_path.clone());
         progress.log_completion();
         HashMap::new()
     } else {
-        let worker_count = resolve_worker_count(replay_files.len());
+        let worker_count = runtime
+            .worker_count
+            .map(|value| std::cmp::max(1, std::cmp::min(value, replay_files.len())))
+            .unwrap_or_else(|| resolve_worker_count(replay_files.len()));
         let thread_pool = ThreadPoolBuilder::new()
             .num_threads(worker_count)
             .build()
             .map_err(|error| GenerateCacheError::ThreadPoolBuildFailed(error.to_string()))?;
+        let stop_requested_for_candidates = stop_requested.clone();
+        let stop_controller_for_candidates = stop_controller.clone();
         let candidate_replays = thread_pool.install(|| {
             replay_files
                 .par_iter()
-                .filter_map(|path| collect_candidate_replay(path, &cache_data))
+                .filter_map(|path| {
+                    if stop_controller_for_candidates
+                        .as_ref()
+                        .is_some_and(|controller| controller.stop_requested())
+                    {
+                        stop_requested_for_candidates.store(true, AtomicOrdering::Release);
+                        return None;
+                    }
+                    collect_candidate_replay(path, &cache_data)
+                })
                 .collect::<Vec<CandidateReplay>>()
         });
         let total_candidates = candidate_replays.len();
@@ -685,11 +740,20 @@ fn generate_cache_overall_stats_impl(
                 HashMap::new()
             } else {
                 let progress_for_workers = Arc::clone(&progress);
+                let stop_requested_for_workers = stop_requested.clone();
+                let stop_controller_for_workers = stop_controller.clone();
 
                 thread_pool.install(|| {
                     pending_candidates
                         .into_par_iter()
-                        .map(|(_, candidate)| {
+                        .filter_map(|(_, candidate)| {
+                            if stop_controller_for_workers
+                                .as_ref()
+                                .is_some_and(|controller| controller.stop_requested())
+                            {
+                                stop_requested_for_workers.store(true, AtomicOrdering::Release);
+                                return None;
+                            }
                             let entry = analyze_candidate_entry(
                                 candidate,
                                 &main_handles,
@@ -700,14 +764,21 @@ fn generate_cache_overall_stats_impl(
                                 progress_for_workers.add_temp_entry(entry.clone());
                             }
                             progress_for_workers.record_processed_file();
-                            (entry.hash.clone(), entry)
+                            Some((entry.hash.clone(), entry))
                         })
                         .collect::<HashMap<_, _>>()
                 })
             };
 
             reused_entries.extend(analyzed_entries);
-            progress.log_completion();
+            if stop_requested.load(AtomicOrdering::Acquire) {
+                emit_optional_logger(
+                    logger,
+                    "Detailed analysis stopped after the current work finished.".to_string(),
+                );
+            } else {
+                progress.log_completion();
+            }
             reused_entries
         }
     };
@@ -732,6 +803,7 @@ fn generate_cache_overall_stats_impl(
     Ok(GenerateCacheSummary {
         scanned_replays: all_entries.len(),
         output_file: config.output_file.clone(),
+        completed: !stop_requested.load(AtomicOrdering::Acquire),
     })
 }
 

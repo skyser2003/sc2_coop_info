@@ -1,8 +1,8 @@
 use notify::{Config as NotifyConfig, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use rfd::FileDialog;
 use s2coop_analyzer::cache_overall_stats_generator::{
-    generate_cache_overall_stats_with_logger, write_cache_file, CacheReplayEntry,
-    GenerateCacheConfig,
+    generate_cache_overall_stats_with_runtime_and_logger, write_cache_file, CacheReplayEntry,
+    GenerateCacheConfig, GenerateCacheRuntimeOptions, GenerateCacheStopController,
 };
 use s2coop_analyzer::detailed_replay_analysis::calculate_replay_hash;
 use s2coop_analyzer::dictionary_data;
@@ -2084,7 +2084,9 @@ fn clear_analysis_cache_files() {
 fn generate_detailed_analysis_cache(
     app: &AppHandle<Wry>,
     stats: &Arc<Mutex<StatsState>>,
-) -> Result<usize, String> {
+    worker_count: usize,
+    stop_controller: Arc<GenerateCacheStopController>,
+) -> Result<(usize, bool), String> {
     let Some(account_dir) = resolve_replay_root() else {
         return Err("Replay root is not configured for detailed analysis.".to_string());
     };
@@ -2108,14 +2110,18 @@ fn generate_detailed_analysis_cache(
         }
     };
 
-    generate_cache_overall_stats_with_logger(
+    generate_cache_overall_stats_with_runtime_and_logger(
         &GenerateCacheConfig {
             account_dir,
             output_file: output_file.clone(),
         },
         &logger,
+        &GenerateCacheRuntimeOptions {
+            worker_count: Some(worker_count),
+            stop_controller: Some(stop_controller),
+        },
     )
-    .map(|summary| summary.scanned_replays)
+    .map(|summary| (summary.scanned_replays, summary.completed))
     .map_err(|error| format!("Failed to generate '{}': {error}", output_file.display()))
 }
 
@@ -2343,6 +2349,7 @@ fn request_startup_analysis(
     stats: Arc<Mutex<StatsState>>,
     replays_slot: Arc<Mutex<HashMap<String, ReplayInfo>>>,
     stats_current_replay_files_slot: Arc<Mutex<HashSet<String>>>,
+    detailed_stop_controller_slot: Arc<Mutex<Option<Arc<GenerateCacheStopController>>>>,
     trigger: StartupAnalysisTrigger,
 ) -> Result<StartupAnalysisRequestOutcome, String> {
     let outcome = {
@@ -2363,6 +2370,7 @@ fn request_startup_analysis(
             stats,
             replays_slot,
             stats_current_replay_files_slot,
+            detailed_stop_controller_slot,
             outcome.include_detailed,
         );
     } else {
@@ -2474,6 +2482,7 @@ fn spawn_analysis_task(
     stats: Arc<Mutex<StatsState>>,
     replays_slot: Arc<Mutex<HashMap<String, ReplayInfo>>>,
     stats_current_replay_files_slot: Arc<Mutex<HashSet<String>>>,
+    detailed_stop_controller_slot: Arc<Mutex<Option<Arc<GenerateCacheStopController>>>>,
     include_detailed: bool,
     limit: usize,
 ) {
@@ -2543,6 +2552,7 @@ fn spawn_analysis_task(
     let analysis_state = stats;
     let shared_replay_cache_slot = replays_slot;
     let current_replay_files_slot = stats_current_replay_files_slot;
+    let detailed_stop_controller_slot_for_thread = detailed_stop_controller_slot;
     let app_for_analysis = app.clone();
     let app_for_progress = app.clone();
     let app_for_progress_updates = app.clone();
@@ -2571,32 +2581,53 @@ fn spawn_analysis_task(
         let existing_cache_by_hash = load_existing_cache_by_hash();
         let mut all_new_cache_entries = Vec::new();
         let all_replays;
+        let mut detailed_completed = true;
 
         // Run analysis based on mode
         if include_detailed {
+            let worker_count = read_settings_memory().normalized_analysis_worker_threads();
+            let stop_controller = Arc::new(GenerateCacheStopController::new());
+            if let Ok(mut slot) = detailed_stop_controller_slot_for_thread.lock() {
+                *slot = Some(stop_controller.clone());
+            }
             // Generate detailed analysis, which produces detailed cache entries
             let generation_started_at = Instant::now();
-            match generate_detailed_analysis_cache(&app_for_progress, &analysis_state) {
-                Ok(scanned_replays) => {
+            match generate_detailed_analysis_cache(
+                &app_for_progress,
+                &analysis_state,
+                worker_count,
+                stop_controller,
+            ) {
+                Ok((scanned_replays, completed)) => {
+                    detailed_completed = completed;
                     crate::sco_log!(
-                        "[SCO/stats] {} generated '{}' with {} replay(s) in {}ms",
+                        "[SCO/stats] {} generated '{}' with {} replay(s) in {}ms completed={completed}",
                         mode.display(),
                         get_cache_path().display(),
                         scanned_replays,
                         generation_started_at.elapsed().as_millis()
                     );
                     if let Ok(mut guard) = analysis_state.lock() {
-                        set_analysis_running_status(
-                            &mut guard,
-                            mode,
-                            "refreshing replay summaries",
-                        );
-                        guard.message = format!(
-                            "Generated '{}' with {} replay entr{}.",
-                            get_cache_path().display(),
-                            scanned_replays,
-                            if scanned_replays == 1 { "y" } else { "ies" }
-                        );
+                        if completed {
+                            set_analysis_running_status(
+                                &mut guard,
+                                mode,
+                                "refreshing replay summaries",
+                            );
+                            guard.message = format!(
+                                "Generated '{}' with {} replay entr{}.",
+                                get_cache_path().display(),
+                                scanned_replays,
+                                if scanned_replays == 1 { "y" } else { "ies" }
+                            );
+                        } else {
+                            guard.detailed_analysis_status = analysis_status_text(mode, "stopped");
+                            guard.message = format!(
+                                "Detailed analysis stopped after saving {} replay entr{}.",
+                                scanned_replays,
+                                if scanned_replays == 1 { "y" } else { "ies" }
+                            );
+                        }
                     }
 
                     // Load the generated detailed cache
@@ -2626,6 +2657,9 @@ fn spawn_analysis_task(
                     all_replays = detailed_replays;
                 }
                 Err(message) => {
+                    if let Ok(mut slot) = detailed_stop_controller_slot_for_thread.lock() {
+                        slot.take();
+                    }
                     crate::sco_log!("[SCO/stats] {} failed: {message}", mode.display());
                     if let Ok(mut guard) = analysis_state.lock() {
                         set_analysis_terminal_status(&mut guard, mode, "failed");
@@ -2639,6 +2673,9 @@ fn spawn_analysis_task(
                     let _ = progress_handle.join();
                     return;
                 }
+            }
+            if let Ok(mut slot) = detailed_stop_controller_slot_for_thread.lock() {
+                slot.take();
             }
         } else {
             // Simple analysis mode - run scan_replays
@@ -2675,6 +2712,11 @@ fn spawn_analysis_task(
             .collect::<Vec<_>>();
 
         let current_replay_files = current_replay_files_snapshot(UNLIMITED_REPLAY_LIMIT);
+        if include_detailed && !detailed_completed {
+            replay_scan_progress()
+                .total
+                .store(current_replay_files.len() as u64, Ordering::Release);
+        }
         update_analysis_replay_cache_slots(&all_replays, &shared_replay_cache_slot);
         if let Ok(mut current_files) = current_replay_files_slot.lock() {
             *current_files = current_replay_files;
@@ -2723,9 +2765,20 @@ fn spawn_analysis_task(
             }
         };
 
-        set_analysis_running_status(&mut guard, mode, "building statistics");
+        if include_detailed && !detailed_completed {
+            guard.detailed_analysis_running = false;
+        } else {
+            set_analysis_running_status(&mut guard, mode, "building statistics");
+        }
 
         apply_rebuild_snapshot(&mut guard, snapshot, mode);
+        if include_detailed && !detailed_completed {
+            guard.detailed_analysis_running = false;
+            guard.detailed_analysis_status = analysis_status_text(mode, "stopped");
+            guard.message =
+                "Detailed analysis stopped. Run detailed analysis to continue generating cache."
+                    .to_string();
+        }
         if !include_detailed {
             sync_detailed_analysis_status_from_replays(&mut guard, &all_replays);
         }
@@ -2734,10 +2787,15 @@ fn spawn_analysis_task(
         emit_replay_scan_progress(&app_for_analysis);
 
         crate::sco_log!(
-            "[SCO/stats] {} completed in {}ms for {} replay(s)",
+            "[SCO/stats] {} finished in {}ms for {} replay(s) completed={}",
             mode.display(),
             started_at.elapsed().as_millis(),
-            all_replays.len()
+            all_replays.len(),
+            if include_detailed {
+                detailed_completed
+            } else {
+                true
+            }
         );
 
         should_stop.store(true, Ordering::Release);
@@ -2750,6 +2808,7 @@ fn spawn_startup_analysis_task(
     stats: Arc<Mutex<StatsState>>,
     replays_slot: Arc<Mutex<HashMap<String, ReplayInfo>>>,
     stats_current_replay_files_slot: Arc<Mutex<HashSet<String>>>,
+    detailed_stop_controller_slot: Arc<Mutex<Option<Arc<GenerateCacheStopController>>>>,
     include_detailed: bool,
 ) {
     crate::sco_log!(
@@ -2761,6 +2820,7 @@ fn spawn_startup_analysis_task(
         stats,
         replays_slot,
         stats_current_replay_files_slot,
+        detailed_stop_controller_slot,
         include_detailed,
         UNLIMITED_REPLAY_LIMIT,
     );
@@ -4431,6 +4491,7 @@ async fn config_request(
                             .map(|replay_state| replay_state.replays.clone())
                             .unwrap_or_else(|_| Arc::new(Mutex::new(HashMap::new()))),
                         state.stats_current_replay_files.clone(),
+                        state.detailed_analysis_stop_controller_slot(),
                         StartupAnalysisTrigger::FrontendReady,
                     )?;
                     let stats = state
@@ -4468,6 +4529,7 @@ async fn config_request(
                             .map(|replay_state| replay_state.replays.clone())
                             .unwrap_or_else(|_| Arc::new(Mutex::new(HashMap::new()))),
                         state.stats_current_replay_files.clone(),
+                        state.detailed_analysis_stop_controller_slot(),
                         include_detailed,
                         limit,
                     );
@@ -4493,6 +4555,7 @@ async fn config_request(
                         stats: None,
                     }));
                 }
+                "stop_detailed_analysis" => {}
                 _ => {}
             }
 
@@ -4504,10 +4567,21 @@ async fn config_request(
             crate::sco_log!("[SCO/stats/action] action={action}");
 
             match action {
-                "pause_detailed_analysis" => {
-                    set_analysis_terminal_status(&mut stats, AnalysisMode::Detailed, "paused");
+                "stop_detailed_analysis" => {
+                    if !stats.detailed_analysis_running {
+                        stats.message = "Detailed analysis is not running.".to_string();
+                    } else if state.request_detailed_analysis_stop() {
+                        stats.detailed_analysis_status =
+                            analysis_status_text(AnalysisMode::Detailed, "stopping");
+                        stats.message =
+                            "Detailed analysis will stop after the current work finishes."
+                                .to_string();
+                    } else {
+                        stats.message =
+                            "Detailed analysis stop could not be requested.".to_string();
+                    }
                     crate::sco_log!(
-                        "[SCO/stats] pause_detailed_analysis requested elapsed={}ms",
+                        "[SCO/stats] stop_detailed_analysis requested elapsed={}ms",
                         request_started_at.elapsed().as_millis()
                     );
                 }
@@ -4554,6 +4628,7 @@ async fn config_request(
                     stats.prestige_names = Value::Object(Default::default());
                     set_analysis_terminal_status(&mut stats, AnalysisMode::Simple, "not started");
                     set_analysis_terminal_status(&mut stats, AnalysisMode::Detailed, "not started");
+                    state.set_detailed_analysis_stop_controller(None);
                     stats.message = "No parsed statistics available yet.".to_string();
                     state.clear_replay_cache_slots();
                     if let Ok(mut stats_current_replay_files) =
@@ -4834,7 +4909,7 @@ pub fn run() {
             spawn_replay_creation_watcher(app.app_handle().clone());
             spawn_game_launch_winrate_task(app.app_handle().clone());
             performance_overlay::spawn_monitor(app.app_handle().clone());
-            let (stats, replays, stats_current_replay_files) = {
+            let (stats, replays, stats_current_replay_files, detailed_stop_controller_slot) = {
                 let state = app.state::<BackendState>();
                 let replays = state
                     .get_replay_state()
@@ -4845,6 +4920,7 @@ pub fn run() {
                     state.stats.clone(),
                     replays,
                     state.stats_current_replay_files.clone(),
+                    state.detailed_analysis_stop_controller_slot(),
                 )
             };
             if let Err(error) = request_startup_analysis(
@@ -4852,6 +4928,7 @@ pub fn run() {
                 stats,
                 replays,
                 stats_current_replay_files,
+                detailed_stop_controller_slot,
                 StartupAnalysisTrigger::Setup,
             ) {
                 crate::sco_log!(

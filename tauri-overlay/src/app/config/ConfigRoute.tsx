@@ -123,7 +123,7 @@ type ExtraState = {
     statsState: StatisticsState;
     statsActions: StatsHelpers & {
         runDetailedAnalysis: () => Promise<void>;
-        pauseDetailedAnalysis: () => Promise<void>;
+        stopDetailedAnalysis: () => Promise<void>;
         setDetailedAnalysisAtStart: (enabled: boolean) => Promise<void>;
     };
     gamesState: GamesTabState & {
@@ -2113,9 +2113,9 @@ function SettingsEditor({
         }
     }
 
-    async function pauseDetailedAnalysis() {
+    async function stopDetailedAnalysis() {
         const result = await postAction("/config/stats/action", {
-            action: "pause_detailed_analysis",
+            action: "stop_detailed_analysis",
         });
         if (result) {
             setTimeout(() => refreshStatistics(true, null, true), 300);
@@ -2384,7 +2384,7 @@ function SettingsEditor({
                     overlayScreenshot,
                     runDetailedAnalysis,
                     startSimpleAnalysis,
-                    pauseDetailedAnalysis,
+                    stopDetailedAnalysis,
                     deleteParsedData: async () => {
                         await deleteParsedData();
                     },
@@ -2538,7 +2538,7 @@ function SettingsEditor({
                     refreshStats: () => refreshStatistics(false, null, true),
                     startSimpleAnalysis,
                     runDetailedAnalysis,
-                    pauseDetailedAnalysis,
+                    stopDetailedAnalysis,
                     dumpData,
                     deleteParsedData,
                     setDetailedAnalysisAtStart,

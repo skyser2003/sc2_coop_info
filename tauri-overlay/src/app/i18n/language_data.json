@@ -1247,9 +1247,9 @@
         "en": "Simple analysis running...",
         "ko": "간단 분석 실행 중..."
     },
-    "ui_stats_pause": {
-        "en": "Pause",
-        "ko": "일시중지"
+    "ui_stats_stop_analyzing": {
+        "en": "Stop analyzing",
+        "ko": "분석 중지"
     },
     "ui_stats_run_detailed_analysis": {
         "en": "Run detailed analysis",
