@@ -20,7 +20,6 @@ use crate::{
 pub struct BackendState {
     pub tray_icon: Arc<Mutex<Option<TrayIcon<Wry>>>>,
     pub stats: Arc<Mutex<StatsState>>,
-    pub stats_replays: Arc<Mutex<HashMap<String, ReplayInfo>>>,
     pub stats_current_replay_files: Arc<Mutex<HashSet<String>>>,
     pub overlay_replay_data_active: AtomicBool,
     pub session_victories: AtomicU64,
@@ -83,7 +82,6 @@ impl BackendState {
         Self {
             tray_icon: Arc::new(Mutex::new(None)),
             stats: Arc::new(Mutex::new(StatsState::from_settings())),
-            stats_replays: Arc::new(Mutex::new(HashMap::new())),
             stats_current_replay_files: Arc::new(Mutex::new(HashSet::new())),
             overlay_replay_data_active: AtomicBool::new(false),
             session_victories: AtomicU64::new(0),
@@ -226,10 +224,7 @@ impl BackendState {
     }
 
     pub fn refresh_stats_snapshot_after_replay_upsert(&self) {
-        let stats_replays = match self.stats_replays.lock() {
-            Ok(replays) => replay_cache_snapshot(&replays),
-            Err(_) => return,
-        };
+        let stats_replays = self.replay_cache_snapshot();
 
         let mut stats = match self.stats.lock() {
             Ok(stats) => stats,
@@ -255,10 +250,6 @@ impl BackendState {
         let _ = replay_state
             .lock()
             .map(|replay_state| replay_state.upsert_replay_cache_slot(replay_hash, replay));
-
-        if let Ok(mut stats_replays) = self.stats_replays.lock() {
-            upsert_replay_map(&mut stats_replays, replay_hash, replay);
-        }
 
         if let Ok(mut current_replay_files) = self.stats_current_replay_files.lock() {
             current_replay_files.insert(replay.file.clone());

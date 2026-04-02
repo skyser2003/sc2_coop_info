@@ -3383,7 +3383,7 @@ impl ReplayAnalysis {
     pub fn build_stats_response(
         path: &str,
         stats: &Arc<Mutex<StatsState>>,
-        stats_replays: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
+        replays: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
         stats_current_replay_files: &Arc<Mutex<HashSet<String>>>,
     ) -> Result<Value, String> {
         let mut response = match stats.try_lock() {
@@ -3414,7 +3414,7 @@ impl ReplayAnalysis {
             .and_then(Value::as_bool)
             .unwrap_or(false);
         if is_ready && !running_simple && !running_detailed {
-            match stats_replays.try_lock() {
+            match replays.try_lock() {
                 Ok(cached_replays) => match stats_current_replay_files.try_lock() {
                     Ok(current_replay_files) => {
                         let mut cached_replays =

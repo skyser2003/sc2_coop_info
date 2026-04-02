@@ -1460,9 +1460,19 @@ function SettingsEditor({
         void requestJson("/config/stats/action", {
             method: "POST",
             body: { action: "frontend_ready" },
-        }).catch((error) => {
-            console.warn("Failed to trigger startup analysis", error);
-        });
+        })
+            .then((payload) => {
+                if (!payload || !payload.stats) {
+                    return;
+                }
+                setTabData((current) => ({
+                    ...current,
+                    statistics: payload.stats as StatisticsPayload,
+                }));
+            })
+            .catch((error) => {
+                console.warn("Failed to trigger startup analysis", error);
+            });
     }, [draft]);
 
     useEffect(() => {

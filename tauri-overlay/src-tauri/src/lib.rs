@@ -2342,7 +2342,6 @@ fn request_startup_analysis(
     app: AppHandle<Wry>,
     stats: Arc<Mutex<StatsState>>,
     replays_slot: Arc<Mutex<HashMap<String, ReplayInfo>>>,
-    stats_replays_slot: Arc<Mutex<HashMap<String, ReplayInfo>>>,
     stats_current_replay_files_slot: Arc<Mutex<HashSet<String>>>,
     trigger: StartupAnalysisTrigger,
 ) -> Result<StartupAnalysisRequestOutcome, String> {
@@ -2363,7 +2362,6 @@ fn request_startup_analysis(
             app,
             stats,
             replays_slot,
-            stats_replays_slot,
             stats_current_replay_files_slot,
             outcome.include_detailed,
         );
@@ -2381,7 +2379,6 @@ fn request_startup_analysis(
 pub fn update_analysis_replay_cache_slots(
     replays: &[ReplayInfo],
     replays_slot: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
-    stats_replays_slot: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
 ) {
     if let Ok(mut cache) = replays_slot.lock() {
         cache.clear();
@@ -2404,28 +2401,6 @@ pub fn update_analysis_replay_cache_slots(
         }
     } else {
         crate::sco_log!("[SCO/stats] failed to update shared replay cache after scan");
-    }
-    if let Ok(mut cache) = stats_replays_slot.lock() {
-        cache.clear();
-        for replay in replays {
-            let replay_hash = calculate_replay_hash(&PathBuf::from(&replay.file));
-            if replay_hash.is_empty() {
-                continue;
-            }
-            match cache.get(&replay_hash) {
-                Some(existing)
-                    if ReplayInfo::should_keep_existing_detailed_variant(
-                        existing.is_detailed,
-                        replay.is_detailed,
-                    ) => {}
-                _ => {
-                    cache.retain(|hash, entry| hash == &replay_hash || entry.file != replay.file);
-                    cache.insert(replay_hash.clone(), replay.clone());
-                }
-            }
-        }
-    } else {
-        crate::sco_log!("[SCO/stats] failed to update stats replay cache after scan");
     }
 }
 
@@ -2498,7 +2473,6 @@ fn spawn_analysis_task(
     app: AppHandle<Wry>,
     stats: Arc<Mutex<StatsState>>,
     replays_slot: Arc<Mutex<HashMap<String, ReplayInfo>>>,
-    stats_replays_slot: Arc<Mutex<HashMap<String, ReplayInfo>>>,
     stats_current_replay_files_slot: Arc<Mutex<HashSet<String>>>,
     include_detailed: bool,
     limit: usize,
@@ -2568,7 +2542,6 @@ fn spawn_analysis_task(
 
     let analysis_state = stats;
     let shared_replay_cache_slot = replays_slot;
-    let replay_cache_slot = stats_replays_slot;
     let current_replay_files_slot = stats_current_replay_files_slot;
     let app_for_analysis = app.clone();
     let app_for_progress = app.clone();
@@ -2702,11 +2675,7 @@ fn spawn_analysis_task(
             .collect::<Vec<_>>();
 
         let current_replay_files = current_replay_files_snapshot(UNLIMITED_REPLAY_LIMIT);
-        update_analysis_replay_cache_slots(
-            &all_replays,
-            &shared_replay_cache_slot,
-            &replay_cache_slot,
-        );
+        update_analysis_replay_cache_slots(&all_replays, &shared_replay_cache_slot);
         if let Ok(mut current_files) = current_replay_files_slot.lock() {
             *current_files = current_replay_files;
         } else {
@@ -2780,7 +2749,6 @@ fn spawn_startup_analysis_task(
     app: AppHandle<Wry>,
     stats: Arc<Mutex<StatsState>>,
     replays_slot: Arc<Mutex<HashMap<String, ReplayInfo>>>,
-    stats_replays_slot: Arc<Mutex<HashMap<String, ReplayInfo>>>,
     stats_current_replay_files_slot: Arc<Mutex<HashSet<String>>>,
     include_detailed: bool,
 ) {
@@ -2792,7 +2760,6 @@ fn spawn_startup_analysis_task(
         app,
         stats,
         replays_slot,
-        stats_replays_slot,
         stats_current_replay_files_slot,
         include_detailed,
         UNLIMITED_REPLAY_LIMIT,
@@ -2934,10 +2901,10 @@ fn ymd_from_unix_seconds(seconds: u64) -> Option<u32> {
 fn build_stats_response(
     path: &str,
     stats: &Arc<Mutex<StatsState>>,
-    stats_replays: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
+    replays: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
     stats_current_replay_files: &Arc<Mutex<HashSet<String>>>,
 ) -> Result<Value, String> {
-    ReplayAnalysis::build_stats_response(path, stats, stats_replays, stats_current_replay_files)
+    ReplayAnalysis::build_stats_response(path, stats, replays, stats_current_replay_files)
 }
 
 fn replay_index_by_file(replays: &[ReplayInfo], file: &Option<String>) -> Option<usize> {
@@ -4337,14 +4304,18 @@ async fn config_request(
         }
         ("get", "/config/stats") => {
             let stats = state.stats.clone();
-            let stats_replays = state.stats_replays.clone();
+            let replays = state
+                .get_replay_state()
+                .lock()
+                .map(|replay_state| replay_state.replays.clone())
+                .unwrap_or_else(|_| Arc::new(Mutex::new(HashMap::new())));
             let stats_current_replay_files = state.stats_current_replay_files.clone();
             let path_for_worker = path.clone();
             let payload = tauri::async_runtime::spawn_blocking(move || {
                 build_stats_response(
                     &path_for_worker,
                     &stats,
-                    &stats_replays,
+                    &replays,
                     &stats_current_replay_files,
                 )
             })
@@ -4459,7 +4430,6 @@ async fn config_request(
                             .lock()
                             .map(|replay_state| replay_state.replays.clone())
                             .unwrap_or_else(|_| Arc::new(Mutex::new(HashMap::new()))),
-                        state.stats_replays.clone(),
                         state.stats_current_replay_files.clone(),
                         StartupAnalysisTrigger::FrontendReady,
                     )?;
@@ -4497,7 +4467,6 @@ async fn config_request(
                             .lock()
                             .map(|replay_state| replay_state.replays.clone())
                             .unwrap_or_else(|_| Arc::new(Mutex::new(HashMap::new()))),
-                        state.stats_replays.clone(),
                         state.stats_current_replay_files.clone(),
                         include_detailed,
                         limit,
@@ -4580,15 +4549,13 @@ async fn config_request(
                 }
                 "delete_parsed_data" => {
                     stats.ready = false;
+                    stats.startup_analysis_requested = false;
                     stats.analysis = Some(empty_stats_payload());
                     stats.prestige_names = Value::Object(Default::default());
                     set_analysis_terminal_status(&mut stats, AnalysisMode::Simple, "not started");
                     set_analysis_terminal_status(&mut stats, AnalysisMode::Detailed, "not started");
                     stats.message = "No parsed statistics available yet.".to_string();
                     state.clear_replay_cache_slots();
-                    if let Ok(mut stats_replays) = state.stats_replays.lock() {
-                        stats_replays.clear();
-                    }
                     if let Ok(mut stats_current_replay_files) =
                         state.stats_current_replay_files.lock()
                     {
@@ -4867,7 +4834,7 @@ pub fn run() {
             spawn_replay_creation_watcher(app.app_handle().clone());
             spawn_game_launch_winrate_task(app.app_handle().clone());
             performance_overlay::spawn_monitor(app.app_handle().clone());
-            let (stats, replays, stats_replays, stats_current_replay_files) = {
+            let (stats, replays, stats_current_replay_files) = {
                 let state = app.state::<BackendState>();
                 let replays = state
                     .get_replay_state()
@@ -4877,7 +4844,6 @@ pub fn run() {
                 (
                     state.stats.clone(),
                     replays,
-                    state.stats_replays.clone(),
                     state.stats_current_replay_files.clone(),
                 )
             };
@@ -4885,7 +4851,6 @@ pub fn run() {
                 app.app_handle().clone(),
                 stats,
                 replays,
-                stats_replays,
                 stats_current_replay_files,
                 StartupAnalysisTrigger::Setup,
             ) {

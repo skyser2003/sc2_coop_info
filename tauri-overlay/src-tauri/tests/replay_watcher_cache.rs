@@ -8,7 +8,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
 };
 use sco_tauri_overlay::{
     canonicalize_coop_map_id, persist_detailed_cache_entry_to_path, BackendState, ReplayInfo,
-    StatsState,
+    ReplayPlayerInfo, StatsState,
 };
 use serde_json::json;
 use serde_json::Value;
@@ -63,8 +63,23 @@ fn test_backend_state() -> BackendState {
     state
 }
 
+fn seed_replay_cache(state: &BackendState, entries: &[(&str, ReplayInfo)]) {
+    let replay_state = state.get_replay_state();
+    let replays_slot = replay_state
+        .lock()
+        .expect("replay state mutex should not be poisoned")
+        .replays
+        .clone();
+    let mut replays = replays_slot
+        .lock()
+        .expect("replays mutex should not be poisoned");
+    for (hash, replay) in entries {
+        replays.insert((*hash).to_string(), replay.clone());
+    }
+}
+
 #[test]
-fn upsert_replay_in_memory_cache_updates_stats_cache_and_current_files() {
+fn upsert_replay_in_memory_cache_updates_replay_cache_and_current_files() {
     let state = test_backend_state();
     let existing_replay = ReplayInfo {
         file: test_replay_path("existing.SC2Replay"),
@@ -79,31 +94,21 @@ fn upsert_replay_in_memory_cache_updates_stats_cache_and_current_files() {
         ..ReplayInfo::default()
     };
 
-    {
-        let replay_state = state.get_replay_state();
-        let replays_slot = replay_state
-            .lock()
-            .expect("replay state mutex should not be poisoned")
-            .replays
-            .clone();
-        let mut replays = replays_slot
-            .lock()
-            .expect("replays mutex should not be poisoned");
-        replays.push(existing_replay.clone());
-    }
-    {
-        let mut stats_replays = state
-            .stats_replays
-            .lock()
-            .expect("stats replay mutex should not be poisoned");
-        stats_replays.push(existing_replay.clone());
-        stats_replays.push(ReplayInfo {
-            file: updated_replay.file.clone(),
-            date: 50,
-            result: "Victory".to_string(),
-            ..ReplayInfo::default()
-        });
-    }
+    seed_replay_cache(
+        &state,
+        &[
+            ("existing-hash", existing_replay.clone()),
+            (
+                "updated-hash",
+                ReplayInfo {
+                    file: updated_replay.file.clone(),
+                    date: 50,
+                    result: "Victory".to_string(),
+                    ..ReplayInfo::default()
+                },
+            ),
+        ],
+    );
     {
         let mut current_files = state
             .stats_current_replay_files
@@ -112,14 +117,9 @@ fn upsert_replay_in_memory_cache_updates_stats_cache_and_current_files() {
         current_files.insert(existing_replay.file.clone());
     }
 
-    state.upsert_replay_in_memory_cache(&updated_replay);
+    state.upsert_replay_in_memory_cache("updated-hash", &updated_replay);
 
     let replays = state.replay_cache_snapshot();
-    let stats_replays = state
-        .stats_replays
-        .lock()
-        .expect("stats replay mutex should not be poisoned")
-        .clone();
     let current_files = state
         .stats_current_replay_files
         .lock()
@@ -128,11 +128,8 @@ fn upsert_replay_in_memory_cache_updates_stats_cache_and_current_files() {
     let selected_file = state.get_current_replay_file();
 
     assert_eq!(replays.len(), 2);
-    assert_eq!(stats_replays.len(), 2);
     assert_eq!(replays[0].file, updated_replay.file);
-    assert_eq!(stats_replays[0].file, updated_replay.file);
     assert_eq!(replays[0].result, updated_replay.result);
-    assert_eq!(stats_replays[0].result, updated_replay.result);
     assert!(current_files.contains(&existing_replay.file));
     assert!(current_files.contains(&updated_replay.file));
     assert_eq!(selected_file.as_deref(), Some(updated_replay.file.as_str()));
@@ -208,27 +205,9 @@ fn upsert_replay_in_memory_cache_refreshes_ready_stats_with_detailed_data() {
         }));
         stats.message = "Scanned 1 replay file(s).".to_string();
     }
-    {
-        let replay_state = state.get_replay_state();
-        let replays_slot = replay_state
-            .lock()
-            .expect("replay state mutex should not be poisoned")
-            .replays
-            .clone();
-        let mut replays = replays_slot
-            .lock()
-            .expect("replays mutex should not be poisoned");
-        replays.push(existing_replay.clone());
-    }
-    {
-        let mut stats_replays = state
-            .stats_replays
-            .lock()
-            .expect("stats replay mutex should not be poisoned");
-        stats_replays.push(existing_replay);
-    }
+    seed_replay_cache(&state, &[("existing-detailed-hash", existing_replay)]);
 
-    state.upsert_replay_in_memory_cache(&updated_replay);
+    state.upsert_replay_in_memory_cache("updated-detailed-hash", &updated_replay);
 
     let stats = state
         .stats
