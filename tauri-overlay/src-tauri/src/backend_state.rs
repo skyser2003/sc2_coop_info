@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
@@ -20,7 +20,7 @@ use crate::{
 pub struct BackendState {
     pub tray_icon: Arc<Mutex<Option<TrayIcon<Wry>>>>,
     pub stats: Arc<Mutex<StatsState>>,
-    pub stats_replays: Arc<Mutex<Vec<ReplayInfo>>>,
+    pub stats_replays: Arc<Mutex<HashMap<String, ReplayInfo>>>,
     pub stats_current_replay_files: Arc<Mutex<HashSet<String>>>,
     pub overlay_replay_data_active: AtomicBool,
     pub session_victories: AtomicU64,
@@ -29,21 +29,42 @@ pub struct BackendState {
 }
 
 pub struct ReplayState {
-    pub replays: Arc<Mutex<Vec<ReplayInfo>>>,
+    pub replays: Arc<Mutex<HashMap<String, ReplayInfo>>>,
     pub selected_replay_file: Arc<Mutex<Option<String>>>,
 }
 
 static PLAYERS_SCAN_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 
-fn upsert_replay_list(cache: &mut Vec<ReplayInfo>, replay: &ReplayInfo) {
-    cache.retain(|entry| entry.file != replay.file);
-    cache.push(replay.clone());
-    cache.sort_by(|left, right| {
-        right
-            .date
-            .cmp(&left.date)
-            .then_with(|| right.file.cmp(&left.file))
-    });
+fn replay_cache_snapshot(cache: &HashMap<String, ReplayInfo>) -> Vec<ReplayInfo> {
+    let mut replays = cache.values().cloned().collect::<Vec<_>>();
+    ReplayInfo::sort_replays(&mut replays);
+    replays
+}
+
+fn upsert_replay_map(
+    cache: &mut HashMap<String, ReplayInfo>,
+    replay_hash: &str,
+    replay: &ReplayInfo,
+) {
+    if replay_hash.is_empty() {
+        return;
+    }
+
+    cache.retain(|hash, entry| hash == replay_hash || entry.file != replay.file);
+
+    match cache.get(replay_hash) {
+        Some(existing)
+            if ReplayInfo::should_keep_existing_detailed_variant(
+                existing.is_detailed,
+                replay.is_detailed,
+            ) => {}
+        Some(_) => {
+            cache.insert(replay_hash.to_string(), replay.clone());
+        }
+        None => {
+            cache.insert(replay_hash.to_string(), replay.clone());
+        }
+    }
 }
 
 fn include_detailed_stats_for_cache(stats: &StatsState, replays: &[ReplayInfo]) -> bool {
@@ -62,13 +83,13 @@ impl BackendState {
         Self {
             tray_icon: Arc::new(Mutex::new(None)),
             stats: Arc::new(Mutex::new(StatsState::from_settings())),
-            stats_replays: Arc::new(Mutex::new(Vec::new())),
+            stats_replays: Arc::new(Mutex::new(HashMap::new())),
             stats_current_replay_files: Arc::new(Mutex::new(HashSet::new())),
             overlay_replay_data_active: AtomicBool::new(false),
             session_victories: AtomicU64::new(0),
             session_defeats: AtomicU64::new(0),
             replay_state: Arc::new(Mutex::new(ReplayState {
-                replays: Arc::new(Mutex::new(Vec::new())),
+                replays: Arc::new(Mutex::new(HashMap::new())),
                 selected_replay_file: Arc::new(Mutex::new(None)),
             })),
         }
@@ -82,7 +103,13 @@ impl BackendState {
         self.replay_state
             .lock()
             .ok()
-            .and_then(|state| state.replays.lock().ok().map(|replays| replays.clone()))
+            .and_then(|state| {
+                state
+                    .replays
+                    .lock()
+                    .ok()
+                    .map(|replays| replay_cache_snapshot(&replays))
+            })
             .unwrap_or_default()
     }
 
@@ -108,8 +135,18 @@ impl BackendState {
 
     pub fn upsert_replay_cache_slot(&self, replay: &ReplayInfo) {
         if let Ok(replay_state) = self.replay_state.lock() {
-            replay_state.upsert_replay_cache_slot(replay);
+            let replay_hash = s2coop_analyzer::detailed_replay_analysis::calculate_replay_hash(
+                &std::path::PathBuf::from(&replay.file),
+            );
+            replay_state.upsert_replay_cache_slot(&replay_hash, replay);
         }
+    }
+
+    pub fn cached_replay_by_hash(&self, replay_hash: &str) -> Option<ReplayInfo> {
+        self.replay_state
+            .lock()
+            .ok()
+            .and_then(|state| state.cached_replay_by_hash(replay_hash))
     }
 
     pub fn clear_replay_cache_slots(&self) {
@@ -154,7 +191,14 @@ impl BackendState {
             match replay_state.lock() {
                 Ok(state) => {
                     if let Ok(mut cache) = state.replays.lock() {
-                        *cache = replays;
+                        cache.clear();
+                        for replay in replays {
+                            let replay_hash =
+                                s2coop_analyzer::detailed_replay_analysis::calculate_replay_hash(
+                                    &std::path::PathBuf::from(&replay.file),
+                                );
+                            upsert_replay_map(&mut cache, &replay_hash, &replay);
+                        }
                     } else {
                         crate::sco_log!("[SCO/players] failed to update player replay cache");
                     }
@@ -163,7 +207,7 @@ impl BackendState {
                         match selected_file.as_ref() {
                             Some(current)
                                 if state.replays.lock().ok().is_some_and(|cache| {
-                                    cache.iter().any(|replay| &replay.file == current)
+                                    cache.values().any(|replay| &replay.file == current)
                                 }) => {}
                             _ => {
                                 *selected_file = selected;
@@ -183,7 +227,7 @@ impl BackendState {
 
     pub fn refresh_stats_snapshot_after_replay_upsert(&self) {
         let stats_replays = match self.stats_replays.lock() {
-            Ok(replays) => replays.clone(),
+            Ok(replays) => replay_cache_snapshot(&replays),
             Err(_) => return,
         };
 
@@ -205,15 +249,15 @@ impl BackendState {
         }
     }
 
-    pub fn upsert_replay_in_memory_cache(&self, replay: &ReplayInfo) {
+    pub fn upsert_replay_in_memory_cache(&self, replay_hash: &str, replay: &ReplayInfo) {
         let replay_state = self.get_replay_state();
 
         let _ = replay_state
             .lock()
-            .map(|replay_state| replay_state.upsert_replay_cache_slot(replay));
+            .map(|replay_state| replay_state.upsert_replay_cache_slot(replay_hash, replay));
 
         if let Ok(mut stats_replays) = self.stats_replays.lock() {
-            upsert_replay_list(&mut stats_replays, replay);
+            upsert_replay_map(&mut stats_replays, replay_hash, replay);
         }
 
         if let Ok(mut current_replay_files) = self.stats_current_replay_files.lock() {
@@ -288,7 +332,7 @@ impl ReplayState {
         let cached = self
             .replays
             .lock()
-            .map(|replays| replays.clone())
+            .map(|replays| replay_cache_snapshot(&replays))
             .unwrap_or_default();
 
         let replays = if cached.is_empty() {
@@ -307,7 +351,14 @@ impl ReplayState {
             };
 
             if let Ok(mut cache) = self.replays.lock() {
-                *cache = loaded.clone();
+                cache.clear();
+                for replay in &loaded {
+                    let replay_hash =
+                        s2coop_analyzer::detailed_replay_analysis::calculate_replay_hash(
+                            &std::path::PathBuf::from(&replay.file),
+                        );
+                    upsert_replay_map(&mut cache, &replay_hash, replay);
+                }
             }
             loaded
         } else {
@@ -352,11 +403,18 @@ impl ReplayState {
         }
     }
 
-    pub fn upsert_replay_cache_slot(&self, replay: &ReplayInfo) {
+    pub fn upsert_replay_cache_slot(&self, replay_hash: &str, replay: &ReplayInfo) {
         let _ = self
             .replays
             .lock()
-            .map(|mut cache| upsert_replay_list(&mut cache, replay));
+            .map(|mut cache| upsert_replay_map(&mut cache, replay_hash, replay));
+    }
+
+    pub fn cached_replay_by_hash(&self, replay_hash: &str) -> Option<ReplayInfo> {
+        self.replays
+            .lock()
+            .ok()
+            .and_then(|cache| cache.get(replay_hash).cloned())
     }
 
     pub fn clear_replay_cache_slots(&self) {

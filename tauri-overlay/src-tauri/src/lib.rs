@@ -908,6 +908,22 @@ impl ReplayPlayerInfo {
 }
 
 impl ReplayInfo {
+    pub(crate) fn should_keep_existing_detailed_variant(
+        existing_is_detailed: bool,
+        incoming_is_detailed: bool,
+    ) -> bool {
+        existing_is_detailed || !incoming_is_detailed
+    }
+
+    pub(crate) fn sort_replays(replays: &mut [Self]) {
+        replays.sort_by(|left, right| {
+            right
+                .date
+                .cmp(&left.date)
+                .then_with(|| right.file.cmp(&left.file))
+        });
+    }
+
     pub fn with_players(
         slot1: ReplayPlayerInfo,
         slot2: ReplayPlayerInfo,
@@ -2325,8 +2341,8 @@ pub fn prepare_startup_analysis_request(
 fn request_startup_analysis(
     app: AppHandle<Wry>,
     stats: Arc<Mutex<StatsState>>,
-    replays_slot: Arc<Mutex<Vec<ReplayInfo>>>,
-    stats_replays_slot: Arc<Mutex<Vec<ReplayInfo>>>,
+    replays_slot: Arc<Mutex<HashMap<String, ReplayInfo>>>,
+    stats_replays_slot: Arc<Mutex<HashMap<String, ReplayInfo>>>,
     stats_current_replay_files_slot: Arc<Mutex<HashSet<String>>>,
     trigger: StartupAnalysisTrigger,
 ) -> Result<StartupAnalysisRequestOutcome, String> {
@@ -2364,16 +2380,50 @@ fn request_startup_analysis(
 
 pub fn update_analysis_replay_cache_slots(
     replays: &[ReplayInfo],
-    replays_slot: &Arc<Mutex<Vec<ReplayInfo>>>,
-    stats_replays_slot: &Arc<Mutex<Vec<ReplayInfo>>>,
+    replays_slot: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
+    stats_replays_slot: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
 ) {
     if let Ok(mut cache) = replays_slot.lock() {
-        *cache = replays.to_vec();
+        cache.clear();
+        for replay in replays {
+            let replay_hash = calculate_replay_hash(&PathBuf::from(&replay.file));
+            if replay_hash.is_empty() {
+                continue;
+            }
+            match cache.get(&replay_hash) {
+                Some(existing)
+                    if ReplayInfo::should_keep_existing_detailed_variant(
+                        existing.is_detailed,
+                        replay.is_detailed,
+                    ) => {}
+                _ => {
+                    cache.retain(|hash, entry| hash == &replay_hash || entry.file != replay.file);
+                    cache.insert(replay_hash.clone(), replay.clone());
+                }
+            }
+        }
     } else {
         crate::sco_log!("[SCO/stats] failed to update shared replay cache after scan");
     }
     if let Ok(mut cache) = stats_replays_slot.lock() {
-        *cache = replays.to_vec();
+        cache.clear();
+        for replay in replays {
+            let replay_hash = calculate_replay_hash(&PathBuf::from(&replay.file));
+            if replay_hash.is_empty() {
+                continue;
+            }
+            match cache.get(&replay_hash) {
+                Some(existing)
+                    if ReplayInfo::should_keep_existing_detailed_variant(
+                        existing.is_detailed,
+                        replay.is_detailed,
+                    ) => {}
+                _ => {
+                    cache.retain(|hash, entry| hash == &replay_hash || entry.file != replay.file);
+                    cache.insert(replay_hash.clone(), replay.clone());
+                }
+            }
+        }
     } else {
         crate::sco_log!("[SCO/stats] failed to update stats replay cache after scan");
     }
@@ -2447,8 +2497,8 @@ fn merge_cache_entries(
 fn spawn_analysis_task(
     app: AppHandle<Wry>,
     stats: Arc<Mutex<StatsState>>,
-    replays_slot: Arc<Mutex<Vec<ReplayInfo>>>,
-    stats_replays_slot: Arc<Mutex<Vec<ReplayInfo>>>,
+    replays_slot: Arc<Mutex<HashMap<String, ReplayInfo>>>,
+    stats_replays_slot: Arc<Mutex<HashMap<String, ReplayInfo>>>,
     stats_current_replay_files_slot: Arc<Mutex<HashSet<String>>>,
     include_detailed: bool,
     limit: usize,
@@ -2729,8 +2779,8 @@ fn spawn_analysis_task(
 fn spawn_startup_analysis_task(
     app: AppHandle<Wry>,
     stats: Arc<Mutex<StatsState>>,
-    replays_slot: Arc<Mutex<Vec<ReplayInfo>>>,
-    stats_replays_slot: Arc<Mutex<Vec<ReplayInfo>>>,
+    replays_slot: Arc<Mutex<HashMap<String, ReplayInfo>>>,
+    stats_replays_slot: Arc<Mutex<HashMap<String, ReplayInfo>>>,
     stats_current_replay_files_slot: Arc<Mutex<HashSet<String>>>,
     include_detailed: bool,
 ) {
@@ -2884,7 +2934,7 @@ fn ymd_from_unix_seconds(seconds: u64) -> Option<u32> {
 fn build_stats_response(
     path: &str,
     stats: &Arc<Mutex<StatsState>>,
-    stats_replays: &Arc<Mutex<Vec<ReplayInfo>>>,
+    stats_replays: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
     stats_current_replay_files: &Arc<Mutex<HashSet<String>>>,
 ) -> Result<Value, String> {
     ReplayAnalysis::build_stats_response(path, stats, stats_replays, stats_current_replay_files)
@@ -3129,7 +3179,7 @@ pub fn persist_detailed_cache_entry_to_path(
         })?;
     }
 
-    let mut entries = match std::fs::read(cache_path) {
+    let entries = match std::fs::read(cache_path) {
         Ok(payload) => {
             serde_json::from_slice::<Vec<CacheReplayEntry>>(&payload).map_err(|error| {
                 format!(
@@ -3147,12 +3197,27 @@ pub fn persist_detailed_cache_entry_to_path(
         }
     };
 
-    entries.retain(|existing| {
-        let same_hash = !entry.hash.is_empty() && existing.hash == entry.hash;
-        let same_file = existing.file == entry.file;
-        !(same_hash || same_file)
-    });
-    entries.push(entry.clone());
+    let mut merged = entries
+        .into_iter()
+        .filter(|existing| !existing.hash.is_empty())
+        .map(|existing| (existing.hash.clone(), existing))
+        .collect::<HashMap<_, _>>();
+
+    if !entry.hash.is_empty() {
+        merged.retain(|hash, existing| hash == &entry.hash || existing.file != entry.file);
+        match merged.get(&entry.hash) {
+            Some(existing)
+                if ReplayInfo::should_keep_existing_detailed_variant(
+                    existing.detailed_analysis,
+                    entry.detailed_analysis,
+                ) => {}
+            _ => {
+                merged.insert(entry.hash.clone(), entry.clone());
+            }
+        }
+    }
+
+    let mut entries = merged.into_values().collect::<Vec<_>>();
     entries.sort_by(|left, right| {
         right
             .date
@@ -3273,6 +3338,7 @@ fn process_new_replay_path(
     let main_names = configured_main_names();
     let main_handles = configured_main_handles();
     let replay = orient_replay_for_main_names(parsed, &main_names, &main_handles);
+    let replay_hash = cache_entry.hash.clone();
     if replay.main_commander().trim().is_empty() && replay.ally_commander().trim().is_empty() {
         crate::sco_log!(
             "[SCO/watch] parsed replay ignored file='{}' reason=missing_commanders main='{}' ally='{}'",
@@ -3294,7 +3360,7 @@ fn process_new_replay_path(
         replay.ally_commander()
     );
     let state = app.state::<BackendState>();
-    state.upsert_replay_in_memory_cache(&replay);
+    state.upsert_replay_in_memory_cache(&replay_hash, &replay);
     state.record_session_result(&replay.result);
     let settings = read_settings_memory();
     let show_replay_info_after_game = show_replay_info_after_game_from_settings(&settings);
@@ -3356,6 +3422,13 @@ fn process_replay_detailed(
 
     crate::sco_log!("[SCO/show] processing existing replay file='{}'", file);
 
+    let replay_hash = calculate_replay_hash(path);
+    if let Some(existing) = state.cached_replay_by_hash(&replay_hash) {
+        if existing.is_detailed {
+            return (ReplayProcessOutcome::Processed, Some(existing));
+        }
+    }
+
     let Some((parsed, cache_entry)) = parse_new_replay_with_retries(path) else {
         crate::sco_log!("[SCO/show] failed to parse existing replay '{}'", file);
         return (ReplayProcessOutcome::RetryLater, None);
@@ -3376,7 +3449,7 @@ fn process_replay_detailed(
         replay.ally_commander()
     );
 
-    state.upsert_replay_in_memory_cache(&replay);
+    state.upsert_replay_in_memory_cache(&cache_entry.hash, &replay);
     spawn_detailed_cache_persist(cache_entry, "show");
 
     (ReplayProcessOutcome::Processed, Some(replay))
@@ -4200,7 +4273,11 @@ async fn config_request(
             let replay_state = state.get_replay_state();
             let replays = match replay_state.try_lock() {
                 Ok(replay_state) => match replay_state.replays.try_lock() {
-                    Ok(replays) if !replays.is_empty() => replays.clone(),
+                    Ok(replays) if !replays.is_empty() => {
+                        let mut replays = replays.values().cloned().collect::<Vec<_>>();
+                        ReplayInfo::sort_replays(&mut replays);
+                        replays
+                    }
                     Ok(_) => {
                         crate::sco_log!(
                             "[SCO/players] replay cache empty, starting background scan for players"
@@ -4381,7 +4458,7 @@ async fn config_request(
                             .get_replay_state()
                             .lock()
                             .map(|replay_state| replay_state.replays.clone())
-                            .unwrap_or_else(|_| Arc::new(Mutex::new(Vec::new()))),
+                            .unwrap_or_else(|_| Arc::new(Mutex::new(HashMap::new()))),
                         state.stats_replays.clone(),
                         state.stats_current_replay_files.clone(),
                         StartupAnalysisTrigger::FrontendReady,
@@ -4419,7 +4496,7 @@ async fn config_request(
                             .get_replay_state()
                             .lock()
                             .map(|replay_state| replay_state.replays.clone())
-                            .unwrap_or_else(|_| Arc::new(Mutex::new(Vec::new()))),
+                            .unwrap_or_else(|_| Arc::new(Mutex::new(HashMap::new()))),
                         state.stats_replays.clone(),
                         state.stats_current_replay_files.clone(),
                         include_detailed,
@@ -4796,7 +4873,7 @@ pub fn run() {
                     .get_replay_state()
                     .lock()
                     .map(|replay_state| replay_state.replays.clone())
-                    .unwrap_or_else(|_| Arc::new(Mutex::new(Vec::new())));
+                    .unwrap_or_else(|_| Arc::new(Mutex::new(HashMap::new())));
                 (
                     state.stats.clone(),
                     replays,

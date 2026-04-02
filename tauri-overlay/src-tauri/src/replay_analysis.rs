@@ -3063,33 +3063,76 @@ impl ReplayAnalysis {
 
         scan_progress.set_stage("finalizing_results");
 
-        // Combine results - start with existing cached replays
-        let mut all_replays = existing_replays;
-        let mut all_cache_entries = Vec::new();
-
-        // Add newly parsed replays (these are simple analysis)
-        for result in successful_results {
-            all_replays.push(result.replay);
-            if let Some(entry) = result.cache_entry {
-                all_cache_entries.push(entry);
+        let mut replay_map = HashMap::<String, ReplayInfo>::new();
+        for replay in existing_replays {
+            let replay_hash = crate::calculate_replay_hash(&PathBuf::from(&replay.file));
+            if replay_hash.is_empty() {
+                continue;
+            }
+            replay_map.retain(|hash, entry| hash == &replay_hash || entry.file != replay.file);
+            match replay_map.get(&replay_hash) {
+                Some(existing)
+                    if ReplayInfo::should_keep_existing_detailed_variant(
+                        existing.is_detailed,
+                        replay.is_detailed,
+                    ) => {}
+                _ => {
+                    replay_map.insert(replay_hash, replay);
+                }
             }
         }
 
-        all_replays.sort_by(|a, b| b.date.cmp(&a.date).then_with(|| b.file.cmp(&a.file)));
+        for result in successful_results {
+            if let Some(entry) = result.cache_entry.as_ref() {
+                if let Err(error) =
+                    crate::persist_detailed_cache_entry_to_path(&get_cache_path(), entry)
+                {
+                    crate::sco_log!(
+                        "[SCO/cache] failed to save simple analysis cache entry for '{}': {error}",
+                        entry.file
+                    );
+                }
+
+                if !entry.hash.is_empty() {
+                    replay_map.retain(|hash, cached| {
+                        hash == &entry.hash || cached.file != result.replay.file
+                    });
+                    match replay_map.get(&entry.hash) {
+                        Some(existing)
+                            if ReplayInfo::should_keep_existing_detailed_variant(
+                                existing.is_detailed,
+                                result.replay.is_detailed,
+                            ) => {}
+                        _ => {
+                            replay_map.insert(entry.hash.clone(), result.replay.clone());
+                        }
+                    }
+                    continue;
+                }
+            }
+
+            let replay_hash = crate::calculate_replay_hash(&PathBuf::from(&result.replay.file));
+            if replay_hash.is_empty() {
+                continue;
+            }
+            replay_map
+                .retain(|hash, cached| hash == &replay_hash || cached.file != result.replay.file);
+            match replay_map.get(&replay_hash) {
+                Some(existing)
+                    if ReplayInfo::should_keep_existing_detailed_variant(
+                        existing.is_detailed,
+                        result.replay.is_detailed,
+                    ) => {}
+                _ => {
+                    replay_map.insert(replay_hash, result.replay);
+                }
+            }
+        }
+
+        let mut all_replays = replay_map.into_values().collect::<Vec<_>>();
+        ReplayInfo::sort_replays(&mut all_replays);
         if limit > 0 && all_replays.len() > limit {
             all_replays.truncate(limit);
-        }
-
-        // Save simple cache
-        if !all_cache_entries.is_empty() {
-            if let Err(error) =
-                s2coop_analyzer::cache_overall_stats_generator::persist_simple_analysis_cache(
-                    &all_cache_entries,
-                    &crate::path_manager::get_cache_path(),
-                )
-            {
-                crate::sco_log!("[SCO/cache] failed to save simple analysis cache: {error}");
-            }
         }
 
         scan_progress.set_stage("completed");
@@ -3340,7 +3383,7 @@ impl ReplayAnalysis {
     pub fn build_stats_response(
         path: &str,
         stats: &Arc<Mutex<StatsState>>,
-        stats_replays: &Arc<Mutex<Vec<ReplayInfo>>>,
+        stats_replays: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
         stats_current_replay_files: &Arc<Mutex<HashSet<String>>>,
     ) -> Result<Value, String> {
         let mut response = match stats.try_lock() {
@@ -3374,6 +3417,9 @@ impl ReplayAnalysis {
             match stats_replays.try_lock() {
                 Ok(cached_replays) => match stats_current_replay_files.try_lock() {
                     Ok(current_replay_files) => {
+                        let mut cached_replays =
+                            cached_replays.values().cloned().collect::<Vec<_>>();
+                        ReplayInfo::sort_replays(&mut cached_replays);
                         let include_detailed = Self::should_include_detailed_stats_response(
                             &response,
                             &cached_replays,
