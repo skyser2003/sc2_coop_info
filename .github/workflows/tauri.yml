@@ -51,7 +51,7 @@ jobs:
               with:
                   tagName: v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
                   releaseName: "SC2_Coop_Info v__VERSION__"
-                  releaseBody: "Feature: Added username hiding option in overlay\nBug fix: Overlay commander icon and prestige name overlapping fixed"
+                  releaseBody: "Feature: Added number of cores control to detailed parsing"
                   releaseDraft: false
                   prerelease: false
                   projectPath: "./tauri-overlay"
