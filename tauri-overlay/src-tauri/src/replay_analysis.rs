@@ -2168,7 +2168,7 @@ impl ReplayAnalysis {
         })
     }
 
-    pub fn rebuild_player_rows_fast(replays: &[ReplayInfo]) -> Vec<Value> {
+    pub fn rebuild_player_rows_fast(replays: &[ReplayInfo]) -> Vec<PlayerRowPayload> {
         let mut player_values: std::collections::BTreeMap<String, PlayerAggregate> =
             std::collections::BTreeMap::new();
 
@@ -2237,7 +2237,7 @@ impl ReplayAnalysis {
                 .first()
                 .cloned()
                 .unwrap_or_else(|| handle.clone());
-            rows.push(report_value(&PlayerRowPayload {
+            rows.push(PlayerRowPayload {
                 handle,
                 player,
                 player_names,
@@ -2249,7 +2249,7 @@ impl ReplayAnalysis {
                 frequency: commander_frequency,
                 kills: median_f64(&agg.kill_fractions),
                 last_seen: agg.last_seen,
-            }));
+            });
         }
         rows
     }
@@ -2268,14 +2268,14 @@ impl ReplayAnalysis {
         }
     }
 
-    pub fn rebuild_weeklies_rows(replays: &[ReplayInfo]) -> Vec<Value> {
+    pub fn rebuild_weeklies_rows(replays: &[ReplayInfo]) -> Vec<WeeklyRowPayload> {
         Self::rebuild_weeklies_rows_for_date(replays, Local::now().date_naive())
     }
 
     pub fn rebuild_weeklies_rows_for_date(
         replays: &[ReplayInfo],
         current_date: NaiveDate,
-    ) -> Vec<Value> {
+    ) -> Vec<WeeklyRowPayload> {
         #[derive(Default)]
         struct WeeklyMutatorUi<'a> {
             name_en: &'a str,
@@ -2467,7 +2467,7 @@ impl ReplayAnalysis {
             let next_duration_days = schedule_status
                 .map(|status| status.next_duration_days)
                 .unwrap_or(i64::MAX);
-            rows.push(report_value(&WeeklyRowPayload {
+            rows.push(WeeklyRowPayload {
                 mutation: mutation.clone(),
                 name_en: weekly_details
                     .map(|value| value.name_en.to_string())
@@ -2501,12 +2501,12 @@ impl ReplayAnalysis {
                 } else {
                     aggregate.wins as f64 / total as f64
                 },
-            }));
+            });
         }
 
         for (mutation, aggregate) in aggregates {
             let total = aggregate.wins + aggregate.losses;
-            rows.push(report_value(&WeeklyRowPayload {
+            rows.push(WeeklyRowPayload {
                 mutation: mutation.clone(),
                 name_en: mutation,
                 name_ko: String::new(),
@@ -2528,40 +2528,18 @@ impl ReplayAnalysis {
                 } else {
                     aggregate.wins as f64 / total as f64
                 },
-            }));
+            });
         }
 
         rows.sort_by(|left, right| {
-            let left_is_current = left
-                .get("isCurrent")
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
-            let right_is_current = right
-                .get("isCurrent")
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
-            let left_order = left
-                .get("mutationOrder")
-                .and_then(Value::as_u64)
-                .unwrap_or(u64::MAX);
-            let right_order = right
-                .get("mutationOrder")
-                .and_then(Value::as_u64)
-                .unwrap_or(u64::MAX);
+            let left_is_current = left.is_current;
+            let right_is_current = right.is_current;
+            let left_order = left.mutation_order;
+            let right_order = right.mutation_order;
             right_is_current
                 .cmp(&left_is_current)
                 .then_with(|| left_order.cmp(&right_order))
-                .then_with(|| {
-                    left.get("mutation")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .cmp(
-                            right
-                                .get("mutation")
-                                .and_then(Value::as_str)
-                                .unwrap_or_default(),
-                        )
-                })
+                .then_with(|| left.mutation.cmp(&right.mutation))
         });
 
         rows

@@ -14,6 +14,7 @@ import {
 } from "./charts";
 import type { DisplayValue } from "../config/types";
 import type {
+    ConfigPayload,
     OverlayColorPreviewPayload,
     OverlayInitColorsDurationPayload,
     OverlayLanguagePreviewPayload,
@@ -52,11 +53,6 @@ type OverlayPrestigeNameCatalog = Record<
     string,
     { en: string[]; ko: string[] }
 >;
-type OverlayConfigResponse = {
-    randomizer_catalog: {
-        prestige_names: OverlayPrestigeNameCatalog;
-    };
-};
 
 function formatOverlayScreenshotError(error: DisplayValue | Error): string {
     if (error instanceof Error) {
@@ -118,11 +114,9 @@ function setOverlayBackgroundVisible(
 function reportOverlayReplayDataState(active: boolean): void {
     void (async function () {
         try {
-            await invoke("config_request", {
-                path: "/config/action",
-                method: "post",
-                body: {
-                    action: "overlay_replay_data_state",
+            await invoke("config_action", {
+                action: "overlay_replay_data_state",
+                payload: {
                     active,
                 },
             });
@@ -224,13 +218,7 @@ export default function OverlayPage() {
 
     async function loadOverlayPrestigeNameCatalog(): Promise<void> {
         try {
-            const response = await invoke<OverlayConfigResponse>(
-                "config_request",
-                {
-                    path: "/config",
-                    method: "GET",
-                },
-            );
+            const response = await invoke<ConfigPayload>("config_get");
             setOverlayPrestigeNameCatalog(
                 response.randomizer_catalog.prestige_names,
             );

@@ -80,14 +80,12 @@ fn rebuild_player_rows_fast_sanitizes_fields_without_full_replay_clone() {
     let rows = ReplayAnalysis::rebuild_player_rows_fast(&[replay]);
 
     assert_eq!(rows.len(), 2);
-    assert!(rows.iter().any(|row| {
-        row.get("player") == Some(&json!("Main Player"))
-            && row.get("commander") == Some(&json!("Raynor"))
-    }));
-    assert!(!rows.iter().any(|row| {
-        row.get("player") == Some(&json!("<b>Main Player</b>"))
-            || row.get("commander") == Some(&json!("<b>Raynor</b>"))
-    }));
+    assert!(rows
+        .iter()
+        .any(|row| { row.player == "Main Player" && row.commander == "Raynor" }));
+    assert!(!rows
+        .iter()
+        .any(|row| { row.player == "<b>Main Player</b>" || row.commander == "<b>Raynor</b>" }));
 }
 
 #[test]
@@ -97,9 +95,9 @@ fn rebuild_weeklies_rows_sanitizes_fields_without_full_replay_clone() {
     let rows = ReplayAnalysis::rebuild_weeklies_rows(&[replay]);
     let row = rows
         .iter()
-        .find(|row| row.get("mutation") == Some(&json!("Mutation #1")))
+        .find(|row| row.mutation == "Mutation #1")
         .expect("sanitized weekly mutation row should exist");
 
-    assert_eq!(row.get("mutation"), Some(&json!("Mutation #1")));
-    assert_eq!(row.get("difficulty"), Some(&json!("Brutal")));
+    assert_eq!(row.mutation, "Mutation #1");
+    assert_eq!(row.difficulty, "Brutal");
 }

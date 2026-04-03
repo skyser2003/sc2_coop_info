@@ -6,7 +6,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
 };
 use s2coop_analyzer::detailed_replay_analysis::calculate_replay_hash;
 use s2coop_analyzer::dictionary_data;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{self, Map, Value};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io::{Read, Write};
@@ -59,18 +59,22 @@ const WINDOWS_STARTUP_VALUE_NAME: &str = "SCO Overlay";
 static ACTIVE_SETTINGS: OnceLock<Mutex<AppSettings>> = OnceLock::new();
 static DETAILED_CACHE_PERSIST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
-pub(crate) struct OverlayActionResult {
-    ok: bool,
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct OverlayActionResult {
+    pub ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    path: Option<String>,
+    pub path: Option<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub(crate) struct OverlayActionResponse {
-    status: &'static str,
-    result: OverlayActionResult,
-    message: String,
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct OverlayActionResponse {
+    pub status: &'static str,
+    pub result: OverlayActionResult,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub randomizer: Option<randomizer::RandomizerResult>,
 }
 
 impl OverlayActionResponse {
@@ -82,6 +86,7 @@ impl OverlayActionResponse {
                 path: None,
             },
             message: message.into(),
+            randomizer: None,
         }
     }
 
@@ -93,6 +98,7 @@ impl OverlayActionResponse {
                 path: Some(path),
             },
             message: message.into(),
+            randomizer: None,
         }
     }
 
@@ -104,6 +110,7 @@ impl OverlayActionResponse {
                 path: None,
             },
             message: message.into(),
+            randomizer: None,
         }
     }
 
@@ -115,6 +122,7 @@ impl OverlayActionResponse {
                 path: Some(path),
             },
             message: message.into(),
+            randomizer: None,
         }
     }
 }
@@ -123,55 +131,84 @@ fn to_json_value<T: Serialize>(value: T) -> Value {
     serde_json::to_value(value).unwrap_or_else(|_| Value::Object(Default::default()))
 }
 
-#[derive(Clone, Debug, Serialize)]
-struct ConfigPayload {
-    status: &'static str,
-    settings: AppSettings,
-    active_settings: AppSettings,
-    randomizer_catalog: shared_types::OverlayRandomizerCatalog,
-    monitor_catalog: Vec<shared_types::MonitorOption>,
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct ConfigPayload {
+    pub status: &'static str,
+    pub settings: AppSettings,
+    pub active_settings: AppSettings,
+    pub randomizer_catalog: shared_types::OverlayRandomizerCatalog,
+    pub monitor_catalog: Vec<shared_types::MonitorOption>,
 }
 
-#[derive(Clone, Debug, Serialize)]
-struct ConfigReplaysPayload {
-    status: &'static str,
-    replays: Vec<Value>,
-    total_replays: usize,
-    selected_replay_file: Option<String>,
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct ConfigReplaysPayload {
+    pub status: &'static str,
+    pub replays: Vec<GamesRowPayload>,
+    #[ts(type = "number")]
+    pub total_replays: usize,
+    pub selected_replay_file: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize)]
-struct ConfigPlayersPayload {
-    status: &'static str,
-    players: Vec<Value>,
-    loading: bool,
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct ConfigPlayersPayload {
+    pub status: &'static str,
+    pub players: Vec<replay_analysis::PlayerRowPayload>,
+    pub loading: bool,
 }
 
-#[derive(Clone, Debug, Serialize)]
-struct ConfigWeekliesPayload {
-    status: &'static str,
-    weeklies: Vec<Value>,
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct ConfigWeekliesPayload {
+    pub status: &'static str,
+    pub weeklies: Vec<replay_analysis::WeeklyRowPayload>,
 }
 
-#[derive(Clone, Serialize)]
-struct ConfigChatPayload {
-    status: &'static str,
-    chat: ReplayChatPayload,
+#[derive(Clone, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct ConfigChatPayload {
+    pub status: &'static str,
+    pub chat: ReplayChatPayload,
 }
 
-#[derive(Clone, Debug, Serialize)]
-struct StatsActionPayload {
-    status: &'static str,
-    result: OverlayActionResult,
-    message: String,
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct StatsStatePayload {
+    pub ready: bool,
+    #[ts(type = "number")]
+    pub games: u64,
+    #[ts(type = "number")]
+    pub detailed_parsed_count: u64,
+    #[ts(type = "number")]
+    pub total_valid_files: u64,
+    #[ts(type = "Record<string, any> | null")]
+    #[ts(optional)]
+    pub analysis: Option<Value>,
+    pub main_players: Vec<String>,
+    pub main_handles: Vec<String>,
+    pub analysis_running: bool,
+    #[ts(optional)]
+    pub analysis_running_mode: Option<String>,
+    pub simple_analysis_status: String,
+    pub detailed_analysis_status: String,
+    pub detailed_analysis_atstart: bool,
+    #[ts(type = "Record<string, any>")]
+    pub prestige_names: Value,
+    pub message: String,
+    #[ts(type = "Record<string, any>")]
+    pub scan_progress: Value,
+}
+
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct StatsActionPayload {
+    pub status: &'static str,
+    pub result: OverlayActionResult,
+    pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    stats: Option<Value>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-struct UnsupportedEndpointPayload {
-    status: &'static str,
-    message: &'static str,
+    pub stats: Option<StatsStatePayload>,
 }
 
 fn decode_html_entities(value: &str) -> String {
@@ -1041,7 +1078,7 @@ impl ReplayInfo {
         &self.ally().icons
     }
 
-    pub fn as_games_row(&self) -> Value {
+    pub fn as_games_row_payload(&self) -> GamesRowPayload {
         let sanitized = self.sanitized_for_client();
         let mutators = sanitized
             .mutators
@@ -1084,7 +1121,7 @@ impl ReplayInfo {
                 }
             })
             .collect::<Vec<_>>();
-        to_json_value(GamesRowPayload {
+        GamesRowPayload {
             file: sanitized.file.clone(),
             date: sanitized.date,
             map: sanitized.map.clone(),
@@ -1108,7 +1145,11 @@ impl ReplayInfo {
             weekly_name: sanitized.weekly_name,
             mutators,
             is_mutation: sanitized.weekly || !sanitized.mutators.is_empty(),
-        })
+        }
+    }
+
+    pub fn as_games_row(&self) -> Value {
+        to_json_value(self.as_games_row_payload())
     }
 
     pub fn chat_payload(&self) -> ReplayChatPayload {
@@ -2960,8 +3001,10 @@ fn build_stats_response(
     stats: &Arc<Mutex<StatsState>>,
     replays: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
     stats_current_replay_files: &Arc<Mutex<HashSet<String>>>,
-) -> Result<Value, String> {
-    ReplayAnalysis::build_stats_response(path, stats, replays, stats_current_replay_files)
+) -> Result<StatsStatePayload, String> {
+    let payload =
+        ReplayAnalysis::build_stats_response(path, stats, replays, stats_current_replay_files)?;
+    serde_json::from_value(payload).map_err(|error| format!("Invalid stats payload: {error}"))
 }
 
 fn replay_index_by_file(replays: &[ReplayInfo], file: &Option<String>) -> Option<usize> {
@@ -4117,25 +4160,6 @@ impl StatsState {
             )
         };
 
-        #[derive(Serialize)]
-        struct StatsStatePayload {
-            ready: bool,
-            games: u64,
-            detailed_parsed_count: u64,
-            total_valid_files: u64,
-            analysis: Option<Value>,
-            main_players: Vec<String>,
-            main_handles: Vec<String>,
-            analysis_running: bool,
-            analysis_running_mode: Option<String>,
-            simple_analysis_status: String,
-            detailed_analysis_status: String,
-            detailed_analysis_atstart: bool,
-            prestige_names: Value,
-            message: String,
-            scan_progress: Value,
-        }
-
         to_json_value(StatsStatePayload {
             ready: self.ready,
             games,
@@ -4155,6 +4179,11 @@ impl StatsState {
             message,
             scan_progress,
         })
+    }
+
+    fn as_payload_typed(&self) -> StatsStatePayload {
+        serde_json::from_value(self.as_payload())
+            .unwrap_or_else(|error| panic!("Failed to convert stats payload: {error}"))
     }
 }
 
@@ -4210,519 +4239,601 @@ fn open_folder_path(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn config_request(
+async fn config_get(
     app: tauri::AppHandle<Wry>,
-    path: String,
-    method: String,
-    body: Option<Value>,
+    _state: State<'_, BackendState>,
+) -> Result<ConfigPayload, String> {
+    log_request("get", "/config", &None);
+    Ok(ConfigPayload {
+        status: "ok",
+        settings: AppSettings::from_saved_file(),
+        active_settings: read_settings_memory(),
+        randomizer_catalog: randomizer::catalog_payload(),
+        monitor_catalog: overlay_info::available_monitor_catalog(&app),
+    })
+}
+
+#[tauri::command]
+async fn config_update(
+    app: tauri::AppHandle<Wry>,
+    settings: Value,
+    persist: Option<bool>,
+    _state: State<'_, BackendState>,
+) -> Result<ConfigPayload, String> {
+    let body = Some(to_json_value(serde_json::json!({
+        "settings": settings,
+        "persist": persist.unwrap_or(true),
+    })));
+    log_request("post", "/config", &body);
+
+    let settings_value = body
+        .as_ref()
+        .and_then(|payload| payload.get("settings"))
+        .cloned()
+        .ok_or_else(|| "Missing payload".to_string())?;
+
+    let mut next_settings = AppSettings::merge_settings_with_defaults(settings_value);
+    let previous_settings = read_settings_memory();
+    let persist = body
+        .as_ref()
+        .and_then(|payload| payload.get("persist"))
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+
+    next_settings.performance_geometry = previous_settings.performance_geometry.clone();
+
+    if persist {
+        write_settings_file(&next_settings)?;
+    }
+    apply_runtime_settings(&app, &previous_settings, &next_settings);
+
+    Ok(ConfigPayload {
+        status: "ok",
+        settings: AppSettings::from_saved_file(),
+        active_settings: read_settings_memory(),
+        randomizer_catalog: randomizer::catalog_payload(),
+        monitor_catalog: overlay_info::available_monitor_catalog(&app),
+    })
+}
+
+#[tauri::command]
+async fn config_replays_get(
+    _app: tauri::AppHandle<Wry>,
+    limit: Option<usize>,
     state: State<'_, BackendState>,
-) -> Result<Value, String> {
-    let route = path.split('?').next().unwrap_or("");
-    let method = method.to_ascii_lowercase();
+) -> Result<ConfigReplaysPayload, String> {
+    let path = format!("/config/replays?limit={}", limit.unwrap_or(300));
+    log_request("get", &path, &None);
+    let limit = parse_query_usize(&path, "limit", 300);
+    let replay_state = state.get_replay_state();
 
-    log_request(&method, &path, &body);
-
-    match (method.as_str(), route) {
-        ("get", "/config") => Ok(to_json_value(ConfigPayload {
-            status: "ok",
-            settings: AppSettings::from_saved_file(),
-            active_settings: read_settings_memory(),
-            randomizer_catalog: randomizer::catalog_payload(),
-            monitor_catalog: overlay_info::available_monitor_catalog(&app),
-        })),
-        ("post", "/config") => {
-            if let Some(payload) = body {
-                if let Some(settings) = payload.get("settings") {
-                    let mut next_settings =
-                        AppSettings::merge_settings_with_defaults(settings.clone());
-                    let previous_settings = read_settings_memory();
-                    let persist = payload
-                        .get("persist")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(true);
-
-                    next_settings.performance_geometry =
-                        previous_settings.performance_geometry.clone();
-
-                    if persist {
-                        write_settings_file(&next_settings)?;
-                    }
-                    apply_runtime_settings(&app, &previous_settings, &next_settings);
-                }
-                Ok(to_json_value(ConfigPayload {
-                    status: "ok",
-                    settings: AppSettings::from_saved_file(),
-                    active_settings: read_settings_memory(),
-                    randomizer_catalog: randomizer::catalog_payload(),
-                    monitor_catalog: overlay_info::available_monitor_catalog(&app),
-                }))
-            } else {
-                Err("Missing payload".to_string())
-            }
-        }
-        ("get", "/config/replays") => {
-            let limit = parse_query_usize(&path, "limit", 300);
-            let replay_state = state.get_replay_state();
-
-            let (replays, total_replays, selected_replay_file) =
-                tauri::async_runtime::spawn_blocking(move || {
-                    let replay_state = replay_state.lock().ok();
-                    let all_replays = replay_state
-                        .as_ref()
-                        .map(|state| state.sync_full_replay_cache_slots())
-                        .unwrap_or_default();
-                    let total_replays = all_replays.len();
-                    let mut replays = all_replays;
-                    if limit > 0 && replays.len() > limit {
-                        replays.truncate(limit);
-                    }
-                    let selected_replay_file = replay_state
-                        .as_ref()
-                        .and_then(|state| state.get_current_replay_file());
-
-                    (replays, total_replays, selected_replay_file)
-                })
-                .await
-                .map_err(|error| format!("Failed to load /config/replays: {error}"))?;
-
-            Ok(to_json_value(ConfigReplaysPayload {
-                status: "ok",
-                replays: replays
-                    .into_iter()
-                    .map(|replay| replay.as_games_row())
-                    .collect(),
-                total_replays,
-                selected_replay_file,
-            }))
-        }
-        ("get", "/config/players") => {
-            let limit = parse_query_usize(&path, "limit", 500);
-            let replay_state = state.get_replay_state();
-            let replays = match replay_state.try_lock() {
-                Ok(replay_state) => match replay_state.replays.try_lock() {
-                    Ok(replays) if !replays.is_empty() => {
-                        let mut replays = replays.values().cloned().collect::<Vec<_>>();
-                        ReplayInfo::sort_replays(&mut replays);
-                        replays
-                    }
-                    Ok(_) => {
-                        crate::sco_log!(
-                            "[SCO/players] replay cache empty, starting background scan for players"
-                        );
-                        state.spawn_players_scan_task(limit);
-                        Vec::new()
-                    }
-                    Err(error) => match error {
-                        TryLockError::WouldBlock => {
-                            crate::sco_log!(
-                                "[SCO/players] replay cache busy, starting background scan for players"
-                            );
-                            state.spawn_players_scan_task(limit);
-                            Vec::new()
-                        }
-                        TryLockError::Poisoned(_) => {
-                            return Err(
-                                "Failed to access replay cache: mutex is poisoned".to_string()
-                            );
-                        }
-                    },
-                },
-                Err(error) => match error {
-                    TryLockError::WouldBlock => {
-                        crate::sco_log!(
-                            "[SCO/players] replay state busy, starting background scan for players"
-                        );
-                        state.spawn_players_scan_task(limit);
-                        Vec::new()
-                    }
-                    TryLockError::Poisoned(_) => {
-                        return Err("Failed to access replay state: mutex is poisoned".to_string());
-                    }
-                },
-            };
-            Ok(to_json_value(ConfigPlayersPayload {
-                status: "ok",
-                players: ReplayAnalysis::rebuild_player_rows_fast(&replays),
-                loading: replays.is_empty(),
-            }))
-        }
-        ("get", "/config/weeklies") => {
-            let replay_state = state.get_replay_state();
-
-            let replays = tauri::async_runtime::spawn_blocking(move || {
-                replay_state
-                    .lock()
-                    .map(|state| state.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT))
-                    .unwrap_or_default()
-            })
-            .await
-            .map_err(|error| format!("Failed to load /config/weeklies: {error}"))?;
-            Ok(to_json_value(ConfigWeekliesPayload {
-                status: "ok",
-                weeklies: ReplayAnalysis::rebuild_weeklies_rows(&replays),
-            }))
-        }
-        ("get", "/config/stats") => {
-            let stats = state.stats.clone();
-            let replays = state
-                .get_replay_state()
-                .lock()
-                .map(|replay_state| replay_state.replays.clone())
-                .unwrap_or_else(|_| Arc::new(Mutex::new(HashMap::new())));
-            let stats_current_replay_files = state.stats_current_replay_files.clone();
-            let path_for_worker = path.clone();
-            let payload = tauri::async_runtime::spawn_blocking(move || {
-                build_stats_response(
-                    &path_for_worker,
-                    &stats,
-                    &replays,
-                    &stats_current_replay_files,
-                )
-            })
-            .await
-            .map_err(|error| format!("Failed to read /config/stats: {error}"))?
-            .map_err(|error| error)?;
-            Ok(payload)
-        }
-        ("post", "/config/replays/show") => {
-            let requested = body
+    let (replays, total_replays, selected_replay_file) =
+        tauri::async_runtime::spawn_blocking(move || {
+            let replay_state = replay_state.lock().ok();
+            let all_replays = replay_state
                 .as_ref()
-                .and_then(|payload| payload.get("file"))
-                .and_then(Value::as_str);
-            Ok(overlay_info::replay_show_for_window(
-                &app, &state, requested,
+                .map(|state| state.sync_full_replay_cache_slots())
+                .unwrap_or_default();
+            let total_replays = all_replays.len();
+            let mut replays = all_replays;
+            if limit > 0 && replays.len() > limit {
+                replays.truncate(limit);
+            }
+            let selected_replay_file = replay_state
+                .as_ref()
+                .and_then(|state| state.get_current_replay_file());
+
+            (replays, total_replays, selected_replay_file)
+        })
+        .await
+        .map_err(|error| format!("Failed to load /config/replays: {error}"))?;
+
+    Ok(ConfigReplaysPayload {
+        status: "ok",
+        replays: replays
+            .into_iter()
+            .map(|replay| replay.as_games_row_payload())
+            .collect(),
+        total_replays,
+        selected_replay_file,
+    })
+}
+
+#[tauri::command]
+async fn config_players_get(
+    _app: tauri::AppHandle<Wry>,
+    limit: Option<usize>,
+    state: State<'_, BackendState>,
+) -> Result<ConfigPlayersPayload, String> {
+    let path = format!("/config/players?limit={}", limit.unwrap_or(500));
+    log_request("get", &path, &None);
+    let limit = parse_query_usize(&path, "limit", 500);
+    let replay_state = state.get_replay_state();
+    let replays = match replay_state.try_lock() {
+        Ok(replay_state) => match replay_state.replays.try_lock() {
+            Ok(replays) if !replays.is_empty() => {
+                let mut replays = replays.values().cloned().collect::<Vec<_>>();
+                ReplayInfo::sort_replays(&mut replays);
+                replays
+            }
+            Ok(_) => {
+                crate::sco_log!(
+                    "[SCO/players] replay cache empty, starting background scan for players"
+                );
+                state.spawn_players_scan_task(limit);
+                Vec::new()
+            }
+            Err(error) => match error {
+                TryLockError::WouldBlock => {
+                    crate::sco_log!(
+                        "[SCO/players] replay cache busy, starting background scan for players"
+                    );
+                    state.spawn_players_scan_task(limit);
+                    Vec::new()
+                }
+                TryLockError::Poisoned(_) => {
+                    return Err("Failed to access replay cache: mutex is poisoned".to_string());
+                }
+            },
+        },
+        Err(error) => match error {
+            TryLockError::WouldBlock => {
+                crate::sco_log!(
+                    "[SCO/players] replay state busy, starting background scan for players"
+                );
+                state.spawn_players_scan_task(limit);
+                Vec::new()
+            }
+            TryLockError::Poisoned(_) => {
+                return Err("Failed to access replay state: mutex is poisoned".to_string());
+            }
+        },
+    };
+    Ok(ConfigPlayersPayload {
+        status: "ok",
+        players: ReplayAnalysis::rebuild_player_rows_fast(&replays),
+        loading: replays.is_empty(),
+    })
+}
+
+#[tauri::command]
+async fn config_weeklies_get(
+    _app: tauri::AppHandle<Wry>,
+    state: State<'_, BackendState>,
+) -> Result<ConfigWeekliesPayload, String> {
+    log_request("get", "/config/weeklies", &None);
+    let replay_state = state.get_replay_state();
+
+    let replays = tauri::async_runtime::spawn_blocking(move || {
+        replay_state
+            .lock()
+            .map(|state| state.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT))
+            .unwrap_or_default()
+    })
+    .await
+    .map_err(|error| format!("Failed to load /config/weeklies: {error}"))?;
+    Ok(ConfigWeekliesPayload {
+        status: "ok",
+        weeklies: ReplayAnalysis::rebuild_weeklies_rows(&replays),
+    })
+}
+
+#[tauri::command]
+async fn config_stats_get(
+    _app: tauri::AppHandle<Wry>,
+    query: Option<String>,
+    state: State<'_, BackendState>,
+) -> Result<StatsStatePayload, String> {
+    let path = if let Some(query) = query.filter(|value| !value.trim().is_empty()) {
+        format!("/config/stats?{query}")
+    } else {
+        "/config/stats".to_string()
+    };
+    log_request("get", &path, &None);
+    let stats = state.stats.clone();
+    let replays = state
+        .get_replay_state()
+        .lock()
+        .map(|replay_state| replay_state.replays.clone())
+        .unwrap_or_else(|_| Arc::new(Mutex::new(HashMap::new())));
+    let stats_current_replay_files = state.stats_current_replay_files.clone();
+    let path_for_worker = path.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        build_stats_response(
+            &path_for_worker,
+            &stats,
+            &replays,
+            &stats_current_replay_files,
+        )
+    })
+    .await
+    .map_err(|error| format!("Failed to read /config/stats: {error}"))?
+    .map_err(|error| error)
+}
+
+#[tauri::command]
+async fn config_replay_show(
+    app: tauri::AppHandle<Wry>,
+    file: Option<String>,
+    state: State<'_, BackendState>,
+) -> Result<OverlayActionResponse, String> {
+    let body = Some(to_json_value(serde_json::json!({ "file": file })));
+    log_request("post", "/config/replays/show", &body);
+    let requested = body
+        .as_ref()
+        .and_then(|payload| payload.get("file"))
+        .and_then(Value::as_str);
+    Ok(overlay_info::replay_show_for_window(
+        &app, &state, requested,
+    ))
+}
+
+#[tauri::command]
+async fn config_replay_chat(
+    _app: tauri::AppHandle<Wry>,
+    file: String,
+    state: State<'_, BackendState>,
+) -> Result<ConfigChatPayload, String> {
+    let body = Some(to_json_value(serde_json::json!({ "file": file })));
+    log_request("post", "/config/replays/chat", &body);
+    let requested_file = body
+        .as_ref()
+        .and_then(|payload| payload.get("file"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let replay_state = state.get_replay_state();
+    let chat = tauri::async_runtime::spawn_blocking(move || {
+        replay_chat_payload_from_slots(replay_state, &requested_file)
+    })
+    .await
+    .map_err(|error| format!("Failed to load /config/replays/chat: {error}"))?
+    .map_err(|error| error)?;
+    Ok(ConfigChatPayload { status: "ok", chat })
+}
+
+#[tauri::command]
+async fn config_replay_move(
+    app: tauri::AppHandle<Wry>,
+    delta: i64,
+    state: State<'_, BackendState>,
+) -> Result<OverlayActionResponse, String> {
+    let body = Some(to_json_value(serde_json::json!({ "delta": delta })));
+    log_request("post", "/config/replays/move", &body);
+    let delta = body
+        .as_ref()
+        .and_then(|payload| payload.get("delta"))
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    Ok(overlay_info::replay_move_window(&app, &state, delta))
+}
+
+#[tauri::command]
+async fn config_action(
+    app: tauri::AppHandle<Wry>,
+    action: String,
+    payload: Option<Value>,
+    state: State<'_, BackendState>,
+) -> Result<OverlayActionResponse, String> {
+    let body = if let Some(Value::Object(mut object)) = payload {
+        object.insert("action".to_string(), Value::String(action));
+        Some(Value::Object(object))
+    } else {
+        Some(to_json_value(serde_json::json!({ "action": action })))
+    };
+    log_request("post", "/config/action", &body);
+    let action = body
+        .as_ref()
+        .and_then(|payload| payload.get("action"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+
+    match action {
+        "set_player_note" => {
+            let player_name = body
+                .as_ref()
+                .and_then(|payload| payload.get("player"))
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let note_value = body
+                .as_ref()
+                .and_then(|payload| payload.get("note"))
+                .and_then(Value::as_str)
+                .unwrap_or("");
+
+            let mut saved_settings = AppSettings::from_saved_file();
+            update_settings_player_note(&mut saved_settings, player_name, note_value)?;
+            saved_settings.write_saved_settings_file()?;
+
+            let mut active_settings = read_settings_memory();
+            update_settings_player_note(&mut active_settings, player_name, note_value)?;
+            replace_active_settings(&active_settings);
+
+            Ok(OverlayActionResponse::success(
+                if note_value.trim().is_empty() {
+                    "Player note cleared."
+                } else {
+                    "Player note saved."
+                },
             ))
         }
-        ("post", "/config/replays/chat") => {
-            let requested_file = body
-                .as_ref()
-                .and_then(|payload| payload.get("file"))
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string();
-            let replay_state = state.get_replay_state();
-            let chat = tauri::async_runtime::spawn_blocking(move || {
-                replay_chat_payload_from_slots(replay_state, &requested_file)
-            })
-            .await
-            .map_err(|error| format!("Failed to load /config/replays/chat: {error}"))?
-            .map_err(|error| error)?;
-            Ok(to_json_value(ConfigChatPayload { status: "ok", chat }))
-        }
-        ("post", "/config/replays/move") => {
-            let delta = body
-                .as_ref()
-                .and_then(|payload| payload.get("delta"))
-                .and_then(Value::as_i64)
-                .unwrap_or(0);
-            Ok(overlay_info::replay_move_window(&app, &state, delta))
-        }
-        ("post", "/config/action") => {
-            let action = body
-                .as_ref()
-                .and_then(|payload| payload.get("action"))
-                .and_then(Value::as_str)
-                .unwrap_or("");
-
-            match action {
-                "set_player_note" => {
-                    let player_name = body
-                        .as_ref()
-                        .and_then(|payload| payload.get("player"))
-                        .and_then(Value::as_str)
-                        .unwrap_or("");
-                    let note_value = body
-                        .as_ref()
-                        .and_then(|payload| payload.get("note"))
-                        .and_then(Value::as_str)
-                        .unwrap_or("");
-
-                    let mut saved_settings = AppSettings::from_saved_file();
-                    update_settings_player_note(&mut saved_settings, player_name, note_value)?;
-                    saved_settings.write_saved_settings_file()?;
-
-                    let mut active_settings = read_settings_memory();
-                    update_settings_player_note(&mut active_settings, player_name, note_value)?;
-                    replace_active_settings(&active_settings);
-
-                    Ok(to_json_value(OverlayActionResponse::success(
-                        if note_value.trim().is_empty() {
-                            "Player note cleared."
-                        } else {
-                            "Player note saved."
-                        },
-                    )))
-                }
-                _ => {
-                    if let Some(response) =
-                        overlay_info::perform_overlay_action(&app, &state, action, body.as_ref())
-                    {
-                        Ok(response)
-                    } else {
-                        Ok(to_json_value(OverlayActionResponse::failure(format!(
-                            "Unsupported action: {action}"
-                        ))))
-                    }
-                }
-            }
-        }
-        ("post", "/config/stats/action") => {
-            let action = body
-                .as_ref()
-                .and_then(|payload| payload.get("action"))
-                .and_then(Value::as_str)
-                .unwrap_or("");
-
+        _ => {
             if let Some(response) =
                 overlay_info::perform_overlay_action(&app, &state, action, body.as_ref())
             {
-                return Ok(response);
+                Ok(response)
+            } else {
+                Ok(OverlayActionResponse::failure(format!(
+                    "Unsupported action: {action}"
+                )))
             }
+        }
+    }
+}
 
-            match action {
-                "frontend_ready" => {
-                    let request_started_at = Instant::now();
-                    request_startup_analysis(
-                        app.clone(),
-                        state.stats.clone(),
-                        state
-                            .get_replay_state()
-                            .lock()
-                            .map(|replay_state| replay_state.replays.clone())
-                            .unwrap_or_else(|_| Arc::new(Mutex::new(HashMap::new()))),
-                        state.stats_current_replay_files.clone(),
-                        state.detailed_analysis_stop_controller_slot(),
-                        StartupAnalysisTrigger::FrontendReady,
-                    )?;
-                    let stats = state
-                        .stats
-                        .lock()
-                        .map_err(|error| format!("Failed to access stats state: {error}"))?;
-                    crate::sco_log!(
-                        "[SCO/stats] frontend_ready completed in {}ms",
-                        request_started_at.elapsed().as_millis()
-                    );
-                    return Ok(to_json_value(StatsActionPayload {
-                        status: "ok",
-                        result: OverlayActionResult {
-                            ok: true,
-                            path: None,
-                        },
-                        message: stats.message.clone(),
-                        stats: Some(stats.as_payload()),
-                    }));
-                }
-                "start_simple_analysis" | "run_detailed_analysis" => {
-                    let include_detailed = action == "run_detailed_analysis";
-                    let mode = analysis_mode(include_detailed);
+#[tauri::command]
+async fn config_stats_action(
+    app: tauri::AppHandle<Wry>,
+    action: String,
+    payload: Option<Value>,
+    state: State<'_, BackendState>,
+) -> Result<StatsActionPayload, String> {
+    let body = if let Some(Value::Object(mut object)) = payload {
+        object.insert("action".to_string(), Value::String(action));
+        Some(Value::Object(object))
+    } else {
+        Some(to_json_value(serde_json::json!({ "action": action })))
+    };
+    log_request("post", "/config/stats/action", &body);
+    let action = body
+        .as_ref()
+        .and_then(|payload| payload.get("action"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
 
-                    let limit = UNLIMITED_REPLAY_LIMIT;
-                    crate::sco_log!(
-                        "[SCO/stats] {action} requested replay_limit={limit} on thread"
-                    );
-                    spawn_analysis_task(
-                        app.clone(),
-                        state.stats.clone(),
-                        state
-                            .get_replay_state()
-                            .lock()
-                            .map(|replay_state| replay_state.replays.clone())
-                            .unwrap_or_else(|_| Arc::new(Mutex::new(HashMap::new()))),
-                        state.stats_current_replay_files.clone(),
-                        state.detailed_analysis_stop_controller_slot(),
-                        include_detailed,
-                        limit,
-                    );
-                    let status = state
-                        .stats
-                        .lock()
-                        .ok()
-                        .and_then(|stats| {
-                            if stats.message.is_empty() {
-                                None
-                            } else {
-                                Some(stats.message.clone())
-                            }
-                        })
-                        .unwrap_or_else(|| analysis_started_message(mode));
-                    return Ok(to_json_value(StatsActionPayload {
-                        status: "ok",
-                        result: OverlayActionResult {
-                            ok: true,
-                            path: None,
-                        },
-                        message: status,
-                        stats: None,
-                    }));
-                }
-                "stop_detailed_analysis" => {}
-                _ => {}
-            }
+    if let Some(response) =
+        overlay_info::perform_overlay_action(&app, &state, action, body.as_ref())
+    {
+        return Ok(StatsActionPayload {
+            status: response.status,
+            result: response.result,
+            message: response.message,
+            stats: None,
+        });
+    }
 
-            let mut stats = state
+    match action {
+        "frontend_ready" => {
+            let request_started_at = Instant::now();
+            request_startup_analysis(
+                app.clone(),
+                state.stats.clone(),
+                state
+                    .get_replay_state()
+                    .lock()
+                    .map(|replay_state| replay_state.replays.clone())
+                    .unwrap_or_else(|_| Arc::new(Mutex::new(HashMap::new()))),
+                state.stats_current_replay_files.clone(),
+                state.detailed_analysis_stop_controller_slot(),
+                StartupAnalysisTrigger::FrontendReady,
+            )?;
+            let stats = state
                 .stats
                 .lock()
                 .map_err(|error| format!("Failed to access stats state: {error}"))?;
-            let request_started_at = Instant::now();
-            crate::sco_log!("[SCO/stats/action] action={action}");
-
-            match action {
-                "stop_detailed_analysis" => {
-                    if !stats.analysis_running
-                        || stats.analysis_running_mode != Some(AnalysisMode::Detailed)
-                    {
-                        stats.message = "Detailed analysis is not running.".to_string();
-                    } else if state.request_detailed_analysis_stop() {
-                        stats.detailed_analysis_status =
-                            analysis_status_text(AnalysisMode::Detailed, "stopping");
-                        stats.message =
-                            "Detailed analysis will stop after the current work finishes."
-                                .to_string();
-                    } else {
-                        stats.message =
-                            "Detailed analysis stop could not be requested.".to_string();
-                    }
-                    crate::sco_log!(
-                        "[SCO/stats] stop_detailed_analysis requested elapsed={}ms",
-                        request_started_at.elapsed().as_millis()
-                    );
-                }
-                "dump_data" => {
-                    let dump_path = PathBuf::from("SCO_analysis_dump.json");
-                    #[derive(Serialize)]
-                    struct DumpPayload {
-                        timestamp: u64,
-                        stats: Value,
-                    }
-
-                    let payload = to_json_value(DumpPayload {
-                        timestamp: format_date_from_system_time(SystemTime::now()),
-                        stats: stats.as_payload(),
-                    });
-                    match serde_json::to_string_pretty(&payload) {
-                        Ok(contents) => match std::fs::write(&dump_path, contents) {
-                            Ok(_) => {
-                                let path = dump_path.display();
-                                stats.message = format!("Data dumped to {path}");
-                                crate::sco_log!("[SCO/stats] dump_data written to {path}");
-                            }
-                            Err(error) => {
-                                let message = format!("Failed to write dump: {error}");
-                                crate::sco_log!("[SCO/stats] {message}");
-                                stats.message = message;
-                            }
-                        },
-                        Err(error) => {
-                            let message = format!("Failed to serialize dump: {error}");
-                            crate::sco_log!("[SCO/stats] {message}");
-                            stats.message = message;
-                        }
-                    }
-                    crate::sco_log!(
-                        "[SCO/stats] dump_data completed in {}ms",
-                        request_started_at.elapsed().as_millis()
-                    );
-                }
-                "delete_parsed_data" => {
-                    stats.ready = false;
-                    stats.startup_analysis_requested = false;
-                    stats.analysis = Some(empty_stats_payload());
-                    stats.prestige_names = Value::Object(Default::default());
-                    set_analysis_terminal_status(&mut stats, AnalysisMode::Simple, "not started");
-                    set_analysis_terminal_status(&mut stats, AnalysisMode::Detailed, "not started");
-                    state.set_detailed_analysis_stop_controller(None);
-                    stats.message = "No parsed statistics available yet.".to_string();
-                    state.clear_replay_cache_slots();
-                    if let Ok(mut stats_current_replay_files) =
-                        state.stats_current_replay_files.lock()
-                    {
-                        stats_current_replay_files.clear();
-                    }
-                    state
-                        .overlay_replay_data_active
-                        .store(false, Ordering::Release);
-                    clear_analysis_cache_files();
-                    crate::sco_log!(
-                        "[SCO/stats] delete_parsed_data completed in {}ms",
-                        request_started_at.elapsed().as_millis()
-                    );
-                }
-                "set_detailed_analysis_atstart" => {
-                    if let Some(payload) = body.as_ref() {
-                        if let Some(enabled) = payload.get("enabled").and_then(Value::as_bool) {
-                            stats.detailed_analysis_atstart = enabled;
-                            persist_setting_bool("detailed_analysis_atstart", enabled);
-                            stats.message = analysis_at_start_message(enabled);
-                            crate::sco_log!(
-                                "[SCO/stats] set_detailed_analysis_atstart requested: {enabled}"
-                            );
-                        }
-                    }
-                    crate::sco_log!(
-                        "[SCO/stats] set_detailed_analysis_atstart completed in {}ms",
-                        request_started_at.elapsed().as_millis()
-                    );
-                }
-                "reveal_file" => {
-                    let requested_file = body
-                        .as_ref()
-                        .and_then(|payload| payload.get("file"))
-                        .and_then(Value::as_str)
-                        .unwrap_or("");
-                    let file = requested_file;
-                    if file.is_empty() {
-                        stats.message = "No replay file specified to reveal.".to_string();
-                    } else {
-                        match overlay_info::reveal_file_in_explorer(file) {
-                            Ok(()) => stats.message = format!("Revealing file: {file}"),
-                            Err(error) => {
-                                let message = format!("Unable to reveal file: {error}");
-                                crate::sco_log!("[SCO/stats] reveal_file failed: {error}");
-                                stats.message = message;
-                            }
-                        }
-                    }
-
-                    crate::sco_log!(
-                        "[SCO/stats] reveal_file requested: {} elapsed={}ms",
-                        if !file.is_empty() { file } else { "<empty>" },
-                        request_started_at.elapsed().as_millis()
-                    );
-                }
-                _ => {
-                    crate::sco_log!("[SCO/stats] unsupported action: {action}");
-                    return Ok(to_json_value(StatsActionPayload {
-                        status: "ok",
-                        result: OverlayActionResult {
-                            ok: false,
-                            path: None,
-                        },
-                        message: format!("Unsupported action: {action}"),
-                        stats: Some(stats.as_payload()),
-                    }));
-                }
-            }
-
             crate::sco_log!(
-                "[SCO/stats/action] done action={} elapsed={}ms",
-                action,
+                "[SCO/stats] frontend_ready completed in {}ms",
                 request_started_at.elapsed().as_millis()
             );
-            Ok(to_json_value(StatsActionPayload {
+            return Ok(StatsActionPayload {
                 status: "ok",
                 result: OverlayActionResult {
                     ok: true,
                     path: None,
                 },
-                message: "Action processed".to_string(),
-                stats: Some(stats.as_payload()),
-            }))
+                message: stats.message.clone(),
+                stats: Some(stats.as_payload_typed()),
+            });
         }
-        _ => Ok(to_json_value(UnsupportedEndpointPayload {
-            status: "ok",
-            message: "unsupported endpoint",
-        })),
+        "start_simple_analysis" | "run_detailed_analysis" => {
+            let include_detailed = action == "run_detailed_analysis";
+            let mode = analysis_mode(include_detailed);
+
+            let limit = UNLIMITED_REPLAY_LIMIT;
+            crate::sco_log!("[SCO/stats] {action} requested replay_limit={limit} on thread");
+            spawn_analysis_task(
+                app.clone(),
+                state.stats.clone(),
+                state
+                    .get_replay_state()
+                    .lock()
+                    .map(|replay_state| replay_state.replays.clone())
+                    .unwrap_or_else(|_| Arc::new(Mutex::new(HashMap::new()))),
+                state.stats_current_replay_files.clone(),
+                state.detailed_analysis_stop_controller_slot(),
+                include_detailed,
+                limit,
+            );
+            let status = state
+                .stats
+                .lock()
+                .ok()
+                .and_then(|stats| {
+                    if stats.message.is_empty() {
+                        None
+                    } else {
+                        Some(stats.message.clone())
+                    }
+                })
+                .unwrap_or_else(|| analysis_started_message(mode));
+            return Ok(StatsActionPayload {
+                status: "ok",
+                result: OverlayActionResult {
+                    ok: true,
+                    path: None,
+                },
+                message: status,
+                stats: None,
+            });
+        }
+        "stop_detailed_analysis" => {}
+        _ => {}
     }
+
+    let mut stats = state
+        .stats
+        .lock()
+        .map_err(|error| format!("Failed to access stats state: {error}"))?;
+    let request_started_at = Instant::now();
+    crate::sco_log!("[SCO/stats/action] action={action}");
+
+    match action {
+        "stop_detailed_analysis" => {
+            if !stats.analysis_running
+                || stats.analysis_running_mode != Some(AnalysisMode::Detailed)
+            {
+                stats.message = "Detailed analysis is not running.".to_string();
+            } else if state.request_detailed_analysis_stop() {
+                stats.detailed_analysis_status =
+                    analysis_status_text(AnalysisMode::Detailed, "stopping");
+                stats.message =
+                    "Detailed analysis will stop after the current work finishes.".to_string();
+            } else {
+                stats.message = "Detailed analysis stop could not be requested.".to_string();
+            }
+            crate::sco_log!(
+                "[SCO/stats] stop_detailed_analysis requested elapsed={}ms",
+                request_started_at.elapsed().as_millis()
+            );
+        }
+        "dump_data" => {
+            let dump_path = PathBuf::from("SCO_analysis_dump.json");
+            #[derive(Serialize)]
+            struct DumpPayload {
+                timestamp: u64,
+                stats: Value,
+            }
+
+            let payload = to_json_value(DumpPayload {
+                timestamp: format_date_from_system_time(SystemTime::now()),
+                stats: stats.as_payload(),
+            });
+            match serde_json::to_string_pretty(&payload) {
+                Ok(contents) => match std::fs::write(&dump_path, contents) {
+                    Ok(_) => {
+                        let path = dump_path.display();
+                        stats.message = format!("Data dumped to {path}");
+                        crate::sco_log!("[SCO/stats] dump_data written to {path}");
+                    }
+                    Err(error) => {
+                        let message = format!("Failed to write dump: {error}");
+                        crate::sco_log!("[SCO/stats] {message}");
+                        stats.message = message;
+                    }
+                },
+                Err(error) => {
+                    let message = format!("Failed to serialize dump: {error}");
+                    crate::sco_log!("[SCO/stats] {message}");
+                    stats.message = message;
+                }
+            }
+            crate::sco_log!(
+                "[SCO/stats] dump_data completed in {}ms",
+                request_started_at.elapsed().as_millis()
+            );
+        }
+        "delete_parsed_data" => {
+            stats.ready = false;
+            stats.startup_analysis_requested = false;
+            stats.analysis = Some(empty_stats_payload());
+            stats.prestige_names = Value::Object(Default::default());
+            set_analysis_terminal_status(&mut stats, AnalysisMode::Simple, "not started");
+            set_analysis_terminal_status(&mut stats, AnalysisMode::Detailed, "not started");
+            state.set_detailed_analysis_stop_controller(None);
+            stats.message = "No parsed statistics available yet.".to_string();
+            state.clear_replay_cache_slots();
+            if let Ok(mut stats_current_replay_files) = state.stats_current_replay_files.lock() {
+                stats_current_replay_files.clear();
+            }
+            state
+                .overlay_replay_data_active
+                .store(false, Ordering::Release);
+            clear_analysis_cache_files();
+            crate::sco_log!(
+                "[SCO/stats] delete_parsed_data completed in {}ms",
+                request_started_at.elapsed().as_millis()
+            );
+        }
+        "set_detailed_analysis_atstart" => {
+            if let Some(payload) = body.as_ref() {
+                if let Some(enabled) = payload.get("enabled").and_then(Value::as_bool) {
+                    stats.detailed_analysis_atstart = enabled;
+                    persist_setting_bool("detailed_analysis_atstart", enabled);
+                    stats.message = analysis_at_start_message(enabled);
+                    crate::sco_log!(
+                        "[SCO/stats] set_detailed_analysis_atstart requested: {enabled}"
+                    );
+                }
+            }
+            crate::sco_log!(
+                "[SCO/stats] set_detailed_analysis_atstart completed in {}ms",
+                request_started_at.elapsed().as_millis()
+            );
+        }
+        "reveal_file" => {
+            let requested_file = body
+                .as_ref()
+                .and_then(|payload| payload.get("file"))
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let file = requested_file;
+            if file.is_empty() {
+                stats.message = "No replay file specified to reveal.".to_string();
+            } else {
+                match overlay_info::reveal_file_in_explorer(file) {
+                    Ok(()) => stats.message = format!("Revealing file: {file}"),
+                    Err(error) => {
+                        let message = format!("Unable to reveal file: {error}");
+                        crate::sco_log!("[SCO/stats] reveal_file failed: {error}");
+                        stats.message = message;
+                    }
+                }
+            }
+
+            crate::sco_log!(
+                "[SCO/stats] reveal_file requested: {} elapsed={}ms",
+                if !file.is_empty() { file } else { "<empty>" },
+                request_started_at.elapsed().as_millis()
+            );
+        }
+        _ => {
+            crate::sco_log!("[SCO/stats] unsupported action: {action}");
+            return Ok(StatsActionPayload {
+                status: "ok",
+                result: OverlayActionResult {
+                    ok: false,
+                    path: None,
+                },
+                message: format!("Unsupported action: {action}"),
+                stats: Some(stats.as_payload_typed()),
+            });
+        }
+    }
+
+    crate::sco_log!(
+        "[SCO/stats/action] done action={} elapsed={}ms",
+        action,
+        request_started_at.elapsed().as_millis()
+    );
+    Ok(StatsActionPayload {
+        status: "ok",
+        result: OverlayActionResult {
+            ok: true,
+            path: None,
+        },
+        message: "Action processed".to_string(),
+        stats: Some(stats.as_payload_typed()),
+    })
 }
 
 async fn auto_update(handle: tauri::AppHandle) -> tauri_plugin_updater::Result<()> {
@@ -4941,7 +5052,17 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            config_request,
+            config_get,
+            config_update,
+            config_replays_get,
+            config_players_get,
+            config_weeklies_get,
+            config_stats_get,
+            config_replay_show,
+            config_replay_chat,
+            config_replay_move,
+            config_action,
+            config_stats_action,
             pick_folder,
             performance_start_drag,
             is_dev,

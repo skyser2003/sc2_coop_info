@@ -2,6 +2,16 @@
 
 export type AppSettings = { start_with_windows: boolean, minimize_to_tray: boolean, start_minimized: boolean, auto_update: boolean, duration: number, show_player_winrates: boolean, show_replay_info_after_game: boolean, show_session: boolean, show_charts: boolean, hide_nicknames_in_overlay: boolean, account_folder: string, screenshot_folder: string, color_player1: string, color_player2: string, color_amon: string, color_mastery: string, "hotkey_show/hide": string | null, hotkey_show: string | null, hotkey_hide: string | null, hotkey_newer: string | null, hotkey_older: string | null, hotkey_winrates: string | null, enable_logging: boolean, dark_theme: boolean, language: string, monitor: number, performance_show: boolean, performance_hotkey: string | null, performance_processes: Array<string>, performance_geometry?: [number, number, number, number], rng_choices: { [key in string]: boolean }, player_notes: { [key in string]: string }, main_names: Array<string>, detailed_analysis_atstart: boolean, analysis_worker_threads: number, };
 
+export type ConfigChatPayload = { status: string, chat: ReplayChatPayload, };
+
+export type ConfigPayload = { status: string, settings: AppSettings, active_settings: AppSettings, randomizer_catalog: OverlayRandomizerCatalog, monitor_catalog: Array<MonitorOption>, };
+
+export type ConfigPlayersPayload = { status: string, players: Array<PlayerRowPayload>, loading: boolean, };
+
+export type ConfigReplaysPayload = { status: string, replays: Array<GamesRowPayload>, total_replays: number, selected_replay_file: string | null, };
+
+export type ConfigWeekliesPayload = { status: string, weeklies: Array<WeeklyRowPayload>, };
+
 export type EmptyPayload = Record<symbol, never>;
 
 export type GamesRowPayload = { file: string, date: number, map: string, result: string, difficulty: string, p1: string, p2: string, slot1_commander: string, slot2_commander: string, enemy: string, main_commander: string, ally_commander: string, length: number, main_apm: number, ally_apm: number, main_kills: number, ally_kills: number, extension: boolean, brutal_plus: number, weekly: boolean, weekly_name?: string, mutators: Array<UiMutatorRow>, is_mutation: boolean, };
@@ -11,6 +21,10 @@ export type LocalizedLabels = { ko: Array<string>, en: Array<string>, };
 export type LocalizedText = { ko: string, en: string, };
 
 export type MonitorOption = { index: number, label: string, };
+
+export type OverlayActionResponse = { status: string, result: OverlayActionResult, message: string, randomizer: RandomizerResult | null, };
+
+export type OverlayActionResult = { ok: boolean, path: string | null, };
 
 export type OverlayColorPreviewPayload = { color_player1?: string, color_player2?: string, color_amon?: string, color_mastery?: string, };
 
@@ -51,6 +65,10 @@ export type ReplayChatMessage = { player: number, text: string, time: number, };
 export type ReplayChatPayload = { file: string, date: number, map: string, result: string, slot1_name: string, slot2_name: string, messages: Array<ReplayChatMessage>, };
 
 export type ReplayPlayerSeries = { name: string, army: Array<number>, supply: Array<number>, killed: Array<number>, mining: Array<number>, };
+
+export type StatsActionPayload = { status: string, result: OverlayActionResult, message: string, stats: StatsStatePayload | null, };
+
+export type StatsStatePayload = { ready: boolean, games: number, detailed_parsed_count: number, total_valid_files: number, analysis?: Record<string, any> | null, main_players: Array<string>, main_handles: Array<string>, analysis_running: boolean, analysis_running_mode?: string, simple_analysis_status: string, detailed_analysis_status: string, detailed_analysis_atstart: boolean, prestige_names: Record<string, any>, message: string, scan_progress: Record<string, any>, };
 
 export type UiMutatorRow = { id: string, name: LocalizedText, iconName: string, description: LocalizedText, };
 

@@ -1,6 +1,5 @@
 use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
 use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo};
-use serde_json::json;
 
 fn replay_for_player_rows(
     player_name: &str,
@@ -56,39 +55,20 @@ fn rebuild_player_rows_fast_restores_winrate_and_dominant_commander_frequency() 
     let rows = ReplayAnalysis::rebuild_player_rows_fast(&replays);
     let row = rows
         .iter()
-        .find(|row| row.get("handle").and_then(serde_json::Value::as_str) == Some("1-S2-1-111"))
+        .find(|row| row.handle == "1-S2-1-111")
         .expect("expected MemoTarget row");
 
-    assert_eq!(row.get("wins").and_then(serde_json::Value::as_u64), Some(2));
-    assert_eq!(
-        row.get("losses").and_then(serde_json::Value::as_u64),
-        Some(1)
-    );
-    assert_eq!(
-        row.get("commander").and_then(serde_json::Value::as_str),
-        Some("Tychus")
-    );
-    assert_eq!(
-        row.get("last_seen").and_then(serde_json::Value::as_u64),
-        Some(300)
-    );
+    assert_eq!(row.wins, 2);
+    assert_eq!(row.losses, 1);
+    assert_eq!(row.commander, "Tychus");
+    assert_eq!(row.last_seen, 300);
 
-    let winrate = row
-        .get("winrate")
-        .and_then(serde_json::Value::as_f64)
-        .expect("row winrate should be numeric");
-    let frequency = row
-        .get("frequency")
-        .and_then(serde_json::Value::as_f64)
-        .expect("row frequency should be numeric");
+    let winrate = row.winrate;
+    let frequency = row.frequency;
     assert!((winrate - (2.0 / 3.0)).abs() < 1e-9);
     assert!((frequency - (2.0 / 3.0)).abs() < 1e-9);
 
-    let player_names = row
-        .get("player_names")
-        .and_then(serde_json::Value::as_array)
-        .expect("row player_names should be an array");
-    assert_eq!(player_names, &vec![json!("MemoTarget")]);
+    assert_eq!(row.player_names, vec!["MemoTarget".to_string()]);
 }
 
 #[test]
@@ -146,17 +126,12 @@ fn rebuild_player_rows_fast_groups_usernames_by_handle_and_prefers_most_recent_n
     let rows = ReplayAnalysis::rebuild_player_rows_fast(&replays);
     let row = rows
         .iter()
-        .find(|entry| entry.get("handle").and_then(serde_json::Value::as_str) == Some("1-S2-1-111"))
+        .find(|entry| entry.handle == "1-S2-1-111")
         .expect("expected MemoTarget row");
 
+    assert_eq!(row.player, "MemoTarget");
     assert_eq!(
-        row.get("player").and_then(serde_json::Value::as_str),
-        Some("MemoTarget")
+        row.player_names,
+        vec!["MemoTarget".to_string(), "OtherName".to_string()]
     );
-
-    let player_names = row
-        .get("player_names")
-        .and_then(serde_json::Value::as_array)
-        .expect("row player_names should be an array");
-    assert_eq!(player_names, &vec![json!("MemoTarget"), json!("OtherName")]);
 }

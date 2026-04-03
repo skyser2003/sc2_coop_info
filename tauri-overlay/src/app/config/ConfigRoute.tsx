@@ -5,15 +5,22 @@ import { listen, emit } from "@tauri-apps/api/event";
 import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
 import type {
     AppSettings,
+    ConfigChatPayload,
+    ConfigPayload,
+    ConfigPlayersPayload,
+    ConfigReplaysPayload,
+    ConfigWeekliesPayload,
     GamesRowPayload,
     MonitorOption,
+    OverlayActionResponse,
     OverlayColorPreviewPayload,
     OverlayLanguagePreviewPayload,
     OverlayRandomizerCatalog,
     OverlayScreenshotResultPayload,
     PerformanceVisibilityPayload,
     PlayerRowPayload,
-    RandomizerResult,
+    StatsActionPayload,
+    StatsStatePayload,
     ReplayChatPayload,
     WeeklyRowPayload,
 } from "../../bindings/overlay";
@@ -58,10 +65,6 @@ type TabDataState = {
     players: PlayerRows | null;
     weeklies: WeekliesRows | null;
     statistics: StatisticsPayload | null;
-};
-type RequestOptions = {
-    method?: string;
-    body?: JsonValue;
 };
 type PathValueUpdater = (path: string[], value: JsonValue) => void;
 type LoadTabOptions = {
@@ -136,28 +139,6 @@ type QueuedLiveApply = {
     requestSeq: number;
     successMessage: string;
 };
-type ConfigResponsePayload = {
-    status: string;
-    error?: string;
-    message?: string;
-    settings?: AppSettings;
-    active_settings?: AppSettings;
-    randomizer_catalog?: OverlayRandomizerCatalog | null;
-    monitor_catalog?: Array<MonitorOption>;
-    replays?: GamesRows;
-    total_replays?: number;
-    selected_replay_file?: string | null;
-    players?: PlayerRows;
-    weeklies?: WeekliesRows;
-    stats?: StatisticsPayload | null;
-    chat?: ReplayChatPayload;
-    result?: {
-        ok?: boolean;
-        path?: string;
-    };
-    randomizer?: RandomizerResult;
-};
-
 declare global {
     interface Window {
         __scoSetPerformanceVisibility?: (visible: boolean) => void;
@@ -813,30 +794,102 @@ function isHotkeyModifierKey(key: string): boolean {
     );
 }
 
-async function requestJson(
-    path: string,
-    init: RequestOptions = {},
-): Promise<ConfigResponsePayload> {
-    const method = init.method || "GET";
-    const body = init.body !== undefined ? init.body : null;
-
-    try {
-        const payload = await invoke<ConfigResponsePayload>("config_request", {
-            path,
-            method,
-            body,
-        });
-        if (!payload || payload.status !== "ok") {
-            throw new Error(
-                payload?.error ||
-                    payload?.message ||
-                    `Request failed (${method} ${path})`,
-            );
-        }
-        return payload;
-    } catch (error) {
-        throw error;
+async function invokeConfigCommand<T extends { status?: string; message?: string }>(
+    command: string,
+    args: JsonObject = {},
+): Promise<T> {
+    const payload = await invoke<T>(command, args);
+    if (!payload) {
+        throw new Error(`Request failed (${command})`);
     }
+    if (typeof payload.status === "string" && payload.status !== "ok") {
+        throw new Error(payload?.message || `Request failed (${command})`);
+    }
+    return payload;
+}
+
+async function loadConfigRequest(): Promise<ConfigPayload> {
+    return invokeConfigCommand<ConfigPayload>("config_get");
+}
+
+async function updateConfigRequest(
+    settings: AppSettings,
+    persist: boolean,
+): Promise<ConfigPayload> {
+    return invokeConfigCommand<ConfigPayload>("config_update", {
+        settings,
+        persist,
+    });
+}
+
+async function loadReplaysRequest(
+    limit: number,
+): Promise<ConfigReplaysPayload> {
+    return invokeConfigCommand<ConfigReplaysPayload>("config_replays_get", {
+        limit,
+    });
+}
+
+async function loadPlayersRequest(
+    limit: number,
+): Promise<ConfigPlayersPayload> {
+    return invokeConfigCommand<ConfigPlayersPayload>("config_players_get", {
+        limit,
+    });
+}
+
+async function loadWeekliesRequest(): Promise<ConfigWeekliesPayload> {
+    return invokeConfigCommand<ConfigWeekliesPayload>("config_weeklies_get");
+}
+
+async function loadStatisticsRequest(
+    query: string,
+): Promise<StatsStatePayload> {
+    return invokeConfigCommand<StatsStatePayload>("config_stats_get", {
+        query,
+    });
+}
+
+async function postConfigActionRequest(
+    action: string,
+    payload: JsonObject = {},
+): Promise<OverlayActionResponse> {
+    return invokeConfigCommand<OverlayActionResponse>("config_action", {
+        action,
+        payload,
+    });
+}
+
+async function postStatsActionRequest(
+    action: string,
+    payload: JsonObject = {},
+): Promise<StatsActionPayload> {
+    return invokeConfigCommand<StatsActionPayload>("config_stats_action", {
+        action,
+        payload,
+    });
+}
+
+async function showReplayRequest(
+    file: string | null,
+): Promise<OverlayActionResponse> {
+    return invokeConfigCommand<OverlayActionResponse>("config_replay_show", {
+        file,
+    });
+}
+
+async function loadReplayChatRequest(file: string): Promise<ConfigChatPayload> {
+    return invokeConfigCommand<ConfigChatPayload>("config_replay_chat", {
+        file,
+    });
+}
+
+async function moveReplayRequest(
+    delta: number,
+): Promise<OverlayActionResponse> {
+    return invokeConfigCommand<OverlayActionResponse>("config_replay_move", {
+        delta,
+    });
 }
 
 async function syncHotkeyReassign(
@@ -849,21 +902,13 @@ async function syncHotkeyReassign(
 
     try {
         if (currentPath !== "") {
-            await requestJson("/config/action", {
-                method: "POST",
-                body: {
-                    action: "hotkey_reassign_end",
-                    path: currentPath,
-                },
+            await postConfigActionRequest("hotkey_reassign_end", {
+                path: currentPath,
             });
         }
         if (nextPath !== "") {
-            await requestJson("/config/action", {
-                method: "POST",
-                body: {
-                    action: "hotkey_reassign_begin",
-                    path: nextPath,
-                },
+            await postConfigActionRequest("hotkey_reassign_begin", {
+                path: nextPath,
             });
         }
     } catch (error) {
@@ -1364,15 +1409,9 @@ function SettingsEditor({
         nextSettings: AppSettings,
         requestSeq: number,
         successMessage = "Changes applied immediately. Click Save to persist.",
-    ): Promise<ConfigResponsePayload | null> {
+    ): Promise<ConfigPayload | null> {
         liveApplyInFlightRef.current = true;
-        return requestJson("/config", {
-            method: "POST",
-            body: {
-                settings: nextSettings,
-                persist: false,
-            },
-        })
+        return updateConfigRequest(nextSettings, false)
             .then((payload) => {
                 setRandomizerCatalog(
                     (current) => payload.randomizer_catalog ?? current,
@@ -1409,7 +1448,7 @@ function SettingsEditor({
     function applyRuntimeSettings(
         nextSettings: AppSettings,
         successMessage = "Changes applied immediately. Click Save to persist.",
-    ): Promise<ConfigResponsePayload | null> {
+    ): Promise<ConfigPayload | null> {
         const requestSeq = latestLiveApplySeqRef.current + 1;
         latestLiveApplySeqRef.current = requestSeq;
         if (liveApplyInFlightRef.current) {
@@ -1431,7 +1470,7 @@ function SettingsEditor({
         try {
             cancelPendingLiveApply();
             setIsBusy(true);
-            const payload = await requestJson("/config");
+            const payload = await loadConfigRequest();
             if (!payload.settings) {
                 throw new Error("Invalid response from API");
             }
@@ -1457,10 +1496,7 @@ function SettingsEditor({
             return;
         }
         startupAnalysisRequestedRef.current = true;
-        void requestJson("/config/stats/action", {
-            method: "POST",
-            body: { action: "frontend_ready" },
-        })
+        void postStatsActionRequest("frontend_ready")
             .then((payload) => {
                 if (!payload || !payload.stats) {
                     return;
@@ -1541,7 +1577,7 @@ function SettingsEditor({
                             return;
                         }
                         applyPerformanceVisibilityState(visible);
-                        void requestJson("/config")
+                        void loadConfigRequest()
                             .then((payload) => {
                                 const confirmedVisible =
                                     performanceVisibilityFromSettings(
@@ -1591,19 +1627,28 @@ function SettingsEditor({
 
     function getPayloadForTab(
         tabId: TabId,
-        payload: ConfigResponsePayload,
+        payload:
+            | ConfigReplaysPayload
+            | ConfigPlayersPayload
+            | ConfigWeekliesPayload
+            | StatsStatePayload,
     ): GenericTabValue {
         if (tabId === "games") {
+            const gamesPayload = payload as ConfigReplaysPayload;
             return {
-                rows: payload.replays || [],
+                rows: gamesPayload.replays || [],
                 totalRows:
-                    Number(payload.total_replays) ||
-                    (payload.replays || []).length,
+                    Number(gamesPayload.total_replays) ||
+                    (gamesPayload.replays || []).length,
             };
         }
-        if (tabId === "players") return payload.players || [];
-        if (tabId === "weeklies") return payload.weeklies || [];
-        if (tabId === "statistics") return payload.stats || null;
+        if (tabId === "players") {
+            return (payload as ConfigPlayersPayload).players || [];
+        }
+        if (tabId === "weeklies") {
+            return (payload as ConfigWeekliesPayload).weeklies || [];
+        }
+        if (tabId === "statistics") return payload as StatisticsPayload;
         return null;
     }
 
@@ -1625,12 +1670,12 @@ function SettingsEditor({
             if (tabId === "games") {
                 gamesLoadLimitRef.current = gamesLimit;
             }
-            const urlMap = {
-                games: `/config/replays?limit=${gamesLimit}`,
-                players: "/config/players?limit=500",
-                weeklies: "/config/weeklies",
-            };
-            const payload = await requestJson(urlMap[tabId]);
+            const payload =
+                tabId === "games"
+                    ? await loadReplaysRequest(gamesLimit)
+                    : tabId === "players"
+                      ? await loadPlayersRequest(500)
+                      : await loadWeekliesRequest();
             setTabData((current) => ({
                 ...current,
                 [tabId]: getPayloadForTab(tabId, payload),
@@ -1668,16 +1713,12 @@ function SettingsEditor({
         tabData.statistics,
     ]);
 
-    async function postAction(
-        path: string,
-        payload: JsonValue,
-    ): Promise<ConfigResponsePayload | null> {
+    async function postAction<T extends { message?: string }>(
+        request: () => Promise<T>,
+    ): Promise<T | null> {
         setIsBusy(true);
         try {
-            const result = await requestJson(path, {
-                method: "POST",
-                body: payload,
-            });
+            const result = await request();
             safeStatus(result.message || "Action completed");
             return result;
         } catch (error) {
@@ -1772,13 +1813,9 @@ function SettingsEditor({
     ): Promise<void> {
         try {
             setIsBusy(true);
-            const payload = await requestJson("/config/action", {
-                method: "POST",
-                body: {
-                    action: "set_player_note",
-                    player: handle,
-                    note: noteValue,
-                },
+            const payload = await postConfigActionRequest("set_player_note", {
+                player: handle,
+                note: noteValue,
             });
             setSettings((current) => {
                 if (current === null) {
@@ -1805,13 +1842,7 @@ function SettingsEditor({
         await queueSettingsMutation(async () => {
             try {
                 setIsBusy(true);
-                const payload = await requestJson("/config", {
-                    method: "POST",
-                    body: {
-                        settings: nextSettings,
-                        persist: true,
-                    },
-                });
+                const payload = await updateConfigRequest(nextSettings, true);
                 const activeSettings =
                     payload.active_settings || payload.settings;
                 setSettings(payload.settings);
@@ -1851,9 +1882,9 @@ function SettingsEditor({
             setStatus("Select a replay first");
             return;
         }
-        const result = await postAction("/config/replays/show", {
-            file: selectedReplayFile,
-        });
+        const result = await postAction(() =>
+            showReplayRequest(selectedReplayFile),
+        );
         if (result) {
             setStatus("Replay sent to overlay");
             await loadTabData("games");
@@ -1865,7 +1896,7 @@ function SettingsEditor({
             return;
         }
         setSelectedReplayFile(file);
-        const result = await postAction("/config/replays/show", { file });
+        const result = await postAction(() => showReplayRequest(file));
         if (result) {
             setStatus("Replay sent to overlay");
         }
@@ -1875,10 +1906,7 @@ function SettingsEditor({
         if (!file) {
             return null;
         }
-        const result = await requestJson("/config/replays/chat", {
-            method: "POST",
-            body: { file },
-        });
+        const result = await loadReplayChatRequest(file);
         return (result.chat as GamesChatPayload) || null;
     }
 
@@ -1886,14 +1914,11 @@ function SettingsEditor({
         if (!file) {
             return;
         }
-        await postAction("/config/stats/action", {
-            action: "reveal_file",
-            file,
-        });
+        await postAction(() => postStatsActionRequest("reveal_file", { file }));
     }
 
     async function moveReplay(delta: number): Promise<void> {
-        const result = await postAction("/config/replays/move", { delta });
+        const result = await postAction(() => moveReplayRequest(delta));
         if (result) {
             await loadTabData("games", false, {
                 gamesLimit: gamesLoadLimitRef.current,
@@ -1904,8 +1929,8 @@ function SettingsEditor({
     async function postConfigAction(
         action: string,
         payload: JsonObject = {},
-    ): Promise<ConfigResponsePayload | null> {
-        return postAction("/config/action", { action, ...payload });
+    ): Promise<OverlayActionResponse | null> {
+        return postAction(() => postConfigActionRequest(action, payload));
     }
 
     async function promptPath(path: string[], title: string): Promise<void> {
@@ -2040,7 +2065,7 @@ function SettingsEditor({
 
         try {
             setIsBusy(true);
-            const payload = await requestJson(`/config/stats?${query}`);
+            const payload = await loadStatisticsRequest(query);
             if (
                 statsQueryRef.current.requestSeq !== requestSeq ||
                 statsQueryRef.current.activeQuery !== query
@@ -2096,50 +2121,51 @@ function SettingsEditor({
     }
 
     async function startSimpleAnalysis() {
-        const result = await postAction("/config/stats/action", {
-            action: "start_simple_analysis",
-        });
+        const result = await postAction(() =>
+            postStatsActionRequest("start_simple_analysis"),
+        );
         if (result) {
             setTimeout(() => refreshStatistics(true, null, true), 800);
         }
     }
 
     async function runDetailedAnalysis() {
-        const result = await postAction("/config/stats/action", {
-            action: "run_detailed_analysis",
-        });
+        const result = await postAction(() =>
+            postStatsActionRequest("run_detailed_analysis"),
+        );
         if (result) {
             setTimeout(() => refreshStatistics(true, null, true), 800);
         }
     }
 
     async function stopDetailedAnalysis() {
-        const result = await postAction("/config/stats/action", {
-            action: "stop_detailed_analysis",
-        });
+        const result = await postAction(() =>
+            postStatsActionRequest("stop_detailed_analysis"),
+        );
         if (result) {
             setTimeout(() => refreshStatistics(true, null, true), 300);
         }
     }
 
     async function dumpData() {
-        await postAction("/config/stats/action", { action: "dump_data" });
+        await postAction(() => postStatsActionRequest("dump_data"));
     }
 
     async function deleteParsedData() {
-        const result = await postAction("/config/stats/action", {
-            action: "delete_parsed_data",
-        });
+        const result = await postAction(() =>
+            postStatsActionRequest("delete_parsed_data"),
+        );
         if (result) {
             setTimeout(() => refreshStatistics(true, null, true), 1000);
         }
     }
 
     async function setDetailedAnalysisAtStart(enabled: boolean): Promise<void> {
-        const result = await postAction("/config/stats/action", {
-            action: "set_detailed_analysis_atstart",
-            enabled: Boolean(enabled),
-        });
+        const result = await postAction(() =>
+            postStatsActionRequest("set_detailed_analysis_atstart", {
+                enabled: Boolean(enabled),
+            }),
+        );
         if (result) {
             setTabData((current) => ({
                 ...current,
@@ -2157,17 +2183,14 @@ function SettingsEditor({
         if (!file) {
             return;
         }
-        await postAction("/config/stats/action", {
-            action: "reveal_file",
-            file,
-        });
+        await postAction(() => postStatsActionRequest("reveal_file", { file }));
     }
 
     async function showReplay(file: string): Promise<void> {
         if (!file) {
             return;
         }
-        await postAction("/config/replays/show", { file });
+        await postAction(() => showReplayRequest(file));
     }
 
     function setStatsBool(key: StatisticsBoolFilterKey) {
