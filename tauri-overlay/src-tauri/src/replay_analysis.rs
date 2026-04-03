@@ -2994,7 +2994,7 @@ impl ReplayAnalysis {
 
         let parse_started_at = Instant::now();
         scan_progress.set_stage("parsing_replays");
-        let worker_threads = crate::read_settings_memory().normalized_analysis_worker_threads();
+        let worker_threads = crate::AppSettings::simple_analysis_worker_threads();
         let progress = replay_scan_progress();
         let parsed_results: Vec<Result<ParseResult, String>> = rayon::ThreadPoolBuilder::new()
             .num_threads(worker_threads)

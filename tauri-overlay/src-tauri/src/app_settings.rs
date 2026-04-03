@@ -67,6 +67,10 @@ impl AppSettings {
         (Self::logical_core_count() / 2).max(1)
     }
 
+    pub fn simple_analysis_worker_threads() -> usize {
+        Self::default_analysis_worker_threads()
+    }
+
     pub fn clamp_analysis_worker_threads(value: usize) -> usize {
         value.clamp(1, Self::logical_core_count())
     }
