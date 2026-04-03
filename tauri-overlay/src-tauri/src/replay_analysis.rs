@@ -3447,16 +3447,7 @@ impl ReplayAnalysis {
             response["query"] = Value::from(query);
         }
 
-        #[derive(Serialize)]
-        struct StatsResponsePayload {
-            status: &'static str,
-            stats: Value,
-        }
-
-        Ok(report_value(&StatsResponsePayload {
-            status: "ok",
-            stats: response,
-        }))
+        Ok(response)
     }
 
     pub fn stats_replays_for_response<'a>(
