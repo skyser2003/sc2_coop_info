@@ -1,43 +1,30 @@
 import * as React from "react";
-import type { OverlayRandomizerCatalog } from "../../../bindings/overlay";
+import type {
+    AppSettings,
+    LocalizedText,
+    OverlayRandomizerCatalog,
+    RandomizerResult,
+} from "../../../bindings/overlay";
 import type { LanguageManager } from "../../i18n/languageManager";
 import { PreviewManager } from "../../previews/PreviewManager";
 import type { PrestigeNameMap } from "../types";
 import SelectionPreview from "./SelectionPreview";
 import { Grid } from "@mui/material";
 
-type RandomizerChoices = Record<string, boolean>;
+type RandomizerChoices = AppSettings["rng_choices"];
 type RandomizerDraft = {
     rng_choices?: RandomizerChoices | null;
-};
-
-type LocalizedText = {
-    en: string;
-    ko: string;
 };
 
 type MutatorCatalogEntry =
     NonNullable<OverlayRandomizerCatalog>["mutators"][number];
 type BrutalPlusCatalogEntry =
     NonNullable<OverlayRandomizerCatalog>["brutal_plus"][number];
-
-type CommanderRandomizerResult = {
-    kind: "commander";
-    commander: string;
-    prestige: number;
-    mastery_indices: Array<number | null>;
-    map_race: string;
-};
-
-type MutatorRandomizerResult = {
-    kind: "mutator";
-    mutators: MutatorCatalogEntry[];
-    mutator_total_points: number;
-    mutator_count: number;
-    brutal_plus: number | null;
-};
-
-type RandomizerResult = CommanderRandomizerResult | MutatorRandomizerResult;
+type CommanderRandomizerResult = Extract<
+    RandomizerResult,
+    { kind: "commander" }
+>;
+type MutatorRandomizerResult = Extract<RandomizerResult, { kind: "mutator" }>;
 
 type CommanderGeneratePayload = {
     mode: "commander";

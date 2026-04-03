@@ -1,4 +1,5 @@
 import type * as React from "react";
+import type { LocalizedLabels } from "../../bindings/overlay";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonArray;
@@ -120,12 +121,7 @@ export type LocalizedMasteryNames = {
 export type CommanderMasteryEntry = string[] | LocalizedMasteryNames;
 export type CommanderMasteryMap = Record<string, CommanderMasteryEntry>;
 
-export type LocalizedPrestigeNames = {
-    en: string[];
-    ko: string[];
-};
-
-export type PrestigeNameMap = Record<string, LocalizedPrestigeNames>;
+export type PrestigeNameMap = Record<string, LocalizedLabels>;
 export type LocalizedText = {
     en?: string | null;
     ko?: string | null;

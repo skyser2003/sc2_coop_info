@@ -2,7 +2,6 @@ use std::thread;
 use std::time::Duration;
 
 use serde::Serialize;
-use serde_json::Value;
 use sysinfo::{Networks, ProcessesToUpdate, System};
 use tauri::{Emitter, Manager, Runtime, Wry};
 
@@ -106,8 +105,8 @@ fn performance_process_names() -> Vec<String> {
     }
 }
 
-fn persist_setting_value(key: &str, value: Value) -> Result<(), String> {
-    crate::persist_single_setting_value(key, value)
+fn persist_setting_value<T: Serialize>(key: &str, value: &T) -> Result<(), String> {
+    crate::persist_serialized_setting_value(key, value)
 }
 
 fn parse_saved_geometry() -> Option<PerformanceGeometry> {
@@ -323,13 +322,8 @@ pub(crate) fn persist_geometry(window: &tauri::WebviewWindow<Wry>) {
     let geometry = normalized_geometry(geometry);
     let width = i32::try_from(geometry.width).unwrap_or(i32::MAX);
     let height = i32::try_from(geometry.height).unwrap_or(i32::MAX);
-    let value = Value::Array(vec![
-        Value::from(geometry.x),
-        Value::from(geometry.y),
-        Value::from(width),
-        Value::from(height),
-    ]);
-    if let Err(error) = persist_setting_value("performance_geometry", value) {
+    let value = [geometry.x, geometry.y, width, height];
+    if let Err(error) = persist_setting_value("performance_geometry", &value) {
         crate::sco_log!("[SCO/performance] Failed to save geometry: {error}");
     }
 }
@@ -400,7 +394,7 @@ pub(crate) fn set_visibility<R: Runtime>(
     persist_setting: bool,
 ) -> Result<(), String> {
     if persist_setting {
-        persist_setting_value("performance_show", Value::Bool(visible))?;
+        persist_setting_value("performance_show", &visible)?;
     }
 
     if visible {

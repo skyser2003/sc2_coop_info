@@ -5,6 +5,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 use ts_rs::TS;
 
+use crate::app_settings::RandomizerChoices;
 use crate::shared_types::{
     LocalizedLabels, LocalizedText, OverlayRandomizerBrutalPlus, OverlayRandomizerCatalog,
     OverlayRandomizerMutator, OverlayRandomizerRange,
@@ -45,7 +46,7 @@ pub struct RandomizerRequest {
     #[serde(default = "default_randomizer_mode")]
     pub mode: String,
     #[serde(default)]
-    pub rng_choices: Value,
+    pub rng_choices: RandomizerChoices,
     #[serde(default = "default_mastery_mode")]
     pub mastery_mode: String,
     #[serde(default = "default_true")]
@@ -73,33 +74,24 @@ pub struct RandomizerMutatorResult {
     pub points: u32,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
-pub struct RandomizerResult {
-    pub kind: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub commander: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub prestige: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub mastery_indices: Option<Vec<Option<u32>>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub map_race: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub mutators: Vec<RandomizerMutatorResult>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub mutator_total_points: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub mutator_count: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub brutal_plus: Option<u8>,
+#[ts(tag = "kind", rename_all = "snake_case")]
+pub enum RandomizerResult {
+    Commander {
+        commander: String,
+        prestige: u32,
+        mastery_indices: Vec<Option<u32>>,
+        map_race: String,
+    },
+    Mutator {
+        mutators: Vec<RandomizerMutatorResult>,
+        mutator_total_points: u32,
+        mutator_count: u32,
+        #[ts(optional)]
+        brutal_plus: Option<u8>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -170,7 +162,7 @@ pub(crate) fn generate_from_body(body: Option<&Value>) -> Result<RandomizerResul
         .map_err(|error| format!("Invalid randomizer payload: {error}"))?
         .unwrap_or(RandomizerRequest {
             mode: default_randomizer_mode(),
-            rng_choices: Value::Object(Default::default()),
+            rng_choices: RandomizerChoices::default(),
             mastery_mode: default_mastery_mode(),
             include_map: true,
             include_race: true,
@@ -223,16 +215,11 @@ fn generate_commander_with_rng(
         map_race_parts.push(race_name);
     }
 
-    Ok(RandomizerResult {
-        kind: "commander".to_string(),
-        commander: Some(commander.clone()),
-        prestige: Some(prestige),
-        mastery_indices: Some(mastery_indices.into_iter().collect()),
-        map_race: Some(map_race_parts.join(" | ")),
-        mutators: Vec::new(),
-        mutator_total_points: None,
-        mutator_count: None,
-        brutal_plus: None,
+    Ok(RandomizerResult::Commander {
+        commander: commander.clone(),
+        prestige,
+        mastery_indices: mastery_indices.into_iter().collect(),
+        map_race: map_race_parts.join(" | "),
     })
 }
 
@@ -313,12 +300,7 @@ fn build_mutator_result(
     let total_points = mutators.iter().map(|mutator| mutator.points).sum::<u32>();
     let mutator_count = u32::try_from(mutators.len()).unwrap_or(u32::MAX);
 
-    Ok(RandomizerResult {
-        kind: "mutator".to_string(),
-        commander: None,
-        prestige: None,
-        mastery_indices: None,
-        map_race: None,
+    Ok(RandomizerResult::Mutator {
         mutators: mutators
             .into_iter()
             .map(|entry| RandomizerMutatorResult {
@@ -329,24 +311,23 @@ fn build_mutator_result(
                 points: entry.points,
             })
             .collect(),
-        mutator_total_points: Some(total_points),
-        mutator_count: Some(mutator_count),
+        mutator_total_points: total_points,
+        mutator_count,
         brutal_plus,
     })
 }
 
-fn effective_commander_choices(saved: &Value) -> BTreeMap<String, Vec<u32>> {
-    let saved_object = saved.as_object();
-    let has_saved = saved_object.is_some_and(|value| !value.is_empty());
+fn effective_commander_choices(saved: &RandomizerChoices) -> BTreeMap<String, Vec<u32>> {
+    let has_saved = !saved.is_empty();
     let mut out = BTreeMap::<String, Vec<u32>>::new();
 
     for commander in commander_names() {
         let mut prestiges = Vec::<u32>::new();
         for prestige in 0..=3 {
             let is_selected = if has_saved {
-                saved_object
-                    .and_then(|value| value.get(&format!("{commander}_{prestige}")))
-                    .and_then(Value::as_bool)
+                saved
+                    .get(&format!("{commander}_{prestige}"))
+                    .copied()
                     .unwrap_or(false)
             } else {
                 prestige == 0

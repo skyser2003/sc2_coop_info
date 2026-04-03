@@ -24,7 +24,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use ts_rs::TS;
 
 use crate::path_manager::get_cache_path;
-use crate::shared_types::{LocalizedText, UiMutatorRow};
+use crate::shared_types::{LocalizedLabels, LocalizedText, UiMutatorRow};
 use crate::{
     build_amon_unit_data, build_commander_unit_data, canonicalize_coop_map_id,
     commander_mind_control_unit, configured_main_handles, configured_main_names,
@@ -1366,7 +1366,7 @@ impl ReplayAnalysis {
         #[derive(Serialize)]
         struct RebuildAnalysisPayload {
             analysis: Value,
-            prestige_names: Value,
+            prestige_names: std::collections::BTreeMap<String, LocalizedLabels>,
         }
 
         let started_at = Instant::now();
@@ -2164,7 +2164,18 @@ impl ReplayAnalysis {
         );
         report_value(&RebuildAnalysisPayload {
             analysis,
-            prestige_names: report_value(&prestige_names),
+            prestige_names: prestige_names
+                .iter()
+                .map(|(key, value)| {
+                    (
+                        key.clone(),
+                        LocalizedLabels {
+                            en: value.en.clone(),
+                            ko: value.ko.clone(),
+                        },
+                    )
+                })
+                .collect(),
         })
     }
 
@@ -2602,7 +2613,10 @@ impl ReplayAnalysis {
             prestige_names: payload
                 .get("prestige_names")
                 .cloned()
-                .unwrap_or_else(|| Value::Object(Default::default())),
+                .map(serde_json::from_value)
+                .transpose()
+                .unwrap_or_default()
+                .unwrap_or_default(),
             message,
         }
     }

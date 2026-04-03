@@ -58,7 +58,7 @@ export type PlayerRowPayload = { handle: string, player: string, player_names: A
 
 export type RandomizerMutatorResult = { id: string, name: LocalizedText, iconName: string, description: LocalizedText, points: number, };
 
-export type RandomizerResult = { kind: string, commander?: string, prestige?: number, mastery_indices?: Array<number | null>, map_race?: string, mutators?: Array<RandomizerMutatorResult>, mutator_total_points?: number, mutator_count?: number, brutal_plus?: number, };
+export type RandomizerResult = { "kind": "commander", commander: string, prestige: number, mastery_indices: Array<number | null>, map_race: string, } | { "kind": "mutator", mutators: Array<RandomizerMutatorResult>, mutator_total_points: number, mutator_count: number, brutal_plus?: number, };
 
 export type ReplayChatMessage = { player: number, text: string, time: number, };
 
@@ -66,9 +66,11 @@ export type ReplayChatPayload = { file: string, date: number, map: string, resul
 
 export type ReplayPlayerSeries = { name: string, army: Array<number>, supply: Array<number>, killed: Array<number>, mining: Array<number>, };
 
+export type ReplayScanProgressPayload = { stage: string, status: string, parsing_status: string, total: number, total_replay_files: number, cache_hits: number, files_already_cached: number, to_parse: number, completed: number, newly_parsed: number, newly_parsed_files: number, failed: number, parse_failed_files: number, parse_skipped: number, parse_skipped_files: number, elapsed_ms: number, total_time_taken_ms: number, };
+
 export type StatsActionPayload = { status: string, result: OverlayActionResult, message: string, stats: StatsStatePayload | null, };
 
-export type StatsStatePayload = { ready: boolean, games: number, detailed_parsed_count: number, total_valid_files: number, analysis?: Record<string, any> | null, main_players: Array<string>, main_handles: Array<string>, analysis_running: boolean, analysis_running_mode?: string, simple_analysis_status: string, detailed_analysis_status: string, detailed_analysis_atstart: boolean, prestige_names: Record<string, any>, message: string, scan_progress: Record<string, any>, };
+export type StatsStatePayload = { ready: boolean, games: number, detailed_parsed_count: number, total_valid_files: number, analysis?: Record<string, any> | null, main_players: Array<string>, main_handles: Array<string>, analysis_running: boolean, analysis_running_mode?: string, simple_analysis_status: string, detailed_analysis_status: string, detailed_analysis_atstart: boolean, prestige_names: { [key in string]: LocalizedLabels }, message: string, scan_progress: ReplayScanProgressPayload, };
 
 export type UiMutatorRow = { id: string, name: LocalizedText, iconName: string, description: LocalizedText, };
 

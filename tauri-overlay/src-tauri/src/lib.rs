@@ -51,6 +51,7 @@ use crate::app_settings::PlayerNotes;
 use crate::backend_state::ReplayState;
 use crate::path_manager::{get_cache_path, get_json_data_dir, is_dev_env};
 use crate::replay_analysis::ReplayAnalysis;
+use crate::shared_types::{LocalizedLabels, ReplayScanProgressPayload};
 
 pub const UNLIMITED_REPLAY_LIMIT: usize = 0;
 const SCO_REPLAY_SCAN_PROGRESS_EVENT: &str = "sco://replay-scan-progress";
@@ -194,11 +195,9 @@ pub struct StatsStatePayload {
     pub simple_analysis_status: String,
     pub detailed_analysis_status: String,
     pub detailed_analysis_atstart: bool,
-    #[ts(type = "Record<string, any>")]
-    pub prestige_names: Value,
+    pub prestige_names: std::collections::BTreeMap<String, LocalizedLabels>,
     pub message: String,
-    #[ts(type = "Record<string, any>")]
-    pub scan_progress: Value,
+    pub scan_progress: ReplayScanProgressPayload,
 }
 
 #[derive(Clone, Debug, Serialize, TS)]
@@ -442,6 +441,15 @@ pub(crate) fn persist_single_setting_value(key: &str, value: Value) -> Result<()
     let active_settings = AppSettings::merge_settings_with_defaults(Value::Object(active_map));
     replace_active_settings(&active_settings);
     Ok(())
+}
+
+pub(crate) fn persist_serialized_setting_value<T: Serialize>(
+    key: &str,
+    value: &T,
+) -> Result<(), String> {
+    let json_value = serde_json::to_value(value)
+        .map_err(|error| format!("Failed to serialize setting: {error}"))?;
+    persist_single_setting_value(key, json_value)
 }
 
 fn apply_runtime_settings(
@@ -1315,7 +1323,7 @@ impl ReplayScanProgress {
         self.parse_skipped.store(0, Ordering::Release);
     }
 
-    fn as_json(&self) -> Value {
+    fn as_payload(&self) -> ReplayScanProgressPayload {
         let stage = self
             .stage
             .lock()
@@ -1345,28 +1353,7 @@ impl ReplayScanProgress {
         } else {
             cache_hits.saturating_add(to_parse)
         };
-        #[derive(Serialize)]
-        struct ReplayScanProgressPayload {
-            stage: String,
-            status: String,
-            parsing_status: String,
-            total: u64,
-            total_replay_files: u64,
-            cache_hits: u64,
-            files_already_cached: u64,
-            to_parse: u64,
-            completed: u64,
-            newly_parsed: u64,
-            newly_parsed_files: u64,
-            failed: u64,
-            parse_failed_files: u64,
-            parse_skipped: u64,
-            parse_skipped_files: u64,
-            elapsed_ms: u64,
-            total_time_taken_ms: u64,
-        }
-
-        to_json_value(ReplayScanProgressPayload {
+        ReplayScanProgressPayload {
             stage,
             status: status.clone(),
             parsing_status: status,
@@ -1384,7 +1371,7 @@ impl ReplayScanProgress {
             parse_skipped_files: parse_skipped,
             elapsed_ms,
             total_time_taken_ms: elapsed_ms,
-        })
+        }
     }
 }
 
@@ -1393,7 +1380,7 @@ fn replay_scan_progress() -> &'static ReplayScanProgress {
 }
 
 fn emit_replay_scan_progress(app: &AppHandle<Wry>) {
-    let payload = replay_scan_progress().as_json();
+    let payload = replay_scan_progress().as_payload();
     if let Err(error) = app.emit(SCO_REPLAY_SCAN_PROGRESS_EVENT, payload) {
         crate::sco_log!("[SCO/stats] failed to emit scan progress: {error}");
     }
@@ -2576,7 +2563,7 @@ fn spawn_analysis_task(
         guard.games = 0;
         guard.main_players = Vec::new();
         guard.main_handles = Vec::new();
-        guard.prestige_names = Value::Object(Default::default());
+        guard.prestige_names = Default::default();
         if guard.message.is_empty() {
             guard.message = analysis_started_message(mode);
         }
@@ -4088,7 +4075,7 @@ pub struct StatsState {
     pub simple_analysis_status: String,
     pub detailed_analysis_status: String,
     pub detailed_analysis_atstart: bool,
-    pub prestige_names: Value,
+    pub prestige_names: std::collections::BTreeMap<String, LocalizedLabels>,
     pub message: String,
 }
 
@@ -4099,7 +4086,7 @@ pub struct StatsSnapshot {
     pub main_players: Vec<String>,
     pub main_handles: Vec<String>,
     pub analysis: Value,
-    pub prestige_names: Value,
+    pub prestige_names: std::collections::BTreeMap<String, LocalizedLabels>,
     pub message: String,
 }
 
@@ -4120,7 +4107,7 @@ impl Default for StatsState {
             ),
             detailed_analysis_status: analysis_status_text(AnalysisMode::Detailed, "not started"),
             detailed_analysis_atstart: false,
-            prestige_names: Value::Object(Default::default()),
+            prestige_names: Default::default(),
             message: "No parsed statistics available yet.".to_string(),
         }
     }
@@ -4135,7 +4122,7 @@ impl StatsState {
     }
 
     fn as_payload(&self) -> Value {
-        let scan_progress = replay_scan_progress().as_json();
+        let scan_progress = replay_scan_progress().as_payload();
         let (analysis, main_players, main_handles, prestige_names, games, message) = if self.ready {
             (
                 self.analysis.clone(),
@@ -4150,7 +4137,7 @@ impl StatsState {
                 Some(empty_stats_payload()),
                 Vec::new(),
                 Vec::new(),
-                Value::Object(Default::default()),
+                Default::default(),
                 0,
                 if self.message.is_empty() {
                     "Statistics are updating. This may take a while.".to_string()
@@ -4746,7 +4733,7 @@ async fn config_stats_action(
             stats.ready = false;
             stats.startup_analysis_requested = false;
             stats.analysis = Some(empty_stats_payload());
-            stats.prestige_names = Value::Object(Default::default());
+            stats.prestige_names = Default::default();
             set_analysis_terminal_status(&mut stats, AnalysisMode::Simple, "not started");
             set_analysis_terminal_status(&mut stats, AnalysisMode::Detailed, "not started");
             state.set_detailed_analysis_stop_controller(None);

@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use ts_rs::TS;
@@ -7,7 +7,7 @@ fn as_u32(value: u64) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, TS)]
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct LocalizedLabels {
     pub ko: Vec<String>,
@@ -126,6 +126,48 @@ pub struct OverlayScreenshotResultPayload {
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct PerformanceVisibilityPayload {
     pub visible: bool,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct ReplayScanProgressPayload {
+    pub stage: String,
+    pub status: String,
+    pub parsing_status: String,
+    #[ts(type = "number")]
+    pub total: u64,
+    #[serde(rename = "total_replay_files")]
+    #[ts(type = "number")]
+    pub total_replay_files: u64,
+    #[ts(type = "number")]
+    pub cache_hits: u64,
+    #[serde(rename = "files_already_cached")]
+    #[ts(type = "number")]
+    pub files_already_cached: u64,
+    #[ts(type = "number")]
+    pub to_parse: u64,
+    #[ts(type = "number")]
+    pub completed: u64,
+    #[ts(type = "number")]
+    pub newly_parsed: u64,
+    #[serde(rename = "newly_parsed_files")]
+    #[ts(type = "number")]
+    pub newly_parsed_files: u64,
+    #[ts(type = "number")]
+    pub failed: u64,
+    #[serde(rename = "parse_failed_files")]
+    #[ts(type = "number")]
+    pub parse_failed_files: u64,
+    #[ts(type = "number")]
+    pub parse_skipped: u64,
+    #[serde(rename = "parse_skipped_files")]
+    #[ts(type = "number")]
+    pub parse_skipped_files: u64,
+    #[ts(type = "number")]
+    pub elapsed_ms: u64,
+    #[serde(rename = "total_time_taken_ms")]
+    #[ts(type = "number")]
+    pub total_time_taken_ms: u64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
