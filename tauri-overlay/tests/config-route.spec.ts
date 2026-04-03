@@ -238,8 +238,8 @@ async function installTauriMock(
                                 stats: {
                                     ready: true,
                                     games: 0,
-                                    simple_analysis_running: false,
-                                    detailed_analysis_running: false,
+                                    analysis_running: false,
+                                    analysis_running_mode: null,
                                     message: "",
                                     query: "",
                                     analysis: {
@@ -289,8 +289,8 @@ test.describe("Config route", () => {
                 games: 9,
                 detailed_parsed_count: 4,
                 total_valid_files: 9,
-                simple_analysis_running: false,
-                detailed_analysis_running: false,
+                analysis_running: false,
+                analysis_running_mode: null,
                 message: "",
                 query: "",
                 analysis: {
@@ -397,8 +397,8 @@ test.describe("Config route", () => {
                 games: 5,
                 detailed_parsed_count: 2,
                 total_valid_files: 5,
-                simple_analysis_running: false,
-                detailed_analysis_running: false,
+                analysis_running: false,
+                analysis_running_mode: null,
                 message: "",
                 query: "",
                 analysis: {
@@ -460,8 +460,8 @@ test.describe("Config route", () => {
             stats: {
                 ready: true,
                 games: 1,
-                simple_analysis_running: false,
-                detailed_analysis_running: false,
+                analysis_running: false,
+                analysis_running_mode: null,
                 message: "",
                 query: "",
                 main_handles: ["3-S2-1-900001"],
@@ -595,8 +595,8 @@ test.describe("Config route", () => {
                 stats: {
                     ready: true,
                     games: 10,
-                    simple_analysis_running: false,
-                    detailed_analysis_running: false,
+                    analysis_running: false,
+                    analysis_running_mode: null,
                     message: "",
                     query: "",
                     analysis: {
@@ -627,8 +627,8 @@ test.describe("Config route", () => {
                         stats: {
                             ready: true,
                             games: 4,
-                            simple_analysis_running: false,
-                            detailed_analysis_running: false,
+                            analysis_running: false,
+                            analysis_running_mode: null,
                             message: "",
                             query: "difficulty_filter=Brutal",
                             analysis: {
@@ -684,8 +684,8 @@ test.describe("Config route", () => {
                 stats: {
                     ready: true,
                     games: 10,
-                    simple_analysis_running: false,
-                    detailed_analysis_running: false,
+                    analysis_running: false,
+                    analysis_running_mode: null,
                     message: "",
                     query: "",
                     analysis: {
@@ -713,8 +713,8 @@ test.describe("Config route", () => {
                         stats: {
                             ready: true,
                             games: 2,
-                            simple_analysis_running: false,
-                            detailed_analysis_running: false,
+                            analysis_running: false,
+                            analysis_running_mode: null,
                             message: "",
                             query: "main_normal_mastery=0",
                             analysis: {
@@ -767,8 +767,8 @@ test.describe("Config route", () => {
             stats: {
                 ready: false,
                 games: 0,
-                simple_analysis_running: false,
-                detailed_analysis_running: true,
+                analysis_running: true,
+                analysis_running_mode: "detailed",
                 detailed_analysis_status:
                     "Detailed analysis: generating cache.",
                 message: "",

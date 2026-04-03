@@ -96,8 +96,8 @@ async function installConfigTauriMock(page: Page) {
                     stats: {
                         ready: true,
                         games: 0,
-                        simple_analysis_running: false,
-                        detailed_analysis_running: false,
+                        analysis_running: false,
+                        analysis_running_mode: null,
                         message: "",
                         query: "",
                         analysis: {

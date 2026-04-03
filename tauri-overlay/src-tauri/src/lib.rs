@@ -2173,7 +2173,7 @@ pub struct StartupAnalysisRequestOutcome {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum AnalysisMode {
+pub enum AnalysisMode {
     Simple,
     Detailed,
 }
@@ -2206,6 +2206,10 @@ impl AnalysisMode {
             Self::Simple => "Detailed analysis",
             Self::Detailed => "Simple analysis",
         }
+    }
+
+    fn key(self) -> &'static str {
+        self.slug()
     }
 }
 
@@ -2298,13 +2302,13 @@ fn set_analysis_running_status(stats: &mut StatsState, mode: AnalysisMode, phase
 }
 
 fn set_analysis_terminal_status(stats: &mut StatsState, mode: AnalysisMode, phase: &str) {
+    stats.analysis_running = false;
+    stats.analysis_running_mode = None;
     match mode {
         AnalysisMode::Simple => {
-            stats.simple_analysis_running = false;
             stats.simple_analysis_status = analysis_status_text(mode, phase);
         }
         AnalysisMode::Detailed => {
-            stats.detailed_analysis_running = false;
             stats.detailed_analysis_status = analysis_status_text(mode, phase);
         }
     }
@@ -2499,43 +2503,32 @@ fn spawn_analysis_task(
             }
         };
 
-        if include_detailed {
-            if guard.simple_analysis_running {
-                crate::sco_log!(
-                    "[SCO/stats] {} blocked while {} is running",
-                    mode.display(),
-                    mode.peer_display()
-                );
-                guard.message = analysis_blocked_by_other_mode_message(mode);
-                return;
-            }
-            if guard.detailed_analysis_running {
+        if guard.analysis_running {
+            let active_mode = guard.analysis_running_mode;
+            if active_mode == Some(mode) {
                 crate::sco_log!("[SCO/stats] {} already running", mode.display());
                 guard.message = analysis_already_running_message(mode);
-                return;
-            }
-            guard.detailed_analysis_running = true;
-            set_analysis_running_status(&mut guard, mode, "generating cache");
-            guard.message = analysis_started_message(mode);
-        } else {
-            if guard.detailed_analysis_running {
+            } else {
                 crate::sco_log!(
-                    "[SCO/stats] {} blocked while {} is running",
-                    mode.display(),
-                    mode.peer_display()
+                    "[SCO/stats] {} blocked while another analysis is running",
+                    mode.display()
                 );
                 guard.message = analysis_blocked_by_other_mode_message(mode);
-                return;
             }
-            if guard.simple_analysis_running {
-                crate::sco_log!("[SCO/stats] {} already running", mode.display());
-                guard.message = analysis_already_running_message(mode);
-                return;
-            }
-            guard.simple_analysis_running = true;
-            set_analysis_running_status(&mut guard, mode, "scanning replays");
-            guard.message = analysis_started_message(mode);
+            return;
         }
+        guard.analysis_running = true;
+        guard.analysis_running_mode = Some(mode);
+        set_analysis_running_status(
+            &mut guard,
+            mode,
+            if include_detailed {
+                "generating cache"
+            } else {
+                "scanning replays"
+            },
+        );
+        guard.message = analysis_started_message(mode);
 
         guard.ready = false;
         guard.analysis = Some(empty_stats_payload());
@@ -2621,6 +2614,8 @@ fn spawn_analysis_task(
                                 if scanned_replays == 1 { "y" } else { "ies" }
                             );
                         } else {
+                            guard.analysis_running = false;
+                            guard.analysis_running_mode = None;
                             guard.detailed_analysis_status = analysis_status_text(mode, "stopped");
                             guard.message = format!(
                                 "Detailed analysis stopped after saving {} replay entr{}.",
@@ -2766,14 +2761,16 @@ fn spawn_analysis_task(
         };
 
         if include_detailed && !detailed_completed {
-            guard.detailed_analysis_running = false;
+            guard.analysis_running = false;
+            guard.analysis_running_mode = None;
         } else {
             set_analysis_running_status(&mut guard, mode, "building statistics");
         }
 
         apply_rebuild_snapshot(&mut guard, snapshot, mode);
         if include_detailed && !detailed_completed {
-            guard.detailed_analysis_running = false;
+            guard.analysis_running = false;
+            guard.analysis_running_mode = None;
             guard.detailed_analysis_status = analysis_status_text(mode, "stopped");
             guard.message =
                 "Detailed analysis stopped. Run detailed analysis to continue generating cache."
@@ -3321,7 +3318,8 @@ pub fn sync_detailed_analysis_status_from_replays(stats: &mut StatsState, replay
         })
         .count();
 
-    stats.detailed_analysis_running = false;
+    stats.analysis_running = false;
+    stats.analysis_running_mode = None;
     stats.detailed_analysis_status = if detailed_parsed_count == 0 {
         analysis_status_text(AnalysisMode::Detailed, "not started")
     } else {
@@ -4042,9 +4040,9 @@ pub struct StatsState {
     pub main_players: Vec<String>,
     pub main_handles: Vec<String>,
     pub startup_analysis_requested: bool,
-    pub simple_analysis_running: bool,
+    pub analysis_running: bool,
+    pub analysis_running_mode: Option<AnalysisMode>,
     pub simple_analysis_status: String,
-    pub detailed_analysis_running: bool,
     pub detailed_analysis_status: String,
     pub detailed_analysis_atstart: bool,
     pub prestige_names: Value,
@@ -4071,12 +4069,12 @@ impl Default for StatsState {
             main_players: vec![],
             main_handles: vec![],
             startup_analysis_requested: false,
-            simple_analysis_running: false,
+            analysis_running: false,
+            analysis_running_mode: None,
             simple_analysis_status: analysis_status_text(
                 AnalysisMode::Simple,
                 "waiting for startup",
             ),
-            detailed_analysis_running: false,
             detailed_analysis_status: analysis_status_text(AnalysisMode::Detailed, "not started"),
             detailed_analysis_atstart: false,
             prestige_names: Value::Object(Default::default()),
@@ -4128,9 +4126,9 @@ impl StatsState {
             analysis: Option<Value>,
             main_players: Vec<String>,
             main_handles: Vec<String>,
-            simple_analysis_running: bool,
+            analysis_running: bool,
+            analysis_running_mode: Option<String>,
             simple_analysis_status: String,
-            detailed_analysis_running: bool,
             detailed_analysis_status: String,
             detailed_analysis_atstart: bool,
             prestige_names: Value,
@@ -4146,9 +4144,11 @@ impl StatsState {
             analysis,
             main_players,
             main_handles,
-            simple_analysis_running: self.simple_analysis_running,
+            analysis_running: self.analysis_running,
+            analysis_running_mode: self
+                .analysis_running_mode
+                .map(|mode| mode.key().to_string()),
             simple_analysis_status: self.simple_analysis_status.clone(),
-            detailed_analysis_running: self.detailed_analysis_running,
             detailed_analysis_status: self.detailed_analysis_status.clone(),
             detailed_analysis_atstart: self.detailed_analysis_atstart,
             prestige_names,
@@ -4568,7 +4568,9 @@ async fn config_request(
 
             match action {
                 "stop_detailed_analysis" => {
-                    if !stats.detailed_analysis_running {
+                    if !stats.analysis_running
+                        || stats.analysis_running_mode != Some(AnalysisMode::Detailed)
+                    {
                         stats.message = "Detailed analysis is not running.".to_string();
                     } else if state.request_detailed_analysis_stop() {
                         stats.detailed_analysis_status =

@@ -67,7 +67,7 @@ fn sync_detailed_analysis_status_from_replays_reports_cached_progress() {
         stats.detailed_analysis_status,
         "Detailed analysis: loaded from cache (1/2)."
     );
-    assert!(!stats.detailed_analysis_running);
+    assert!(!stats.analysis_running);
 }
 
 #[test]

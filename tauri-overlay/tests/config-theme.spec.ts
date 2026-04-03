@@ -181,8 +181,8 @@ async function installThemeMock(
                             stats: {
                                 ready: false,
                                 games: 0,
-                                simple_analysis_running: false,
-                                detailed_analysis_running: false,
+                                analysis_running: false,
+                                analysis_running_mode: null,
                                 message: "",
                             },
                         };

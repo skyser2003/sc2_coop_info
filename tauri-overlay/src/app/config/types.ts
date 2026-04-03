@@ -104,8 +104,8 @@ export type StatisticsPayload = JsonObject & {
     ready?: boolean;
     message?: string;
     games?: number;
-    simple_analysis_running?: boolean;
-    detailed_analysis_running?: boolean;
+    analysis_running?: boolean;
+    analysis_running_mode?: string | null;
     detailed_parsed_count?: number;
     total_valid_files?: number;
     prestige_names?: PrestigeNameMap | JsonObject;

@@ -2397,15 +2397,11 @@ export default function StatisticsTab({
                                     disabled={
                                         actions.isBusy ||
                                         Boolean(payload.ready) ||
-                                        Boolean(
-                                            payload.simple_analysis_running,
-                                        ) ||
-                                        Boolean(
-                                            payload.detailed_analysis_running,
-                                        )
+                                        Boolean(payload.analysis_running)
                                     }
                                 >
-                                    {payload.simple_analysis_running
+                                    {payload.analysis_running &&
+                                    payload.analysis_running_mode === "simple"
                                         ? t("ui_stats_simple_running")
                                         : t("ui_stats_run_simple_analysis")}
                                 </button>

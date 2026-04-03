@@ -27,8 +27,8 @@ type SettingsActions = {
     resetMainSettings: () => void;
     isHotkeyClearKey: (key: string) => boolean;
     isHotkeyModifierKey: (key: string) => boolean;
-    detailedAnalysisRunning?: boolean;
-    simpleAnalysisRunning?: boolean;
+    analysisRunning?: boolean;
+    analysisRunningMode?: string | null;
     detailedAnalysisStatus?: string;
     simpleAnalysisStatus?: string;
     analysisMessage?: string;
@@ -690,8 +690,15 @@ export default function SettingsTab({
     );
 
     const minimizeToTrayEnabled = Boolean(read(["minimize_to_tray"], false));
-    const detailedAnalysisRunning = Boolean(actions.detailedAnalysisRunning);
-    const simpleAnalysisRunning = Boolean(actions.simpleAnalysisRunning);
+    const analysisRunning = Boolean(actions.analysisRunning);
+    const analysisRunningMode =
+        typeof actions.analysisRunningMode === "string"
+            ? actions.analysisRunningMode
+            : null;
+    const detailedAnalysisRunning =
+        analysisRunning && analysisRunningMode === "detailed";
+    const simpleAnalysisRunning =
+        analysisRunning && analysisRunningMode === "simple";
     const detailedAnalysisStatus =
         actions.detailedAnalysisStatus || t("ui_stats_detailed_not_started");
     const simpleAnalysisStatus =

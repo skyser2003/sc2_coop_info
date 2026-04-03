@@ -3403,15 +3403,11 @@ impl ReplayAnalysis {
             .get("ready")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        let running_simple = response
-            .get("simple_analysis_running")
+        let analysis_running = response
+            .get("analysis_running")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        let running_detailed = response
-            .get("detailed_analysis_running")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        if is_ready && !running_simple && !running_detailed {
+        if is_ready && !analysis_running {
             match replays.try_lock() {
                 Ok(cached_replays) => match stats_current_replay_files.try_lock() {
                     Ok(current_replay_files) => {

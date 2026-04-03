@@ -2293,8 +2293,7 @@ function SettingsEditor({
         if (
             hasCachedQuery &&
             tabData.statistics.query === currentQuery &&
-            !tabData.statistics.simple_analysis_running &&
-            !tabData.statistics.detailed_analysis_running
+            !tabData.statistics.analysis_running
         ) {
             return undefined;
         }
@@ -2316,9 +2315,7 @@ function SettingsEditor({
             return undefined;
         }
         const isParsing =
-            !tabData.statistics.ready ||
-            tabData.statistics.simple_analysis_running ||
-            tabData.statistics.detailed_analysis_running;
+            !tabData.statistics.ready || tabData.statistics.analysis_running;
 
         if (!isParsing) {
             return undefined;
@@ -2330,8 +2327,8 @@ function SettingsEditor({
     }, [
         observesStatistics,
         tabData.statistics && tabData.statistics.ready,
-        tabData.statistics && tabData.statistics.simple_analysis_running,
-        tabData.statistics && tabData.statistics.detailed_analysis_running,
+        tabData.statistics && tabData.statistics.analysis_running,
+        tabData.statistics && tabData.statistics.analysis_running_mode,
         statsState.filters,
     ]);
 
@@ -2393,14 +2390,16 @@ function SettingsEditor({
                     monitorOptions: monitorCatalog,
                     isHotkeyClearKey,
                     isHotkeyModifierKey,
-                    simpleAnalysisRunning: Boolean(
-                        tabData.statistics?.simple_analysis_running,
+                    analysisRunning: Boolean(
+                        tabData.statistics?.analysis_running,
                     ),
+                    analysisRunningMode:
+                        typeof tabData.statistics?.analysis_running_mode ===
+                        "string"
+                            ? tabData.statistics.analysis_running_mode
+                            : null,
                     simpleAnalysisStatus: String(
                         tabData.statistics?.simple_analysis_status || "",
-                    ),
-                    detailedAnalysisRunning: Boolean(
-                        tabData.statistics?.detailed_analysis_running,
                     ),
                     detailedAnalysisStatus: String(
                         tabData.statistics?.detailed_analysis_status || "",

@@ -121,8 +121,8 @@ async function installMasteryLanguageMock(page) {
                         stats: {
                             ready: true,
                             games: 1,
-                            simple_analysis_running: false,
-                            detailed_analysis_running: false,
+                            analysis_running: false,
+                            analysis_running_mode: null,
                             message: "",
                             query: "",
                             commander_mastery: commanderMastery,

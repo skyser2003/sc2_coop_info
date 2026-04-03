@@ -261,7 +261,7 @@ impl BackendState {
             Err(_) => return,
         };
 
-        if !stats.ready || stats.simple_analysis_running || stats.detailed_analysis_running {
+        if !stats.ready || stats.analysis_running {
             return;
         }
 
