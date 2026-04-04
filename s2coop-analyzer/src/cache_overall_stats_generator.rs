@@ -2378,7 +2378,7 @@ pub fn persist_simple_analysis_cache(
         })?;
     }
 
-    let mut all_entries = match std::fs::read(cache_path) {
+    let all_entries = match std::fs::read(cache_path) {
         Ok(payload) => {
             serde_json::from_slice::<Vec<CacheReplayEntry>>(&payload).map_err(|error| {
                 GenerateCacheError::ParseExistingCache(cache_path.to_path_buf(), error)
@@ -2393,8 +2393,27 @@ pub fn persist_simple_analysis_cache(
         }
     };
 
-    all_entries.retain(|existing| existing.detailed_analysis);
-    all_entries.extend_from_slice(entries);
+    let mut merged_entries = all_entries
+        .into_iter()
+        .filter(|entry| !entry.hash.is_empty())
+        .map(|entry| (entry.hash.clone(), entry))
+        .collect::<HashMap<_, _>>();
+
+    for entry in entries {
+        if entry.hash.is_empty() {
+            continue;
+        }
+
+        merged_entries.retain(|hash, existing| hash == &entry.hash || existing.file != entry.file);
+        match merged_entries.get(&entry.hash) {
+            Some(existing) if existing.detailed_analysis && !entry.detailed_analysis => {}
+            _ => {
+                merged_entries.insert(entry.hash.clone(), entry.clone());
+            }
+        }
+    }
+
+    let mut all_entries = merged_entries.into_values().collect::<Vec<_>>();
 
     all_entries.sort_by(|left, right| {
         right
