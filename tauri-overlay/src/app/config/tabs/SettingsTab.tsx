@@ -718,8 +718,15 @@ export default function SettingsTab({
     const normalizedDetailedAnalysisStatus = asTableValue(
         detailedAnalysisStatus,
     ).trim();
+    const normalizedSimpleAnalysisStatusLower =
+        normalizedSimpleAnalysisStatus.toLocaleLowerCase();
     const normalizedDetailedAnalysisStatusLower =
         normalizedDetailedAnalysisStatus.toLocaleLowerCase();
+    const simpleAnalysisTerminalStatusOnly =
+        !simpleAnalysisRunning &&
+        normalizedSimpleAnalysisStatusLower ===
+            "simple analysis: completed." &&
+        normalizedAnalysisMessage.length > 0;
     const preferDetailedProgressTotal =
         detailedAnalysisRunning ||
         normalizedDetailedAnalysisStatusLower.includes("stopping") ||
@@ -730,6 +737,7 @@ export default function SettingsTab({
         normalizedAnalysisMessage !== normalizedDetailedAnalysisStatus;
     const showSimpleAnalysisStatus =
         normalizedSimpleAnalysisStatus.length > 0 &&
+        !simpleAnalysisTerminalStatusOnly &&
         (simpleAnalysisRunning ||
             (!detailedAnalysisRunning &&
                 normalizedSimpleAnalysisStatus !==

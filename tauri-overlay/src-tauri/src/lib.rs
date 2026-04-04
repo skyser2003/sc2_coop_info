@@ -2277,6 +2277,39 @@ fn analysis_error_status_text(mode: AnalysisMode, message: &str) -> String {
     format!("{}: {message}", mode.display())
 }
 
+fn analysis_elapsed_suffix(elapsed: Duration) -> String {
+    format!("Time consumed: {:.2} s.", elapsed.as_secs_f64())
+}
+
+fn analysis_completed_message(mode: AnalysisMode, replay_count: u64, elapsed: Duration) -> String {
+    let summary = if replay_count == 0 {
+        "No replay files found.".to_string()
+    } else {
+        format!(
+            "{} completed with {replay_count} replay file(s).",
+            mode.display()
+        )
+    };
+    format!("{summary} {}", analysis_elapsed_suffix(elapsed))
+}
+
+fn analysis_stopped_message(mode: AnalysisMode, detail: &str, elapsed: Duration) -> String {
+    format!(
+        "{} stopped. {} {}",
+        mode.display(),
+        detail,
+        analysis_elapsed_suffix(elapsed)
+    )
+}
+
+fn analysis_failed_message(mode: AnalysisMode, message: &str, elapsed: Duration) -> String {
+    format!(
+        "{} failed: {message} {}",
+        mode.display(),
+        analysis_elapsed_suffix(elapsed)
+    )
+}
+
 fn normalize_detailed_analysis_logger_message(message: &str) -> String {
     let normalized = message.replace('\n', " | ");
     if normalized == "Starting detailed analysis!" {
@@ -2680,6 +2713,7 @@ fn spawn_analysis_task(
                     all_replays = detailed_replays;
                 }
                 Err(message) => {
+                    let elapsed = started_at.elapsed();
                     if let Ok(mut slot) = detailed_stop_controller_slot_for_thread.lock() {
                         slot.take();
                     }
@@ -2687,7 +2721,7 @@ fn spawn_analysis_task(
                     if let Ok(mut guard) = analysis_state.lock() {
                         set_analysis_terminal_status(&mut guard, mode, "failed");
                         guard.detailed_analysis_status = analysis_error_status_text(mode, &message);
-                        guard.message = message;
+                        guard.message = analysis_failed_message(mode, &message, elapsed);
                     }
                     replay_scan_progress().set_stage("analysis_failed");
                     replay_scan_progress().set_status("Completed");
@@ -2800,9 +2834,13 @@ fn spawn_analysis_task(
             guard.analysis_running = false;
             guard.analysis_running_mode = None;
             guard.detailed_analysis_status = analysis_status_text(mode, "stopped");
-            guard.message =
-                "Detailed analysis stopped. Run detailed analysis to continue generating cache."
-                    .to_string();
+            guard.message = analysis_stopped_message(
+                mode,
+                "Run detailed analysis to continue generating cache.",
+                started_at.elapsed(),
+            );
+        } else {
+            guard.message = analysis_completed_message(mode, guard.games, started_at.elapsed());
         }
         if !include_detailed {
             sync_detailed_analysis_status_from_replays(&mut guard, &all_replays);
