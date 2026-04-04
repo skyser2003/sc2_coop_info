@@ -1,8 +1,9 @@
 use chrono::{Local, NaiveDate};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use s2coop_analyzer::cache_overall_stats_generator::{
-    cache_entry_from_report, parse_basic_cache_entry, CacheIconValue, CacheNumericValue,
-    CachePlayer, CacheReplayEntry, CacheUnitStats, ReplayMessage,
+    cache_entry_from_report, parse_basic_cache_entry, pretty_output_path, write_cache_file,
+    write_pretty_cache_file, CacheIconValue, CacheNumericValue, CachePlayer, CacheReplayEntry,
+    CacheUnitStats, ReplayMessage,
 };
 use s2coop_analyzer::detailed_replay_analysis::{
     analyze_replay_file, cache_hidden_created_lost_units,
@@ -678,6 +679,130 @@ fn replay_chat_messages_from_report(messages: &[ParsedReplayMessage]) -> Vec<Rep
             time: message.time,
         })
         .collect()
+}
+
+fn temp_cache_path(cache_path: &Path) -> PathBuf {
+    cache_path.with_extension("temp.jsonl")
+}
+
+fn load_temp_cache_entries(temp_path: &Path) -> Vec<CacheReplayEntry> {
+    let content = match std::fs::read_to_string(temp_path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+        Err(error) => {
+            crate::sco_log!(
+                "[SCO/cache] failed to read temp cache '{}': {error}",
+                temp_path.display()
+            );
+            return Vec::new();
+        }
+    };
+
+    content
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+
+            match serde_json::from_str::<CacheReplayEntry>(trimmed) {
+                Ok(entry) if !entry.hash.is_empty() => Some(entry),
+                Ok(_) => None,
+                Err(error) => {
+                    crate::sco_log!(
+                        "[SCO/cache] failed to parse temp cache entry in '{}': {error}",
+                        temp_path.display()
+                    );
+                    None
+                }
+            }
+        })
+        .collect()
+}
+
+fn read_cache_entries(cache_path: &Path, log_label: &str) -> Vec<CacheReplayEntry> {
+    let payload = match std::fs::read(cache_path) {
+        Ok(payload) => payload,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+        Err(error) => {
+            crate::sco_log!(
+                "[SCO/cache] failed to read {log_label} '{}': {error}",
+                cache_path.display()
+            );
+            return Vec::new();
+        }
+    };
+
+    match serde_json::from_slice::<Vec<CacheReplayEntry>>(&payload) {
+        Ok(entries) => entries,
+        Err(error) => {
+            crate::sco_log!(
+                "[SCO/cache] failed to parse {log_label} '{}': {error}",
+                cache_path.display()
+            );
+            Vec::new()
+        }
+    }
+}
+
+fn recover_cache_entries_from_temp(cache_path: &Path, log_label: &str) -> Vec<CacheReplayEntry> {
+    let mut merged = read_cache_entries(cache_path, log_label)
+        .into_iter()
+        .filter(|entry| !entry.hash.is_empty())
+        .map(|entry| (entry.hash.clone(), entry))
+        .collect::<HashMap<_, _>>();
+    let temp_path = temp_cache_path(cache_path);
+    let temp_entries = load_temp_cache_entries(&temp_path);
+    if temp_entries.is_empty() {
+        return merged.into_values().collect();
+    }
+
+    for entry in temp_entries {
+        merged.retain(|hash, existing| hash == &entry.hash || existing.file != entry.file);
+        match merged.get(&entry.hash) {
+            Some(existing)
+                if ReplayInfo::should_keep_existing_detailed_variant(
+                    existing.detailed_analysis,
+                    entry.detailed_analysis,
+                ) => {}
+            _ => {
+                merged.insert(entry.hash.clone(), entry);
+            }
+        }
+    }
+
+    let mut entries = merged.into_values().collect::<Vec<_>>();
+    entries.sort_by(|left, right| {
+        right
+            .date
+            .cmp(&left.date)
+            .then_with(|| right.file.cmp(&left.file))
+    });
+
+    if let Err(error) = write_cache_file(&entries, cache_path) {
+        crate::sco_log!(
+            "[SCO/cache] failed to persist recovered cache '{}': {error}",
+            cache_path.display()
+        );
+    } else {
+        if let Err(error) =
+            write_pretty_cache_file(cache_path, Some(&pretty_output_path(cache_path)))
+        {
+            crate::sco_log!(
+                "[SCO/cache] failed to update pretty cache '{}': {error}",
+                cache_path.display()
+            );
+        }
+        if let Err(error) = std::fs::remove_file(&temp_path) {
+            crate::sco_log!(
+                "[SCO/cache] failed to remove recovered temp cache '{}': {error}",
+                temp_path.display()
+            );
+        }
+    }
+
+    entries
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -2627,22 +2752,7 @@ impl ReplayAnalysis {
         main_names: &HashSet<String>,
         main_handles: &HashSet<String>,
     ) -> Vec<ReplayInfo> {
-        let payload = match std::fs::read(cache_path) {
-            Ok(payload) => payload,
-            Err(_) => return Vec::new(),
-        };
-        let entries = match serde_json::from_slice::<Vec<CacheReplayEntry>>(&payload) {
-            Ok(entries) => entries,
-            Err(error) => {
-                crate::sco_log!(
-                    "[SCO/cache] failed to parse detailed-analysis cache '{}': {error}",
-                    cache_path.display()
-                );
-                return Vec::new();
-            }
-        };
-
-        let mut replays = entries
+        let mut replays = recover_cache_entries_from_temp(cache_path, "detailed-analysis cache")
             .into_iter()
             .filter(|entry| entry.detailed_analysis && Path::new(&entry.file).exists())
             .map(|entry| {
@@ -2699,22 +2809,7 @@ impl ReplayAnalysis {
         main_names: &HashSet<String>,
         main_handles: &HashSet<String>,
     ) -> Vec<ReplayInfo> {
-        let payload = match std::fs::read(cache_path) {
-            Ok(payload) => payload,
-            Err(_) => return Vec::new(),
-        };
-        let entries = match serde_json::from_slice::<Vec<CacheReplayEntry>>(&payload) {
-            Ok(entries) => entries,
-            Err(error) => {
-                crate::sco_log!(
-                    "[SCO/cache] failed to parse unified cache '{}': {error}",
-                    cache_path.display()
-                );
-                return Vec::new();
-            }
-        };
-
-        let mut replays = entries
+        let mut replays = recover_cache_entries_from_temp(cache_path, "unified cache")
             .into_iter()
             .filter(|entry| Path::new(&entry.file).exists())
             .map(|entry| {

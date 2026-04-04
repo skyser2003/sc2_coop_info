@@ -1,6 +1,6 @@
 use s2coop_analyzer::cache_overall_stats_generator::{
-    CacheCountValue, CacheNumericValue, CachePlayer, CacheReplayEntry, CacheUnitStats,
-    ProtocolBuildValue, ReplayBuildInfo,
+    pretty_output_path, CacheCountValue, CacheNumericValue, CachePlayer, CacheReplayEntry,
+    CacheUnitStats, ProtocolBuildValue, ReplayBuildInfo,
 };
 use sco_tauri_overlay::canonicalize_coop_map_id;
 use sco_tauri_overlay::replay_analysis::{bonus_objective_total_for_map_id, ReplayAnalysis};
@@ -177,5 +177,138 @@ fn load_detailed_analysis_replays_snapshot_from_path_uses_cache_entries() {
     let _ = std::fs::remove_file(&cache_path);
     let _ = std::fs::remove_file(&replay_path);
     let _ = std::fs::remove_file(&ignored_replay_path);
+    let _ = std::fs::remove_dir(&root);
+}
+
+#[test]
+fn load_detailed_analysis_replays_snapshot_from_path_recovers_temp_cache_entries() {
+    let root = unique_temp_path("recover_temp_cache");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let existing_replay_path = root.join("existing.SC2Replay");
+    let recovered_replay_path = root.join("recovered.SC2Replay");
+    let cache_path = root.join("cache_overall_stats.json");
+    let temp_path = cache_path.with_extension("temp.jsonl");
+    let pretty_path = pretty_output_path(&cache_path);
+
+    std::fs::write(&existing_replay_path, []).expect("existing replay file should be created");
+    std::fs::write(&recovered_replay_path, []).expect("recovered replay file should be created");
+
+    let existing_entry = sample_cache_entry(&existing_replay_path, true);
+    let recovered_entry = sample_cache_entry(&recovered_replay_path, true);
+
+    let payload =
+        serde_json::to_vec(&vec![existing_entry.clone()]).expect("cache payload should serialize");
+    std::fs::write(&cache_path, payload).expect("cache file should be written");
+    std::fs::write(
+        &temp_path,
+        format!(
+            "{}\n",
+            serde_json::to_string(&recovered_entry).expect("temp cache entry should serialize")
+        ),
+    )
+    .expect("temp cache file should be written");
+
+    let replays = ReplayAnalysis::load_detailed_analysis_replays_snapshot_from_path(
+        &cache_path,
+        0,
+        &HashSet::new(),
+        &HashSet::new(),
+    );
+
+    assert_eq!(replays.len(), 2);
+    assert!(replays
+        .iter()
+        .any(|replay| replay.file == existing_replay_path.display().to_string()));
+    assert!(replays
+        .iter()
+        .any(|replay| replay.file == recovered_replay_path.display().to_string()));
+    assert!(
+        !temp_path.exists(),
+        "temp cache should be removed after recovery"
+    );
+    assert!(
+        pretty_path.exists(),
+        "pretty cache should be regenerated after recovery"
+    );
+
+    let persisted_payload = std::fs::read(&cache_path).expect("cache file should exist");
+    let persisted_entries = serde_json::from_slice::<Vec<CacheReplayEntry>>(&persisted_payload)
+        .expect("persisted cache should parse");
+    assert_eq!(persisted_entries.len(), 2);
+    assert!(persisted_entries
+        .iter()
+        .any(|entry| entry.file == existing_entry.file));
+    assert!(persisted_entries
+        .iter()
+        .any(|entry| entry.file == recovered_entry.file));
+
+    let _ = std::fs::remove_file(&pretty_path);
+    let _ = std::fs::remove_file(&cache_path);
+    let _ = std::fs::remove_file(&existing_replay_path);
+    let _ = std::fs::remove_file(&recovered_replay_path);
+    let _ = std::fs::remove_dir(&root);
+}
+
+#[test]
+fn load_detailed_analysis_replays_snapshot_from_path_persists_simple_temp_entry_to_cache_file() {
+    let root = unique_temp_path("recover_simple_temp_cache");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let existing_replay_path = root.join("existing.SC2Replay");
+    let recovered_replay_path = root.join("recovered_simple.SC2Replay");
+    let cache_path = root.join("cache_overall_stats.json");
+    let temp_path = cache_path.with_extension("temp.jsonl");
+    let pretty_path = pretty_output_path(&cache_path);
+
+    std::fs::write(&existing_replay_path, []).expect("existing replay file should be created");
+    std::fs::write(&recovered_replay_path, []).expect("recovered replay file should be created");
+
+    let existing_entry = sample_cache_entry(&existing_replay_path, true);
+    let recovered_entry = sample_cache_entry(&recovered_replay_path, false);
+
+    let payload =
+        serde_json::to_vec(&vec![existing_entry.clone()]).expect("cache payload should serialize");
+    std::fs::write(&cache_path, payload).expect("cache file should be written");
+    std::fs::write(
+        &temp_path,
+        format!(
+            "{}\n",
+            serde_json::to_string(&recovered_entry).expect("temp cache entry should serialize")
+        ),
+    )
+    .expect("temp cache file should be written");
+
+    let replays = ReplayAnalysis::load_detailed_analysis_replays_snapshot_from_path(
+        &cache_path,
+        0,
+        &HashSet::new(),
+        &HashSet::new(),
+    );
+
+    assert_eq!(replays.len(), 1);
+    assert_eq!(replays[0].file, existing_replay_path.display().to_string());
+    assert!(
+        !temp_path.exists(),
+        "temp cache should be removed after recovery"
+    );
+    assert!(
+        pretty_path.exists(),
+        "pretty cache should be regenerated after recovery"
+    );
+
+    let persisted_payload = std::fs::read(&cache_path).expect("cache file should exist");
+    let persisted_entries = serde_json::from_slice::<Vec<CacheReplayEntry>>(&persisted_payload)
+        .expect("persisted cache should parse");
+    assert_eq!(persisted_entries.len(), 2);
+    assert!(persisted_entries
+        .iter()
+        .any(|entry| entry.file == existing_entry.file && entry.detailed_analysis));
+    assert!(persisted_entries
+        .iter()
+        .any(|entry| entry.file == recovered_entry.file && !entry.detailed_analysis));
+
+    let _ = std::fs::remove_file(&pretty_path);
+    let _ = std::fs::remove_file(&cache_path);
+    let _ = std::fs::remove_file(&existing_replay_path);
+    let _ = std::fs::remove_file(&recovered_replay_path);
     let _ = std::fs::remove_dir(&root);
 }

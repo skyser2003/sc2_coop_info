@@ -682,12 +682,9 @@ fn generate_cache_overall_stats_impl(
     let cache_data = dictionary_data::cache_generation_data()
         .map_err(|error| GenerateCacheError::DetailedAnalysisConfig(error.to_string()))?;
 
-    // Load existing detailed analysis entries from both complete cache and temp file
-    let mut existing_detailed_analysis_entries =
+    let existing_detailed_analysis_entries =
         load_existing_detailed_analysis_cache(&config.output_file, logger);
     let temp_file_path = config.output_file.with_extension("temp.jsonl");
-    let temp_entries = load_temp_detailed_analysis_cache(&temp_file_path, logger);
-    existing_detailed_analysis_entries.extend(temp_entries);
 
     let stop_controller = runtime.stop_controller.clone();
     let stop_requested = Arc::new(AtomicBool::new(false));
@@ -783,7 +780,7 @@ fn generate_cache_overall_stats_impl(
         }
     };
 
-    // Collect all entries: existing from cache/temp + newly analyzed
+    // Collect all entries: existing from cache + newly analyzed
     let mut all_entries = HashMap::new();
     all_entries.extend(existing_detailed_analysis_entries);
     all_entries.extend(entries);
@@ -877,50 +874,6 @@ pub fn load_existing_detailed_analysis_cache(
         .filter(|entry| entry.detailed_analysis && !entry.hash.is_empty())
         .map(|entry| (entry.hash.clone(), entry))
         .collect()
-}
-
-fn load_temp_detailed_analysis_cache(
-    temp_path: &Path,
-    logger: Option<&(dyn Fn(String) + Send + Sync + '_)>,
-) -> HashMap<String, CacheReplayEntry> {
-    let content = match fs::read_to_string(temp_path) {
-        Ok(content) => content,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return HashMap::new(),
-        Err(error) => {
-            emit_optional_logger(
-                logger,
-                format!(
-                    "Ignoring existing temp cache '{}': failed to read: {error}",
-                    temp_path.display()
-                ),
-            );
-            return HashMap::new();
-        }
-    };
-
-    let mut entries = HashMap::new();
-    for line in content.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        match serde_json::from_str::<CacheReplayEntry>(line) {
-            Ok(entry) => {
-                if entry.detailed_analysis && !entry.hash.is_empty() {
-                    entries.insert(entry.hash.clone(), entry);
-                }
-            }
-            Err(error) => {
-                emit_optional_logger(
-                    logger,
-                    format!(
-                        "Ignoring invalid temp cache entry in '{}': {error}",
-                        temp_path.display()
-                    ),
-                );
-            }
-        }
-    }
-    entries
 }
 
 pub fn partition_cached_candidates(
