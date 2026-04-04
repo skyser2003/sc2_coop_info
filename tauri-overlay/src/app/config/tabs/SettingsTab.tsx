@@ -724,8 +724,7 @@ export default function SettingsTab({
         normalizedDetailedAnalysisStatus.toLocaleLowerCase();
     const simpleAnalysisTerminalStatusOnly =
         !simpleAnalysisRunning &&
-        normalizedSimpleAnalysisStatusLower ===
-            "simple analysis: completed." &&
+        normalizedSimpleAnalysisStatusLower === "simple analysis: completed." &&
         normalizedAnalysisMessage.length > 0;
     const preferDetailedProgressTotal =
         detailedAnalysisRunning ||

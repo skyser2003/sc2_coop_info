@@ -3052,8 +3052,15 @@ impl ReplayAnalysis {
         );
 
         scan_progress.set_stage("finalizing_results");
+        scan_progress.set_status("Finalizing results");
+        crate::sco_log!(
+            "[SCO/replay] finalizing {} parsed replay result(s) against {} existing replay(s)",
+            successful_results.len(),
+            existing_replays.len()
+        );
 
         let mut replay_map = HashMap::<String, ReplayInfo>::new();
+        let mut simple_cache_entries = Vec::<CacheReplayEntry>::new();
         for replay in existing_replays {
             let replay_hash = crate::calculate_replay_hash(&PathBuf::from(&replay.file));
             if replay_hash.is_empty() {
@@ -3074,14 +3081,7 @@ impl ReplayAnalysis {
 
         for result in successful_results {
             if let Some(entry) = result.cache_entry.as_ref() {
-                if let Err(error) =
-                    crate::persist_detailed_cache_entry_to_path(&get_cache_path(), entry)
-                {
-                    crate::sco_log!(
-                        "[SCO/cache] failed to save simple analysis cache entry for '{}': {error}",
-                        entry.file
-                    );
-                }
+                simple_cache_entries.push(entry.clone());
 
                 if !entry.hash.is_empty() {
                     replay_map.retain(|hash, cached| {
@@ -3117,6 +3117,19 @@ impl ReplayAnalysis {
                     replay_map.insert(replay_hash, result.replay);
                 }
             }
+        }
+
+        crate::sco_log!(
+            "[SCO/cache] persisting {} simple-analysis cache entr(y/ies) in one batch",
+            simple_cache_entries.len()
+        );
+        if let Err(error) =
+            s2coop_analyzer::cache_overall_stats_generator::persist_simple_analysis_cache(
+                &simple_cache_entries,
+                &get_cache_path(),
+            )
+        {
+            crate::sco_log!("[SCO/cache] failed to persist simple analysis cache batch: {error}");
         }
 
         let mut all_replays = replay_map.into_values().collect::<Vec<_>>();

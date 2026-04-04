@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
 import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
 import type {
+    AnalysisCompletedPayload,
     AppSettings,
     ConfigChatPayload,
     ConfigPayload,
@@ -258,6 +259,7 @@ const TABS: ConfigTabDefinition[] = [
 ];
 
 const SCO_REPLAY_SCAN_PROGRESS_EVENT = "sco://replay-scan-progress";
+const SCO_ANALYSIS_COMPLETED_EVENT = "sco://analysis-completed";
 const SCO_PERFORMANCE_VISIBILITY_EVENT = "sco://performance-visibility";
 const SCO_OVERLAY_COLOR_PREVIEW_EVENT = "sco://overlay-color-preview";
 const SCO_OVERLAY_LANGUAGE_PREVIEW_EVENT = "sco://overlay-language-preview";
@@ -794,10 +796,9 @@ function isHotkeyModifierKey(key: string): boolean {
     );
 }
 
-async function invokeConfigCommand<T extends { status?: string; message?: string }>(
-    command: string,
-    args: JsonObject = {},
-): Promise<T> {
+async function invokeConfigCommand<
+    T extends { status?: string; message?: string },
+>(command: string, args: JsonObject = {}): Promise<T> {
     const payload = await invoke<T>(command, args);
     if (!payload) {
         throw new Error(`Request failed (${command})`);
@@ -868,6 +869,21 @@ async function postStatsActionRequest(
         action,
         payload,
     });
+}
+
+function applyStatsActionPayload(
+    payload: StatsActionPayload | null | undefined,
+    setTabData: React.Dispatch<React.SetStateAction<TabDataState>>,
+): void {
+    if (!payload || !payload.stats) {
+        console.log("[SCO/ui] stats action payload missing stats", payload);
+        return;
+    }
+    console.log("[SCO/ui] applying stats action payload", payload);
+    setTabData((current) => ({
+        ...current,
+        statistics: payload.stats as StatisticsPayload,
+    }));
 }
 
 async function showReplayRequest(
@@ -1309,6 +1325,7 @@ function SettingsEditor({
     }
 
     function safeStatus(message: string): void {
+        console.log("[SCO/ui] status", message);
         setStatus(message);
     }
 
@@ -1492,12 +1509,57 @@ function SettingsEditor({
     }, []);
 
     useEffect(() => {
+        let isMounted = true;
+        let unlisten: null | (() => void) = null;
+        (async () => {
+            try {
+                console.log(
+                    "[SCO/ui] subscribing to analysis completed event",
+                    SCO_ANALYSIS_COMPLETED_EVENT,
+                );
+                unlisten = await listen<AnalysisCompletedPayload>(
+                    SCO_ANALYSIS_COMPLETED_EVENT,
+                    (event) => {
+                        if (!isMounted) {
+                            return;
+                        }
+                        console.log("[SCO/ui] analysis completed event", event);
+                        const payload = event?.payload;
+                        if (
+                            payload &&
+                            typeof payload === "object" &&
+                            typeof payload.message === "string"
+                        ) {
+                            safeStatus(payload.message);
+                        }
+                        void refreshStatistics(true, null, true);
+                    },
+                );
+            } catch (error) {
+                console.warn(
+                    "[SCO/ui] Failed to subscribe to analysis completed event",
+                    error,
+                );
+            }
+        })();
+
+        return () => {
+            isMounted = false;
+            if (typeof unlisten === "function") {
+                unlisten();
+            }
+        };
+    }, []);
+
+    useEffect(() => {
         if (draft === null || startupAnalysisRequestedRef.current) {
             return;
         }
         startupAnalysisRequestedRef.current = true;
+        console.log("[SCO/ui] frontend_ready request");
         void postStatsActionRequest("frontend_ready")
             .then((payload) => {
+                console.log("[SCO/ui] frontend_ready response", payload);
                 if (!payload || !payload.stats) {
                     return;
                 }
@@ -1526,6 +1588,10 @@ function SettingsEditor({
                         if (!isMounted) {
                             return;
                         }
+                        console.log(
+                            "[SCO/ui] replay scan progress event",
+                            event,
+                        );
                         const progress = event?.payload;
                         if (!progress || typeof progress !== "object") {
                             return;
@@ -2036,6 +2102,13 @@ function SettingsEditor({
         const existingQuery = tabData.statistics && tabData.statistics.query;
         const now = Date.now();
         const completedQuery = statsQueryRef.current;
+        console.log("[SCO/ui] refreshStatistics request", {
+            silent,
+            force,
+            query,
+            existingQuery,
+            completedQuery,
+        });
         statsQueryRef.current = {
             ...completedQuery,
             desiredQuery: query,
@@ -2066,10 +2139,14 @@ function SettingsEditor({
         try {
             setIsBusy(true);
             const payload = await loadStatisticsRequest(query);
+            console.log("[SCO/ui] refreshStatistics response", payload);
             if (
                 statsQueryRef.current.requestSeq !== requestSeq ||
                 statsQueryRef.current.activeQuery !== query
             ) {
+                console.log(
+                    "[SCO/ui] refreshStatistics stale response ignored",
+                );
                 return;
             }
             setTabData((current) => ({
@@ -2088,6 +2165,7 @@ function SettingsEditor({
                 safeStatus("statistics refreshed");
             }
         } catch (error) {
+            console.warn("[SCO/ui] refreshStatistics failed", error);
             if (statsQueryRef.current.requestSeq !== requestSeq) {
                 return;
             }
@@ -2121,30 +2199,30 @@ function SettingsEditor({
     }
 
     async function startSimpleAnalysis() {
+        console.log("[SCO/ui] startSimpleAnalysis request");
         const result = await postAction(() =>
             postStatsActionRequest("start_simple_analysis"),
         );
-        if (result) {
-            setTimeout(() => refreshStatistics(true, null, true), 800);
-        }
+        console.log("[SCO/ui] startSimpleAnalysis response", result);
+        applyStatsActionPayload(result, setTabData);
     }
 
     async function runDetailedAnalysis() {
+        console.log("[SCO/ui] runDetailedAnalysis request");
         const result = await postAction(() =>
             postStatsActionRequest("run_detailed_analysis"),
         );
-        if (result) {
-            setTimeout(() => refreshStatistics(true, null, true), 800);
-        }
+        console.log("[SCO/ui] runDetailedAnalysis response", result);
+        applyStatsActionPayload(result, setTabData);
     }
 
     async function stopDetailedAnalysis() {
+        console.log("[SCO/ui] stopDetailedAnalysis request");
         const result = await postAction(() =>
             postStatsActionRequest("stop_detailed_analysis"),
         );
-        if (result) {
-            setTimeout(() => refreshStatistics(true, null, true), 300);
-        }
+        console.log("[SCO/ui] stopDetailedAnalysis response", result);
+        applyStatsActionPayload(result, setTabData);
     }
 
     async function dumpData() {
@@ -2152,12 +2230,12 @@ function SettingsEditor({
     }
 
     async function deleteParsedData() {
+        console.log("[SCO/ui] deleteParsedData request");
         const result = await postAction(() =>
             postStatsActionRequest("delete_parsed_data"),
         );
-        if (result) {
-            setTimeout(() => refreshStatistics(true, null, true), 1000);
-        }
+        console.log("[SCO/ui] deleteParsedData response", result);
+        applyStatsActionPayload(result, setTabData);
     }
 
     async function setDetailedAnalysisAtStart(enabled: boolean): Promise<void> {
@@ -2328,32 +2406,6 @@ function SettingsEditor({
         }, refreshDelayMs);
         return () => clearTimeout(timer);
     }, [observesStatistics, statsState.filters]);
-
-    useEffect(() => {
-        if (!observesStatistics) {
-            return undefined;
-        }
-        if (!tabData.statistics) {
-            refreshStatistics(true, null, true);
-            return undefined;
-        }
-        const isParsing =
-            !tabData.statistics.ready || tabData.statistics.analysis_running;
-
-        if (!isParsing) {
-            return undefined;
-        }
-        const timer = setInterval(() => {
-            refreshStatistics(true, null, true);
-        }, 2000);
-        return () => clearInterval(timer);
-    }, [
-        observesStatistics,
-        tabData.statistics && tabData.statistics.ready,
-        tabData.statistics && tabData.statistics.analysis_running,
-        tabData.statistics && tabData.statistics.analysis_running_mode,
-        statsState.filters,
-    ]);
 
     function refreshDataTabOnClick(tabId: TabId): void {
         if (tabId === "games") {

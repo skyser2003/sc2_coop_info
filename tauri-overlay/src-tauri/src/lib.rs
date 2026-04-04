@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::OnceLock;
-use std::sync::{Arc, Mutex, TryLockError};
+use std::sync::{mpsc, Arc, Mutex, TryLockError};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri_plugin_updater::UpdaterExt;
@@ -55,6 +55,7 @@ use crate::shared_types::{LocalizedLabels, ReplayScanProgressPayload};
 
 pub const UNLIMITED_REPLAY_LIMIT: usize = 0;
 const SCO_REPLAY_SCAN_PROGRESS_EVENT: &str = "sco://replay-scan-progress";
+const SCO_ANALYSIS_COMPLETED_EVENT: &str = "sco://analysis-completed";
 const WINDOWS_STARTUP_RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 const WINDOWS_STARTUP_VALUE_NAME: &str = "SCO Overlay";
 static ACTIVE_SETTINGS: OnceLock<Mutex<AppSettings>> = OnceLock::new();
@@ -208,6 +209,13 @@ pub struct StatsActionPayload {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stats: Option<StatsStatePayload>,
+}
+
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct AnalysisCompletedPayload {
+    pub mode: String,
+    pub message: String,
 }
 
 fn decode_html_entities(value: &str) -> String {
@@ -1379,10 +1387,41 @@ fn replay_scan_progress() -> &'static ReplayScanProgress {
     REPLAY_SCAN_PROGRESS.get_or_init(ReplayScanProgress::default)
 }
 
-fn emit_replay_scan_progress(app: &AppHandle<Wry>) {
+fn emit_replay_scan_progress(app: &AppHandle<Wry>, log_event: bool) {
     let payload = replay_scan_progress().as_payload();
+    if log_event {
+        crate::sco_log!(
+            "[SCO/stats/event] emit {} stage={} status={} completed={} total={} elapsed_ms={}",
+            SCO_REPLAY_SCAN_PROGRESS_EVENT,
+            payload.stage,
+            payload.status,
+            payload.completed,
+            payload.total,
+            payload.elapsed_ms
+        );
+    }
     if let Err(error) = app.emit(SCO_REPLAY_SCAN_PROGRESS_EVENT, payload) {
         crate::sco_log!("[SCO/stats] failed to emit scan progress: {error}");
+    }
+}
+
+enum ProgressEmitterCommand {
+    Stop,
+}
+
+fn emit_analysis_completed(app: &AppHandle<Wry>, mode: AnalysisMode, message: &str) {
+    let payload = AnalysisCompletedPayload {
+        mode: mode.key().to_string(),
+        message: message.to_string(),
+    };
+    crate::sco_log!(
+        "[SCO/stats/event] emit {} mode={} message={}",
+        SCO_ANALYSIS_COMPLETED_EVENT,
+        payload.mode,
+        payload.message
+    );
+    if let Err(error) = app.emit(SCO_ANALYSIS_COMPLETED_EVENT, payload) {
+        crate::sco_log!("[SCO/stats] failed to emit analysis completed event: {error}");
     }
 }
 
@@ -2134,7 +2173,7 @@ fn generate_detailed_analysis_cache(
                 guard.detailed_analysis_status = normalized.clone();
                 guard.message = normalized.clone();
             }
-            emit_replay_scan_progress(&app);
+            emit_replay_scan_progress(&app, false);
         }
     };
 
@@ -2619,16 +2658,22 @@ fn spawn_analysis_task(
             "scan_running"
         });
         replay_scan_progress().set_status("Parsing");
-        emit_replay_scan_progress(&app_for_progress);
+        emit_replay_scan_progress(&app_for_progress, true);
 
-        let should_stop = Arc::new(AtomicBool::new(false));
-        let stop_for_progress = should_stop.clone();
-        let progress_handle = thread::spawn(move || {
-            while !stop_for_progress.load(Ordering::Acquire) {
-                emit_replay_scan_progress(&app_for_progress_updates);
-                thread::sleep(Duration::from_millis(150));
+        let (progress_tx, progress_rx) = mpsc::channel::<ProgressEmitterCommand>();
+        let progress_handle = thread::spawn(move || loop {
+            match progress_rx.recv_timeout(Duration::from_millis(150)) {
+                Ok(ProgressEmitterCommand::Stop) => {
+                    emit_replay_scan_progress(&app_for_progress_updates, true);
+                    break;
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    emit_replay_scan_progress(&app_for_progress_updates, false);
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    break;
+                }
             }
-            emit_replay_scan_progress(&app_for_progress_updates);
         });
 
         // Load existing cache at start for merging and hash checking
@@ -2725,8 +2770,12 @@ fn spawn_analysis_task(
                     }
                     replay_scan_progress().set_stage("analysis_failed");
                     replay_scan_progress().set_status("Completed");
-                    emit_replay_scan_progress(&app_for_analysis);
-                    should_stop.store(true, Ordering::Release);
+                    let _ = progress_tx.send(ProgressEmitterCommand::Stop);
+                    let completion_message = analysis_state
+                        .lock()
+                        .map(|guard| guard.message.clone())
+                        .unwrap_or_else(|_| analysis_failed_message(mode, &message, elapsed));
+                    emit_analysis_completed(&app_for_analysis, mode, &completion_message);
                     let _ = progress_handle.join();
                     return;
                 }
@@ -2815,8 +2864,12 @@ fn spawn_analysis_task(
                 );
                 replay_scan_progress().set_stage("analysis_ready");
                 replay_scan_progress().set_status("Completed");
-                emit_replay_scan_progress(&app_for_analysis);
-                should_stop.store(true, Ordering::Release);
+                let _ = progress_tx.send(ProgressEmitterCommand::Stop);
+                emit_analysis_completed(
+                    &app_for_analysis,
+                    mode,
+                    &analysis_error_status_text(mode, "analysis aborted before rebuild"),
+                );
                 let _ = progress_handle.join();
                 return;
             }
@@ -2847,7 +2900,7 @@ fn spawn_analysis_task(
         }
         replay_scan_progress().set_stage("analysis_ready");
         replay_scan_progress().set_status("Completed");
-        emit_replay_scan_progress(&app_for_analysis);
+        let _ = progress_tx.send(ProgressEmitterCommand::Stop);
 
         crate::sco_log!(
             "[SCO/stats] {} finished in {}ms for {} replay(s) completed={}",
@@ -2861,7 +2914,9 @@ fn spawn_analysis_task(
             }
         );
 
-        should_stop.store(true, Ordering::Release);
+        let completion_message = guard.message.clone();
+        drop(guard);
+        emit_analysis_completed(&app_for_analysis, mode, &completion_message);
         let _ = progress_handle.join();
     });
 }
@@ -4630,6 +4685,7 @@ async fn config_stats_action(
     match action {
         "frontend_ready" => {
             let request_started_at = Instant::now();
+            crate::sco_log!("[SCO/stats/action] frontend_ready requested");
             request_startup_analysis(
                 app.clone(),
                 state.stats.clone(),
@@ -4691,6 +4747,16 @@ async fn config_stats_action(
                     }
                 })
                 .unwrap_or_else(|| analysis_started_message(mode));
+            crate::sco_log!(
+                "[SCO/stats/action] {} immediate response message={}",
+                action,
+                status
+            );
+            let stats_payload = state
+                .stats
+                .lock()
+                .ok()
+                .map(|stats| stats.as_payload_typed());
             return Ok(StatsActionPayload {
                 status: "ok",
                 result: OverlayActionResult {
@@ -4698,7 +4764,7 @@ async fn config_stats_action(
                     path: None,
                 },
                 message: status,
-                stats: None,
+                stats: stats_payload,
             });
         }
         "stop_detailed_analysis" => {}
@@ -4768,6 +4834,7 @@ async fn config_stats_action(
             );
         }
         "delete_parsed_data" => {
+            crate::sco_log!("[SCO/stats/action] delete_parsed_data requested");
             stats.ready = false;
             stats.startup_analysis_requested = false;
             stats.analysis = Some(empty_stats_payload());
