@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use s2protocol_port::{build_protocol_store, parse_file_with_store_simple, ParsedReplay};
+use s2protocol_port::{build_protocol_store, parse_file_with_store, ParsedReplay, ReplayParseMode};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -84,7 +84,7 @@ fn main() {
             .and_then(|name: &std::ffi::OsStr| name.to_str())
             .unwrap_or("<unknown>");
         let start = Instant::now();
-        let result = parse_file_with_store_simple(path, &store);
+        let result = parse_file_with_store(path, &store, ReplayParseMode::Simple);
         let elapsed = start.elapsed();
 
         match result {

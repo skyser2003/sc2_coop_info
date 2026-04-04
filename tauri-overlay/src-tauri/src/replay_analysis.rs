@@ -2878,7 +2878,7 @@ impl ReplayAnalysis {
             .unwrap_or_else(|| unparsed_replay(path))
     }
 
-    pub fn scan_replays(limit: usize) -> Vec<ReplayInfo> {
+    pub fn analyze_replays(limit: usize) -> Vec<ReplayInfo> {
         let scan_progress = replay_scan_progress();
         let main_names = configured_main_names();
         let main_handles = configured_main_handles();
@@ -2902,7 +2902,7 @@ impl ReplayAnalysis {
         scan_progress.set_status("Loading cache");
 
         let scan_started_at = Instant::now();
-        crate::sco_log!("[SCO/replay] scan_replays start limit={limit}");
+        crate::sco_log!("[SCO/replay] analyze_replays start limit={limit}");
         scan_progress.set_stage("resolving_replay_root");
 
         let Some(root) = resolve_replay_root() else {
@@ -2967,7 +2967,7 @@ impl ReplayAnalysis {
                 replays.truncate(limit);
             }
             crate::sco_log!(
-                "[SCO/replay] scan_replays finished from cache in {}ms (total={})",
+                "[SCO/replay] analyze_replays finished from cache in {}ms (total={})",
                 scan_started_at.elapsed().as_millis(),
                 replays.len()
             );
@@ -3145,7 +3145,7 @@ impl ReplayAnalysis {
             .filter(|replay| replay.result == "Unparsed")
             .count();
         crate::sco_log!(
-            "[SCO/replay] scan_replays finished in {}ms (parsed={}, unparsed={}, cached={})",
+            "[SCO/replay] analyze_replays finished in {}ms (parsed={}, unparsed={}, cached={})",
             scan_started_at.elapsed().as_millis(),
             all_replays.len() - unparsed_count,
             unparsed_count,

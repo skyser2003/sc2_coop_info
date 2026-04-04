@@ -2214,10 +2214,6 @@ fn infer_region_from_handle(handle: &str) -> Option<String> {
     normalize_region_code(region_code).map(|region| region.to_string())
 }
 
-fn scan_replays(limit: usize) -> Vec<ReplayInfo> {
-    ReplayAnalysis::scan_replays(limit)
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StartupAnalysisTrigger {
     Setup,
@@ -2581,6 +2577,84 @@ fn merge_cache_entries(
     result
 }
 
+struct AnalysisOutcome {
+    reported_replay_count: usize,
+    replays: Vec<ReplayInfo>,
+    final_cache_entries: Vec<CacheReplayEntry>,
+    analysis_completed: bool,
+}
+
+fn run_analysis(
+    app: &AppHandle<Wry>,
+    analysis_state: &Arc<Mutex<StatsState>>,
+    detailed_stop_controller_slot: &Arc<Mutex<Option<Arc<GenerateCacheStopController>>>>,
+    limit: usize,
+    include_detailed: bool,
+) -> Result<AnalysisOutcome, String> {
+    if include_detailed {
+        let existing_cache_by_hash = load_existing_cache_by_hash();
+        let worker_count = read_settings_memory().normalized_analysis_worker_threads();
+        let stop_controller = Arc::new(GenerateCacheStopController::new());
+        if let Ok(mut slot) = detailed_stop_controller_slot.lock() {
+            *slot = Some(stop_controller.clone());
+        }
+
+        let generation_result =
+            generate_detailed_analysis_cache(app, analysis_state, worker_count, stop_controller);
+
+        if let Ok(mut slot) = detailed_stop_controller_slot.lock() {
+            slot.take();
+        }
+
+        let (scanned_replays, completed) = generation_result?;
+        crate::sco_log!(
+            "[SCO/stats] detailed scan generated '{}' with {} replay(s) completed={completed}",
+            get_cache_path().display(),
+            scanned_replays
+        );
+
+        let cache_path = get_cache_path();
+        let payload = match std::fs::read(&cache_path) {
+            Ok(payload) => payload,
+            Err(error) => {
+                crate::sco_log!("[SCO/stats] failed to read generated detailed cache: {error}");
+                Vec::new()
+            }
+        };
+        let new_cache_entries = serde_json::from_slice::<Vec<CacheReplayEntry>>(&payload)
+            .unwrap_or_else(|error| {
+                crate::sco_log!("[SCO/stats] failed to parse generated detailed cache: {error}");
+                Vec::new()
+            });
+
+        let main_names = configured_main_names();
+        let main_handles = configured_main_handles();
+        let replays = ReplayAnalysis::load_detailed_analysis_replays_snapshot(
+            limit,
+            &main_names,
+            &main_handles,
+        );
+        let final_cache_entries = merge_cache_entries(&existing_cache_by_hash, new_cache_entries);
+
+        Ok(AnalysisOutcome {
+            reported_replay_count: scanned_replays,
+            replays,
+            final_cache_entries,
+            analysis_completed: completed,
+        })
+    } else {
+        let replays = ReplayAnalysis::analyze_replays(limit);
+        let final_cache_entries = load_existing_cache_by_hash().into_values().collect();
+
+        Ok(AnalysisOutcome {
+            reported_replay_count: replays.len(),
+            replays,
+            final_cache_entries,
+            analysis_completed: true,
+        })
+    }
+}
+
 fn spawn_analysis_task(
     app: AppHandle<Wry>,
     stats: Arc<Mutex<StatsState>>,
@@ -2676,128 +2750,65 @@ fn spawn_analysis_task(
             }
         });
 
-        // Load existing cache at start for merging and hash checking
-        let existing_cache_by_hash = load_existing_cache_by_hash();
-        let mut all_new_cache_entries = Vec::new();
-        let all_replays;
-        let mut detailed_completed = true;
-
-        // Run analysis based on mode
-        if include_detailed {
-            let worker_count = read_settings_memory().normalized_analysis_worker_threads();
-            let stop_controller = Arc::new(GenerateCacheStopController::new());
-            if let Ok(mut slot) = detailed_stop_controller_slot_for_thread.lock() {
-                *slot = Some(stop_controller.clone());
+        let analysis_outcome = match run_analysis(
+            &app_for_progress,
+            &analysis_state,
+            &detailed_stop_controller_slot_for_thread,
+            limit,
+            include_detailed,
+        ) {
+            Ok(outcome) => outcome,
+            Err(message) => {
+                let elapsed = started_at.elapsed();
+                crate::sco_log!("[SCO/stats] {} failed: {message}", mode.display());
+                if let Ok(mut guard) = analysis_state.lock() {
+                    set_analysis_terminal_status(&mut guard, mode, "failed");
+                    guard.detailed_analysis_status = analysis_error_status_text(mode, &message);
+                    guard.message = analysis_failed_message(mode, &message, elapsed);
+                }
+                replay_scan_progress().set_stage("analysis_failed");
+                replay_scan_progress().set_status("Completed");
+                let _ = progress_tx.send(ProgressEmitterCommand::Stop);
+                let completion_message = analysis_state
+                    .lock()
+                    .map(|guard| guard.message.clone())
+                    .unwrap_or_else(|_| analysis_failed_message(mode, &message, elapsed));
+                emit_analysis_completed(&app_for_analysis, mode, &completion_message);
+                let _ = progress_handle.join();
+                return;
             }
-            // Generate detailed analysis, which produces detailed cache entries
-            let generation_started_at = Instant::now();
-            match generate_detailed_analysis_cache(
-                &app_for_progress,
-                &analysis_state,
-                worker_count,
-                stop_controller,
-            ) {
-                Ok((scanned_replays, completed)) => {
-                    detailed_completed = completed;
-                    crate::sco_log!(
-                        "[SCO/stats] {} generated '{}' with {} replay(s) in {}ms completed={completed}",
-                        mode.display(),
+        };
+
+        if let Ok(mut guard) = analysis_state.lock() {
+            if include_detailed {
+                let replay_count = analysis_outcome.reported_replay_count;
+                if analysis_outcome.analysis_completed {
+                    set_analysis_running_status(&mut guard, mode, "refreshing replay summaries");
+                    guard.message = format!(
+                        "Generated '{}' with {} replay entr{}.",
                         get_cache_path().display(),
-                        scanned_replays,
-                        generation_started_at.elapsed().as_millis()
+                        replay_count,
+                        if replay_count == 1 { "y" } else { "ies" }
                     );
-                    if let Ok(mut guard) = analysis_state.lock() {
-                        if completed {
-                            set_analysis_running_status(
-                                &mut guard,
-                                mode,
-                                "refreshing replay summaries",
-                            );
-                            guard.message = format!(
-                                "Generated '{}' with {} replay entr{}.",
-                                get_cache_path().display(),
-                                scanned_replays,
-                                if scanned_replays == 1 { "y" } else { "ies" }
-                            );
-                        } else {
-                            guard.analysis_running = false;
-                            guard.analysis_running_mode = None;
-                            guard.detailed_analysis_status = analysis_status_text(mode, "stopped");
-                            guard.message = format!(
-                                "Detailed analysis stopped after saving {} replay entr{}.",
-                                scanned_replays,
-                                if scanned_replays == 1 { "y" } else { "ies" }
-                            );
-                        }
-                    }
-
-                    // Load the generated detailed cache
-                    let cache_path = get_cache_path();
-                    let payload = match std::fs::read(&cache_path) {
-                        Ok(p) => p,
-                        Err(error) => {
-                            crate::sco_log!(
-                                "[SCO/stats] failed to read generated detailed cache: {error}"
-                            );
-                            vec![]
-                        }
-                    };
-
-                    if let Ok(entries) = serde_json::from_slice::<Vec<CacheReplayEntry>>(&payload) {
-                        all_new_cache_entries.extend(entries);
-                    }
-
-                    // Load detailed replays from generated cache
-                    let main_names = configured_main_names();
-                    let main_handles = configured_main_handles();
-                    let detailed_replays = ReplayAnalysis::load_detailed_analysis_replays_snapshot(
-                        limit,
-                        &main_names,
-                        &main_handles,
+                } else {
+                    guard.analysis_running = false;
+                    guard.analysis_running_mode = None;
+                    guard.detailed_analysis_status = analysis_status_text(mode, "stopped");
+                    guard.message = format!(
+                        "Detailed analysis stopped after saving {} replay entr{}.",
+                        replay_count,
+                        if replay_count == 1 { "y" } else { "ies" }
                     );
-                    all_replays = detailed_replays;
-                }
-                Err(message) => {
-                    let elapsed = started_at.elapsed();
-                    if let Ok(mut slot) = detailed_stop_controller_slot_for_thread.lock() {
-                        slot.take();
-                    }
-                    crate::sco_log!("[SCO/stats] {} failed: {message}", mode.display());
-                    if let Ok(mut guard) = analysis_state.lock() {
-                        set_analysis_terminal_status(&mut guard, mode, "failed");
-                        guard.detailed_analysis_status = analysis_error_status_text(mode, &message);
-                        guard.message = analysis_failed_message(mode, &message, elapsed);
-                    }
-                    replay_scan_progress().set_stage("analysis_failed");
-                    replay_scan_progress().set_status("Completed");
-                    let _ = progress_tx.send(ProgressEmitterCommand::Stop);
-                    let completion_message = analysis_state
-                        .lock()
-                        .map(|guard| guard.message.clone())
-                        .unwrap_or_else(|_| analysis_failed_message(mode, &message, elapsed));
-                    emit_analysis_completed(&app_for_analysis, mode, &completion_message);
-                    let _ = progress_handle.join();
-                    return;
                 }
             }
-            if let Ok(mut slot) = detailed_stop_controller_slot_for_thread.lock() {
-                slot.take();
-            }
-        } else {
-            // Simple analysis mode - run scan_replays
-            let scan_started_at = Instant::now();
-            let scanned_replays = scan_replays(limit);
-            crate::sco_log!(
-                "[SCO/stats] {} scanned {} replay(s) in {}ms",
-                mode.display(),
-                scanned_replays.len(),
-                scan_started_at.elapsed().as_millis()
-            );
-            all_replays = scanned_replays;
-
-            // scan_replays already saves simple cache entries directly via persist_simple_analysis_cache
-            // No need to save again here
         }
+
+        let AnalysisOutcome {
+            reported_replay_count: _reported_replay_count,
+            replays: all_replays,
+            final_cache_entries,
+            analysis_completed: detailed_completed,
+        } = analysis_outcome;
 
         let mut hashes = HashMap::new();
 
@@ -2830,16 +2841,6 @@ fn spawn_analysis_task(
             crate::sco_log!("[SCO/stats] failed to update current replay file set after scan");
         }
 
-        // Load cache and merge entries for both modes
-        let final_cache_entries = if include_detailed {
-            merge_cache_entries(&existing_cache_by_hash, all_new_cache_entries)
-        } else {
-            // For simple mode, scan_replays already saved its entries
-            // Just load them
-            load_existing_cache_by_hash().into_values().collect()
-        };
-
-        // Save final detailed cache (simple mode already saved during scan_replays)
         if include_detailed {
             let cache_path = get_cache_path();
             if let Err(error) =

@@ -1,5 +1,5 @@
 use mpq::Archive;
-use s2protocol_port::{build_protocol_store, parse_file_with_store_detailed};
+use s2protocol_port::{build_protocol_store, parse_file_with_store, ReplayParseMode};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -113,7 +113,7 @@ fn malwarfare_weekly_replay_has_tracker_events() {
     };
 
     let store = build_protocol_store().expect("protocol store should build");
-    let parsed = parse_file_with_store_detailed(&replay_path, &store)
+    let parsed = parse_file_with_store(&replay_path, &store, ReplayParseMode::Detailed)
         .expect("full replay parser should read the replay");
     assert!(!parsed.tracker_events.is_empty());
 

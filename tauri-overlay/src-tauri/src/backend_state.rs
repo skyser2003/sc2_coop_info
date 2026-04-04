@@ -13,7 +13,7 @@ use tauri::{tray::TrayIcon, Wry};
 
 use crate::{
     apply_rebuild_snapshot, configured_main_handles, configured_main_names,
-    replay_analysis::ReplayAnalysis, scan_replays, session_counter_delta,
+    replay_analysis::ReplayAnalysis, session_counter_delta,
     sync_detailed_analysis_status_from_replays, AnalysisMode, ReplayInfo, StatsState,
     UNLIMITED_REPLAY_LIMIT,
 };
@@ -213,7 +213,7 @@ impl BackendState {
 
         thread::spawn(move || {
             crate::sco_log!("[SCO/players] background player scan started (limit={limit})");
-            let replays = scan_replays(limit);
+            let replays = ReplayAnalysis::analyze_replays(limit);
             let selected = replays.first().map(|replay| replay.file.clone());
 
             match replay_state.lock() {
@@ -366,7 +366,7 @@ impl ReplayState {
             );
 
             let loaded = if from_detailed_analysis.is_empty() {
-                scan_replays(UNLIMITED_REPLAY_LIMIT)
+                ReplayAnalysis::analyze_replays(UNLIMITED_REPLAY_LIMIT)
             } else {
                 from_detailed_analysis
             };

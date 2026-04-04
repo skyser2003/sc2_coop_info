@@ -12,8 +12,8 @@ use crate::tauri_replay_analysis_impl::{
 use chrono::{DateTime, Local};
 use indexmap::IndexMap;
 use s2protocol_port::{
-    build_protocol_store, parse_file_with_store_detailed, process_details_data, process_init_data,
-    ProtocolStore, Value,
+    build_protocol_store, parse_file_with_store, process_details_data, process_init_data,
+    ProtocolStore, ReplayParseMode, Value,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
@@ -632,12 +632,13 @@ fn parse_replay_file_input(
 ) -> Result<ParsedReplayAnalysisInput, DetailedReplayAnalysisError> {
     let dictionaries = load_sc2_dictionary_data()?;
     let store = protocol_store()?;
-    let parsed = parse_file_with_store_detailed(replay_path, store).map_err(|error| {
-        DetailedReplayAnalysisError::ReplayParse {
-            path: replay_path.display().to_string(),
-            message: error.to_string(),
-        }
-    })?;
+    let parsed =
+        parse_file_with_store(replay_path, store, ReplayParseMode::Detailed).map_err(|error| {
+            DetailedReplayAnalysisError::ReplayParse {
+                path: replay_path.display().to_string(),
+                message: error.to_string(),
+            }
+        })?;
 
     let replay_build = i64::from(parsed.base_build);
     let latest_build = i64::from(

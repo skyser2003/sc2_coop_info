@@ -8,8 +8,8 @@ use indexmap::IndexMap;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use rayon::ThreadPoolBuilder;
 use s2protocol_port::{
-    build_protocol_store, parse_file_with_store_detailed, parse_file_with_store_simple,
-    process_details_data, process_init_data, ProtocolStore, Value,
+    build_protocol_store, parse_file_with_store, process_details_data, process_init_data,
+    ProtocolStore, ReplayParseMode, Value,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value as JsonValue};
@@ -1307,11 +1307,16 @@ fn parse_cache_replay(
     }
 
     let store = protocol_store()?;
-    let parsed = if options.parse_events {
-        parse_file_with_store_detailed(replay_path, store).ok()?
-    } else {
-        parse_file_with_store_simple(replay_path, store).ok()?
-    };
+    let parsed = parse_file_with_store(
+        replay_path,
+        store,
+        if options.parse_events {
+            ReplayParseMode::Detailed
+        } else {
+            ReplayParseMode::Simple
+        },
+    )
+    .ok()?;
     let details = parsed.details.as_ref().cloned().map(process_details_data)?;
     let init_data = parsed.init_data.as_ref().cloned().map(process_init_data)?;
     let metadata = parsed.metadata.as_ref()?.clone();

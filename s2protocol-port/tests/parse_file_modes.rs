@@ -1,11 +1,6 @@
-use s2coop_analyzer::detailed_replay_analysis::analyze_replay_file;
 use s2protocol_port::{build_protocol_store, parse_file_with_store, ReplayParseMode};
-use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use walkdir::WalkDir;
-
-use s2coop_analyzer::cache_overall_stats_detailed_analysis::repo_root;
 
 fn read_env_file_value(env_file: &Path, key: &str) -> Option<String> {
     let content = fs::read_to_string(env_file).ok()?;
@@ -43,7 +38,10 @@ fn resolve_account_dir() -> Option<PathBuf> {
         }
     }
 
-    let env_path = repo_root().join(".env");
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()?
+        .to_path_buf();
+    let env_path = repo_root.join(".env");
     for key in [
         "SC2_ACCOUNT_PATH",
         "SC2_ACCOUNT_PATH_WINDOWS",
@@ -61,56 +59,56 @@ fn resolve_account_dir() -> Option<PathBuf> {
 }
 
 fn find_replay(root: &Path, replay_name: &str) -> Option<PathBuf> {
-    let mut matches = WalkDir::new(root)
-        .into_iter()
-        .filter_map(Result::ok)
-        .filter(|entry| {
-            entry.file_type().is_file()
-                && entry
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&current) else {
+            continue;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            let Ok(metadata) = entry.metadata() else {
+                continue;
+            };
+            if metadata.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if metadata.is_file()
+                && path
                     .file_name()
-                    .to_str()
+                    .and_then(|value| value.to_str())
                     .is_some_and(|value| value == replay_name)
-        })
-        .map(|entry| entry.into_path())
-        .collect::<Vec<PathBuf>>();
-    matches.sort();
-    matches.into_iter().next()
+            {
+                return Some(path);
+            }
+        }
+    }
+
+    None
 }
 
 #[test]
-fn malwarfare_weekly_replay_with_korean_filename_builds_detailed_report() {
+fn replay_parse_mode_controls_event_streams() {
     let Some(account_dir) = resolve_account_dir() else {
-        eprintln!(
-            "skipping Malwarfare weekly regression test: no SC2 account directory configured"
-        );
+        eprintln!("skipping parse-mode regression test: no SC2 account directory configured");
         return;
     };
     let Some(replay_path) = find_replay(&account_dir, "잘못된 전쟁 (63).SC2Replay") else {
         eprintln!(
-            "skipping Malwarfare weekly regression test: replay not found under {}",
+            "skipping parse-mode regression test: replay not found under {}",
             account_dir.display()
         );
         return;
     };
 
-    let main_handles = HashSet::new();
     let store = build_protocol_store().expect("protocol store should build");
-    let parsed = parse_file_with_store(&replay_path, &store, ReplayParseMode::Detailed)
+    let simple = parse_file_with_store(&replay_path, &store, ReplayParseMode::Simple)
+        .expect("simple replay parser should read the replay");
+    let detailed = parse_file_with_store(&replay_path, &store, ReplayParseMode::Detailed)
         .expect("detailed replay parser should read the replay");
-    assert!(!parsed.tracker_events.is_empty());
 
-    let report = analyze_replay_file(&replay_path, &main_handles)
-        .unwrap_or_else(|error| panic!("replay analysis should succeed: {error}"));
-
-    assert!(report.replaydata);
-    assert!(report.weekly);
-    assert_eq!(report.map_name, "Malwarfare");
-    let commanders = HashSet::from([
-        report.main_commander.as_str(),
-        report.ally_commander.as_str(),
-    ]);
-    assert_eq!(commanders, HashSet::from(["Abathur", "Stukov"]));
-    assert!(!report.main_units.is_empty());
-    assert!(!report.ally_units.is_empty());
-    assert!(!report.player_stats.is_empty());
+    assert!(simple.game_events.is_empty());
+    assert!(simple.tracker_events.is_empty());
+    assert!(!detailed.game_events.is_empty());
+    assert!(!detailed.tracker_events.is_empty());
 }

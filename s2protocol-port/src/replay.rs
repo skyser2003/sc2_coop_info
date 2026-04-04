@@ -29,6 +29,12 @@ pub struct ParsedReplay {
     pub attribute_scopes: Vec<Value>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayParseMode {
+    Simple,
+    Detailed,
+}
+
 fn is_decode_truncated(err: &DecodeError) -> bool {
     match err {
         DecodeError::Truncated => true,
@@ -140,26 +146,20 @@ fn extract_base_build(header: &Value) -> Result<u32, DecodeError> {
     Ok(version as u32)
 }
 
-pub fn parse_file_with_store_simple(
+pub fn parse_file_with_store(
     path: &Path,
     store: &crate::protocol::ProtocolStore,
+    mode: ReplayParseMode,
 ) -> Result<ParsedReplay, DecodeError> {
-    parse_file_with_store_internal(path, store, false, false)
-}
-
-pub fn parse_file_with_store_detailed(
-    path: &Path,
-    store: &crate::protocol::ProtocolStore,
-) -> Result<ParsedReplay, DecodeError> {
-    parse_file_with_store_internal(path, store, true, true)
+    parse_file_with_store_internal(path, store, mode)
 }
 
 fn parse_file_with_store_internal(
     path: &Path,
     store: &crate::protocol::ProtocolStore,
-    parse_events: bool,
-    parse_fallback: bool,
+    mode: ReplayParseMode,
 ) -> Result<ParsedReplay, DecodeError> {
+    let parse_events = matches!(mode, ReplayParseMode::Detailed);
     let header_blob = read_user_data_header_content(path)?;
     let header = { store.latest()?.decode_replay_header(&header_blob)? };
 
@@ -197,7 +197,7 @@ fn parse_file_with_store_internal(
         match protocol.decode_replay_initdata(&data) {
             Ok(value) => Some(value),
             Err(err) if is_decode_truncated(&err) => {
-                if parse_fallback {
+                if parse_events {
                     decode_replay_initdata_with_store_fallback(store, base_build, &data)
                 } else {
                     None
@@ -235,7 +235,7 @@ fn parse_file_with_store_internal(
                 Some(data) => match protocol.decode_replay_tracker_events(&data) {
                     Ok(events) => events,
                     Err(_) => {
-                        if parse_fallback {
+                        if parse_events {
                             decode_replay_tracker_events_with_store_fallback(
                                 store, base_build, &data,
                             )
