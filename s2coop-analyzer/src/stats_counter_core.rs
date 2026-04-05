@@ -543,16 +543,15 @@ impl ReplayStatsCounterCore {
     }
 
     pub fn update_prestige(&mut self, prestige: &str) {
-        let prestige_string = prestige.to_string();
-        if self.prestige.as_ref() == Some(&prestige_string) {
+        if self.prestige.as_deref() == Some(prestige) {
             return;
         }
-        self.prestige = Some(prestige_string.clone());
+        self.prestige = Some(prestige.to_owned());
 
-        if prestige_string == "Merchant of Death" {
+        if prestige == "Merchant of Death" {
             self.trooper_weapon_cost = (40.0, 20.0);
         }
-        if prestige_string == "Lone Wolf" {
+        if prestige == "Lone Wolf" {
             self.tychus_gear_cost = (self.tychus_gear_cost.0 * 1.25, 0.0);
         }
         self.unit_costs_cache.clear();
@@ -696,8 +695,7 @@ impl ReplayStatsCounterCore {
             return;
         }
 
-        let creator_ability = event.m_creator_ability_name.clone();
-        if creator_ability.as_deref() != Some("MorphZerglingToSplitterling") {
+        if event.m_creator_ability_name.as_deref() != Some("MorphZerglingToSplitterling") {
             self.zagara_free_banelings += 1;
         }
     }
