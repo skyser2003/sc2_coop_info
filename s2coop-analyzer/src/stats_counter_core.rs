@@ -30,7 +30,7 @@ pub struct ReplayStatsCounterCore {
     prestige: Option<String>,
     enable_updates: bool,
     salvaged_units: Vec<String>,
-    unit_costs_cache: HashMap<String, Vec<f64>>,
+    unit_costs_cache: HashMap<String, TotalUnitCost>,
     army_value_offset: f64,
     trooper_weapon_cost: (f64, f64),
     tychus_gear_cost: (f64, f64),
@@ -40,6 +40,99 @@ pub struct ReplayStatsCounterCore {
     army_value: Vec<f64>,
     supply: Vec<f64>,
     collection_rate: Vec<f64>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct UnitCost {
+    mineral: f64,
+    gas: f64,
+}
+
+impl UnitCost {
+    fn zero() -> Self {
+        Self {
+            mineral: 0.0,
+            gas: 0.0,
+        }
+    }
+
+    fn new(mineral: f64, gas: f64) -> Self {
+        Self { mineral, gas }
+    }
+
+    fn sum(self) -> f64 {
+        self.mineral + self.gas
+    }
+
+    fn scaled(self, min_mult: f64, gas_mult: f64) -> Self {
+        Self {
+            mineral: self.mineral * min_mult,
+            gas: self.gas * gas_mult,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+struct TotalUnitCost {
+    values: Vec<UnitCost>,
+}
+
+impl TotalUnitCost {
+    fn zero() -> Self {
+        Self {
+            values: vec![UnitCost::zero()],
+        }
+    }
+
+    fn from_slice(values: &[f64]) -> Self {
+        let values = values
+            .chunks_exact(2)
+            .map(|chunk| UnitCost::new(chunk[0], chunk[1]))
+            .collect::<Vec<UnitCost>>();
+        if values.is_empty() {
+            Self::zero()
+        } else {
+            Self { values }
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    fn first(&self) -> UnitCost {
+        self.values.first().copied().unwrap_or_else(UnitCost::zero)
+    }
+
+    fn get(&self, index: usize) -> UnitCost {
+        self.values
+            .get(index)
+            .copied()
+            .unwrap_or_else(UnitCost::zero)
+    }
+
+    fn sum(&self) -> f64 {
+        self.values.iter().map(|value| value.sum()).sum()
+    }
+
+    fn scaled(&self, min_mult: f64, gas_mult: f64) -> Self {
+        Self {
+            values: self
+                .values
+                .iter()
+                .copied()
+                .map(|value| value.scaled(min_mult, gas_mult))
+                .collect(),
+        }
+    }
+
+    fn scaled_mineral(&self, min_mult: f64) -> Self {
+        self.scaled(min_mult, 1.0)
+    }
+
+    fn scaled_gas(&self, gas_mult: f64) -> Self {
+        self.scaled(1.0, gas_mult)
+    }
 }
 
 fn normalize_commander_name(commander: &str) -> String {
@@ -202,30 +295,15 @@ impl ReplayStatsCounterCore {
         }
     }
 
-    fn update_cost(cost: &[f64], min_mult: f64, gas_mult: f64) -> Vec<f64> {
-        if cost.len() == 2 {
-            return vec![cost[0] * min_mult, cost[1] * gas_mult];
-        }
-        if cost.len() == 4 {
-            return vec![
-                cost[0] * min_mult,
-                cost[1] * gas_mult,
-                cost[2] * min_mult,
-                cost[3] * gas_mult,
-            ];
-        }
-        vec![0.0, 0.0]
-    }
-
-    fn get_base_cost(&self, unit: &str) -> Vec<f64> {
+    fn get_base_cost(&self, unit: &str) -> Option<TotalUnitCost> {
         if self.commander.is_empty() {
-            return vec![0.0, 0.0];
+            return None;
         }
         let Some(commander_costs) = self.dictionaries.unit_base_costs.get(&self.commander) else {
-            return vec![0.0, 0.0];
+            return None;
         };
         if let Some(cost) = commander_costs.get(unit) {
-            return cost.clone();
+            return Some(TotalUnitCost::from_slice(cost));
         }
 
         let replacements: [(&str, &str); 6] = [
@@ -244,226 +322,221 @@ impl ReplayStatsCounterCore {
                     unit.replace(suffix, replace_with)
                 };
                 if let Some(cost) = commander_costs.get(&candidate) {
-                    return cost.clone();
+                    return Some(TotalUnitCost::from_slice(cost));
                 }
             }
         }
 
-        vec![0.0, 0.0]
+        None
     }
 
-    fn unit_cost(&mut self, unit: &str) -> Vec<f64> {
+    fn unit_cost(&mut self, unit: &str) -> TotalUnitCost {
         if let Some(cost) = self.unit_costs_cache.get(unit) {
             return cost.clone();
         }
 
-        let mut cost = self.get_base_cost(unit);
+        let mut cost = self.get_base_cost(unit).unwrap_or_else(TotalUnitCost::zero);
         let prestige = self.prestige.as_deref().unwrap_or("");
 
         if self.commander == "Abathur" && prestige == "Essence Hoarder" {
-            cost = vec![
-                cost.first().copied().unwrap_or_default(),
-                cost.get(1).copied().unwrap_or_default() * 1.2,
-            ];
+            cost = cost.scaled_gas(1.2);
         } else if self.commander == "Alarak" && prestige == "Shadow of Death" {
             if unit == "SOAMothershipv4" {
-                cost = vec![400.0, 400.0];
+                cost = TotalUnitCost::from_slice(&[400.0, 400.0]);
             } else if unit == "VoidRayTaldarim" {
-                cost = vec![125.0, 75.0];
+                cost = TotalUnitCost::from_slice(&[125.0, 75.0]);
             }
         }
 
-        if cost.iter().sum::<f64>() == 0.0 {
-            self.unit_costs_cache
-                .insert(unit.to_string(), vec![0.0, 0.0]);
-            return vec![0.0, 0.0];
-        }
-
-        if self.commander == "Artanis"
-            && prestige == "Valorous Inspirator"
-            && unit != "PhotonCannon"
-            && unit != "Observer"
-            && unit != "ObserverSiegeMode"
-        {
-            cost = Self::update_cost(&cost, 1.3, 1.3);
-        } else if self.commander == "Fenix"
-            && prestige == "Network Administrator"
-            && unit != "PhotonCannon"
-            && unit != "Observer"
-            && unit != "ObserverSiegeMode"
-        {
-            cost = Self::update_cost(&cost, 0.5, 0.5);
-        } else if self.commander == "Horner" {
-            if prestige == "Chaotic Power Couple" && self.dictionaries.horners_units.contains(unit)
+        if cost.sum() != 0.0 {
+            if self.commander == "Artanis"
+                && prestige == "Valorous Inspirator"
+                && unit != "PhotonCannon"
+                && unit != "Observer"
+                && unit != "ObserverSiegeMode"
             {
-                cost = Self::update_cost(&cost, 1.3, 1.3);
-            } else if prestige == "Wing Commanders"
-                && self.dictionaries.horners_units.contains(unit)
+                cost = cost.scaled(1.3, 1.3);
+            } else if self.commander == "Fenix"
+                && prestige == "Network Administrator"
+                && unit != "PhotonCannon"
+                && unit != "Observer"
+                && unit != "ObserverSiegeMode"
             {
-                cost = Self::update_cost(&cost, 1.0, 0.8);
-            } else if prestige == "Galactic Gunrunners" && unit == "HHBomberPlatform" {
-                cost = Self::update_cost(&cost, 2.0, 2.0);
-            }
-        } else if self.commander == "Karax"
-            && prestige == "Templar Apparent"
-            && !matches!(
-                unit,
-                "ShieldBattery"
-                    | "KhaydarinMonolith"
-                    | "PhotonCannon"
-                    | "Observer"
-                    | "ObserverSiegeMode"
-            )
-        {
-            cost = Self::update_cost(&cost, 0.6, 0.6);
-        } else if self.commander == "Kerrigan" && self.masteries[2] > 0 {
-            cost = Self::update_cost(&cost, 1.0, 1.0 - self.masteries[2] as f64 / 100.0);
-        } else if self.commander == "Mengsk" {
-            if self.masteries[3] > 0 && self.dictionaries.royal_guards.contains(unit) {
-                let coef = 1.0 - 20.0 * self.masteries[3] as f64 / 3000.0;
-                cost = Self::update_cost(&cost, coef, coef);
-            }
-            if prestige == "Principal Proletariat" && self.dictionaries.royal_guards.contains(unit)
-            {
-                cost = Self::update_cost(&cost, 2.0, 0.75);
-            }
-            if prestige == "Merchant of Death"
-                && matches!(
-                    unit,
-                    "TrooperMengskAA" | "TrooperMengskFlamethrower" | "TrooperMengskImproved"
-                )
-            {
-                cost = vec![40.0, 20.0, 80.0, 20.0];
-            }
-        } else if self.commander == "Raynor" {
-            if prestige == "Rough Rider"
-                && matches!(
-                    unit,
-                    "Banshee"
-                        | "Battlecruiser"
-                        | "VikingAssault"
-                        | "VikingFighter"
-                        | "SiegeTank"
-                        | "SiegeTankSieged"
-                )
-            {
-                cost = Self::update_cost(&cost, 1.0, 1.25);
-            } else if prestige == "Rebel Raider" {
-                if matches!(
-                    unit,
-                    "Banshee" | "Battlecruiser" | "VikingAssault" | "VikingFighter"
-                ) {
-                    cost = Self::update_cost(&cost, 1.5, 0.7);
-                } else if !matches!(unit, "Bunker" | "MissileTurret" | "SpiderMine") {
-                    cost = Self::update_cost(&cost, 1.5, 1.0);
+                cost = cost.scaled(0.5, 0.5);
+            } else if self.commander == "Horner" {
+                if prestige == "Chaotic Power Couple"
+                    && self.dictionaries.horners_units.contains(unit)
+                {
+                    cost = cost.scaled(1.3, 1.3);
+                } else if prestige == "Wing Commanders"
+                    && self.dictionaries.horners_units.contains(unit)
+                {
+                    cost = cost.scaled_gas(0.8);
+                } else if prestige == "Galactic Gunrunners" && unit == "HHBomberPlatform" {
+                    cost = cost.scaled(2.0, 2.0);
                 }
-            }
-        } else if self.commander == "Stetmann"
-            && prestige == "Oil Baron"
-            && !matches!(
-                unit,
-                "SpineCrawlerStetmann"
-                    | "SpineCrawlerUprootedStetmann"
-                    | "SporeCrawlerStetmann"
-                    | "SporeCrawlerUprootedStetmann"
-                    | "OverseerStetmann"
-                    | "OverseerStetmannSiegeMode"
-            )
-        {
-            cost = Self::update_cost(&cost, 1.4, 1.0);
-        } else if self.commander == "Stukov"
-            && prestige == "Frightful Fleshwelder"
-            && matches!(
-                unit,
-                "SILiberator"
-                    | "StukovInfestedBanshee"
-                    | "StukovInfestedBansheeBurrowed"
-                    | "StukovInfestedDiamondBack"
-                    | "StukovInfestedSiegeTank"
-                    | "StukovInfestedSiegeTankUprooted"
-            )
-        {
-            cost = Self::update_cost(&cost, 0.7, 0.7);
-        } else if self.commander == "Swann" {
-            if prestige == "Grease Monkey"
+            } else if self.commander == "Karax"
+                && prestige == "Templar Apparent"
                 && !matches!(
                     unit,
-                    "KelMorianGrenadeTurret"
-                        | "KelMorianMissileTurret"
-                        | "PerditionTurret"
-                        | "PerditionTurretUnderground"
+                    "ShieldBattery"
+                        | "KhaydarinMonolith"
+                        | "PhotonCannon"
+                        | "Observer"
+                        | "ObserverSiegeMode"
                 )
             {
-                cost = Self::update_cost(&cost, 1.0, 1.5);
-            }
-        } else if self.commander == "Tychus" {
-            if prestige == "Technical Recruiter" && unit != "TychusSCVAutoTurret" {
-                cost = Self::update_cost(&cost, 1.5, 1.5);
-            }
-        } else if self.commander == "Zagara" {
-            if prestige == "Mother of Constructs"
-                && matches!(unit, "ZagaraCorruptor" | "InfestedAbomination")
-            {
-                cost = Self::update_cost(&cost, 0.75, 0.75);
-            } else if prestige == "Apex Predator"
+                cost = cost.scaled(0.6, 0.6);
+            } else if self.commander == "Kerrigan" && self.masteries[2] > 0 {
+                cost = cost.scaled_gas(1.0 - self.masteries[2] as f64 / 100.0);
+            } else if self.commander == "Mengsk" {
+                if self.masteries[3] > 0 && self.dictionaries.royal_guards.contains(unit) {
+                    let coef = 1.0 - 20.0 * self.masteries[3] as f64 / 3000.0;
+                    cost = cost.scaled(coef, coef);
+                }
+                if prestige == "Principal Proletariat"
+                    && self.dictionaries.royal_guards.contains(unit)
+                {
+                    cost = cost.scaled(2.0, 0.75);
+                }
+                if prestige == "Merchant of Death"
+                    && matches!(
+                        unit,
+                        "TrooperMengskAA" | "TrooperMengskFlamethrower" | "TrooperMengskImproved"
+                    )
+                {
+                    cost = TotalUnitCost::from_slice(&[40.0, 20.0, 80.0, 20.0]);
+                }
+            } else if self.commander == "Raynor" {
+                if prestige == "Rough Rider"
+                    && matches!(
+                        unit,
+                        "Banshee"
+                            | "Battlecruiser"
+                            | "VikingAssault"
+                            | "VikingFighter"
+                            | "SiegeTank"
+                            | "SiegeTankSieged"
+                    )
+                {
+                    cost = cost.scaled_gas(1.25);
+                } else if prestige == "Rebel Raider" {
+                    if matches!(
+                        unit,
+                        "Banshee" | "Battlecruiser" | "VikingAssault" | "VikingFighter"
+                    ) {
+                        cost = cost.scaled(1.5, 0.7);
+                    } else if !matches!(unit, "Bunker" | "MissileTurret" | "SpiderMine") {
+                        cost = cost.scaled_mineral(1.5);
+                    }
+                }
+            } else if self.commander == "Stetmann"
+                && prestige == "Oil Baron"
                 && !matches!(
                     unit,
-                    "BileLauncherZagara"
-                        | "QueenCoop"
-                        | "QueenCoopBurrowed"
-                        | "Overseer"
-                        | "OverseerSiegeMode"
-                        | "SpineCrawler"
-                        | "SpineCrawlerUprooted"
-                        | "SporeCrawler"
-                        | "SporeCrawlerUprooted"
+                    "SpineCrawlerStetmann"
+                        | "SpineCrawlerUprootedStetmann"
+                        | "SporeCrawlerStetmann"
+                        | "SporeCrawlerUprootedStetmann"
+                        | "OverseerStetmann"
+                        | "OverseerStetmannSiegeMode"
                 )
             {
-                cost = Self::update_cost(&cost, 1.25, 1.25);
+                cost = cost.scaled_mineral(1.4);
+            } else if self.commander == "Stukov"
+                && prestige == "Frightful Fleshwelder"
+                && matches!(
+                    unit,
+                    "SILiberator"
+                        | "StukovInfestedBanshee"
+                        | "StukovInfestedBansheeBurrowed"
+                        | "StukovInfestedDiamondBack"
+                        | "StukovInfestedSiegeTank"
+                        | "StukovInfestedSiegeTankUprooted"
+                )
+            {
+                cost = cost.scaled(0.7, 0.7);
+            } else if self.commander == "Swann" {
+                if prestige == "Grease Monkey"
+                    && !matches!(
+                        unit,
+                        "KelMorianGrenadeTurret"
+                            | "KelMorianMissileTurret"
+                            | "PerditionTurret"
+                            | "PerditionTurretUnderground"
+                    )
+                {
+                    cost = cost.scaled_gas(1.5);
+                }
+            } else if self.commander == "Tychus" {
+                if prestige == "Technical Recruiter" && unit != "TychusSCVAutoTurret" {
+                    cost = cost.scaled(1.5, 1.5);
+                }
+            } else if self.commander == "Zagara" {
+                if prestige == "Mother of Constructs"
+                    && matches!(unit, "ZagaraCorruptor" | "InfestedAbomination")
+                {
+                    cost = cost.scaled(0.75, 0.75);
+                } else if prestige == "Apex Predator"
+                    && !matches!(
+                        unit,
+                        "BileLauncherZagara"
+                            | "QueenCoop"
+                            | "QueenCoopBurrowed"
+                            | "Overseer"
+                            | "OverseerSiegeMode"
+                            | "SpineCrawler"
+                            | "SpineCrawlerUprooted"
+                            | "SporeCrawler"
+                            | "SporeCrawlerUprooted"
+                    )
+                {
+                    cost = cost.scaled(1.25, 1.25);
+                }
+            } else if self.commander == "Zeratul"
+                && prestige == "Knowledge Seeker"
+                && !matches!(
+                    unit,
+                    "ZeratulObserver"
+                        | "ZeratulObserverSiegeMode"
+                        | "ZeratulPhotonCannon"
+                        | "ZeratulWarpPrism"
+                        | "ZeratulWarpPrismPhasing"
+                )
+            {
+                cost = cost.scaled(1.25, 1.25);
             }
-        } else if self.commander == "Zeratul"
-            && prestige == "Knowledge Seeker"
-            && !matches!(
-                unit,
-                "ZeratulObserver"
-                    | "ZeratulObserverSiegeMode"
-                    | "ZeratulPhotonCannon"
-                    | "ZeratulWarpPrism"
-                    | "ZeratulWarpPrismPhasing"
-            )
-        {
-            cost = Self::update_cost(&cost, 1.25, 1.25);
         }
-
-        self.unit_costs_cache.insert(unit.to_string(), cost.clone());
-        cost
+        self.unit_costs_cache.insert(unit.to_owned(), cost);
+        self.unit_costs_cache
+            .get(unit)
+            .cloned()
+            .unwrap_or_else(TotalUnitCost::zero)
     }
 
-    fn calculate_total_unit_value(&self, unit: &str, cost: &[f64]) -> f64 {
-        if cost.iter().sum::<f64>() == 0.0 {
+    fn calculate_total_unit_value(&self, unit: &str, cost: &TotalUnitCost) -> f64 {
+        if cost.sum() == 0.0 {
             return 0.0;
         }
 
-        let Some((mut unit_alive, mut unit_dead)) = self.unit_dict.get(unit).copied() else {
+        let Some((unit_alive_raw, unit_dead_raw)) = self.unit_dict.get(unit).copied() else {
             return 0.0;
         };
-
-        if self.dictionaries.outlaws.contains(unit) {
-            unit_dead = 0.0;
-        }
-
+        let unit_dead = if self.dictionaries.outlaws.contains(unit) {
+            0.0
+        } else {
+            unit_dead_raw
+        };
         let salvaged_count = self
             .salvaged_units
             .iter()
             .filter(|saved| saved.as_str() == unit)
             .count();
-        unit_alive -= salvaged_count as f64;
+        let unit_alive = unit_alive_raw - salvaged_count as f64;
 
         if self.commander == "Zagara" && (unit == "Baneling" || unit == "HotSSplitterlingBig") {
-            let primary_cost = cost.first().copied().unwrap_or_default()
-                + cost.get(1).copied().unwrap_or_default();
-            let full_cost =
-                cost.get(2).copied().unwrap_or_default() + cost.get(3).copied().unwrap_or_default();
+            let primary_cost = cost.first().sum();
+            let full_cost = cost.get(1).sum();
             let free_banelings = self.zagara_free_banelings as f64;
             let mut result = (unit_alive - free_banelings) * primary_cost;
             result += free_banelings * full_cost;
@@ -471,20 +544,26 @@ impl ReplayStatsCounterCore {
             return result;
         }
 
-        if cost.len() == 2 {
-            return (unit_alive - unit_dead)
-                * (cost.first().copied().unwrap_or_default()
-                    + cost.get(1).copied().unwrap_or_default());
+        if cost.len() == 1 {
+            return (unit_alive - unit_dead) * cost.first().sum();
         }
-        if cost.len() == 4 {
-            return unit_alive
-                * (cost.first().copied().unwrap_or_default()
-                    + cost.get(1).copied().unwrap_or_default())
-                - unit_dead
-                    * (cost.get(2).copied().unwrap_or_default()
-                        + cost.get(3).copied().unwrap_or_default());
+        if cost.len() >= 2 {
+            return unit_alive * cost.first().sum() - unit_dead * cost.get(1).sum();
         }
         0.0
+    }
+
+    fn cost_sum(&mut self, unit: &str) -> f64 {
+        self.unit_cost(unit).sum()
+    }
+
+    fn cost_additive(&mut self, unit: &str) -> f64 {
+        let cost = self.unit_cost(unit);
+        cost.get(1).sum()
+    }
+
+    fn cost_gas(&mut self, unit: &str) -> f64 {
+        self.unit_cost(unit).first().gas
     }
 
     fn calculate_army_value(&mut self) -> i64 {
@@ -587,94 +666,74 @@ impl ReplayStatsCounterCore {
             self.army_value_offset -=
                 40.0 + self.trooper_weapon_cost.0 + self.trooper_weapon_cost.1;
         } else if old_unit == "Thor" && unit == "ThorWreckageSwann" {
-            self.army_value_offset -= self.unit_cost("Thor").get(1).copied().unwrap_or_default();
+            self.army_value_offset -= self.cost_gas("Thor");
         } else if old_unit == "ThorWreckageSwann" && unit == "Thor" {
-            self.army_value_offset += self.unit_cost("Thor").get(1).copied().unwrap_or_default();
+            self.army_value_offset += self.cost_gas("Thor");
         } else if old_unit == "SiegeTank" && unit == "SiegeTankWreckage" {
-            self.army_value_offset -= self
-                .unit_cost("SiegeTank")
-                .get(1)
-                .copied()
-                .unwrap_or_default();
+            self.army_value_offset -= self.cost_gas("SiegeTank");
         } else if old_unit == "SiegeTankWreckage" && unit == "SiegeTank" {
-            self.army_value_offset += self
-                .unit_cost("SiegeTank")
-                .get(1)
-                .copied()
-                .unwrap_or_default();
+            self.army_value_offset += self.cost_gas("SiegeTank");
         } else if old_unit == "GuardianMP" && unit == "LeviathanCocoon" {
-            let guardian = self.unit_cost("GuardianMP");
-            let mutalisk = self.unit_cost("Mutalisk");
-            let guardian_additive = guardian.get(2).copied().unwrap_or_default()
-                + guardian.get(3).copied().unwrap_or_default();
-            self.army_value_offset -= guardian_additive - mutalisk.iter().sum::<f64>();
+            let guardian_additive = self.cost_additive("GuardianMP");
+            let mutalisk_total = self.cost_sum("Mutalisk");
+            self.army_value_offset -= guardian_additive - mutalisk_total;
         } else if old_unit == "LeviathanCocoon" && unit == "GuardianMP" {
-            let guardian = self.unit_cost("GuardianMP");
-            let mutalisk = self.unit_cost("Mutalisk");
-            let guardian_additive = guardian.get(2).copied().unwrap_or_default()
-                + guardian.get(3).copied().unwrap_or_default();
-            self.army_value_offset += guardian_additive - mutalisk.iter().sum::<f64>();
+            let guardian_additive = self.cost_additive("GuardianMP");
+            let mutalisk_total = self.cost_sum("Mutalisk");
+            self.army_value_offset += guardian_additive - mutalisk_total;
         } else if old_unit == "Devourer" && unit == "LeviathanCocoon" {
-            let devourer = self.unit_cost("Devourer");
-            let mutalisk = self.unit_cost("Mutalisk");
-            let devourer_additive = devourer.get(2).copied().unwrap_or_default()
-                + devourer.get(3).copied().unwrap_or_default();
-            self.army_value_offset -= devourer_additive - mutalisk.iter().sum::<f64>();
+            let devourer_additive = self.cost_additive("Devourer");
+            let mutalisk_total = self.cost_sum("Mutalisk");
+            self.army_value_offset -= devourer_additive - mutalisk_total;
         } else if old_unit == "LeviathanCocoon" && unit == "Devourer" {
-            let devourer = self.unit_cost("Devourer");
-            let mutalisk = self.unit_cost("Mutalisk");
-            let devourer_additive = devourer.get(2).copied().unwrap_or_default()
-                + devourer.get(3).copied().unwrap_or_default();
-            self.army_value_offset += devourer_additive - mutalisk.iter().sum::<f64>();
+            let devourer_additive = self.cost_additive("Devourer");
+            let mutalisk_total = self.cost_sum("Mutalisk");
+            self.army_value_offset += devourer_additive - mutalisk_total;
         } else if old_unit == "Viper" && unit == "LeviathanCocoon" {
-            let viper = self.unit_cost("Viper");
-            let mutalisk = self.unit_cost("Mutalisk");
-            self.army_value_offset -= viper.iter().sum::<f64>() - mutalisk.iter().sum::<f64>();
+            let viper_total = self.cost_sum("Viper");
+            let mutalisk_total = self.cost_sum("Mutalisk");
+            self.army_value_offset -= viper_total - mutalisk_total;
         } else if old_unit == "LeviathanCocoon" && unit == "Viper" {
-            let viper = self.unit_cost("Viper");
-            let mutalisk = self.unit_cost("Mutalisk");
-            self.army_value_offset += viper.iter().sum::<f64>() - mutalisk.iter().sum::<f64>();
+            let viper_total = self.cost_sum("Viper");
+            let mutalisk_total = self.cost_sum("Mutalisk");
+            self.army_value_offset += viper_total - mutalisk_total;
         } else if matches!(old_unit, "SwarmHost" | "SwarmHostBurrowed")
             && unit == "BrutaliskCocoonSwarmhost"
         {
-            let swarm_host = self.unit_cost("SwarmHost");
-            let roach = self.unit_cost("RoachVile");
-            self.army_value_offset -= swarm_host.iter().sum::<f64>() - roach.iter().sum::<f64>();
+            let swarm_host_total = self.cost_sum("SwarmHost");
+            let roach_total = self.cost_sum("RoachVile");
+            self.army_value_offset -= swarm_host_total - roach_total;
         } else if old_unit == "BrutaliskCocoonSwarmhost"
             && matches!(unit, "SwarmHost" | "SwarmHostBurrowed")
         {
-            let swarm_host = self.unit_cost("SwarmHost");
-            let roach = self.unit_cost("RoachVile");
-            self.army_value_offset += swarm_host.iter().sum::<f64>() - roach.iter().sum::<f64>();
+            let swarm_host_total = self.cost_sum("SwarmHost");
+            let roach_total = self.cost_sum("RoachVile");
+            self.army_value_offset += swarm_host_total - roach_total;
         } else if matches!(old_unit, "RavagerAbathur" | "RavagerAbathurBurrowed")
             && unit == "BrutaliskCocoonRavager"
         {
-            let ravager = self.unit_cost("RavagerAbathur");
-            let roach = self.unit_cost("RoachVile");
-            let ravager_additive = ravager.get(2).copied().unwrap_or_default()
-                + ravager.get(3).copied().unwrap_or_default();
-            self.army_value_offset -= ravager_additive - roach.iter().sum::<f64>();
+            let ravager_additive = self.cost_additive("RavagerAbathur");
+            let roach_total = self.cost_sum("RoachVile");
+            self.army_value_offset -= ravager_additive - roach_total;
         } else if old_unit == "BrutaliskCocoonRavager"
             && matches!(unit, "RavagerAbathur" | "RavagerAbathurBurrowed")
         {
-            let ravager = self.unit_cost("RavagerAbathur");
-            let roach = self.unit_cost("RoachVile");
-            let ravager_additive = ravager.get(2).copied().unwrap_or_default()
-                + ravager.get(3).copied().unwrap_or_default();
-            self.army_value_offset += ravager_additive - roach.iter().sum::<f64>();
+            let ravager_additive = self.cost_additive("RavagerAbathur");
+            let roach_total = self.cost_sum("RoachVile");
+            self.army_value_offset += ravager_additive - roach_total;
         } else if matches!(old_unit, "Queen" | "QueenBurrowed") && unit == "BrutaliskCocoonQueen" {
-            let queen = self.unit_cost("Queen");
-            let roach = self.unit_cost("RoachVile");
-            self.army_value_offset -= queen.iter().sum::<f64>() - roach.iter().sum::<f64>();
+            let queen_total = self.cost_sum("Queen");
+            let roach_total = self.cost_sum("RoachVile");
+            self.army_value_offset -= queen_total - roach_total;
         } else if old_unit == "BrutaliskCocoonQueen" && matches!(unit, "Queen" | "QueenBurrowed") {
-            let queen = self.unit_cost("Queen");
-            let roach = self.unit_cost("RoachVile");
-            self.army_value_offset += queen.iter().sum::<f64>() - roach.iter().sum::<f64>();
+            let queen_total = self.cost_sum("Queen");
+            let roach_total = self.cost_sum("RoachVile");
+            self.army_value_offset += queen_total - roach_total;
         }
     }
 
     pub fn mindcontrolled_unit_dies(&mut self, unit: &str) {
-        let cost = self.unit_cost(unit).iter().sum::<f64>();
+        let cost = self.cost_sum(unit);
         if cost > 0.0 {
             self.army_value_offset += cost;
         }
