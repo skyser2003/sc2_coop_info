@@ -15,7 +15,7 @@ pub use crate::events::{
 pub use crate::protocol::{build_protocol_store, ProtocolStore};
 pub use crate::replay::{
     cache_handle_uri, convert_fourcc, parse_file_with_store, unit_tag, unit_tag_index,
-    unit_tag_recycle, ParseResult, ParsedReplay, ReplayParseMode,
+    unit_tag_recycle, ParsedReplay, ReplayParseMode,
 };
 pub use crate::replay_data::{
     process_scope_attributes, ReplayAttributeScope, ReplayAttributeValue, ReplayAttributes,

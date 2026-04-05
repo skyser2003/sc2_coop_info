@@ -11,12 +11,6 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-pub struct ParseResult {
-    pub path: String,
-    pub base_build: u32,
-    pub header: ReplayHeader,
-}
-
 #[derive(Debug, Clone)]
 pub struct ParsedReplay {
     pub path: String,

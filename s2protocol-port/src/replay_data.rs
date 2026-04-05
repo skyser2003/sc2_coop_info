@@ -318,9 +318,9 @@ impl ReplayMetadata {
             Players: object
                 .get("Players")
                 .and_then(serde_json::Value::as_array)
-                .cloned()
-                .unwrap_or_default()
-                .into_iter()
+                .map(Vec::as_slice)
+                .unwrap_or(&[])
+                .iter()
                 .map(ReplayMetadataPlayer::from_json_value)
                 .collect::<Result<Vec<_>, _>>()?,
         })
@@ -328,7 +328,7 @@ impl ReplayMetadata {
 }
 
 impl ReplayMetadataPlayer {
-    fn from_json_value(value: serde_json::Value) -> Result<Self, DecodeError> {
+    fn from_json_value(value: &serde_json::Value) -> Result<Self, DecodeError> {
         let object = value
             .as_object()
             .ok_or_else(|| DecodeError::Corrupted("metadata player must be object".into()))?;
