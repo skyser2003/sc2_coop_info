@@ -12,8 +12,8 @@ use crate::tauri_replay_analysis_impl::{
 use chrono::{DateTime, Local};
 use indexmap::IndexMap;
 use s2protocol_port::{
-    build_protocol_store, parse_file_with_store, process_details_data, process_init_data,
-    ProtocolStore, ReplayEvent, ReplayParseMode, TrackerEvent, Value,
+    build_protocol_store, parse_file_with_store, ProtocolStore, ReplayEvent, ReplayInitData,
+    ReplayParseMode, TrackerEvent,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
@@ -148,68 +148,6 @@ pub fn cache_hidden_created_lost_units() -> Result<HashSet<String>, DetailedRepl
         .collect())
 }
 
-fn value_as_i64(value: &Value) -> Option<i64> {
-    value
-        .as_i128()
-        .and_then(|value| i64::try_from(value).ok())
-        .or_else(|| match value {
-            Value::Float(number) => Some(*number as i64),
-            Value::String(text) => text.parse::<i64>().ok(),
-            _ => None,
-        })
-}
-
-fn value_as_f64(value: &Value) -> Option<f64> {
-    value
-        .as_f64()
-        .or_else(|| value_as_i64(value).map(|value| value as f64))
-}
-
-fn value_as_bool(value: &Value) -> Option<bool> {
-    match value {
-        Value::Bool(flag) => Some(*flag),
-        Value::Int(value) => Some(*value != 0),
-        Value::Float(value) => Some(*value != 0.0),
-        Value::String(text) => {
-            if text.eq_ignore_ascii_case("true") || text == "1" {
-                Some(true)
-            } else if text.eq_ignore_ascii_case("false") || text == "0" {
-                Some(false)
-            } else {
-                None
-            }
-        }
-        _ => None,
-    }
-}
-
-fn value_as_text(value: &Value) -> String {
-    match value {
-        Value::Null => String::new(),
-        Value::Bool(flag) => flag.to_string(),
-        Value::Int(number) => number.to_string(),
-        Value::Float(number) => number.to_string(),
-        Value::String(text) => text.clone(),
-        Value::Bytes(bytes) => String::from_utf8_lossy(bytes).to_string(),
-        Value::Array(_) | Value::Object(_) => String::new(),
-    }
-}
-
-fn value_array(value: &Value) -> Option<&[Value]> {
-    match value {
-        Value::Array(values) => Some(values),
-        _ => None,
-    }
-}
-
-fn nested_value<'a>(root: &'a Value, path: &[&str]) -> Option<&'a Value> {
-    let mut current = root;
-    for key in path {
-        current = current.get_key(key)?;
-    }
-    Some(current)
-}
-
 fn event_name(event: &ReplayEvent) -> &str {
     event._event()
 }
@@ -239,14 +177,10 @@ fn event_user_id(event: &ReplayEvent) -> Option<i64> {
     }
 }
 
-fn parse_masteries(values: Option<&[Value]>) -> [u32; 6] {
+fn parse_masteries(values: &[u32]) -> [u32; 6] {
     let mut out = [0_u32; 6];
-    if let Some(values) = values {
-        for (index, value) in values.iter().take(6).enumerate() {
-            out[index] = value_as_i64(value)
-                .and_then(|value| u32::try_from(value).ok())
-                .unwrap_or_default();
-        }
+    for (index, value) in values.iter().take(6).enumerate() {
+        out[index] = *value;
     }
     out
 }
@@ -331,30 +265,9 @@ fn supported_legacy_protocol(build: i64) -> bool {
     matches!(build, 76114 | 78285 | 83830)
 }
 
-fn list_item(value: &Value, index: usize) -> Option<&Value> {
-    value_array(value).and_then(|items| items.get(index))
-}
-
-fn cache_handle_id(handle: &Value) -> String {
-    match handle {
-        Value::Bytes(bytes) => {
-            let mut hex = String::with_capacity(bytes.len() * 2);
-            for byte in bytes {
-                use std::fmt::Write as _;
-                let _ = write!(&mut hex, "{byte:02x}");
-            }
-            if hex.len() > 16 {
-                hex[16..].to_string()
-            } else {
-                String::new()
-            }
-        }
-        Value::String(text) => {
-            let tail = text.rsplit('/').next().unwrap_or("");
-            tail.split('.').next().unwrap_or("").to_string()
-        }
-        _ => String::new(),
-    }
+fn cache_handle_id(handle: &str) -> String {
+    let tail = handle.rsplit('/').next().unwrap_or("");
+    tail.split('.').next().unwrap_or("").to_string()
 }
 
 fn mutator_from_button(button: i64, panel: i64, mutators_list: &[String]) -> Option<String> {
@@ -416,7 +329,7 @@ fn identify_mutators(
     cached_mutators: &CachedMutatorsJson,
     extension: bool,
     mm: bool,
-    detailed_info: Option<&Value>,
+    detailed_info: Option<&ReplayInitData>,
 ) -> (Vec<String>, bool) {
     let mut mutators: Vec<String> = Vec::new();
     let mut weekly = false;
@@ -441,14 +354,8 @@ fn identify_mutators(
     }
 
     if extension {
-        if let Some(handles) = detailed_info
-            .and_then(|value| {
-                nested_value(
-                    value,
-                    &["m_syncLobbyState", "m_gameDescription", "m_cacheHandles"],
-                )
-            })
-            .and_then(value_array)
+        if let Some(handles) =
+            detailed_info.map(|value| &value.m_syncLobbyState.m_gameDescription.m_cacheHandles)
         {
             for handle in handles {
                 let cached = cache_handle_id(handle);
@@ -464,28 +371,18 @@ fn identify_mutators(
     }
 
     if !extension {
-        if let Some(slot0) = detailed_info
-            .and_then(|value| nested_value(value, &["m_syncLobbyState", "m_lobbyState", "m_slots"]))
-            .and_then(|value| list_item(value, 0))
+        if let Some(slot0) =
+            detailed_info.and_then(|value| value.m_syncLobbyState.m_lobbyState.m_slots.first())
         {
-            let brutal_plus = slot0
-                .get_key("m_brutalPlusDifficulty")
-                .and_then(value_as_i64)
-                .unwrap_or_default();
+            let brutal_plus = slot0.m_brutalPlusDifficulty;
             if brutal_plus > 0 {
-                if let Some(indexes) = slot0
-                    .get_key("m_retryMutationIndexes")
-                    .and_then(value_array)
-                {
-                    for key in indexes {
-                        let key = value_as_i64(key).unwrap_or_default();
-                        if key <= 0 {
-                            continue;
-                        }
-                        if let Ok(index) = usize::try_from(key - 1) {
-                            if let Some(mutator) = mutators_all.get(index) {
-                                mutators.push(mutator.clone());
-                            }
+                for key in &slot0.m_retryMutationIndexes {
+                    if *key <= 0 {
+                        continue;
+                    }
+                    if let Ok(index) = usize::try_from(*key - 1) {
+                        if let Some(mutator) = mutators_all.get(index) {
+                            mutators.push(mutator.clone());
                         }
                     }
                 }
@@ -652,23 +549,13 @@ fn parse_replay_file_input(
         ProtocolBuildValue::Str(latest_build.to_string())
     };
 
-    let details = parsed
-        .details
-        .as_ref()
-        .cloned()
-        .map(process_details_data)
-        .ok_or_else(|| {
-            DetailedReplayAnalysisError::InvalidReplayData("missing replay.details".to_string())
-        })?;
-    let init_data = parsed
-        .init_data
-        .as_ref()
-        .cloned()
-        .map(process_init_data)
-        .ok_or_else(|| {
-            DetailedReplayAnalysisError::InvalidReplayData("missing replay.initData".to_string())
-        })?;
-    let metadata = parsed.metadata.as_ref().cloned().ok_or_else(|| {
+    let details = parsed.details.ok_or_else(|| {
+        DetailedReplayAnalysisError::InvalidReplayData("missing replay.details".to_string())
+    })?;
+    let init_data = parsed.init_data.ok_or_else(|| {
+        DetailedReplayAnalysisError::InvalidReplayData("missing replay.initData".to_string())
+    })?;
+    let metadata = parsed.metadata.ok_or_else(|| {
         DetailedReplayAnalysisError::InvalidReplayData(
             "missing replay.gamemetadata.json".to_string(),
         )
@@ -679,61 +566,51 @@ fn parse_replay_file_input(
     events.extend(parsed.tracker_events.into_iter().map(ReplayEvent::Tracker));
     events.sort_by_key(event_gameloop);
 
-    let map_title = metadata
-        .get_key("Title")
-        .map(value_as_text)
-        .unwrap_or_else(|| "Unknown map".to_string());
+    let map_title = if metadata.Title.is_empty() {
+        "Unknown map".to_string()
+    } else {
+        metadata.Title.clone()
+    };
     let map_name = dictionaries
         .map_names
         .get(&map_title)
         .and_then(|row| row.get("EN"))
         .cloned()
         .unwrap_or(map_title);
-    let _is_blizzard = details
-        .get_key("m_isBlizzardMap")
-        .and_then(value_as_bool)
-        .unwrap_or(false);
-    let _disable_recover = details
-        .get_key("m_disableRecoverGame")
-        .and_then(value_as_bool)
-        .unwrap_or(false);
+    let _is_blizzard = details.m_isBlizzardMap;
+    let _disable_recover = details.m_disableRecoverGame.unwrap_or(false);
 
-    let extension = nested_value(
-        &init_data,
-        &["m_syncLobbyState", "m_gameDescription", "m_hasExtensionMod"],
-    )
-    .and_then(value_as_bool)
-    .unwrap_or(false);
-    let brutal_plus = nested_value(&init_data, &["m_syncLobbyState", "m_lobbyState", "m_slots"])
-        .and_then(|value| list_item(value, 0))
-        .and_then(|value| value.get_key("m_brutalPlusDifficulty"))
-        .and_then(value_as_i64)
-        .unwrap_or_default() as u32;
-
-    let length = metadata
-        .get_key("Duration")
-        .and_then(value_as_f64)
+    let extension = init_data
+        .m_syncLobbyState
+        .m_gameDescription
+        .m_hasExtensionMod;
+    let brutal_plus = init_data
+        .m_syncLobbyState
+        .m_lobbyState
+        .m_slots
+        .first()
+        .map(|value| value.m_brutalPlusDifficulty as u32)
         .unwrap_or_default();
+
+    let length = metadata.Duration;
     let start_time = get_start_time(&events);
     let last_deselect_event = get_last_deselect_event(&events).unwrap_or(length);
 
-    let metadata_players = metadata
-        .get_key("Players")
-        .and_then(value_array)
-        .ok_or_else(|| {
-            DetailedReplayAnalysisError::InvalidReplayData(
-                "metadata Players must be array".to_string(),
-            )
-        })?;
+    let metadata_players = if metadata.Players.is_empty() {
+        Err(DetailedReplayAnalysisError::InvalidReplayData(
+            "metadata Players must be array".to_string(),
+        ))
+    } else {
+        Ok(&metadata.Players)
+    }
+    .map_err(|error| error)?;
     let player0_result = metadata_players
         .first()
-        .and_then(|value| value.get_key("Result"))
-        .map(value_as_text)
+        .map(|value| value.Result.clone())
         .unwrap_or_default();
     let player1_result = metadata_players
         .get(1)
-        .and_then(|value| value.get_key("Result"))
-        .map(value_as_text)
+        .map(|value| value.Result.clone())
         .unwrap_or_default();
     let result = if player0_result == "Win" || player1_result == "Win" {
         "Victory".to_string()
@@ -781,15 +658,8 @@ fn parse_replay_file_input(
 
     for (index, player) in metadata_players.iter().take(2).enumerate() {
         let pid = (index + 1) as u8;
-        let apm = player
-            .get_key("APM")
-            .and_then(value_as_f64)
-            .map(|value| (value * length / accurate_length).round_ties_even() as u32)
-            .unwrap_or_default();
-        let player_result = player
-            .get_key("Result")
-            .map(value_as_text)
-            .unwrap_or_default();
+        let apm = (player.APM * length / accurate_length).round_ties_even() as u32;
+        let player_result = player.Result.clone();
         parsed_players.push(ParsedReplayPlayer {
             pid,
             name: String::new(),
@@ -824,64 +694,38 @@ fn parse_replay_file_input(
         });
     }
 
-    let player_list = details
-        .get_key("m_playerList")
-        .and_then(value_array)
-        .ok_or_else(|| {
-            DetailedReplayAnalysisError::InvalidReplayData(
-                "details player list must be array".to_string(),
-            )
-        })?;
+    let player_list = if details.m_playerList.is_empty() {
+        Err(DetailedReplayAnalysisError::InvalidReplayData(
+            "details player list must be array".to_string(),
+        ))
+    } else {
+        Ok(&details.m_playerList)
+    }
+    .map_err(|error| error)?;
     let mut region = String::new();
     for (index, player) in player_list.iter().take(2).enumerate() {
         if let Some(target) = parsed_players.get_mut(index + 1) {
-            target.name = player
-                .get_key("m_name")
-                .map(value_as_text)
-                .unwrap_or_default();
-            target.race = player
-                .get_key("m_race")
-                .map(value_as_text)
-                .unwrap_or_default();
-            target.observer = player
-                .get_key("m_observe")
-                .and_then(value_as_i64)
-                .unwrap_or_default()
-                != 0;
+            target.name = player.m_name.clone();
+            target.race = player.m_race.clone();
+            target.observer = player.m_observe != 0;
             if index == 0 {
                 let region_code = player
-                    .get_key("m_toon")
-                    .and_then(|value| value.get_key("m_region"))
-                    .and_then(value_as_i64)
+                    .m_toon
+                    .as_ref()
+                    .map(|value| value.m_region)
                     .unwrap_or_default();
                 region = region_name(region_code).to_string();
             }
         }
     }
 
-    let slots = nested_value(&init_data, &["m_syncLobbyState", "m_lobbyState", "m_slots"])
-        .and_then(value_array)
-        .ok_or_else(|| {
-            DetailedReplayAnalysisError::InvalidReplayData("init slots must be array".to_string())
-        })?;
+    let slots = &init_data.m_syncLobbyState.m_lobbyState.m_slots;
     for (index, slot) in slots.iter().take(2).enumerate() {
         if let Some(target) = parsed_players.get_mut(index + 1) {
-            let commander = slot
-                .get_key("m_commander")
-                .map(value_as_text)
-                .unwrap_or_default();
-            let commander_level = slot
-                .get_key("m_commanderLevel")
-                .and_then(value_as_i64)
-                .unwrap_or_default();
-            let commander_mastery_level = slot
-                .get_key("m_commanderMasteryLevel")
-                .and_then(value_as_i64)
-                .unwrap_or_default();
-            let prestige = slot
-                .get_key("m_selectedCommanderPrestige")
-                .and_then(value_as_i64)
-                .unwrap_or_default();
+            let commander = slot.m_commander.clone();
+            let commander_level = slot.m_commanderLevel;
+            let commander_mastery_level = slot.m_commanderMasteryLevel;
+            let prestige = slot.m_selectedCommanderPrestige;
             target.commander = commander.clone();
             target.commander_level = commander_level as u32;
             target.commander_mastery_level = commander_mastery_level as u32;
@@ -892,26 +736,15 @@ fn parse_replay_file_input(
                 .and_then(|row| row.get(&prestige))
                 .cloned()
                 .unwrap_or_default();
-            target.handle = slot
-                .get_key("m_toonHandle")
-                .map(value_as_text)
-                .unwrap_or_default();
-            target.masteries = parse_masteries(
-                slot.get_key("m_commanderMasteryTalents")
-                    .and_then(value_array),
-            );
+            target.handle = slot.m_toonHandle.clone();
+            target.masteries = parse_masteries(&slot.m_commanderMasteryTalents);
         }
     }
 
-    let user_initial = nested_value(&init_data, &["m_syncLobbyState", "m_userInitialData"])
-        .and_then(value_array)
-        .unwrap_or_default();
+    let user_initial = &init_data.m_syncLobbyState.m_userInitialData;
     for (index, user) in user_initial.iter().take(2).enumerate() {
         if let Some(target) = parsed_players.get_mut(index + 1) {
-            let user_name = user
-                .get_key("m_name")
-                .map(value_as_text)
-                .unwrap_or_default();
+            let user_name = user.m_name.clone();
             if !user_name.is_empty() {
                 target.name = user_name;
             }
@@ -920,25 +753,11 @@ fn parse_replay_file_input(
 
     let enemy_race = slots
         .get(2)
-        .and_then(|value| value.get_key("m_race"))
-        .map(value_as_text)
-        .or_else(|| {
-            player_list
-                .get(2)
-                .and_then(|value| value.get_key("m_race"))
-                .map(value_as_text)
-        })
+        .map(|value| value.m_race.clone())
+        .or_else(|| player_list.get(2).map(|value| value.m_race.clone()))
         .unwrap_or_default();
-    let diff_1 = slots
-        .get(2)
-        .and_then(|value| value.get_key("m_difficulty"))
-        .and_then(value_as_i64)
-        .unwrap_or(4);
-    let diff_2 = slots
-        .get(3)
-        .and_then(|value| value.get_key("m_difficulty"))
-        .and_then(value_as_i64)
-        .unwrap_or(4);
+    let diff_1 = slots.get(2).map(|value| value.m_difficulty).unwrap_or(4);
+    let diff_2 = slots.get(3).map(|value| value.m_difficulty).unwrap_or(4);
     let diff_1_name = difficulty_name(diff_1).to_string();
     let diff_2_name = difficulty_name(diff_2).to_string();
     let ext_difficulty = if brutal_plus > 0 {
