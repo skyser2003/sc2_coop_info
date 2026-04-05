@@ -1,5 +1,9 @@
 use crate::bitstream::BitPackedBuffer;
-use crate::{error::DecodeError, value::Value};
+use crate::{
+    error::DecodeError,
+    events::{GameEvent, MessageEvent, TrackerEvent},
+    value::Value,
+};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 
@@ -21,7 +25,10 @@ pub struct ProtocolDefinition {
 }
 
 impl ProtocolDefinition {
-    pub fn decode_replay_game_events(&self, contents: &[u8]) -> Result<Vec<Value>, DecodeError> {
+    pub fn decode_replay_game_events(
+        &self,
+        contents: &[u8],
+    ) -> Result<Vec<GameEvent>, DecodeError> {
         let mut decoder = BitPackedDecoder::new(contents, &self.typeinfos);
         decode_event_stream(
             &mut decoder,
@@ -31,9 +38,13 @@ impl ProtocolDefinition {
             self.replay_userid_typeid,
             self.svaruint32_typeid,
         )
+        .map(|events| events.into_iter().map(GameEvent::from_value).collect())
     }
 
-    pub fn decode_replay_message_events(&self, contents: &[u8]) -> Result<Vec<Value>, DecodeError> {
+    pub fn decode_replay_message_events(
+        &self,
+        contents: &[u8],
+    ) -> Result<Vec<MessageEvent>, DecodeError> {
         let mut decoder = BitPackedDecoder::new(contents, &self.typeinfos);
         decode_event_stream(
             &mut decoder,
@@ -43,9 +54,13 @@ impl ProtocolDefinition {
             self.replay_userid_typeid,
             self.svaruint32_typeid,
         )
+        .map(|events| events.into_iter().map(MessageEvent::from_value).collect())
     }
 
-    pub fn decode_replay_tracker_events(&self, contents: &[u8]) -> Result<Vec<Value>, DecodeError> {
+    pub fn decode_replay_tracker_events(
+        &self,
+        contents: &[u8],
+    ) -> Result<Vec<TrackerEvent>, DecodeError> {
         let Some(eventid_typeid) = self.tracker_eventid_typeid else {
             return Ok(Vec::new());
         };
@@ -59,6 +74,7 @@ impl ProtocolDefinition {
             self.replay_userid_typeid,
             self.svaruint32_typeid,
         )
+        .map(|events| events.into_iter().map(TrackerEvent::from_value).collect())
     }
 
     pub fn decode_replay_header(&self, contents: &[u8]) -> Result<Value, DecodeError> {

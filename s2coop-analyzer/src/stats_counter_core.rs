@@ -1,6 +1,6 @@
 use crate::cache_overall_stats_generator::PlayerStatsSeries;
 use crate::dictionary_data::UnitBaseCostsJson;
-use s2protocol_port::Value;
+use s2protocol_port::{GameEvent, SnapshotPoint, SnapshotPointValue, TrackerEvent};
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 #[derive(Clone, Debug)]
@@ -61,25 +61,6 @@ fn remove_upward_spikes(values: &mut [f64]) {
     }
 }
 
-fn value_as_i64(value: &Value) -> Option<i64> {
-    value
-        .as_i128()
-        .and_then(|value| i64::try_from(value).ok())
-        .or_else(|| match value {
-            Value::Float(number) => Some(*number as i64),
-            Value::String(text) => text.parse::<i64>().ok(),
-            _ => None,
-        })
-}
-
-fn value_as_text(value: &Value) -> Option<String> {
-    match value {
-        Value::String(text) => Some(text.clone()),
-        Value::Bytes(bytes) => Some(String::from_utf8_lossy(bytes).into_owned()),
-        _ => None,
-    }
-}
-
 fn upward_spike_indices(values: &[f64]) -> HashSet<usize> {
     let mut indices = HashSet::new();
     if values.len() < 3 {
@@ -116,24 +97,15 @@ impl ReplayDroneIdentifierCore {
         self.drones as f64 * 19.055
     }
 
-    pub fn event(&mut self, event: &Value) {
-        let Some(event_name) = event.get_key("_event").map(|value| match value {
-            Value::String(text) => text.clone(),
-            _ => String::new(),
-        }) else {
-            return;
-        };
+    pub fn event(&mut self, event: &GameEvent) {
+        let event_name = event.event.as_str();
         if event_name != "NNet.Game.SCmdEvent"
             && event_name != "NNet.Game.SCmdUpdateTargetUnitEvent"
         {
             return;
         }
 
-        let Some(user_id) = event
-            .get_key("_userid")
-            .and_then(|value| value.get_key("m_userId"))
-            .and_then(value_as_i64)
-        else {
+        let Some(user_id) = event.user_id else {
             return;
         };
         if !(0..=1).contains(&user_id) {
@@ -146,16 +118,12 @@ impl ReplayDroneIdentifierCore {
             return;
         }
 
-        let parse_snapshot_point = |snapshot: &Value| -> Option<String> {
-            let Value::Object(snapshot_dict) = snapshot else {
-                return None;
-            };
+        let parse_snapshot_point = |snapshot: &SnapshotPoint| -> Option<String> {
             let mut values: Vec<String> = Vec::new();
-            for value in snapshot_dict.values() {
-                if let Some(integer) = value_as_i64(value) {
-                    values.push(integer.to_string());
-                } else if let Some(number) = value.as_f64() {
-                    values.push(format!("{number}"));
+            for value in &snapshot.values {
+                match value {
+                    SnapshotPointValue::Int(value) => values.push(value.to_string()),
+                    SnapshotPointValue::Float(value) => values.push(format!("{value}")),
                 }
             }
             if values.is_empty() {
@@ -168,16 +136,17 @@ impl ReplayDroneIdentifierCore {
         if event_name == "NNet.Game.SCmdEvent" {
             self.recently_used = false;
             let ability_link = event
-                .get_key("m_abil")
-                .and_then(|value| value.get_key("m_abilLink"))
-                .and_then(value_as_i64)
+                .m_abil
+                .as_ref()
+                .map(|value| value.m_abilLink)
                 .unwrap_or_default();
             if ability_link == 2536 {
                 self.recently_used = true;
                 if let Some(snapshot_key) = event
-                    .get_key("m_data")
-                    .and_then(|value| value.get_key("TargetUnit"))
-                    .and_then(|value| value.get_key("m_snapshotPoint"))
+                    .m_data
+                    .as_ref()
+                    .and_then(|value| value.TargetUnit.as_ref())
+                    .and_then(|value| value.m_snapshotPoint.as_ref())
                     .and_then(parse_snapshot_point)
                 {
                     if !self.refineries.contains(&snapshot_key) {
@@ -191,8 +160,9 @@ impl ReplayDroneIdentifierCore {
 
         if self.recently_used && event_name == "NNet.Game.SCmdUpdateTargetUnitEvent" {
             if let Some(snapshot_key) = event
-                .get_key("m_target")
-                .and_then(|value| value.get_key("m_snapshotPoint"))
+                .m_target
+                .as_ref()
+                .and_then(|value| value.m_snapshotPoint.as_ref())
                 .and_then(parse_snapshot_point)
             {
                 if !self.refineries.contains(&snapshot_key) {
@@ -719,16 +689,14 @@ impl ReplayStatsCounterCore {
         }
     }
 
-    pub fn unit_created_event(&mut self, unit_type: &str, event: &Value) {
+    pub fn unit_created_event(&mut self, unit_type: &str, event: &TrackerEvent) {
         if self.commander != "Zagara"
             || (unit_type != "Baneling" && unit_type != "HotSSplitterlingBig")
         {
             return;
         }
 
-        let creator_ability = event
-            .get_key("m_creatorAbilityName")
-            .and_then(value_as_text);
+        let creator_ability = event.m_creator_ability_name.clone();
         if creator_ability.as_deref() != Some("MorphZerglingToSplitterling") {
             self.zagara_free_banelings += 1;
         }

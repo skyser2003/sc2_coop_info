@@ -9,7 +9,7 @@ use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterato
 use rayon::ThreadPoolBuilder;
 use s2protocol_port::{
     build_protocol_store, parse_file_with_store, process_details_data, process_init_data,
-    ProtocolStore, ReplayParseMode, Value,
+    MessageEvent, ProtocolStore, ReplayEvent, ReplayParseMode, Value,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value as JsonValue};
@@ -1307,8 +1307,14 @@ fn parse_cache_replay(
 
     let mut events = Vec::new();
     if options.parse_events {
-        events.extend(parsed.game_events.clone());
-        events.extend(parsed.tracker_events.clone());
+        events.extend(parsed.game_events.iter().cloned().map(ReplayEvent::Game));
+        events.extend(
+            parsed
+                .tracker_events
+                .iter()
+                .cloned()
+                .map(ReplayEvent::Tracker),
+        );
         events.sort_by_key(event_gameloop);
     }
 
@@ -1661,54 +1667,29 @@ fn resolve_protocol_build(
     }
 }
 
-fn parse_message_event(message: &Value) -> Option<ReplayMessage> {
-    let text = if let Some(raw) = message.get_key("m_string") {
-        let value = value_as_text(raw);
-        if value.is_empty() {
-            if event_name(message).as_deref() == Some("NNet.Game.SPingMessage") {
-                "*pings*".to_string()
-            } else {
-                return None;
-            }
-        } else {
-            value
-        }
-    } else if event_name(message).as_deref() == Some("NNet.Game.SPingMessage") {
+fn parse_message_event(message: &MessageEvent) -> Option<ReplayMessage> {
+    let text = if let Some(value) = message.m_string.as_ref().filter(|value| !value.is_empty()) {
+        value.clone()
+    } else if message.event == "NNet.Game.SPingMessage" {
         "*pings*".to_string()
     } else {
         return None;
     };
-    let player = message
-        .get_key("_userid")
-        .and_then(|value| value.get_key("m_userId"))
-        .and_then(value_as_i64)
-        .map(|value| value + 1)
-        .unwrap_or_default() as u8;
-    let time = message
-        .get_key("_gameloop")
-        .and_then(value_as_f64)
-        .unwrap_or_default()
-        / 16.0;
+    let player = message.user_id.map(|value| value + 1).unwrap_or_default() as u8;
+    let time = message.game_loop as f64 / 16.0;
     Some(ReplayMessage { text, player, time })
 }
 
-fn collect_user_leave_times(events: &[Value]) -> IndexMap<i64, f64> {
+fn collect_user_leave_times(events: &[ReplayEvent]) -> IndexMap<i64, f64> {
     let mut user_leave_times = IndexMap::new();
     for event in events {
-        if event_name(event).as_deref() != Some("NNet.Game.SGameUserLeaveEvent") {
+        if event_name(event) != "NNet.Game.SGameUserLeaveEvent" {
             continue;
         }
-        let user = event
-            .get_key("_userid")
-            .and_then(|value| value.get_key("m_userId"))
-            .and_then(value_as_i64)
+        let user = event_user_id(event)
             .map(|value| value + 1)
             .unwrap_or_default();
-        let leave_time = event
-            .get_key("_gameloop")
-            .and_then(value_as_f64)
-            .unwrap_or_default()
-            / 16.0;
+        let leave_time = event_gameloop(event) as f64 / 16.0;
         user_leave_times.insert(user, leave_time);
     }
     user_leave_times
@@ -1886,48 +1867,33 @@ fn value_as_text(value: &Value) -> String {
     }
 }
 
-fn value_contains(value: &Value, needle: &str) -> bool {
-    match value {
-        Value::String(text) => text.contains(needle),
-        Value::Bytes(bytes) => String::from_utf8_lossy(bytes).contains(needle),
-        Value::Array(values) => values.iter().any(|item| match item {
-            Value::String(text) => text == needle,
-            Value::Bytes(bytes) => String::from_utf8_lossy(bytes) == needle,
-            _ => false,
-        }),
-        Value::Object(map) => map.contains_key(needle),
-        _ => false,
+fn event_name(event: &ReplayEvent) -> &str {
+    event._event()
+}
+
+fn event_gameloop(event: &ReplayEvent) -> i64 {
+    event._gameloop()
+}
+
+fn event_control_id(event: &ReplayEvent) -> Option<i64> {
+    match event {
+        ReplayEvent::Game(event) => event.m_control_id,
+        ReplayEvent::Tracker(_) => None,
     }
 }
 
-fn event_name(event: &Value) -> Option<String> {
-    event.get_key("_event").map(value_as_text)
+fn event_event_type(event: &ReplayEvent) -> Option<i64> {
+    match event {
+        ReplayEvent::Game(event) => event.m_event_type,
+        ReplayEvent::Tracker(_) => None,
+    }
 }
 
-fn event_gameloop(event: &Value) -> i64 {
-    event
-        .get_key("_gameloop")
-        .and_then(value_as_i64)
-        .unwrap_or_default()
-}
-
-fn event_player_id(event: &Value) -> Option<i64> {
-    event.get_key("m_playerId").and_then(value_as_i64)
-}
-
-fn event_control_id(event: &Value) -> Option<i64> {
-    event.get_key("m_controlId").and_then(value_as_i64)
-}
-
-fn event_event_type(event: &Value) -> Option<i64> {
-    event.get_key("m_eventType").and_then(value_as_i64)
-}
-
-fn event_user_id(event: &Value) -> Option<i64> {
-    event
-        .get_key("_userid")
-        .and_then(|value| value.get_key("m_userId"))
-        .and_then(value_as_i64)
+fn event_user_id(event: &ReplayEvent) -> Option<i64> {
+    match event {
+        ReplayEvent::Game(event) => event.user_id,
+        ReplayEvent::Tracker(_) => None,
+    }
 }
 
 fn difficulty_name(code: i64) -> &'static str {
@@ -2027,10 +1993,10 @@ fn mutator_from_button(button: i64, panel: i64, mutators: &[String]) -> Option<S
     mutators.get(index).cloned()
 }
 
-fn get_last_deselect_event(events: &[Value]) -> Option<ReplayNumericValue> {
+fn get_last_deselect_event(events: &[ReplayEvent]) -> Option<ReplayNumericValue> {
     let mut last_event = None;
     for event in events {
-        if event_name(event).as_deref() == Some("NNet.Game.SSelectionDeltaEvent") {
+        if event_name(event) == "NNet.Game.SSelectionDeltaEvent" {
             last_event = Some(ReplayNumericValue::Float(
                 event_gameloop(event) as f64 / 16.0 - 2.0,
             ));
@@ -2039,30 +2005,29 @@ fn get_last_deselect_event(events: &[Value]) -> Option<ReplayNumericValue> {
     last_event
 }
 
-fn get_start_time(events: &[Value]) -> ReplayNumericValue {
+fn get_start_time(events: &[ReplayEvent]) -> ReplayNumericValue {
     for event in events {
-        if event_name(event).as_deref() == Some("NNet.Replay.Tracker.SPlayerStatsEvent")
-            && event_player_id(event) == Some(1)
-        {
-            let minerals = event
-                .get_key("m_stats")
-                .and_then(|value| value.get_key("m_scoreValueMineralsCollectionRate"))
-                .and_then(value_as_f64)
-                .unwrap_or_default();
-            if minerals > 0.0 {
-                return ReplayNumericValue::Float(event_gameloop(event) as f64 / 16.0);
+        if let ReplayEvent::Tracker(event) = event {
+            if event.event == "NNet.Replay.Tracker.SPlayerStatsEvent"
+                && event.m_player_id == Some(1)
+            {
+                let minerals = event
+                    .m_stats
+                    .as_ref()
+                    .and_then(|stats| stats.m_score_value_minerals_collection_rate)
+                    .unwrap_or_default();
+                if minerals > 0.0 {
+                    return ReplayNumericValue::Float(event.game_loop as f64 / 16.0);
+                }
             }
-        }
 
-        if event_name(event).as_deref() == Some("NNet.Replay.Tracker.SUpgradeEvent")
-            && matches!(event_player_id(event), Some(1 | 2))
-        {
-            let upgrade_name = event
-                .get_key("m_upgradeTypeName")
-                .map(value_as_text)
-                .unwrap_or_default();
-            if upgrade_name.contains("Spray") {
-                return ReplayNumericValue::Float(event_gameloop(event) as f64 / 16.0);
+            if event.event == "NNet.Replay.Tracker.SUpgradeEvent"
+                && matches!(event.m_player_id, Some(1 | 2))
+            {
+                let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
+                if upgrade_name.contains("Spray") {
+                    return ReplayNumericValue::Float(event.game_loop as f64 / 16.0);
+                }
             }
         }
     }
@@ -2071,7 +2036,7 @@ fn get_start_time(events: &[Value]) -> ReplayNumericValue {
 }
 
 fn identify_mutators_for_cache(
-    events: &[Value],
+    events: &[ReplayEvent],
     mutators_all: &[String],
     mutators_ui: &[String],
     mutator_ids: &MutatorIdsJson,
@@ -2085,16 +2050,13 @@ fn identify_mutators_for_cache(
 
     if mm {
         for event in events {
-            if event_name(event).as_deref() != Some("NNet.Replay.Tracker.SUpgradeEvent") {
+            let ReplayEvent::Tracker(event) = event else {
+                continue;
+            };
+            if event.event != "NNet.Replay.Tracker.SUpgradeEvent" || event.m_player_id != Some(0) {
                 continue;
             }
-            if event_player_id(event) != Some(0) {
-                continue;
-            }
-            let upgrade_name = event
-                .get_key("m_upgradeTypeName")
-                .map(value_as_text)
-                .unwrap_or_default();
+            let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
             if !upgrade_name.contains("mutatorinfo") {
                 continue;
             }
@@ -2168,12 +2130,17 @@ fn identify_mutators_for_cache(
             let name = event_name(event);
 
             if gameloop == 0
-                && name.as_deref() == Some("NNet.Game.STriggerDialogControlEvent")
+                && name == "NNet.Game.STriggerDialogControlEvent"
                 && event_event_type(event) == Some(3)
             {
-                let contains_selection_changed = event
-                    .get_key("m_eventData")
-                    .is_some_and(|value| value_contains(value, "SelectionChanged"));
+                let contains_selection_changed = matches!(
+                    event,
+                    ReplayEvent::Game(event)
+                        if event
+                            .m_event_data
+                            .as_ref()
+                            .is_some_and(|data| data.contains_selection_changed)
+                );
                 if contains_selection_changed {
                     if let Some(control_id) = event_control_id(event) {
                         offset = 129 - control_id;
@@ -2184,12 +2151,14 @@ fn identify_mutators_for_cache(
 
             if gameloop > 0
                 && Some(gameloop) != last_gameloop
-                && name.as_deref() == Some("NNet.Game.STriggerDialogControlEvent")
+                && name == "NNet.Game.STriggerDialogControlEvent"
                 && event_user_id(event) == Some(0)
             {
-                let contains_none = event
-                    .get_key("m_eventData")
-                    .is_some_and(|value| value_contains(value, "None"));
+                let contains_none = matches!(
+                    event,
+                    ReplayEvent::Game(event)
+                        if event.m_event_data.as_ref().is_some_and(|data| data.contains_none)
+                );
                 if !contains_none {
                     if let Some(control_id) = event_control_id(event) {
                         actions.push(control_id + offset);
@@ -2199,15 +2168,14 @@ fn identify_mutators_for_cache(
                 }
             }
 
-            if name.as_deref() == Some("NNet.Replay.Tracker.SUpgradeEvent")
-                && matches!(event_player_id(event), Some(1 | 2))
-            {
-                let upgrade_name = event
-                    .get_key("m_upgradeTypeName")
-                    .map(value_as_text)
-                    .unwrap_or_default();
-                if upgrade_name.contains("Spray") {
-                    break;
+            if let ReplayEvent::Tracker(event) = event {
+                if event.event == "NNet.Replay.Tracker.SUpgradeEvent"
+                    && matches!(event.m_player_id, Some(1 | 2))
+                {
+                    let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
+                    if upgrade_name.contains("Spray") {
+                        break;
+                    }
                 }
             }
         }

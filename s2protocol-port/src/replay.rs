@@ -1,4 +1,8 @@
-use crate::{error::DecodeError, value::Value};
+use crate::{
+    error::DecodeError,
+    events::{GameEvent, MessageEvent, TrackerEvent},
+    value::Value,
+};
 use mpq::Archive;
 use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, HashMap};
@@ -22,9 +26,9 @@ pub struct ParsedReplay {
     pub details_backup: Option<Value>,
     pub init_data: Option<Value>,
     pub metadata: Option<Value>,
-    pub game_events: Vec<Value>,
-    pub message_events: Vec<Value>,
-    pub tracker_events: Vec<Value>,
+    pub game_events: Vec<GameEvent>,
+    pub message_events: Vec<MessageEvent>,
+    pub tracker_events: Vec<TrackerEvent>,
     pub attributes: Option<Value>,
     pub attribute_scopes: Vec<Value>,
 }
@@ -69,7 +73,7 @@ fn decode_replay_tracker_events_with_store_fallback(
     store: &crate::protocol::ProtocolStore,
     build: u32,
     raw: &[u8],
-) -> Option<Vec<Value>> {
+) -> Option<Vec<TrackerEvent>> {
     let mut builds = store.known_builds();
     builds.sort_by_key(|candidate| candidate.abs_diff(build));
 

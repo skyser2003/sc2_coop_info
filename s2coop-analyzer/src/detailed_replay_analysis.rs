@@ -13,7 +13,7 @@ use chrono::{DateTime, Local};
 use indexmap::IndexMap;
 use s2protocol_port::{
     build_protocol_store, parse_file_with_store, process_details_data, process_init_data,
-    ProtocolStore, ReplayParseMode, Value,
+    ProtocolStore, ReplayEvent, ReplayParseMode, TrackerEvent, Value,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
@@ -102,11 +102,9 @@ pub enum DetailedReplayAnalysisError {
 #[derive(Clone, Debug)]
 struct ParsedReplayAnalysisInput {
     parser: ParsedReplayInput,
-    events: Vec<Value>,
+    events: Vec<ReplayEvent>,
     start_time: f64,
     end_time: f64,
-    is_blizzard: bool,
-    disable_recover: bool,
 }
 
 fn protocol_store() -> Result<&'static ProtocolStore, DetailedReplayAnalysisError> {
@@ -212,48 +210,33 @@ fn nested_value<'a>(root: &'a Value, path: &[&str]) -> Option<&'a Value> {
     Some(current)
 }
 
-fn value_contains(value: &Value, needle: &str) -> bool {
-    match value {
-        Value::String(text) => text.contains(needle),
-        Value::Bytes(bytes) => String::from_utf8_lossy(bytes).contains(needle),
-        Value::Array(values) => values.iter().any(|item| match item {
-            Value::String(text) => text == needle,
-            Value::Bytes(bytes) => String::from_utf8_lossy(bytes) == needle,
-            _ => false,
-        }),
-        Value::Object(map) => map.contains_key(needle),
-        _ => false,
+fn event_name(event: &ReplayEvent) -> &str {
+    event._event()
+}
+
+fn event_gameloop(event: &ReplayEvent) -> i64 {
+    event._gameloop()
+}
+
+fn event_control_id(event: &ReplayEvent) -> Option<i64> {
+    match event {
+        ReplayEvent::Game(event) => event.m_control_id,
+        ReplayEvent::Tracker(_) => None,
     }
 }
 
-fn event_name(event: &Value) -> Option<String> {
-    event.get_key("_event").map(value_as_text)
+fn event_event_type(event: &ReplayEvent) -> Option<i64> {
+    match event {
+        ReplayEvent::Game(event) => event.m_event_type,
+        ReplayEvent::Tracker(_) => None,
+    }
 }
 
-fn event_gameloop(event: &Value) -> i64 {
-    event
-        .get_key("_gameloop")
-        .and_then(value_as_i64)
-        .unwrap_or_default()
-}
-
-fn event_player_id(event: &Value) -> Option<i64> {
-    event.get_key("m_playerId").and_then(value_as_i64)
-}
-
-fn event_control_id(event: &Value) -> Option<i64> {
-    event.get_key("m_controlId").and_then(value_as_i64)
-}
-
-fn event_event_type(event: &Value) -> Option<i64> {
-    event.get_key("m_eventType").and_then(value_as_i64)
-}
-
-fn event_user_id(event: &Value) -> Option<i64> {
-    event
-        .get_key("_userid")
-        .and_then(|value| value.get_key("m_userId"))
-        .and_then(value_as_i64)
+fn event_user_id(event: &ReplayEvent) -> Option<i64> {
+    match event {
+        ReplayEvent::Game(event) => event.user_id,
+        ReplayEvent::Tracker(_) => None,
+    }
 }
 
 fn parse_masteries(values: Option<&[Value]>) -> [u32; 6] {
@@ -385,40 +368,39 @@ fn mutator_from_button(button: i64, panel: i64, mutators_list: &[String]) -> Opt
     mutators_list.get(index).cloned()
 }
 
-fn get_last_deselect_event(events: &[Value]) -> Option<f64> {
+fn get_last_deselect_event(events: &[ReplayEvent]) -> Option<f64> {
     let mut last_event: Option<f64> = None;
     for event in events {
-        if event_name(event).as_deref() == Some("NNet.Game.SSelectionDeltaEvent") {
+        if event_name(event) == "NNet.Game.SSelectionDeltaEvent" {
             last_event = Some(event_gameloop(event) as f64 / 16.0 - 2.0);
         }
     }
     last_event
 }
 
-fn get_start_time(events: &[Value]) -> f64 {
+fn get_start_time(events: &[ReplayEvent]) -> f64 {
     for event in events {
-        if event_name(event).as_deref() == Some("NNet.Replay.Tracker.SPlayerStatsEvent")
-            && event_player_id(event) == Some(1)
-        {
-            let minerals = event
-                .get_key("m_stats")
-                .and_then(|value| value.get_key("m_scoreValueMineralsCollectionRate"))
-                .and_then(value_as_f64)
-                .unwrap_or_default();
-            if minerals > 0.0 {
-                return event_gameloop(event) as f64 / 16.0;
+        if let ReplayEvent::Tracker(event) = event {
+            if event.event == "NNet.Replay.Tracker.SPlayerStatsEvent"
+                && event.m_player_id == Some(1)
+            {
+                let minerals = event
+                    .m_stats
+                    .as_ref()
+                    .and_then(|stats| stats.m_score_value_minerals_collection_rate)
+                    .unwrap_or_default();
+                if minerals > 0.0 {
+                    return event.game_loop as f64 / 16.0;
+                }
             }
-        }
 
-        if event_name(event).as_deref() == Some("NNet.Replay.Tracker.SUpgradeEvent")
-            && matches!(event_player_id(event), Some(1 | 2))
-        {
-            let upgrade_name = event
-                .get_key("m_upgradeTypeName")
-                .map(value_as_text)
-                .unwrap_or_default();
-            if upgrade_name.contains("Spray") {
-                return event_gameloop(event) as f64 / 16.0;
+            if event.event == "NNet.Replay.Tracker.SUpgradeEvent"
+                && matches!(event.m_player_id, Some(1 | 2))
+            {
+                let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
+                if upgrade_name.contains("Spray") {
+                    return event.game_loop as f64 / 16.0;
+                }
             }
         }
     }
@@ -427,7 +409,7 @@ fn get_start_time(events: &[Value]) -> f64 {
 }
 
 fn identify_mutators(
-    events: &[Value],
+    events: &[ReplayEvent],
     mutators_all: &[String],
     mutators_ui: &[String],
     mutator_ids: &MutatorIdsJson,
@@ -441,16 +423,13 @@ fn identify_mutators(
 
     if mm {
         for event in events {
-            if event_name(event).as_deref() != Some("NNet.Replay.Tracker.SUpgradeEvent") {
+            let ReplayEvent::Tracker(event) = event else {
+                continue;
+            };
+            if event.event != "NNet.Replay.Tracker.SUpgradeEvent" || event.m_player_id != Some(0) {
                 continue;
             }
-            if event_player_id(event) != Some(0) {
-                continue;
-            }
-            let upgrade_name = event
-                .get_key("m_upgradeTypeName")
-                .map(value_as_text)
-                .unwrap_or_default();
+            let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
             if !upgrade_name.contains("mutatorinfo") {
                 continue;
             }
@@ -524,12 +503,17 @@ fn identify_mutators(
             let name = event_name(event);
 
             if gameloop == 0
-                && name.as_deref() == Some("NNet.Game.STriggerDialogControlEvent")
+                && name == "NNet.Game.STriggerDialogControlEvent"
                 && event_event_type(event) == Some(3)
             {
-                let contains_selection_changed = event
-                    .get_key("m_eventData")
-                    .is_some_and(|value| value_contains(value, "SelectionChanged"));
+                let contains_selection_changed = matches!(
+                    event,
+                    ReplayEvent::Game(event)
+                        if event
+                            .m_event_data
+                            .as_ref()
+                            .is_some_and(|data| data.contains_selection_changed)
+                );
                 if contains_selection_changed {
                     if let Some(control_id) = event_control_id(event) {
                         offset = 129 - control_id;
@@ -540,12 +524,14 @@ fn identify_mutators(
 
             if gameloop > 0
                 && Some(gameloop) != last_gameloop
-                && name.as_deref() == Some("NNet.Game.STriggerDialogControlEvent")
+                && name == "NNet.Game.STriggerDialogControlEvent"
                 && event_user_id(event) == Some(0)
             {
-                let contains_none = event
-                    .get_key("m_eventData")
-                    .is_some_and(|value| value_contains(value, "None"));
+                let contains_none = matches!(
+                    event,
+                    ReplayEvent::Game(event)
+                        if event.m_event_data.as_ref().is_some_and(|data| data.contains_none)
+                );
                 if !contains_none {
                     if let Some(control_id) = event_control_id(event) {
                         actions.push(control_id + offset);
@@ -555,15 +541,14 @@ fn identify_mutators(
                 }
             }
 
-            if name.as_deref() == Some("NNet.Replay.Tracker.SUpgradeEvent")
-                && matches!(event_player_id(event), Some(1 | 2))
-            {
-                let upgrade_name = event
-                    .get_key("m_upgradeTypeName")
-                    .map(value_as_text)
-                    .unwrap_or_default();
-                if upgrade_name.contains("Spray") {
-                    break;
+            if let ReplayEvent::Tracker(event) = event {
+                if event.event == "NNet.Replay.Tracker.SUpgradeEvent"
+                    && matches!(event.m_player_id, Some(1 | 2))
+                {
+                    let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
+                    if upgrade_name.contains("Spray") {
+                        break;
+                    }
                 }
             }
         }
@@ -690,8 +675,8 @@ fn parse_replay_file_input(
     })?;
 
     let mut events = Vec::new();
-    events.extend(parsed.game_events);
-    events.extend(parsed.tracker_events);
+    events.extend(parsed.game_events.into_iter().map(ReplayEvent::Game));
+    events.extend(parsed.tracker_events.into_iter().map(ReplayEvent::Tracker));
     events.sort_by_key(event_gameloop);
 
     let map_title = metadata
@@ -704,11 +689,11 @@ fn parse_replay_file_input(
         .and_then(|row| row.get("EN"))
         .cloned()
         .unwrap_or(map_title);
-    let is_blizzard = details
+    let _is_blizzard = details
         .get_key("m_isBlizzardMap")
         .and_then(value_as_bool)
         .unwrap_or(false);
-    let disable_recover = details
+    let _disable_recover = details
         .get_key("m_disableRecoverGame")
         .and_then(value_as_bool)
         .unwrap_or(false);
@@ -968,33 +953,16 @@ fn parse_replay_file_input(
         .message_events
         .iter()
         .filter_map(|message| {
-            let text = if let Some(raw) = message.get_key("m_string") {
-                let value = value_as_text(raw);
-                if value.is_empty() {
-                    if event_name(message).as_deref() == Some("NNet.Game.SPingMessage") {
-                        "*pings*".to_string()
-                    } else {
-                        return None;
-                    }
+            let text =
+                if let Some(value) = message.m_string.as_ref().filter(|value| !value.is_empty()) {
+                    value.clone()
+                } else if message.event == "NNet.Game.SPingMessage" {
+                    "*pings*".to_string()
                 } else {
-                    value
-                }
-            } else if event_name(message).as_deref() == Some("NNet.Game.SPingMessage") {
-                "*pings*".to_string()
-            } else {
-                return None;
-            };
-            let player = message
-                .get_key("_userid")
-                .and_then(|value| value.get_key("m_userId"))
-                .and_then(value_as_i64)
-                .map(|value| value + 1)
-                .unwrap_or_default() as u8;
-            let time = message
-                .get_key("_gameloop")
-                .and_then(value_as_f64)
-                .unwrap_or_default()
-                / 16.0;
+                    return None;
+                };
+            let player = message.user_id.map(|value| value + 1).unwrap_or_default() as u8;
+            let time = message.game_loop as f64 / 16.0;
             Some(ParsedReplayMessage { text, player, time })
         })
         .collect::<Vec<ParsedReplayMessage>>();
@@ -1029,8 +997,6 @@ fn parse_replay_file_input(
         events,
         start_time,
         end_time,
-        is_blizzard,
-        disable_recover,
     })
 }
 
@@ -1045,17 +1011,20 @@ fn find_replay_player_mut(
     players.iter_mut().find(|player| player.pid == pid)
 }
 
-fn replay_unitid_from_event(event: &Value, killer: bool, creator: bool) -> Option<i64> {
-    let (index_key, recycle_key) = if killer {
-        ("m_killerUnitTagIndex", "m_killerUnitTagRecycle")
+fn replay_unitid_from_event(event: &TrackerEvent, killer: bool, creator: bool) -> Option<i64> {
+    let (index, recycle_index) = if killer {
+        (
+            event.m_killer_unit_tag_index?,
+            event.m_killer_unit_tag_recycle?,
+        )
     } else if creator {
-        ("m_creatorUnitTagIndex", "m_creatorUnitTagRecycle")
+        (
+            event.m_creator_unit_tag_index?,
+            event.m_creator_unit_tag_recycle?,
+        )
     } else {
-        ("m_unitTagIndex", "m_unitTagRecycle")
+        (event.m_unit_tag_index?, event.m_unit_tag_recycle?)
     };
-
-    let index = event.get_key(index_key).and_then(value_as_i64)?;
-    let recycle_index = event.get_key(recycle_key).and_then(value_as_i64)?;
     Some(recycle_index * 100_000 + index)
 }
 
@@ -1763,18 +1732,11 @@ fn analyze_replay_file_impl(
     let mut ally_icons_base = BTreeMap::<String, u64>::new();
 
     for event in &events {
-        let current_event_name = event_name(event).unwrap_or_default();
+        let current_event_name = event_name(event);
 
         if current_event_name == "NNet.Game.SGameUserLeaveEvent" {
-            let user_id = event
-                .get_key("_userid")
-                .and_then(|value| value.get_key("m_userId"))
-                .and_then(value_as_i64)
-                .unwrap_or_default();
-            let gameloop = event
-                .get_key("_gameloop")
-                .and_then(value_as_f64)
-                .unwrap_or_default();
+            let user_id = event_user_id(event).unwrap_or_default();
+            let gameloop = event_gameloop(event) as f64;
             replay_handle_game_user_leave_event_fields(user_id, gameloop, &mut user_leave_times);
         }
 
@@ -1782,136 +1744,131 @@ fn analyze_replay_file_impl(
             continue;
         }
 
-        vespene_drone_identifier.event(event);
-
-        if current_event_name == "NNet.Replay.Tracker.SPlayerStatsEvent" {
-            let player = event
-                .get_key("m_playerId")
-                .and_then(value_as_i64)
-                .unwrap_or_default();
-            if let Some(stats) = event.get_key("m_stats") {
-                let supply_used = stats
-                    .get_key("m_scoreValueFoodUsed")
-                    .and_then(value_as_f64)
-                    .unwrap_or_default()
-                    / 4096.0;
-                let collection_rate = stats
-                    .get_key("m_scoreValueMineralsCollectionRate")
-                    .and_then(value_as_f64)
-                    .unwrap_or_default()
-                    + stats
-                        .get_key("m_scoreValueVespeneCollectionRate")
-                        .and_then(value_as_f64)
-                        .unwrap_or_default();
-
-                if let Some(update) = replay_handle_player_stats_event_fields(
-                    player,
-                    main_player,
-                    ally_player,
-                    supply_used,
-                    collection_rate,
-                    &killcounts,
-                ) {
-                    match update.target {
-                        StatsCounterTarget::Main => {
-                            main_stats_counter.set_unit_dict(&unit_type_dict_main);
-                            main_stats_counter.add_stats(
-                                &vespene_drone_identifier,
-                                update.kills,
-                                update.supply_used,
-                                update.collection_rate,
-                            );
-                        }
-                        StatsCounterTarget::Ally => {
-                            ally_stats_counter.set_unit_dict(&unit_type_dict_ally);
-                            ally_stats_counter.add_stats(
-                                &vespene_drone_identifier,
-                                update.kills,
-                                update.supply_used,
-                                update.collection_rate,
-                            );
-                        }
-                    }
-                }
-            }
+        if let ReplayEvent::Game(game_event) = event {
+            vespene_drone_identifier.event(game_event);
         }
 
-        if current_event_name == "NNet.Replay.Tracker.SUpgradeEvent"
-            && matches!(event_player_id(event), Some(1 | 2))
-        {
-            let upg_name = event
-                .get_key("m_upgradeTypeName")
-                .map(value_as_text)
-                .unwrap_or_default();
-            let upg_pid = event_player_id(event).unwrap_or_default();
-            let upgrade_count = event
-                .get_key("m_count")
-                .and_then(value_as_i64)
-                .unwrap_or_default();
-            let update = replay_handle_upgrade_event_fields(
-                upg_name.as_str(),
-                upg_pid,
-                upgrade_count,
-                main_player,
-                ally_player,
-                &dictionaries.replay_analysis_data.commander_upgrades,
-                &dictionaries.co_mastery_upgrades,
-                &dictionaries.prestige_upgrades,
-            );
+        if let ReplayEvent::Tracker(event) = event {
+            if current_event_name == "NNet.Replay.Tracker.SPlayerStatsEvent" {
+                let player = event.m_player_id.unwrap_or_default();
+                if let Some(stats) = event.m_stats.as_ref() {
+                    let supply_used = stats.m_score_value_food_used.unwrap_or_default() / 4096.0;
+                    let collection_rate = stats
+                        .m_score_value_minerals_collection_rate
+                        .unwrap_or_default()
+                        + stats
+                            .m_score_value_vespene_collection_rate
+                            .unwrap_or_default();
 
-            if let Some(target) = update.target {
-                match target {
-                    StatsCounterTarget::Main => main_stats_counter.upgrade_event(upg_name.as_str()),
-                    StatsCounterTarget::Ally => ally_stats_counter.upgrade_event(upg_name.as_str()),
-                }
-            }
-
-            if let Some(commander_name) = update.commander_name.as_deref() {
-                commander_by_player.insert(upg_pid, commander_name.to_string());
-                vespene_drone_identifier.update_commanders(upg_pid, commander_name);
-
-                if let Some(target) = update.target {
-                    match target {
-                        StatsCounterTarget::Main => {
-                            main_stats_counter.update_commander(commander_name);
-                        }
-                        StatsCounterTarget::Ally => {
-                            ally_stats_counter.update_commander(commander_name);
+                    if let Some(update) = replay_handle_player_stats_event_fields(
+                        player,
+                        main_player,
+                        ally_player,
+                        supply_used,
+                        collection_rate,
+                        &killcounts,
+                    ) {
+                        match update.target {
+                            StatsCounterTarget::Main => {
+                                main_stats_counter.set_unit_dict(&unit_type_dict_main);
+                                main_stats_counter.add_stats(
+                                    &vespene_drone_identifier,
+                                    update.kills,
+                                    update.supply_used,
+                                    update.collection_rate,
+                                );
+                            }
+                            StatsCounterTarget::Ally => {
+                                ally_stats_counter.set_unit_dict(&unit_type_dict_ally);
+                                ally_stats_counter.add_stats(
+                                    &vespene_drone_identifier,
+                                    update.kills,
+                                    update.supply_used,
+                                    update.collection_rate,
+                                );
+                            }
                         }
                     }
                 }
             }
 
-            if let Some(mastery_idx) = update.mastery_index {
-                if let Some(row) = mastery_by_player.get_mut(&upg_pid) {
-                    if let Ok(index) = usize::try_from(mastery_idx) {
-                        if index < row.len() {
-                            row[index] = update.upgrade_count;
-                        }
-                    }
-                }
+            if current_event_name == "NNet.Replay.Tracker.SUpgradeEvent"
+                && matches!(event.m_player_id, Some(1 | 2))
+            {
+                let upg_name = event.m_upgrade_type_name.clone().unwrap_or_default();
+                let upg_pid = event.m_player_id.unwrap_or_default();
+                let upgrade_count = event.m_count.unwrap_or_default();
+                let update = replay_handle_upgrade_event_fields(
+                    upg_name.as_str(),
+                    upg_pid,
+                    upgrade_count,
+                    main_player,
+                    ally_player,
+                    &dictionaries.replay_analysis_data.commander_upgrades,
+                    &dictionaries.co_mastery_upgrades,
+                    &dictionaries.prestige_upgrades,
+                );
 
                 if let Some(target) = update.target {
                     match target {
                         StatsCounterTarget::Main => {
-                            main_stats_counter.update_mastery(mastery_idx, update.upgrade_count);
+                            main_stats_counter.upgrade_event(upg_name.as_str())
                         }
                         StatsCounterTarget::Ally => {
-                            ally_stats_counter.update_mastery(mastery_idx, update.upgrade_count);
+                            ally_stats_counter.upgrade_event(upg_name.as_str())
                         }
                     }
                 }
-            }
 
-            if let Some(prestige_name) = update.prestige_name.as_deref() {
-                prestige_by_player.insert(upg_pid, prestige_name.to_string());
-                if let Some(target) = update.target {
-                    match target {
-                        StatsCounterTarget::Main => {
-                            main_stats_counter.update_prestige(prestige_name);
+                if let Some(commander_name) = update.commander_name.as_deref() {
+                    commander_by_player.insert(upg_pid, commander_name.to_string());
+                    vespene_drone_identifier.update_commanders(upg_pid, commander_name);
+
+                    if let Some(target) = update.target {
+                        match target {
+                            StatsCounterTarget::Main => {
+                                main_stats_counter.update_commander(commander_name);
+                            }
+                            StatsCounterTarget::Ally => {
+                                ally_stats_counter.update_commander(commander_name);
+                            }
                         }
-                        StatsCounterTarget::Ally => {
-                            ally_stats_counter.update_prestige(prestige_name);
+                    }
+                }
+
+                if let Some(mastery_idx) = update.mastery_index {
+                    if let Some(row) = mastery_by_player.get_mut(&upg_pid) {
+                        if let Ok(index) = usize::try_from(mastery_idx) {
+                            if index < row.len() {
+                                row[index] = update.upgrade_count;
+                            }
+                        }
+                    }
+
+                    if let Some(target) = update.target {
+                        match target {
+                            StatsCounterTarget::Main => {
+                                main_stats_counter
+                                    .update_mastery(mastery_idx, update.upgrade_count);
+                            }
+                            StatsCounterTarget::Ally => {
+                                ally_stats_counter
+                                    .update_mastery(mastery_idx, update.upgrade_count);
+                            }
+                        }
+                    }
+                }
+
+                if let Some(prestige_name) = update.prestige_name.as_deref() {
+                    prestige_by_player.insert(upg_pid, prestige_name.to_string());
+                    if let Some(target) = update.target {
+                        match target {
+                            StatsCounterTarget::Main => {
+                                main_stats_counter.update_prestige(prestige_name);
+                            }
+                            StatsCounterTarget::Ally => {
+                                ally_stats_counter.update_prestige(prestige_name);
+                            }
                         }
                     }
                 }
@@ -1921,30 +1878,18 @@ fn analyze_replay_file_impl(
         if current_event_name == "NNet.Replay.Tracker.SUnitBornEvent"
             || current_event_name == "NNet.Replay.Tracker.SUnitInitEvent"
         {
+            let ReplayEvent::Tracker(event) = event else {
+                continue;
+            };
             let event_fields = UnitBornOrInitEventFields {
-                unit_type: event
-                    .get_key("m_unitTypeName")
-                    .map(value_as_text)
-                    .unwrap_or_default(),
-                ability_name: event
-                    .get_key("m_creatorAbilityName")
-                    .filter(|value| !matches!(value, Value::Null))
-                    .map(value_as_text),
+                unit_type: event.m_unit_type_name.clone().unwrap_or_default(),
+                ability_name: event.m_creator_ability_name.clone(),
                 unit_id: replay_unitid_from_event(event, false, false).unwrap_or_default(),
                 creator_unit_id: replay_unitid_from_event(event, false, true),
-                control_pid: event
-                    .get_key("m_controlPlayerId")
-                    .and_then(value_as_i64)
-                    .unwrap_or_default(),
-                gameloop: event_gameloop(event),
-                event_x: event
-                    .get_key("m_x")
-                    .and_then(value_as_i64)
-                    .unwrap_or_default(),
-                event_y: event
-                    .get_key("m_y")
-                    .and_then(value_as_i64)
-                    .unwrap_or_default(),
+                control_pid: event.m_control_player_id.unwrap_or_default(),
+                gameloop: event.game_loop,
+                event_x: event.m_x.unwrap_or_default(),
+                event_y: event.m_y.unwrap_or_default(),
             };
             let update = replay_handle_unit_born_or_init_event_fields(
                 &event_fields,
@@ -1986,32 +1931,32 @@ fn analyze_replay_file_impl(
         }
 
         if current_event_name == "NNet.Replay.Tracker.SUnitInitEvent" {
-            let event_unit_type = event
-                .get_key("m_unitTypeName")
-                .map(value_as_text)
-                .unwrap_or_default();
+            let ReplayEvent::Tracker(event) = event else {
+                continue;
+            };
+            let event_unit_type = event.m_unit_type_name.clone().unwrap_or_default();
             if event_unit_type == "Archon" {
-                let control_pid = event
-                    .get_key("m_controlPlayerId")
-                    .and_then(value_as_i64)
-                    .unwrap_or_default();
+                let control_pid = event.m_control_player_id.unwrap_or_default();
                 replay_handle_archon_init_event_control_pid(control_pid, &mut dt_ht_ignore);
             }
         }
 
-        let event_unit_id = replay_unitid_from_event(event, false, false);
+        let event_unit_id = match event {
+            ReplayEvent::Tracker(event) => replay_unitid_from_event(event, false, false),
+            ReplayEvent::Game(_) => None,
+        };
         if current_event_name == "NNet.Replay.Tracker.SUnitTypeChangeEvent"
             && event_unit_id
                 .map(|value| unit_dict.contains_key(&value))
                 .unwrap_or(false)
         {
+            let ReplayEvent::Tracker(event) = event else {
+                continue;
+            };
             let event_fields = UnitTypeChangeEventFields {
                 event_unit_id: event_unit_id.unwrap_or_default(),
-                unit_type: event
-                    .get_key("m_unitTypeName")
-                    .map(value_as_text)
-                    .unwrap_or_default(),
-                gameloop: event_gameloop(event),
+                unit_type: event.m_unit_type_name.clone().unwrap_or_default(),
+                gameloop: event.game_loop,
             };
             let update = replay_handle_unit_type_change_event_fields(
                 &event_fields,
@@ -2056,11 +2001,11 @@ fn analyze_replay_file_impl(
                 .unwrap_or(false)
         {
             if let Some(changed_unit_id) = event_unit_id {
-                let control_pid = event
-                    .get_key("m_controlPlayerId")
-                    .and_then(value_as_i64)
-                    .unwrap_or_default();
-                let game_time = event_gameloop(event) as f64 / 16.0 - start_time;
+                let ReplayEvent::Tracker(event) = event else {
+                    continue;
+                };
+                let control_pid = event.m_control_player_id.unwrap_or_default();
+                let game_time = event.game_loop as f64 / 16.0 - start_time;
                 let update = replay_handle_unit_owner_change_event_fields(
                     changed_unit_id,
                     parser.map_name.as_str(),
@@ -2090,18 +2035,16 @@ fn analyze_replay_file_impl(
         }
 
         if current_event_name == "NNet.Replay.Tracker.SUnitDiedEvent" {
+            let ReplayEvent::Tracker(event) = event else {
+                continue;
+            };
             let unit_in_dict = event_unit_id
                 .map(|value| unit_dict.contains_key(&value))
                 .unwrap_or(false);
             if !unit_in_dict {
-                let killed_unit_type = event
-                    .get_key("m_unitTypeName")
-                    .map(value_as_text)
-                    .unwrap_or_default();
+                let killed_unit_type = event.m_unit_type_name.clone().unwrap_or_default();
                 if !do_not_count_kills_set.contains(killed_unit_type.as_str()) {
-                    if let Some(killer_player) =
-                        event.get_key("m_killerPlayerId").and_then(value_as_i64)
-                    {
+                    if let Some(killer_player) = event.m_killer_player_id {
                         if let Ok(index) = usize::try_from(killer_player) {
                             if let Some(value) = killcounts.get_mut(index) {
                                 *value += 1;
@@ -2113,8 +2056,8 @@ fn analyze_replay_file_impl(
 
             ally_kills_counted_toward_main = replay_handle_unit_died_kill_stats_event_fields(
                 event_unit_id,
-                event.get_key("m_killerPlayerId").and_then(value_as_i64),
-                event_gameloop(event),
+                event.m_killer_player_id,
+                event.game_loop,
                 main_player,
                 ally_player,
                 &amon_player_ids_set,
@@ -2135,19 +2078,16 @@ fn analyze_replay_file_impl(
                 .unwrap_or(false)
         {
             if let Some(detail_unit_id) = event_unit_id {
+                let ReplayEvent::Tracker(event) = event else {
+                    continue;
+                };
                 let event_fields = UnitDiedEventFields {
                     event_unit_id: detail_unit_id,
                     killing_unit_id: replay_unitid_from_event(event, true, false),
-                    killing_player: event.get_key("m_killerPlayerId").and_then(value_as_i64),
-                    gameloop: event_gameloop(event),
-                    event_x: event
-                        .get_key("m_x")
-                        .and_then(value_as_i64)
-                        .unwrap_or_default(),
-                    event_y: event
-                        .get_key("m_y")
-                        .and_then(value_as_i64)
-                        .unwrap_or_default(),
+                    killing_player: event.m_killer_player_id,
+                    gameloop: event.game_loop,
+                    event_x: event.m_x.unwrap_or_default(),
+                    event_y: event.m_y.unwrap_or_default(),
                 };
                 let update = replay_handle_unit_died_detail_event_fields(
                     &event_fields,
