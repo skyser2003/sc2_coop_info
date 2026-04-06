@@ -6,7 +6,8 @@ import PlayerStatMode from "./component/PlayerStatMode";
 import { createLanguageManager } from "../i18n/languageManager";
 import { emit, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import html2canvas from "html2canvas";
+import { snapdom } from "@zumer/snapdom";
+
 import {
     destroy_overlay_charts,
     reset_overlay_chart_pixel_ratio,
@@ -537,12 +538,13 @@ export default function OverlayPage() {
     }
 
     async function saveOverlayScreenshot(path: string): Promise<void> {
-        const target = document.getElementById("overlay-screenshot-root");
+        const target = document.body;
         if (target == null) {
             throw new Error("Overlay screenshot root was not found");
         }
         const width = Math.max(window.innerWidth, 1);
         const height = Math.max(window.innerHeight, 1);
+
         const captureScale = Math.min(
             Math.max(window.devicePixelRatio || 1, 2),
             3,
@@ -552,15 +554,7 @@ export default function OverlayPage() {
         await waitForAnimationFrame();
 
         try {
-            const canvas = await html2canvas(target, {
-                backgroundColor: null,
-                foreignObjectRendering: true,
-                logging: false,
-                scale: captureScale,
-                useCORS: true,
-                width,
-                height,
-            });
+            const canvas = await snapdom.toCanvas(target);
             const dataUrl = canvas.toDataURL("image/png");
             const base64 = dataUrl.replace(/^data:image\/png;base64,/, "");
             const binary = window.atob(base64);

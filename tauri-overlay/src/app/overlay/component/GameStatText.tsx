@@ -294,15 +294,15 @@ function renderUnitRows(
             <br />
             {unitRows.map((row) => (
                 <Fragment key={row.key}>
-                    <div
-                        className="unitkillbg"
-                        style={{
-                            width: `${row.backgroundWidth}vh`,
-                            backgroundColor: color,
-                        }}
-                    />
                     <div className="unitline">
-                        {row.key}{" "}
+                        <span className="unitname">{row.key}</span>
+                        <div
+                            className="unitkillbg"
+                            style={{
+                                width: `${row.backgroundWidth}vh`,
+                                backgroundColor: color,
+                            }}
+                        />
                         <span
                             className={`unitkills ${row.spacerClassName}`.trim()}
                         >

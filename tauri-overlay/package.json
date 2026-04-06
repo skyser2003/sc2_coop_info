@@ -16,8 +16,8 @@
         "@tauri-apps/api": "^2.10.1",
         "@tauri-apps/plugin-opener": "^2.5.3",
         "@tauri-apps/plugin-updater": "^2.10.0",
+        "@zumer/snapdom": "^2.0.0-dev.4",
         "chart.js": "^4.5.1",
-        "html2canvas": "^1.4.1",
         "react": "^19.2.4",
         "react-dom": "^19.2.4",
         "react-router-dom": "^7.13.0"
