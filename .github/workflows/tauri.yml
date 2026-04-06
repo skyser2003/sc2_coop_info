@@ -51,7 +51,7 @@ jobs:
               with:
                   tagName: v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
                   releaseName: "SC2_Coop_Info v__VERSION__"
-                  releaseBody: "Bug fix: Some UI bug related to replay parsing fixed"
+                  releaseBody: "Bug fix: Overlay screenshot fixed"
                   releaseDraft: false
                   prerelease: false
                   projectPath: "./tauri-overlay"
