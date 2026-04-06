@@ -753,8 +753,12 @@ fn parse_replay_file_input(
 
     let enemy_race = slots
         .get(2)
-        .map(|value| value.m_race.clone())
-        .or_else(|| player_list.get(2).map(|value| value.m_race.clone()))
+        .and_then(|value| (!value.m_race.is_empty()).then(|| value.m_race.clone()))
+        .or_else(|| {
+            player_list
+                .get(2)
+                .and_then(|value| (!value.m_race.is_empty()).then(|| value.m_race.clone()))
+        })
         .unwrap_or_default();
     let diff_1 = slots.get(2).map(|value| value.m_difficulty).unwrap_or(4);
     let diff_2 = slots.get(3).map(|value| value.m_difficulty).unwrap_or(4);
