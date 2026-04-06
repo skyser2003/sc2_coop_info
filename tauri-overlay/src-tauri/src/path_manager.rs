@@ -69,7 +69,7 @@ pub fn get_cache_path() -> PathBuf {
     write_data_dir().join("generated").join(filename)
 }
 
-pub(crate) fn get_pretty_cache_path() -> PathBuf {
+pub fn get_pretty_cache_path() -> PathBuf {
     let filename = "cache_overall_stats_pretty.json";
     write_data_dir().join("generated").join(filename)
 }
