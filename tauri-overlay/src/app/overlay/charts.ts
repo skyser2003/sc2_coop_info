@@ -66,18 +66,12 @@ function getReplayPlayer(
     return stringKey ?? null;
 }
 
-function chartTitle(metric: ChartMetric): string {
-    if (metric === "army") return "Army value";
-    if (metric === "supply") return "Supply used";
-    if (metric === "killed") return "Kill count";
-    return "Resource collection rate";
-}
-
 function generateConfig(
     player1: ReplayPlayerSeries,
     player2: ReplayPlayerSeries,
     labels: string[],
     metric: ChartMetric,
+    title: string,
 ): ChartConfiguration<"line", number[], string> {
     return {
         type: "line",
@@ -116,7 +110,7 @@ function generateConfig(
                 title: {
                     display: true,
                     fullSize: false,
-                    text: chartTitle(metric),
+                    text: title,
                     color: "#ddd",
                     font: {
                         family: "Eurostile",
@@ -172,12 +166,15 @@ function updateChart(
     player2: ReplayPlayerSeries,
     labels: string[],
     metric: ChartMetric,
+    title: string,
 ): void {
     chart.data.datasets[0].data = player1[metric];
     chart.data.datasets[1].data = player2[metric];
     chart.data.datasets[0].label = player1.name;
     chart.data.datasets[1].label = player2.name;
     chart.data.labels = labels;
+    chart.options.plugins.title.text = title;
+
     chart.update();
 }
 
@@ -186,6 +183,7 @@ function plotChart(
     labels: string[],
     metric: ChartMetric,
     canvas: HTMLCanvasElement | null,
+    title: string,
 ): void {
     if (!canvas) {
         return;
@@ -203,7 +201,7 @@ function plotChart(
 
     const tracked = charts[metric];
     if (tracked && tracked.canvas === canvas) {
-        updateChart(tracked, player1, player2, labels, metric);
+        updateChart(tracked, player1, player2, labels, metric, title);
         return;
     }
 
@@ -214,7 +212,7 @@ function plotChart(
     ensureChartComponentsRegistered();
     charts[metric] = new Chart(
         ctx,
-        generateConfig(player1, player2, labels, metric),
+        generateConfig(player1, player2, labels, metric, title),
     );
 }
 
@@ -226,6 +224,7 @@ export function setChartPlayerColors(p1: string, p2: string): void {
 export function plot_charts(
     replayData: ReplayDataRecord,
     canvases: OverlayChartCanvasMap,
+    chartTitles: Record<ChartMetric, string>,
 ): void {
     const player1 = getReplayPlayer(replayData, 1);
     if (!player1) return;
@@ -236,7 +235,28 @@ export function plot_charts(
     }
 
     for (const metric of chartMetrics) {
-        plotChart(replayData, labels, metric, canvases[metric]);
+        plotChart(
+            replayData,
+            labels,
+            metric,
+            canvases[metric],
+            chartTitles[metric],
+        );
+    }
+}
+
+export function updateChartTitles(
+    chartTitles: Record<ChartMetric, string>,
+): void {
+    for (const metric of chartMetrics) {
+        const chart = charts[metric];
+
+        if (!chart) {
+            continue;
+        }
+
+        chart.options.plugins.title.text = chartTitles[metric];
+        chart.update();
     }
 }
 

@@ -374,6 +374,22 @@
         "en": "Player note",
         "ko": "플레이어 메모"
     },
+    "ui_overlay_metric_army": {
+        "en": "Army value",
+        "ko": "전투 유닛 가치"
+    },
+    "ui_overlay_metric_supply": {
+        "en": "Supply used",
+        "ko": "보급품 사용량"
+    },
+    "ui_overlay_metric_killed": {
+        "en": "Kill count",
+        "ko": "처치 수"
+    },
+    "ui_overlay_metric_mining": {
+        "en": "Resource collection rate",
+        "ko": "자원 수집률"
+    },
     "race_terran": {
         "en": "Terran",
         "ko": "테란",

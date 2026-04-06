@@ -5,8 +5,10 @@ import {
     plot_charts,
     setChartPlayerColors,
     update_charts_colors,
+    updateChartTitles,
 } from "../charts";
 import type { OverlayReplayPayload } from "../../../bindings/overlay";
+import { LanguageManager } from "../../i18n/languageManager";
 
 export interface ReplayChartVisible {
     visible: boolean;
@@ -30,11 +32,15 @@ export default function GameStatChart({
     chartVisibility,
     p1Color,
     p2Color,
+    language,
+    languageManager,
 }: {
     payload: OverlayReplayPayload | null;
     chartVisibility: ReplayChartVisible;
     p1Color: string;
     p2Color: string;
+    language: string;
+    languageManager: LanguageManager;
 }) {
     const [chartStyle, setChartStyle] =
         useState<ChartStyleState>(hiddenChartStyle);
@@ -54,8 +60,15 @@ export default function GameStatChart({
             mining: miningChartRef.current,
         };
 
+        const chartTitles = {
+            army: languageManager.translate("ui_overlay_metric_army"),
+            supply: languageManager.translate("ui_overlay_metric_supply"),
+            killed: languageManager.translate("ui_overlay_metric_killed"),
+            mining: languageManager.translate("ui_overlay_metric_mining"),
+        };
+
         if (shouldShowCharts) {
-            plot_charts(replayPlayerStats, chartCanvases);
+            plot_charts(replayPlayerStats, chartCanvases, chartTitles);
             setChartStyle({
                 display: "block",
                 opacity: chartVisibility.immediate ? "1" : "0",
@@ -103,6 +116,17 @@ export default function GameStatChart({
             clearTimeout(destroyTimer);
         };
     }, [chartVisibility, payload]);
+
+    useEffect(() => {
+        const chartTitles = {
+            army: languageManager.translate("ui_overlay_metric_army"),
+            supply: languageManager.translate("ui_overlay_metric_supply"),
+            killed: languageManager.translate("ui_overlay_metric_killed"),
+            mining: languageManager.translate("ui_overlay_metric_mining"),
+        };
+
+        updateChartTitles(chartTitles);
+    }, [language]);
 
     useEffect(() => {
         setChartPlayerColors(p1Color, p2Color);

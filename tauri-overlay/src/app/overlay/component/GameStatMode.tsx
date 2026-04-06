@@ -55,6 +55,8 @@ export default function GameStatMode({
                 chartVisibility={chartVisibility}
                 p1Color={p1Color}
                 p2Color={p2Color}
+                language={language}
+                languageManager={overlayLanguageManager}
             />
             <GameStatText
                 payload={payload}
