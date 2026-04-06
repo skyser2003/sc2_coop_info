@@ -37,6 +37,7 @@ impl ProtocolDefinition {
             true,
             self.replay_userid_typeid,
             self.svaruint32_typeid,
+            false,
         )
         .map(|events| events.into_iter().map(GameEvent::from_value).collect())
     }
@@ -53,6 +54,7 @@ impl ProtocolDefinition {
             true,
             self.replay_userid_typeid,
             self.svaruint32_typeid,
+            false,
         )
         .map(|events| events.into_iter().map(MessageEvent::from_value).collect())
     }
@@ -841,6 +843,7 @@ fn decode_event_stream<D: TypeDecoder>(
     decode_user_id: bool,
     replay_userid_typeid: Option<usize>,
     svaruint32_typeid: usize,
+    tolerant: bool,
 ) -> Result<Vec<Value>, DecodeError> {
     let Some(eventid_typeid) = eventid_typeid else {
         return Ok(Vec::new());
@@ -852,86 +855,7 @@ fn decode_event_stream<D: TypeDecoder>(
     while !decoder.done() {
         let start_bits = decoder.used_bits();
 
-        let delta = decode_varuint_value(&decoder.instance(svaruint32_typeid)?)?;
-        gameloop += delta;
-
-        let userid = if decode_user_id {
-            replay_userid_typeid
-                .map(|typeid| decoder.instance(typeid))
-                .transpose()?
-        } else {
-            None
-        };
-
-        let eventid_raw = decoder.instance(eventid_typeid)?;
-        let eventid = eventid_raw
-            .as_i128()
-            .and_then(|v| u32::try_from(v).ok())
-            .ok_or_else(|| DecodeError::Corrupted("invalid event id".into()))?;
-
-        let (typeid, name) = event_types
-            .iter()
-            .find(|(id, _, _)| *id == eventid)
-            .map(|(_, typeid, name)| (*typeid, name.clone()))
-            .ok_or_else(|| DecodeError::Corrupted(format!("eventid({eventid}) unknown")))?;
-
-        let mut event = decoder.instance(typeid as usize)?;
-        match &mut event {
-            Value::Object(map) => {
-                map.insert("_event".to_string(), Value::String(name));
-                map.insert("_eventid".to_string(), Value::Int(eventid as i128));
-                map.insert("_gameloop".to_string(), Value::Int(gameloop));
-                if let Some(userid) = userid {
-                    map.insert("_userid".to_string(), userid);
-                }
-                map.insert(
-                    "_bits".to_string(),
-                    Value::Int((decoder.used_bits() - start_bits) as i128),
-                );
-            }
-            _ => {
-                let mut map = BTreeMap::new();
-                map.insert("_event".to_string(), Value::String(name));
-                map.insert("_eventid".to_string(), Value::Int(eventid as i128));
-                map.insert("_gameloop".to_string(), Value::Int(gameloop));
-                if let Some(userid) = userid {
-                    map.insert("_userid".to_string(), userid);
-                }
-                map.insert(
-                    "_bits".to_string(),
-                    Value::Int((decoder.used_bits() - start_bits) as i128),
-                );
-                map.insert("event".to_string(), event);
-                event = Value::Object(map);
-            }
-        }
-
-        decoder.byte_align();
-        events.push(event);
-    }
-
-    Ok(events)
-}
-
-fn decode_event_stream_tolerant<D: TypeDecoder>(
-    decoder: &mut D,
-    eventid_typeid: Option<usize>,
-    event_types: &[(u32, u32, String)],
-    decode_user_id: bool,
-    replay_userid_typeid: Option<usize>,
-    svaruint32_typeid: usize,
-) -> Result<Vec<Value>, DecodeError> {
-    let Some(eventid_typeid) = eventid_typeid else {
-        return Ok(Vec::new());
-    };
-
-    let mut events = Vec::new();
-    let mut gameloop = 0i128;
-
-    while !decoder.done() {
-        let start_bits = decoder.used_bits();
-
-        let event = (|| -> Result<Value, DecodeError> {
+        let event_result = (|| -> Result<Value, DecodeError> {
             let delta = decode_varuint_value(&decoder.instance(svaruint32_typeid)?)?;
             gameloop += delta;
 
@@ -989,13 +913,14 @@ fn decode_event_stream_tolerant<D: TypeDecoder>(
             Ok(event)
         })();
 
-        let event = match event {
+        let event = match event_result {
             Ok(event) => event,
             Err(error) => {
-                if events.is_empty() {
+                if tolerant && !events.is_empty() {
+                    return Ok(events);
+                } else {
                     return Err(error);
                 }
-                return Ok(events);
             }
         };
 
@@ -1004,4 +929,23 @@ fn decode_event_stream_tolerant<D: TypeDecoder>(
     }
 
     Ok(events)
+}
+
+fn decode_event_stream_tolerant<D: TypeDecoder>(
+    decoder: &mut D,
+    eventid_typeid: Option<usize>,
+    event_types: &[(u32, u32, String)],
+    decode_user_id: bool,
+    replay_userid_typeid: Option<usize>,
+    svaruint32_typeid: usize,
+) -> Result<Vec<Value>, DecodeError> {
+    decode_event_stream(
+        decoder,
+        eventid_typeid,
+        event_types,
+        decode_user_id,
+        replay_userid_typeid,
+        svaruint32_typeid,
+        true,
+    )
 }
