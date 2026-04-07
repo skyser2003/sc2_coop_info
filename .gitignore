@@ -15,3 +15,4 @@ cache_overall_stats_pretty.json
 cache_overall_stats_temp
 settings.json
 logs.txt
+generated/
