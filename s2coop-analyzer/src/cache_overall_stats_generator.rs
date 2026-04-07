@@ -1816,7 +1816,7 @@ fn cache_handle_id(handle: &str) -> String {
     tail.split('.').next().unwrap_or("").to_string()
 }
 
-fn mutator_from_button(button: i64, panel: i64, mutators: &[String]) -> Option<String> {
+pub(crate) fn mutator_from_button(button: i64, panel: i64, mutators: &[String]) -> Option<String> {
     let idx = (button - 41) / 3 + (panel - 1) * 15;
     if idx < 0 {
         return None;
@@ -1869,7 +1869,7 @@ fn get_start_time(events: &[ReplayEvent]) -> ReplayNumericValue {
     ReplayNumericValue::Int(0)
 }
 
-fn identify_mutators_for_cache(
+pub(crate) fn identify_mutators_for_cache(
     events: &[ReplayEvent],
     mutators_all: &[String],
     mutators_ui: &[String],

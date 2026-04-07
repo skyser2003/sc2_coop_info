@@ -1,9 +1,8 @@
 use crate::cache_overall_stats_generator::{
-    PlayerStatsSeries, ProtocolBuildValue, ReplayBuildInfo,
+    identify_mutators_for_cache, PlayerStatsSeries, ProtocolBuildValue, ReplayBuildInfo,
 };
 use crate::dictionary_data::{
-    self, CacheGenerationData, CachedMutatorsJson, DictionaryDataError, MutatorIdsJson,
-    UnitAddKillsToJson, UnitNamesJson,
+    self, CacheGenerationData, DictionaryDataError, UnitAddKillsToJson, UnitNamesJson,
 };
 use crate::tauri_replay_analysis_impl::{
     build_replay_report_detailed, ParsedReplayInput, ParsedReplayMessage, ParsedReplayPlayer,
@@ -12,8 +11,8 @@ use crate::tauri_replay_analysis_impl::{
 use chrono::{DateTime, Local};
 use indexmap::IndexMap;
 use s2protocol_port::{
-    build_protocol_store, parse_file_with_store, ProtocolStore, ReplayEvent, ReplayInitData,
-    ReplayParseMode, TrackerEvent,
+    build_protocol_store, parse_file_with_store, ProtocolStore, ReplayEvent, ReplayParseMode,
+    TrackerEvent,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
@@ -156,20 +155,6 @@ fn event_gameloop(event: &ReplayEvent) -> i64 {
     event._gameloop()
 }
 
-fn event_control_id(event: &ReplayEvent) -> Option<i64> {
-    match event {
-        ReplayEvent::Game(event) => event.m_control_id,
-        ReplayEvent::Tracker(_) => None,
-    }
-}
-
-fn event_event_type(event: &ReplayEvent) -> Option<i64> {
-    match event {
-        ReplayEvent::Game(event) => event.m_event_type,
-        ReplayEvent::Tracker(_) => None,
-    }
-}
-
 fn event_user_id(event: &ReplayEvent) -> Option<i64> {
     match event {
         ReplayEvent::Game(event) => event.user_id,
@@ -265,22 +250,6 @@ fn supported_legacy_protocol(build: i64) -> bool {
     matches!(build, 76114 | 78285 | 83830)
 }
 
-fn cache_handle_id(handle: &str) -> String {
-    let tail = handle.rsplit('/').next().unwrap_or("");
-    tail.split('.').next().unwrap_or("").to_string()
-}
-
-fn mutator_from_button(button: i64, panel: i64, mutators_list: &[String]) -> Option<String> {
-    let idx = (button - 41) / 3 + (panel - 1) * 15;
-    if idx < 0 {
-        return None;
-    }
-    let Ok(index) = usize::try_from(idx) else {
-        return None;
-    };
-    mutators_list.get(index).cloned()
-}
-
 fn get_last_deselect_event(events: &[ReplayEvent]) -> Option<f64> {
     let mut last_event: Option<f64> = None;
     for event in events {
@@ -319,177 +288,6 @@ fn get_start_time(events: &[ReplayEvent]) -> f64 {
     }
 
     0.0
-}
-
-fn identify_mutators(
-    events: &[ReplayEvent],
-    mutators_all: &[String],
-    mutators_ui: &[String],
-    mutator_ids: &MutatorIdsJson,
-    cached_mutators: &CachedMutatorsJson,
-    extension: bool,
-    mm: bool,
-    detailed_info: Option<&ReplayInitData>,
-) -> (Vec<String>, bool) {
-    let mut mutators: Vec<String> = Vec::new();
-    let mut weekly = false;
-
-    if mm {
-        for event in events {
-            let ReplayEvent::Tracker(event) = event else {
-                continue;
-            };
-            if event.event != "NNet.Replay.Tracker.SUpgradeEvent" || event.m_player_id != Some(0) {
-                continue;
-            }
-            let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
-            if !upgrade_name.contains("mutatorinfo") {
-                continue;
-            }
-            let mutator_key = upgrade_name.get(12..).unwrap_or_default();
-            if mutator_ids.contains_key(mutator_key) {
-                mutators.push(mutator_key.to_string());
-            }
-        }
-    }
-
-    if extension {
-        if let Some(handles) =
-            detailed_info.map(|value| &value.m_syncLobbyState.m_gameDescription.m_cacheHandles)
-        {
-            for handle in handles {
-                let cached = cache_handle_id(handle);
-                if cached.is_empty() {
-                    continue;
-                }
-                if let Some(mutator_id) = cached_mutators.get(&cached) {
-                    mutators.push(mutator_id.clone());
-                    weekly = true;
-                }
-            }
-        }
-    }
-
-    if !extension {
-        if let Some(slot0) =
-            detailed_info.and_then(|value| value.m_syncLobbyState.m_lobbyState.m_slots.first())
-        {
-            let brutal_plus = slot0.m_brutalPlusDifficulty;
-            if brutal_plus > 0 {
-                for key in &slot0.m_retryMutationIndexes {
-                    if *key <= 0 {
-                        continue;
-                    }
-                    if let Ok(index) = usize::try_from(*key - 1) {
-                        if let Some(mutator) = mutators_all.get(index) {
-                            mutators.push(mutator.clone());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if extension {
-        let mut actions: Vec<i64> = Vec::new();
-        let mut offset: i64 = 0;
-        let mut last_gameloop: Option<i64> = None;
-
-        for event in events {
-            let gameloop = event_gameloop(event);
-            let name = event_name(event);
-
-            if gameloop == 0
-                && name == "NNet.Game.STriggerDialogControlEvent"
-                && event_event_type(event) == Some(3)
-            {
-                let contains_selection_changed = matches!(
-                    event,
-                    ReplayEvent::Game(event)
-                        if event
-                            .m_event_data
-                            .as_ref()
-                            .is_some_and(|data| data.contains_selection_changed)
-                );
-                if contains_selection_changed {
-                    if let Some(control_id) = event_control_id(event) {
-                        offset = 129 - control_id;
-                    }
-                    continue;
-                }
-            }
-
-            if gameloop > 0
-                && Some(gameloop) != last_gameloop
-                && name == "NNet.Game.STriggerDialogControlEvent"
-                && event_user_id(event) == Some(0)
-            {
-                let contains_none = matches!(
-                    event,
-                    ReplayEvent::Game(event)
-                        if event.m_event_data.as_ref().is_some_and(|data| data.contains_none)
-                );
-                if !contains_none {
-                    if let Some(control_id) = event_control_id(event) {
-                        actions.push(control_id + offset);
-                        last_gameloop = Some(gameloop);
-                    }
-                    continue;
-                }
-            }
-
-            if let ReplayEvent::Tracker(event) = event {
-                if event.event == "NNet.Replay.Tracker.SUpgradeEvent"
-                    && matches!(event.m_player_id, Some(1 | 2))
-                {
-                    let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
-                    if upgrade_name.contains("Spray") {
-                        break;
-                    }
-                }
-            }
-        }
-
-        let mut panel: i64 = 1;
-        for action in actions {
-            if (41..=83).contains(&action) {
-                if let Some(new_mutator) = mutator_from_button(action, panel, mutators_ui) {
-                    if !mutators.contains(&new_mutator) || new_mutator == "Random" {
-                        mutators.push(new_mutator);
-                    } else if let Some(position) =
-                        mutators.iter().position(|value| value == &new_mutator)
-                    {
-                        mutators.remove(position);
-                    }
-                }
-            }
-
-            if action == 123 && panel > 1 {
-                panel -= 1;
-            }
-            if action == 124 && panel < 4 {
-                panel += 1;
-            }
-
-            if (88..=106).contains(&action) {
-                if let Ok(index) = usize::try_from((action - 88) / 2) {
-                    if index < mutators.len() {
-                        mutators.remove(index);
-                    }
-                }
-            }
-        }
-    }
-
-    let normalized = mutators
-        .into_iter()
-        .map(|value| {
-            value
-                .replace("Heroes from the Storm (old)", "Heroes from the Storm")
-                .replace("Extreme Caution", "Afraid of the Dark")
-        })
-        .collect::<Vec<String>>();
-    (normalized, weekly)
 }
 
 pub fn find_replay_player(players: &[ParsedReplayPlayer], pid: u8) -> Option<&ParsedReplayPlayer> {
@@ -629,7 +427,7 @@ fn parse_replay_file_input(
         length
     };
 
-    let (mutators, weekly) = identify_mutators(
+    let (mutators, weekly) = identify_mutators_for_cache(
         &events,
         &dictionaries.mutators_all,
         &dictionaries.mutators_ui,
