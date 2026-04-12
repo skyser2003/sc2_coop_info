@@ -421,7 +421,7 @@ fn mutator_pool() -> Vec<RandomizerMutatorEntry> {
             } else {
                 name.en.clone()
             };
-            let icon_name = mutator_icon_name(&icon_name_source);
+            let icon_name = icon_name_source;
 
             RandomizerMutatorEntry {
                 id: mutator_id.clone(),
@@ -442,13 +442,6 @@ fn decode_html_entities(value: &str) -> String {
         .replace("&quot;", "\"")
         .replace("&#39;", "'")
         .replace("&apos;", "'")
-}
-
-fn mutator_icon_name(name_en: &str) -> &str {
-    match name_en {
-        "Moment Of Silence" => "Moment of Silence",
-        _ => name_en,
-    }
 }
 
 fn choose_random_unique_mutators(

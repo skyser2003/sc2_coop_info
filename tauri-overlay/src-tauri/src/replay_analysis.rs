@@ -52,13 +52,6 @@ fn decode_html_entities(value: &str) -> String {
         .replace("&apos;", "'")
 }
 
-fn mutator_icon_name(name_en: &str) -> &str {
-    match name_en {
-        "Moment Of Silence" => "Moment of Silence",
-        _ => name_en,
-    }
-}
-
 fn canonical_mutator_id(mutator: &str) -> String {
     let canonical = if dictionary_data::mutator_data(mutator).is_some() {
         mutator.to_string()
@@ -2514,9 +2507,9 @@ impl ReplayAnalysis {
                                 .unwrap_or_default();
                         let fallback_name_en = mutator_display_name_en(&mutator_id);
                         let icon_name = if name_en.is_empty() {
-                            mutator_icon_name(&fallback_name_en).to_string()
+                            fallback_name_en.to_string()
                         } else {
-                            mutator_icon_name(&name_en).to_string()
+                            name_en.to_string()
                         };
                         let display_name_en = if name_en.is_empty() {
                             fallback_name_en
