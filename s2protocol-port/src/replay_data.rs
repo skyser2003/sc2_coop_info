@@ -3,6 +3,8 @@ use crate::replay::cache_handle_uri;
 use crate::value::Value;
 use std::collections::BTreeMap;
 
+const DEFAULT_GAME_SPEED_CODE: i64 = 4;
+
 #[allow(non_snake_case)]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ReplayVersion {
@@ -14,6 +16,8 @@ pub struct ReplayVersion {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ReplayHeader {
     pub m_version: ReplayVersion,
+    pub m_elapsedGameLoops: Option<u64>,
+    pub m_useScaledTime: bool,
 }
 
 #[allow(non_snake_case)]
@@ -33,12 +37,13 @@ pub struct ReplayDetailsPlayer {
 }
 
 #[allow(non_snake_case)]
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReplayDetails {
     pub m_playerList: Vec<ReplayDetailsPlayer>,
     pub m_isBlizzardMap: bool,
     pub m_disableRecoverGame: Option<bool>,
     pub m_cacheHandles: Vec<String>,
+    pub m_gameSpeed: i64,
 }
 
 #[allow(non_snake_case)]
@@ -69,10 +74,11 @@ pub struct ReplayLobbyState {
 }
 
 #[allow(non_snake_case)]
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReplayGameDescription {
     pub m_hasExtensionMod: bool,
     pub m_cacheHandles: Vec<String>,
+    pub m_gameSpeed: i64,
 }
 
 #[allow(non_snake_case)]
@@ -145,13 +151,28 @@ impl ReplayHeader {
                 m_baseBuild: base_build,
                 m_version,
             },
+            m_elapsedGameLoops: get_u64(map, "m_elapsedGameLoops"),
+            m_useScaledTime: get_bool(map, "m_useScaledTime").unwrap_or(false),
         })
+    }
+}
+
+impl Default for ReplayDetails {
+    fn default() -> Self {
+        Self {
+            m_playerList: Vec::new(),
+            m_isBlizzardMap: false,
+            m_disableRecoverGame: None,
+            m_cacheHandles: Vec::new(),
+            m_gameSpeed: DEFAULT_GAME_SPEED_CODE,
+        }
     }
 }
 
 impl ReplayDetails {
     pub(crate) fn from_value(value: Value) -> Result<Self, DecodeError> {
         let map = as_object(&value)?;
+        let game_speed = get_i64(map, "m_gameSpeed");
         Ok(Self {
             m_playerList: map
                 .get("m_playerList")
@@ -167,6 +188,7 @@ impl ReplayDetails {
                 .and_then(as_array_opt)
                 .map(parse_cache_handles)
                 .unwrap_or_default(),
+            m_gameSpeed: game_speed.unwrap_or(DEFAULT_GAME_SPEED_CODE),
         })
     }
 }
@@ -239,9 +261,20 @@ impl ReplayUserInitialData {
     }
 }
 
+impl Default for ReplayGameDescription {
+    fn default() -> Self {
+        Self {
+            m_hasExtensionMod: false,
+            m_cacheHandles: Vec::new(),
+            m_gameSpeed: DEFAULT_GAME_SPEED_CODE,
+        }
+    }
+}
+
 impl ReplayGameDescription {
     fn from_value(value: &Value) -> Result<Self, DecodeError> {
         let map = as_object(value)?;
+        let game_speed = get_i64(map, "m_gameSpeed");
         Ok(Self {
             m_hasExtensionMod: get_bool(map, "m_hasExtensionMod").unwrap_or(false),
             m_cacheHandles: map
@@ -249,6 +282,7 @@ impl ReplayGameDescription {
                 .and_then(as_array_opt)
                 .map(parse_cache_handles)
                 .unwrap_or_default(),
+            m_gameSpeed: game_speed.unwrap_or(DEFAULT_GAME_SPEED_CODE),
         })
     }
 }
@@ -487,6 +521,10 @@ fn get_i64(map: &BTreeMap<String, Value>, key: &str) -> Option<i64> {
 
 fn get_u32(map: &BTreeMap<String, Value>, key: &str) -> Option<u32> {
     get_i64(map, key).and_then(|value| u32::try_from(value).ok())
+}
+
+fn get_u64(map: &BTreeMap<String, Value>, key: &str) -> Option<u64> {
+    get_i64(map, key).and_then(|value| u64::try_from(value).ok())
 }
 
 fn get_u8(map: &BTreeMap<String, Value>, key: &str) -> Option<u8> {

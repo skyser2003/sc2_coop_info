@@ -18,7 +18,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use thiserror::Error;
-
 #[path = "replay_event_handlers.rs"]
 mod replay_event_handlers;
 
@@ -117,6 +116,7 @@ pub(crate) struct ReplayBaseParse {
     pub result: String,
     pub accurate_length: f64,
     pub accurate_length_force_float: bool,
+    pub realtime_length: f64,
     pub form_alength: String,
     pub length: u64,
     pub mutators: Vec<String>,
@@ -132,6 +132,7 @@ pub(crate) struct ReplayParsedInputBundle {
     pub parser: ParsedReplayInput,
     pub all_players: Vec<ParsedReplayPlayer>,
     pub accurate_length_force_float: bool,
+    pub realtime_length: f64,
     pub commander_found: bool,
     pub enemy_race_present: bool,
     pub detailed: Option<ReplayDetailedParseContext>,
@@ -205,6 +206,44 @@ pub(crate) fn protocol_store() -> Result<&'static ProtocolStore, ReplayBaseParse
     store
         .as_ref()
         .map_err(|message| ReplayBaseParseError::ProtocolStore(message.clone()))
+}
+
+fn replay_game_speed_code(details: &ReplayDetails, init_data: &ReplayInitData) -> i64 {
+    if matches!(details.m_gameSpeed, 0..=4) {
+        details.m_gameSpeed
+    } else if matches!(
+        init_data.m_syncLobbyState.m_gameDescription.m_gameSpeed,
+        0..=4
+    ) {
+        init_data.m_syncLobbyState.m_gameDescription.m_gameSpeed
+    } else {
+        4
+    }
+}
+
+fn game_speed_multiplier(game_speed: i64) -> f64 {
+    match game_speed {
+        0 => 0.6,
+        1 => 0.8,
+        2 => 1.0,
+        3 => 1.2,
+        4 => 1.4,
+        _ => 1.4,
+    }
+}
+
+pub fn realtime_length_from_replay(
+    accurate_length: f64,
+    details: &ReplayDetails,
+    init_data: &ReplayInitData,
+) -> f64 {
+    if !accurate_length.is_finite() || accurate_length <= 0.0 {
+        return 0.0;
+    }
+
+    let multiplier = game_speed_multiplier(replay_game_speed_code(details, init_data));
+
+    accurate_length / multiplier
 }
 
 pub(crate) fn parse_replay_base(
@@ -338,6 +377,7 @@ pub(crate) fn parse_replay_base(
         length_numeric.subtract(&start_time)
     };
     let accurate_length = accurate_length_numeric.as_f64();
+    let realtime_length = realtime_length_from_replay(accurate_length, &details, &init_data);
     let end_time = if result == "Victory" && options.include_events {
         last_deselect_event.as_f64()
     } else {
@@ -380,6 +420,7 @@ pub(crate) fn parse_replay_base(
             accurate_length_numeric,
             ReplayNumericValue::Float(_)
         ),
+        realtime_length,
         form_alength: format_duration(accurate_length),
         length: duration_to_u64(length_numeric.as_f64()),
         mutators,
@@ -857,6 +898,7 @@ pub enum DetailedReplayAnalysisError {
 #[derive(Clone, Debug)]
 struct ParsedReplayAnalysisInput {
     parser: ParsedReplayInput,
+    realtime_length: f64,
     events: Vec<ReplayEvent>,
     start_time: f64,
     end_time: f64,
@@ -1088,6 +1130,7 @@ pub(crate) fn build_replay_input_bundle(
         parser,
         all_players,
         accurate_length_force_float: base.accurate_length_force_float,
+        realtime_length: base.realtime_length,
         commander_found,
         enemy_race_present,
         detailed: base.detailed,
@@ -1146,6 +1189,7 @@ fn parse_replay_file_input(
 
     Ok(ParsedReplayAnalysisInput {
         parser: parsed.parser,
+        realtime_length: parsed.realtime_length,
         events: detailed.events,
         start_time: detailed.start_time,
         end_time: detailed.end_time,
@@ -1680,10 +1724,10 @@ fn analyze_replay_file_impl(
     let dictionaries = load_sc2_dictionary_data()?;
     let ParsedReplayAnalysisInput {
         mut parser,
+        realtime_length,
         events,
         start_time,
         end_time,
-        ..
     } = parsed_input;
 
     let main_player = resolve_main_player_pid(&parser.players, main_player_handles);
@@ -2356,7 +2400,7 @@ fn analyze_replay_file_impl(
         main: main_player as u8,
         ally: ally_player as u8,
     });
-    detailed_input.length = Some(detailed_input.parser.accurate_length / 1.4);
+    detailed_input.length = Some(realtime_length);
     detailed_input.bonus = Some(bonus);
     detailed_input.comp = Some(comp);
     detailed_input.main_kills = Some(clamp_nonnegative_to_u64(count_for_pid(

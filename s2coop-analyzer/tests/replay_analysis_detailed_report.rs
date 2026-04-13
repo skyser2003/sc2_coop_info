@@ -84,7 +84,7 @@ fn detailed_builder_applies_positions_hash_length_and_payload_fields() {
     assert_eq!(report.main, "AllyPlayer");
     assert_eq!(report.ally, "MainPlayer");
     assert_eq!(report.length, 100.0);
-    assert_eq!(report.parser.accurate_length, 140.0);
+    assert_eq!(report.parser.accurate_length, 1260.0);
     assert_eq!(report.parser.form_alength, "21:00");
     assert_eq!(report.parser.length, 1260);
     assert_eq!(report.parser.hash.as_deref(), Some("hash-abc"));

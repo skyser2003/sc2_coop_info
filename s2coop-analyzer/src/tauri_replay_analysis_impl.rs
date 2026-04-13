@@ -267,10 +267,12 @@ pub fn build_replay_report_detailed(
     );
 
     let report_length = detailed_input.length.unwrap_or(replay.accurate_length);
-    let parser_accurate_length = detailed_input
-        .length
-        .map(|value| value * 1.4)
-        .unwrap_or(replay.accurate_length);
+    let parser_accurate_length =
+        if replay.accurate_length.is_finite() && replay.accurate_length > 0.0 {
+            replay.accurate_length
+        } else {
+            report_length
+        };
     let parser_hash = replay
         .hash
         .clone()

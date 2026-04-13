@@ -515,7 +515,6 @@ pub fn cache_entry_from_report(
     hidden_created_lost: &HashSet<String>,
 ) -> CacheReplayEntry {
     let mut entry = cache_entry_from_report_with_basic(None, report, hidden_created_lost);
-    entry.accurate_length = CacheNumericValue::Float(report.parser.accurate_length);
     entry.file = normalized_path_string(Path::new(&report.parser.file));
     entry.hash = report.parser.hash.clone().unwrap_or_default();
     entry
@@ -844,7 +843,7 @@ fn cache_entry_from_report_with_basic(
 ) -> CacheReplayEntry {
     let parser = &report.parser;
     CacheReplayEntry {
-        accurate_length: CacheNumericValue::Float(normalize_json_float(report.length * 1.4)),
+        accurate_length: CacheNumericValue::Float(normalize_json_float(parser.accurate_length)),
         amon_units: Some(convert_numeric_units(&report.amon_units, None)),
         bonus: Some(report.bonus.clone()),
         brutal_plus: basic
