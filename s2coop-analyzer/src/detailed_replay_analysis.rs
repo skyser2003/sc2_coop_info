@@ -18,7 +18,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use thiserror::Error;
-#[path = "replay_event_handlers.rs"]
 mod replay_event_handlers;
 
 use crate::stats_counter_core::{
