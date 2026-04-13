@@ -12,3 +12,5 @@
 - Make sure all codes and tests run in windows/mac/linux.
 - Run tests in release mode.
 - ALWAYS retain parallelization when doing full folder analysis and parsing.
+- Do not use #[path="..."] when importing other file or module in rust.
+- Put all tests under tests/ folder.
