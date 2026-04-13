@@ -1,7 +1,7 @@
 use s2coop_analyzer::cache_overall_stats_generator::{
     load_existing_detailed_analysis_cache, partition_cached_candidates,
     persist_simple_analysis_cache, CacheNumericValue, CachePlayer, CacheReplayEntry,
-    CandidateReplay, ParsedCacheReplay, ProtocolBuildValue, ReplayBuildInfo, ReplayMessage,
+    CandidateReplay, ProtocolBuildValue, ReplayBuildInfo, ReplayMessage,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -75,28 +75,7 @@ fn sample_cached_entry(hash: &str, file: &str, detailed_analysis: bool) -> Cache
 fn sample_candidate(hash: &str, file: &str) -> CandidateReplay {
     CandidateReplay {
         path: PathBuf::from(file),
-        basic: ParsedCacheReplay {
-            accurate_length: 1750.0,
-            accurate_length_force_float: true,
-            brutal_plus: 0,
-            build: sample_build_info(),
-            date: "2024-01-01 00:00:00".to_string(),
-            difficulty: ("Brutal".to_string(), "Brutal".to_string()),
-            enemy_race: Some("Zerg".to_string()),
-            ext_difficulty: "Brutal".to_string(),
-            extension: false,
-            file: file.to_string(),
-            form_alength: "20:50".to_string(),
-            length: 1250,
-            map_name: "Dead of Night".to_string(),
-            messages: Vec::new(),
-            mutators: Vec::new(),
-            players: vec![sample_player(1), sample_player(2)],
-            region: "NA".to_string(),
-            result: "Victory".to_string(),
-            weekly: false,
-            hash: hash.to_string(),
-        },
+        basic: sample_cached_entry(hash, file, false),
     }
 }
 

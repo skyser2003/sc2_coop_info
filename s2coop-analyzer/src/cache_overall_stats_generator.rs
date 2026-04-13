@@ -1,16 +1,14 @@
 use crate::detailed_replay_analysis::{
-    analyze_replay_file, cache_hidden_created_lost_units, calculate_replay_hash,
+    analyze_replay_file, cache_hidden_created_lost_units, collect_user_leave_times,
+    normalized_path_string, parse_replay_input_bundle, sorted_messages_with_leave_events,
+    ReplayBaseParseFilters, ReplayBaseParseOptions,
 };
-use crate::dictionary_data::{self, CacheGenerationData, CachedMutatorsJson, MutatorIdsJson};
-use crate::tauri_replay_analysis_impl::{ParsedReplayPlayer, ReplayReport};
-use chrono::{DateTime, Local};
-use indexmap::IndexMap;
+use crate::dictionary_data::{self, CacheGenerationData};
+use crate::tauri_replay_analysis_impl::{
+    ParsedReplayInput, ParsedReplayMessage, ParsedReplayPlayer, ReplayReport,
+};
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use rayon::ThreadPoolBuilder;
-use s2protocol_port::{
-    build_protocol_store, parse_file_with_store, MessageEvent, ProtocolStore, ReplayEvent,
-    ReplayInitData, ReplayParseMode,
-};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value as JsonValue};
 use std::cmp::Ordering;
@@ -21,7 +19,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering},
-    Arc, OnceLock,
+    Arc,
 };
 use std::time::{Duration, Instant};
 use thiserror::Error;
@@ -29,18 +27,7 @@ use walkdir::WalkDir;
 
 type NumericUnitStats = (i64, i64, i64, f64);
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(untagged)]
-pub enum ProtocolBuildValue {
-    Int(u32),
-    Str(String),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ReplayBuildInfo {
-    pub replay_build: u32,
-    pub protocol_build: ProtocolBuildValue,
-}
+pub use crate::detailed_replay_analysis::{ProtocolBuildValue, ReplayBuildInfo};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
@@ -49,12 +36,7 @@ pub enum CacheNumericValue {
     Float(f64),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ReplayMessage {
-    pub text: String,
-    pub player: u8,
-    pub time: f64,
-}
+pub type ReplayMessage = ParsedReplayMessage;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PlayerStatsSeries {
@@ -532,105 +514,17 @@ pub fn cache_entry_from_report(
     report: &ReplayReport,
     hidden_created_lost: &HashSet<String>,
 ) -> CacheReplayEntry {
-    CacheReplayEntry {
-        accurate_length: CacheNumericValue::Float(report.parser.accurate_length),
-        amon_units: Some(convert_numeric_units(&report.amon_units, None)),
-        bonus: Some(report.bonus.clone()),
-        brutal_plus: report.parser.brutal_plus,
-        build: report.parser.build.clone(),
-        comp: Some(report.comp.clone()),
-        date: report.parser.date.clone(),
-        difficulty: report.parser.difficulty.clone(),
-        enemy_race: Some(report.parser.enemy_race.clone()),
-        ext_difficulty: report.parser.ext_difficulty.clone(),
-        extension: report.parser.extension,
-        file: normalized_path_string(Path::new(&report.parser.file)),
-        form_alength: report.parser.form_alength.clone(),
-        detailed_analysis: true,
-        hash: report.parser.hash.clone().unwrap_or_default(),
-        length: report.parser.length,
-        map_name: report.parser.map_name.clone(),
-        messages: report
-            .parser
-            .messages
-            .iter()
-            .map(|message| ReplayMessage {
-                text: message.text.clone(),
-                player: message.player,
-                time: message.time,
-            })
-            .collect(),
-        mutators: report.parser.mutators.clone(),
-        player_stats: Some(convert_player_stats(&report.player_stats)),
-        players: convert_players(report, hidden_created_lost),
-        region: report.parser.region.clone(),
-        result: report.parser.result.clone(),
-        weekly: report.parser.weekly,
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ParsedCacheReplay {
-    pub accurate_length: f64,
-    pub accurate_length_force_float: bool,
-    pub brutal_plus: u32,
-    pub build: ReplayBuildInfo,
-    pub date: String,
-    pub difficulty: (String, String),
-    pub enemy_race: Option<String>,
-    pub ext_difficulty: String,
-    pub extension: bool,
-    pub file: String,
-    pub form_alength: String,
-    pub length: u64,
-    pub map_name: String,
-    pub messages: Vec<ReplayMessage>,
-    pub mutators: Vec<String>,
-    pub players: Vec<CachePlayer>,
-    pub region: String,
-    pub result: String,
-    pub weekly: bool,
-    pub hash: String,
-}
-
-impl ParsedCacheReplay {
-    fn into_basic_entry(self) -> CacheReplayEntry {
-        CacheReplayEntry {
-            accurate_length: cache_numeric_value(
-                self.accurate_length,
-                self.accurate_length_force_float,
-            ),
-            amon_units: None,
-            bonus: None,
-            brutal_plus: self.brutal_plus,
-            build: self.build,
-            comp: None,
-            date: self.date,
-            difficulty: self.difficulty,
-            enemy_race: self.enemy_race,
-            ext_difficulty: self.ext_difficulty,
-            extension: self.extension,
-            file: self.file,
-            form_alength: self.form_alength,
-            detailed_analysis: false,
-            hash: self.hash,
-            length: self.length,
-            map_name: self.map_name,
-            messages: self.messages,
-            mutators: self.mutators,
-            player_stats: None,
-            players: self.players,
-            region: self.region,
-            result: self.result,
-            weekly: self.weekly,
-        }
-    }
+    let mut entry = cache_entry_from_report_with_basic(None, report, hidden_created_lost);
+    entry.accurate_length = CacheNumericValue::Float(report.parser.accurate_length);
+    entry.file = normalized_path_string(Path::new(&report.parser.file));
+    entry.hash = report.parser.hash.clone().unwrap_or_default();
+    entry
 }
 
 #[derive(Debug, Clone)]
 pub struct CandidateReplay {
     pub path: PathBuf,
-    pub basic: ParsedCacheReplay,
+    pub basic: CacheReplayEntry,
 }
 
 pub fn generate_cache_overall_stats(
@@ -834,7 +728,6 @@ pub fn parse_basic_cache_entry(replay_path: &Path) -> Option<CacheReplayEntry> {
             without_recover_enabled: true,
         },
     )
-    .map(ParsedCacheReplay::into_basic_entry)
 }
 
 pub fn load_existing_detailed_analysis_cache(
@@ -902,7 +795,7 @@ pub fn partition_cached_candidates(
 }
 
 fn reuse_cached_detailed_analysis_entry(
-    basic: &ParsedCacheReplay,
+    basic: &CacheReplayEntry,
     existing_entry: &CacheReplayEntry,
 ) -> CacheReplayEntry {
     let mut reused_entry = existing_entry.clone();
@@ -926,11 +819,11 @@ fn analyze_candidate_entry(
 
     if let Ok(report) = analyze_replay_file(&path, main_handles) {
         if has_non_empty_player_stats(&report) {
-            return cache_entry_from_report_with_basic(&basic, &report, hidden_created_lost);
+            return cache_entry_from_report_with_basic(Some(&basic), &report, hidden_created_lost);
         }
     }
 
-    basic.into_basic_entry()
+    basic
 }
 
 fn has_non_empty_player_stats(report: &ReplayReport) -> bool {
@@ -945,44 +838,58 @@ fn has_non_empty_player_stats(report: &ReplayReport) -> bool {
 }
 
 fn cache_entry_from_report_with_basic(
-    basic: &ParsedCacheReplay,
+    basic: Option<&CacheReplayEntry>,
     report: &ReplayReport,
     hidden_created_lost: &HashSet<String>,
 ) -> CacheReplayEntry {
+    let parser = &report.parser;
     CacheReplayEntry {
         accurate_length: CacheNumericValue::Float(normalize_json_float(report.length * 1.4)),
         amon_units: Some(convert_numeric_units(&report.amon_units, None)),
         bonus: Some(report.bonus.clone()),
-        brutal_plus: basic.brutal_plus,
-        build: basic.build.clone(),
+        brutal_plus: basic
+            .map(|entry| entry.brutal_plus)
+            .unwrap_or(parser.brutal_plus),
+        build: basic
+            .map(|entry| entry.build.clone())
+            .unwrap_or_else(|| parser.build.clone()),
         comp: Some(report.comp.clone()),
-        date: basic.date.clone(),
-        difficulty: basic.difficulty.clone(),
-        enemy_race: basic.enemy_race.clone(),
-        ext_difficulty: basic.ext_difficulty.clone(),
-        extension: basic.extension,
-        file: basic.file.clone(),
-        form_alength: report.parser.form_alength.clone(),
+        date: basic
+            .map(|entry| entry.date.clone())
+            .unwrap_or_else(|| parser.date.clone()),
+        difficulty: basic
+            .map(|entry| entry.difficulty.clone())
+            .unwrap_or_else(|| parser.difficulty.clone()),
+        enemy_race: basic
+            .map(|entry| entry.enemy_race.clone())
+            .unwrap_or_else(|| Some(parser.enemy_race.clone())),
+        ext_difficulty: basic
+            .map(|entry| entry.ext_difficulty.clone())
+            .unwrap_or_else(|| parser.ext_difficulty.clone()),
+        extension: basic
+            .map(|entry| entry.extension)
+            .unwrap_or(parser.extension),
+        file: basic
+            .map(|entry| entry.file.clone())
+            .unwrap_or_else(|| normalized_path_string(Path::new(&parser.file))),
+        form_alength: parser.form_alength.clone(),
         detailed_analysis: true,
-        hash: basic.hash.clone(),
-        length: basic.length,
-        map_name: basic.map_name.clone(),
-        messages: report
-            .parser
-            .messages
-            .iter()
-            .map(|message| ReplayMessage {
-                text: message.text.clone(),
-                player: message.player,
-                time: message.time,
-            })
-            .collect(),
-        mutators: report.parser.mutators.clone(),
+        hash: basic
+            .map(|entry| entry.hash.clone())
+            .unwrap_or_else(|| parser.hash.clone().unwrap_or_default()),
+        length: basic.map(|entry| entry.length).unwrap_or(parser.length),
+        map_name: basic
+            .map(|entry| entry.map_name.clone())
+            .unwrap_or_else(|| parser.map_name.clone()),
+        messages: parser.messages.clone(),
+        mutators: parser.mutators.clone(),
         player_stats: Some(convert_player_stats(&report.player_stats)),
         players: convert_players(report, hidden_created_lost),
-        region: report.parser.region.clone(),
-        result: basic.result.clone(),
-        weekly: report.parser.weekly,
+        region: parser.region.clone(),
+        result: basic
+            .map(|entry| entry.result.clone())
+            .unwrap_or_else(|| parser.result.clone()),
+        weekly: parser.weekly,
     }
 }
 
@@ -998,24 +905,7 @@ fn convert_players(
         .map(base_cache_player)
         .collect::<Vec<CachePlayer>>();
     while players.len() < 3 {
-        players.push(CachePlayer {
-            pid: players.len() as u8,
-            apm: None,
-            commander: None,
-            commander_level: None,
-            commander_mastery_level: None,
-            handle: None,
-            icons: None,
-            kills: None,
-            masteries: None,
-            name: None,
-            observer: None,
-            prestige: None,
-            prestige_name: None,
-            race: None,
-            result: None,
-            units: None,
-        });
+        players.push(empty_cache_player(players.len() as u8));
     }
 
     let main_index = match report.positions.main {
@@ -1063,26 +953,30 @@ fn convert_players(
     players
 }
 
+fn empty_cache_player(pid: u8) -> CachePlayer {
+    CachePlayer {
+        pid,
+        apm: None,
+        commander: None,
+        commander_level: None,
+        commander_mastery_level: None,
+        handle: None,
+        icons: None,
+        kills: None,
+        masteries: None,
+        name: None,
+        observer: None,
+        prestige: None,
+        prestige_name: None,
+        race: None,
+        result: None,
+        units: None,
+    }
+}
+
 fn base_cache_player(player: &ParsedReplayPlayer) -> CachePlayer {
     if player.pid == 0 || is_placeholder_player(player) {
-        return CachePlayer {
-            pid: player.pid,
-            apm: None,
-            commander: None,
-            commander_level: None,
-            commander_mastery_level: None,
-            handle: None,
-            icons: None,
-            kills: None,
-            masteries: None,
-            name: None,
-            observer: None,
-            prestige: None,
-            prestige_name: None,
-            race: None,
-            result: None,
-            units: None,
-        };
+        return empty_cache_player(player.pid);
     }
 
     CachePlayer {
@@ -1238,11 +1132,6 @@ fn convert_icon_map(
     out
 }
 
-fn protocol_store() -> Option<&'static ProtocolStore> {
-    static STORE: OnceLock<Option<ProtocolStore>> = OnceLock::new();
-    STORE.get_or_init(|| build_protocol_store().ok()).as_ref()
-}
-
 #[derive(Clone, Copy)]
 struct ParseCacheReplayOptions {
     parse_events: bool,
@@ -1254,794 +1143,101 @@ fn parse_cache_replay(
     replay_path: &Path,
     inputs: &CacheGenerationData<'_>,
     options: ParseCacheReplayOptions,
-) -> Option<ParsedCacheReplay> {
-    if options.only_blizzard && replay_path.to_string_lossy().contains("[MM]") {
-        return None;
-    }
-
-    let store = protocol_store()?;
-    let parsed = parse_file_with_store(
+) -> Option<CacheReplayEntry> {
+    let parsed = parse_replay_input_bundle(
         replay_path,
-        store,
-        if options.parse_events {
-            ReplayParseMode::Detailed
-        } else {
-            ReplayParseMode::Simple
+        inputs,
+        ReplayBaseParseOptions {
+            include_events: options.parse_events,
+            filters: ReplayBaseParseFilters {
+                only_blizzard: options.only_blizzard,
+                require_recover_disabled: options.without_recover_enabled,
+            },
         },
     )
-    .ok()?;
+    .ok()??;
 
-    let details = parsed.details.clone()?;
-    let init_data = parsed.init_data.clone()?;
-    let metadata = parsed.metadata.clone()?;
-
-    let replay_build = i64::from(parsed.base_build);
-    let latest_build = i64::from(store.latest().ok()?.build);
-    let selected_build = if store.build(parsed.base_build).is_ok() {
-        replay_build
-    } else {
-        store
-            .closest_build(parsed.base_build)
-            .map(i64::from)
-            .unwrap_or(latest_build)
-    };
-    let protocol_build = resolve_protocol_build(replay_build, latest_build, selected_build);
-
-    let is_blizzard = details.m_isBlizzardMap;
-    if options.only_blizzard && !is_blizzard {
+    if parsed.parser.accurate_length == 0.0 {
         return None;
     }
 
-    if details.m_disableRecoverGame.is_none() {
-        return None;
-    }
-    let disable_recover = details.m_disableRecoverGame.unwrap_or(false);
-    if options.without_recover_enabled && !disable_recover {
+    if options.only_blizzard && !parsed.commander_found {
         return None;
     }
 
-    let mut events = Vec::new();
-    if options.parse_events {
-        events.extend(parsed.game_events.iter().cloned().map(ReplayEvent::Game));
-        events.extend(
-            parsed
-                .tracker_events
-                .iter()
-                .cloned()
-                .map(ReplayEvent::Tracker),
-        );
-        events.sort_by_key(event_gameloop);
-    }
-
-    let map_title = if metadata.Title.is_empty() {
-        "Unknown map".to_string()
-    } else {
-        metadata.Title.clone()
-    };
-    let map_name = inputs
-        .map_names
-        .get(&map_title)
-        .and_then(|row| row.get("EN"))
-        .cloned()
-        .unwrap_or(map_title);
-
-    let extension = init_data
-        .m_syncLobbyState
-        .m_gameDescription
-        .m_hasExtensionMod;
-    let brutal_plus = init_data
-        .m_syncLobbyState
-        .m_lobbyState
-        .m_slots
-        .first()
-        .map(|value| value.m_brutalPlusDifficulty as u32)
-        .unwrap_or_default();
-
-    let length_numeric = ReplayNumericValue::Float(metadata.Duration);
-    let length = length_numeric.as_f64();
-    let start_time = get_start_time(&events);
-    let last_deselect_event =
-        get_last_deselect_event(&events).unwrap_or(ReplayNumericValue::Float(length));
-    let metadata_players = &metadata.Players;
-    if metadata_players.is_empty() {
-        return None;
-    }
-
-    let player0_result = metadata_players
-        .first()
-        .map(|value| value.Result.clone())
-        .unwrap_or_default();
-    let player1_result = metadata_players
-        .get(1)
-        .map(|value| value.Result.clone())
-        .unwrap_or_default();
-    let result = if player0_result == "Win" || player1_result == "Win" {
-        "Victory".to_string()
-    } else {
-        "Defeat".to_string()
-    };
-
-    let accurate_length_numeric = if result == "Victory" && options.parse_events {
-        last_deselect_event.subtract(&start_time)
-    } else {
-        length_numeric.subtract(&start_time)
-    };
-    let accurate_length = accurate_length_numeric.as_f64();
-    if accurate_length == 0.0 {
-        return None;
-    }
-
-    let (mutators, weekly) = identify_mutators_for_cache(
-        &events,
-        &inputs.mutators_all,
-        &inputs.mutators_ui,
-        &inputs.mutator_ids,
-        &inputs.cached_mutators,
+    let enemy_race_present = parsed.enemy_race_present;
+    let accurate_length_force_float = parsed.accurate_length_force_float;
+    let detailed = parsed.detailed;
+    let all_players = parsed.all_players;
+    let parser = parsed.parser;
+    let ParsedReplayInput {
+        file,
+        map_name,
         extension,
-        replay_path.to_string_lossy().contains("[MM]"),
-        Some(&init_data),
-    );
+        brutal_plus,
+        result,
+        players: _,
+        difficulty,
+        accurate_length,
+        form_alength,
+        length,
+        mutators,
+        weekly,
+        messages: parser_messages,
+        hash,
+        build,
+        date,
+        enemy_race,
+        ext_difficulty,
+        region,
+    } = parser;
 
-    let mut players = Vec::new();
-    for player in metadata_players {
-        let pid = (players.len() + 1) as u8;
-        let apm = player.APM;
-        let player_result = player.Result.clone();
-
-        players.push(CachePlayer {
-            pid,
-            apm: Some((apm * length / accurate_length).round_ties_even() as u32),
-            commander: None,
-            commander_level: None,
-            commander_mastery_level: None,
-            handle: None,
-            icons: None,
-            kills: None,
-            masteries: None,
-            name: None,
-            observer: None,
-            prestige: None,
-            prestige_name: None,
-            race: None,
-            result: Some(player_result),
-            units: None,
-        });
-    }
-
-    let player_list = &details.m_playerList;
-    if player_list.is_empty() {
-        return None;
-    }
-    let mut region = String::new();
-    for (idx, player) in player_list.iter().enumerate() {
-        let Some(replay_player) = players.get_mut(idx) else {
-            continue;
-        };
-        replay_player.name = Some(player.m_name.clone());
-        replay_player.race = Some(player.m_race.clone());
-        replay_player.observer = Some(player.m_observe != 0);
-
-        if idx == 0 {
-            region = player
-                .m_toon
-                .as_ref()
-                .map(|value| value.m_region)
-                .map(region_name)
-                .unwrap_or("")
-                .to_string();
-        }
-    }
-
-    let slots = &init_data.m_syncLobbyState.m_lobbyState.m_slots;
-    let mut commander_found = false;
-    for (idx, slot) in slots.iter().enumerate() {
-        let Some(replay_player) = players.get_mut(idx) else {
-            continue;
-        };
-        let commander = slot.m_commander.clone();
-
-        replay_player.masteries = Some(parse_masteries(&slot.m_commanderMasteryTalents));
-        replay_player.commander = Some(cache_commander_name(&commander));
-        replay_player.commander_level = Some(slot.m_commanderLevel as u32);
-        replay_player.commander_mastery_level = Some(slot.m_commanderMasteryLevel as u32);
-        let prestige = slot.m_selectedCommanderPrestige;
-        replay_player.prestige = Some(prestige as u32);
-        replay_player.prestige_name = Some(
-            inputs
-                .prestige_names
-                .get(&commander)
-                .and_then(|values| values.get(&prestige))
-                .cloned()
-                .unwrap_or_default(),
-        );
-        replay_player.handle = Some(slot.m_toonHandle.clone());
-
-        if !commander.is_empty() {
-            commander_found = true;
-        }
-    }
-
-    if options.only_blizzard && !commander_found {
-        return None;
-    }
-
-    for (idx, user) in init_data
-        .m_syncLobbyState
-        .m_userInitialData
-        .iter()
-        .enumerate()
-    {
-        let Some(replay_player) = players.get_mut(idx) else {
-            continue;
-        };
-        let user_name = user.m_name.clone();
-        if !user_name.is_empty() {
-            replay_player.name = Some(user_name);
-        }
-    }
-
-    players.insert(
-        0,
-        CachePlayer {
-            pid: 0,
-            apm: None,
-            commander: None,
-            commander_level: None,
-            commander_mastery_level: None,
-            handle: None,
-            icons: None,
-            kills: None,
-            masteries: None,
-            name: None,
-            observer: None,
-            prestige: None,
-            prestige_name: None,
-            race: None,
-            result: None,
-            units: None,
-        },
-    );
-
+    let mut players = vec![empty_cache_player(0)];
+    players.extend(all_players.iter().map(base_cache_player));
     let insert_pid2 = match players.get(2).map(|player| player.pid) {
         Some(2) => false,
         Some(_) => true,
         None => true,
     };
     if insert_pid2 {
-        players.insert(
-            2,
-            CachePlayer {
-                pid: 2,
-                apm: None,
-                commander: None,
-                commander_level: None,
-                commander_mastery_level: None,
-                handle: None,
-                icons: None,
-                kills: None,
-                masteries: None,
-                name: None,
-                observer: None,
-                prestige: None,
-                prestige_name: None,
-                race: None,
-                result: None,
-                units: None,
-            },
-        );
+        players.insert(2, empty_cache_player(2));
     }
 
-    let difficulty_from_player = |index: usize| -> Option<i64> {
-        let slot = slots.get(index.saturating_sub(1))?;
-        Some(slot.m_difficulty)
-    };
+    let user_leave_times = detailed
+        .as_ref()
+        .map(|context| collect_user_leave_times(&context.events))
+        .unwrap_or_default();
+    let messages = sorted_messages_with_leave_events(&parser_messages, &user_leave_times);
 
-    let enemy_race = players.get(3).and_then(|player| player.race.clone());
-    let mut diff_1_code = difficulty_from_player(3);
-    let mut diff_2_code = difficulty_from_player(4);
-    if diff_1_code.is_none() {
-        diff_1_code = difficulty_from_player(1).or_else(|| difficulty_from_player(0));
-    }
-    if diff_2_code.is_none() {
-        diff_2_code = difficulty_from_player(2);
-    }
-    let diff_1_name = difficulty_name(diff_1_code.unwrap_or(1)).to_string();
-    let diff_2_name = difficulty_name(diff_2_code.unwrap_or(1)).to_string();
-    let ext_difficulty = if brutal_plus > 0 {
-        format!("B+{brutal_plus}")
-    } else if diff_1_name == diff_2_name {
-        diff_1_name.clone()
-    } else {
-        format!("{diff_1_name}/{diff_2_name}")
-    };
-
-    let raw_messages = parsed
-        .message_events
-        .iter()
-        .filter_map(parse_message_event)
-        .collect::<Vec<ReplayMessage>>();
-    let user_leave_times = collect_user_leave_times(&events);
-    let messages = sorted_messages_with_leave_events(&raw_messages, &user_leave_times);
-
-    Some(ParsedCacheReplay {
-        accurate_length: normalize_json_float(accurate_length),
-        accurate_length_force_float: matches!(
-            accurate_length_numeric,
-            ReplayNumericValue::Float(_)
+    Some(CacheReplayEntry {
+        accurate_length: cache_numeric_value(
+            normalize_json_float(accurate_length),
+            accurate_length_force_float,
         ),
+        amon_units: None,
+        bonus: None,
         brutal_plus,
-        build: ReplayBuildInfo {
-            replay_build: parsed.base_build,
-            protocol_build,
-        },
-        date: file_date_string(replay_path).ok()?,
-        difficulty: (diff_1_name, diff_2_name),
-        enemy_race,
+        build,
+        comp: None,
+        date,
+        difficulty,
+        enemy_race: enemy_race_present.then_some(enemy_race),
         ext_difficulty,
         extension,
-        file: normalized_path_string(replay_path),
-        form_alength: format_duration(accurate_length),
-        length: duration_to_u64(length),
+        file: normalized_path_string(Path::new(&file)),
+        form_alength,
+        detailed_analysis: false,
+        hash: hash.unwrap_or_default(),
+        length,
         map_name,
         messages,
         mutators,
+        player_stats: None,
         players,
         region,
         result,
         weekly,
-        hash: calculate_replay_hash(replay_path),
     })
-}
-
-fn resolve_protocol_build(
-    replay_build: i64,
-    latest_build: i64,
-    selected_build: i64,
-) -> ProtocolBuildValue {
-    if let Some(mapped) = valid_protocol_mapping(replay_build) {
-        if supported_legacy_protocol(mapped) {
-            ProtocolBuildValue::Int(mapped as u32)
-        } else {
-            ProtocolBuildValue::Str(latest_build.to_string())
-        }
-    } else if replay_build == selected_build {
-        ProtocolBuildValue::Int(replay_build as u32)
-    } else {
-        ProtocolBuildValue::Str(latest_build.to_string())
-    }
-}
-
-fn parse_message_event(message: &MessageEvent) -> Option<ReplayMessage> {
-    let text = if let Some(value) = message.m_string.as_ref().filter(|value| !value.is_empty()) {
-        value.clone()
-    } else if message.event == "NNet.Game.SPingMessage" {
-        "*pings*".to_string()
-    } else {
-        return None;
-    };
-    let player = message.user_id.map(|value| value + 1).unwrap_or_default() as u8;
-    let time = message.game_loop as f64 / 16.0;
-    Some(ReplayMessage { text, player, time })
-}
-
-fn collect_user_leave_times(events: &[ReplayEvent]) -> IndexMap<i64, f64> {
-    let mut user_leave_times = IndexMap::new();
-    for event in events {
-        if event_name(event) != "NNet.Game.SGameUserLeaveEvent" {
-            continue;
-        }
-        let user = event_user_id(event)
-            .map(|value| value + 1)
-            .unwrap_or_default();
-        let leave_time = event_gameloop(event) as f64 / 16.0;
-        user_leave_times.insert(user, leave_time);
-    }
-    user_leave_times
-}
-
-fn sorted_messages_with_leave_events(
-    messages: &[ReplayMessage],
-    user_leave_times: &IndexMap<i64, f64>,
-) -> Vec<ReplayMessage> {
-    let mut rows = messages
-        .iter()
-        .cloned()
-        .enumerate()
-        .map(|(index, message)| (message.time, index, message))
-        .collect::<Vec<(f64, usize, ReplayMessage)>>();
-
-    let base_index = rows.len();
-    for (offset, (player, leave_time)) in user_leave_times.iter().enumerate() {
-        if *player != 1 && *player != 2 {
-            continue;
-        }
-        rows.push((
-            *leave_time,
-            base_index + offset,
-            ReplayMessage {
-                player: *player as u8,
-                text: "*has left the game*".to_string(),
-                time: *leave_time,
-            },
-        ));
-    }
-
-    rows.sort_by(|left, right| {
-        left.0
-            .total_cmp(&right.0)
-            .then_with(|| left.1.cmp(&right.1))
-    });
-    rows.into_iter().map(|(_, _, message)| message).collect()
-}
-
-fn file_date_string(file: &Path) -> Result<String, io::Error> {
-    let modified = fs::metadata(file)?.modified()?;
-    let datetime: DateTime<Local> = DateTime::from(modified);
-    Ok(datetime.format("%Y:%m:%d:%H:%M:%S").to_string())
-}
-
-fn normalized_path_string(path: &Path) -> String {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        normalized.push(component.as_os_str());
-    }
-    normalized.display().to_string()
-}
-
-fn parse_masteries(values: &[u32]) -> [u32; 6] {
-    let mut out = [0_u32; 6];
-    for (index, value) in values.iter().take(6).enumerate() {
-        out[index] = *value;
-    }
-    out
-}
-
-#[derive(Clone, Copy)]
-enum ReplayNumericValue {
-    Int(i64),
-    Float(f64),
-}
-
-impl ReplayNumericValue {
-    fn as_f64(self) -> f64 {
-        match self {
-            Self::Int(value) => value as f64,
-            Self::Float(value) => value,
-        }
-    }
-
-    fn subtract(self, rhs: &Self) -> Self {
-        match (self, *rhs) {
-            (Self::Int(left), Self::Int(right)) => Self::Int(left - right),
-            _ => Self::Float(self.as_f64() - rhs.as_f64()),
-        }
-    }
-}
-
-fn event_name(event: &ReplayEvent) -> &str {
-    event._event()
-}
-
-fn event_gameloop(event: &ReplayEvent) -> i64 {
-    event._gameloop()
-}
-
-fn event_control_id(event: &ReplayEvent) -> Option<i64> {
-    match event {
-        ReplayEvent::Game(event) => event.m_control_id,
-        ReplayEvent::Tracker(_) => None,
-    }
-}
-
-fn event_event_type(event: &ReplayEvent) -> Option<i64> {
-    match event {
-        ReplayEvent::Game(event) => event.m_event_type,
-        ReplayEvent::Tracker(_) => None,
-    }
-}
-
-fn event_user_id(event: &ReplayEvent) -> Option<i64> {
-    match event {
-        ReplayEvent::Game(event) => event.user_id,
-        ReplayEvent::Tracker(_) => None,
-    }
-}
-
-fn difficulty_name(code: i64) -> &'static str {
-    match code {
-        1 => "Casual",
-        2 => "Normal",
-        3 => "Hard",
-        4 => "Brutal",
-        5 => "Custom",
-        6 => "Cheater",
-        _ => "Unknown",
-    }
-}
-
-fn region_name(code: i64) -> &'static str {
-    match code {
-        1 => "NA",
-        2 => "EU",
-        3 => "KR",
-        5 => "CN",
-        98 => "PTR",
-        _ => "",
-    }
-}
-
-fn format_duration(seconds: f64) -> String {
-    if !seconds.is_finite() || seconds <= 0.0 {
-        return "00:00".to_string();
-    }
-
-    let total = seconds.floor() as u64;
-    let hours = total / 3600;
-    let minutes = (total % 3600) / 60;
-    let secs = total % 60;
-    if hours > 0 {
-        format!("{hours:02}:{minutes:02}:{secs:02}")
-    } else {
-        format!("{minutes:02}:{secs:02}")
-    }
-}
-
-fn duration_to_u64(value: f64) -> u64 {
-    if !value.is_finite() || value <= 0.0 {
-        0
-    } else {
-        value.round_ties_even() as u64
-    }
-}
-
-fn valid_protocol_mapping(build: i64) -> Option<i64> {
-    match build {
-        81102 => Some(81433),
-        80871 => Some(81433),
-        76811 => Some(76114),
-        80188 => Some(78285),
-        79998 => Some(78285),
-        81433 => Some(83830),
-        84643 => Some(83830),
-        _ => None,
-    }
-}
-
-fn supported_legacy_protocol(build: i64) -> bool {
-    matches!(build, 76114 | 78285 | 83830)
-}
-
-fn cache_handle_id(handle: &str) -> String {
-    let tail = handle.rsplit('/').next().unwrap_or("");
-    tail.split('.').next().unwrap_or("").to_string()
-}
-
-pub(crate) fn mutator_from_button(button: i64, panel: i64, mutators: &[String]) -> Option<String> {
-    let idx = (button - 41) / 3 + (panel - 1) * 15;
-    if idx < 0 {
-        return None;
-    }
-    let Ok(index) = usize::try_from(idx) else {
-        return None;
-    };
-    mutators.get(index).cloned()
-}
-
-fn get_last_deselect_event(events: &[ReplayEvent]) -> Option<ReplayNumericValue> {
-    let mut last_event = None;
-    for event in events {
-        if event_name(event) == "NNet.Game.SSelectionDeltaEvent" {
-            last_event = Some(ReplayNumericValue::Float(
-                event_gameloop(event) as f64 / 16.0 - 2.0,
-            ));
-        }
-    }
-    last_event
-}
-
-fn get_start_time(events: &[ReplayEvent]) -> ReplayNumericValue {
-    for event in events {
-        if let ReplayEvent::Tracker(event) = event {
-            if event.event == "NNet.Replay.Tracker.SPlayerStatsEvent"
-                && event.m_player_id == Some(1)
-            {
-                let minerals = event
-                    .m_stats
-                    .as_ref()
-                    .and_then(|stats| stats.m_score_value_minerals_collection_rate)
-                    .unwrap_or_default();
-                if minerals > 0.0 {
-                    return ReplayNumericValue::Float(event.game_loop as f64 / 16.0);
-                }
-            }
-
-            if event.event == "NNet.Replay.Tracker.SUpgradeEvent"
-                && matches!(event.m_player_id, Some(1 | 2))
-            {
-                let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
-                if upgrade_name.contains("Spray") {
-                    return ReplayNumericValue::Float(event.game_loop as f64 / 16.0);
-                }
-            }
-        }
-    }
-
-    ReplayNumericValue::Int(0)
-}
-
-pub(crate) fn identify_mutators_for_cache(
-    events: &[ReplayEvent],
-    mutators_all: &[String],
-    mutators_ui: &[String],
-    mutator_ids: &MutatorIdsJson,
-    cached_mutators: &CachedMutatorsJson,
-    extension: bool,
-    mm: bool,
-    detailed_info: Option<&ReplayInitData>,
-) -> (Vec<String>, bool) {
-    let mut mutators = Vec::new();
-    let mut weekly = false;
-
-    if mm {
-        for event in events {
-            let ReplayEvent::Tracker(event) = event else {
-                continue;
-            };
-            if event.event != "NNet.Replay.Tracker.SUpgradeEvent" || event.m_player_id != Some(0) {
-                continue;
-            }
-            let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
-            if !upgrade_name.contains("mutatorinfo") {
-                continue;
-            }
-            let mutator_key = upgrade_name.get(12..).unwrap_or_default();
-            if mutator_ids.contains_key(mutator_key) {
-                mutators.push(mutator_key.to_string());
-            }
-        }
-    }
-
-    if extension {
-        if let Some(handles) =
-            detailed_info.map(|value| &value.m_syncLobbyState.m_gameDescription.m_cacheHandles)
-        {
-            for handle in handles {
-                let cached = cache_handle_id(handle);
-                if cached.is_empty() {
-                    continue;
-                }
-                if let Some(mutator_id) = cached_mutators.get(&cached) {
-                    mutators.push(mutator_id.clone());
-                    weekly = true;
-                }
-            }
-        }
-    }
-
-    if !extension {
-        if let Some(slot0) =
-            detailed_info.and_then(|value| value.m_syncLobbyState.m_lobbyState.m_slots.first())
-        {
-            let brutal_plus = slot0.m_brutalPlusDifficulty;
-            if brutal_plus > 0 {
-                for key in &slot0.m_retryMutationIndexes {
-                    if *key <= 0 {
-                        continue;
-                    }
-                    if let Ok(index) = usize::try_from(*key - 1) {
-                        if let Some(mutator) = mutators_all.get(index) {
-                            mutators.push(mutator.clone());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if extension {
-        let mut actions = Vec::new();
-        let mut offset = 0_i64;
-        let mut last_gameloop = None;
-
-        for event in events {
-            let gameloop = event_gameloop(event);
-            let name = event_name(event);
-
-            if gameloop == 0
-                && name == "NNet.Game.STriggerDialogControlEvent"
-                && event_event_type(event) == Some(3)
-            {
-                let contains_selection_changed = matches!(
-                    event,
-                    ReplayEvent::Game(event)
-                        if event
-                            .m_event_data
-                            .as_ref()
-                            .is_some_and(|data| data.contains_selection_changed)
-                );
-                if contains_selection_changed {
-                    if let Some(control_id) = event_control_id(event) {
-                        offset = 129 - control_id;
-                    }
-                    continue;
-                }
-            }
-
-            if gameloop > 0
-                && Some(gameloop) != last_gameloop
-                && name == "NNet.Game.STriggerDialogControlEvent"
-                && event_user_id(event) == Some(0)
-            {
-                let contains_none = matches!(
-                    event,
-                    ReplayEvent::Game(event)
-                        if event.m_event_data.as_ref().is_some_and(|data| data.contains_none)
-                );
-                if !contains_none {
-                    if let Some(control_id) = event_control_id(event) {
-                        actions.push(control_id + offset);
-                        last_gameloop = Some(gameloop);
-                    }
-                    continue;
-                }
-            }
-
-            if let ReplayEvent::Tracker(event) = event {
-                if event.event == "NNet.Replay.Tracker.SUpgradeEvent"
-                    && matches!(event.m_player_id, Some(1 | 2))
-                {
-                    let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
-                    if upgrade_name.contains("Spray") {
-                        break;
-                    }
-                }
-            }
-        }
-
-        let mut panel = 1_i64;
-        for action in actions {
-            if (41..=83).contains(&action) {
-                if let Some(new_mutator) = mutator_from_button(action, panel, mutators_ui) {
-                    if !mutators.contains(&new_mutator) || new_mutator == "Random" {
-                        mutators.push(new_mutator);
-                    } else if new_mutator != "Random" {
-                        if let Some(position) =
-                            mutators.iter().position(|value| value == &new_mutator)
-                        {
-                            mutators.remove(position);
-                        }
-                    }
-                }
-            }
-
-            if action == 123 && panel > 1 {
-                panel -= 1;
-            }
-            if action == 124 && panel < 4 {
-                panel += 1;
-            }
-
-            if (88..=106).contains(&action) {
-                if let Ok(index) = usize::try_from((action - 88) / 2) {
-                    if index < mutators.len() {
-                        mutators.remove(index);
-                    }
-                }
-            }
-        }
-    }
-
-    (
-        mutators
-            .into_iter()
-            .map(|mutator| {
-                mutator
-                    .replace("Heroes from the Storm (old)", "Heroes from the Storm")
-                    .replace("Extreme Caution", "Afraid of the Dark")
-            })
-            .collect(),
-        weekly,
-    )
 }
 
 fn resolve_half_cpu_worker_cap() -> usize {

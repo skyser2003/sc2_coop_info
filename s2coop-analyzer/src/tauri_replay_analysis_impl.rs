@@ -58,29 +58,6 @@ pub struct PlayerPositions {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ParsedReplayOutput {
-    pub file: String,
-    pub map_name: String,
-    pub extension: bool,
-    pub brutal_plus: u32,
-    pub result: String,
-    pub players: Vec<ParsedReplayPlayer>,
-    pub difficulty: (String, String),
-    pub accurate_length: f64,
-    pub form_alength: String,
-    pub length: u64,
-    pub mutators: Vec<String>,
-    pub weekly: bool,
-    pub messages: Vec<ParsedReplayMessage>,
-    pub hash: Option<String>,
-    pub build: ReplayBuildInfo,
-    pub date: String,
-    pub enemy_race: String,
-    pub ext_difficulty: String,
-    pub region: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ReplayReport {
     pub file: String,
     pub replaydata: bool,
@@ -105,7 +82,7 @@ pub struct ReplayReport {
     pub bonus: Vec<String>,
     pub comp: String,
     pub length: f64,
-    pub parser: ParsedReplayOutput,
+    pub parser: ParsedReplayInput,
     pub mutators: Vec<String>,
     pub weekly: bool,
     #[serde(rename = "mainCommander")]
@@ -298,6 +275,9 @@ pub fn build_replay_report_detailed(
         .hash
         .clone()
         .or_else(|| detailed_input.replay_hash.clone());
+    let mut parser = replay.clone();
+    parser.accurate_length = parser_accurate_length;
+    parser.hash = parser_hash;
 
     ReplayReport {
         file: replay_file.to_string(),
@@ -321,27 +301,7 @@ pub fn build_replay_report_detailed(
         bonus: detailed_input.bonus.clone().unwrap_or_default(),
         comp: detailed_input.comp.clone().unwrap_or_default(),
         length: report_length,
-        parser: ParsedReplayOutput {
-            file: replay.file.clone(),
-            map_name: replay.map_name.clone(),
-            extension: replay.extension,
-            brutal_plus: replay.brutal_plus,
-            result: replay.result.clone(),
-            players: replay.players.clone(),
-            difficulty: replay.difficulty.clone(),
-            accurate_length: parser_accurate_length,
-            form_alength: replay.form_alength.clone(),
-            length: replay.length,
-            mutators: replay.mutators.clone(),
-            weekly: replay.weekly,
-            messages: replay.messages.clone(),
-            hash: parser_hash,
-            build: replay.build.clone(),
-            date: replay.date.clone(),
-            enemy_race: replay.enemy_race.clone(),
-            ext_difficulty: replay.ext_difficulty.clone(),
-            region: replay.region.clone(),
-        },
+        parser,
         mutators: replay.mutators.clone(),
         weekly: replay.weekly,
         main_commander: normalized_commander_name(main_player.commander.as_str()),

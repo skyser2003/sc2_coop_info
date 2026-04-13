@@ -1,6 +1,4 @@
-use crate::cache_overall_stats_generator::{
-    identify_mutators_for_cache, PlayerStatsSeries, ProtocolBuildValue, ReplayBuildInfo,
-};
+use crate::cache_overall_stats_generator::PlayerStatsSeries;
 use crate::dictionary_data::{
     self, CacheGenerationData, DictionaryDataError, UnitAddKillsToJson, UnitNamesJson,
 };
@@ -11,9 +9,10 @@ use crate::tauri_replay_analysis_impl::{
 use chrono::{DateTime, Local};
 use indexmap::IndexMap;
 use s2protocol_port::{
-    build_protocol_store, parse_file_with_store, ProtocolStore, ReplayEvent, ReplayParseMode,
-    TrackerEvent,
+    build_protocol_store, parse_file_with_store, MessageEvent, ParsedReplay, ProtocolStore,
+    ReplayDetails, ReplayEvent, ReplayInitData, ReplayMetadata, ReplayParseMode, TrackerEvent,
 };
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -80,6 +79,763 @@ const CUSTOM_KILL_ICON_KEYS: [&str; 10] = [
 
 type UnitStats = (i64, i64, i64, f64);
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum ProtocolBuildValue {
+    Int(u32),
+    Str(String),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReplayBuildInfo {
+    pub replay_build: u32,
+    pub protocol_build: ProtocolBuildValue,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ReplayParsedContext {
+    pub details: ReplayDetails,
+    pub init_data: ReplayInitData,
+    pub metadata: ReplayMetadata,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ReplayDetailedParseContext {
+    pub events: Vec<ReplayEvent>,
+    pub start_time: f64,
+    pub end_time: f64,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ReplayBaseParse {
+    pub context: ReplayParsedContext,
+    pub build: ReplayBuildInfo,
+    pub file: String,
+    pub map_name: String,
+    pub extension: bool,
+    pub brutal_plus: u32,
+    pub result: String,
+    pub accurate_length: f64,
+    pub accurate_length_force_float: bool,
+    pub form_alength: String,
+    pub length: u64,
+    pub mutators: Vec<String>,
+    pub weekly: bool,
+    pub raw_messages: Vec<ParsedReplayMessage>,
+    pub hash: String,
+    pub date: String,
+    pub detailed: Option<ReplayDetailedParseContext>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ReplayParsedInputBundle {
+    pub parser: ParsedReplayInput,
+    pub all_players: Vec<ParsedReplayPlayer>,
+    pub accurate_length_force_float: bool,
+    pub commander_found: bool,
+    pub enemy_race_present: bool,
+    pub detailed: Option<ReplayDetailedParseContext>,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct ReplayBaseParseFilters {
+    pub only_blizzard: bool,
+    pub require_recover_disabled: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct ReplayBaseParseOptions {
+    pub include_events: bool,
+    pub filters: ReplayBaseParseFilters,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ReplayBaseParseError {
+    ProtocolStore(String),
+    ReplayParse { path: String, message: String },
+    InvalidReplayData(String),
+    IoRead { path: PathBuf, message: String },
+}
+
+impl std::fmt::Display for ReplayBaseParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ProtocolStore(message) => write!(f, "failed to build protocol store: {message}"),
+            Self::ReplayParse { path, message } => {
+                write!(f, "failed to parse replay '{path}': {message}")
+            }
+            Self::InvalidReplayData(message) => write!(f, "invalid replay data: {message}"),
+            Self::IoRead { path, message } => {
+                write!(f, "failed to read '{}': {message}", path.display())
+            }
+        }
+    }
+}
+
+impl std::error::Error for ReplayBaseParseError {}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ReplayNumericValue {
+    Int(i64),
+    Float(f64),
+}
+
+impl ReplayNumericValue {
+    fn as_f64(self) -> f64 {
+        match self {
+            Self::Int(value) => value as f64,
+            Self::Float(value) => value,
+        }
+    }
+
+    fn subtract(self, rhs: &Self) -> Self {
+        match (self, *rhs) {
+            (Self::Int(left), Self::Int(right)) => Self::Int(left - right),
+            _ => Self::Float(self.as_f64() - rhs.as_f64()),
+        }
+    }
+}
+
+pub(crate) fn protocol_store() -> Result<&'static ProtocolStore, ReplayBaseParseError> {
+    static STORE: OnceLock<Result<ProtocolStore, String>> = OnceLock::new();
+    let store = STORE.get_or_init(|| {
+        build_protocol_store().map_err(|error| format!("failed to build protocol store: {error}"))
+    });
+
+    store
+        .as_ref()
+        .map_err(|message| ReplayBaseParseError::ProtocolStore(message.clone()))
+}
+
+pub(crate) fn parse_replay_base(
+    replay_path: &Path,
+    inputs: &CacheGenerationData<'_>,
+    options: ReplayBaseParseOptions,
+) -> Result<Option<ReplayBaseParse>, ReplayBaseParseError> {
+    if options.filters.only_blizzard && replay_path.to_string_lossy().contains("[MM]") {
+        return Ok(None);
+    }
+
+    let store = protocol_store()?;
+    let parse_mode = if options.include_events {
+        ReplayParseMode::Detailed
+    } else {
+        ReplayParseMode::Simple
+    };
+    let parsed = parse_file_with_store(replay_path, store, parse_mode).map_err(|error| {
+        ReplayBaseParseError::ReplayParse {
+            path: replay_path.display().to_string(),
+            message: error.to_string(),
+        }
+    })?;
+
+    let ParsedReplay {
+        base_build,
+        details,
+        init_data,
+        metadata,
+        game_events,
+        message_events,
+        tracker_events,
+        ..
+    } = parsed;
+
+    let details = details.ok_or_else(|| {
+        ReplayBaseParseError::InvalidReplayData("missing replay.details".to_string())
+    })?;
+    let init_data = init_data.ok_or_else(|| {
+        ReplayBaseParseError::InvalidReplayData("missing replay.initData".to_string())
+    })?;
+    let metadata = metadata.ok_or_else(|| {
+        ReplayBaseParseError::InvalidReplayData("missing replay.gamemetadata.json".to_string())
+    })?;
+
+    if options.filters.only_blizzard && !details.m_isBlizzardMap {
+        return Ok(None);
+    }
+
+    let disable_recover = details.m_disableRecoverGame.unwrap_or(false);
+    if options.filters.require_recover_disabled && !disable_recover {
+        return Ok(None);
+    }
+
+    let mut events = Vec::new();
+    if options.include_events {
+        events.extend(game_events.into_iter().map(ReplayEvent::Game));
+        events.extend(tracker_events.into_iter().map(ReplayEvent::Tracker));
+        events.sort_by_key(event_gameloop);
+    }
+
+    let replay_build = i64::from(base_build);
+    let latest_build = i64::from(
+        store
+            .latest()
+            .map_err(|error| ReplayBaseParseError::ProtocolStore(error.to_string()))?
+            .build,
+    );
+    let selected_build = if store.build(base_build).is_ok() {
+        replay_build
+    } else {
+        store
+            .closest_build(base_build)
+            .map(i64::from)
+            .unwrap_or(latest_build)
+    };
+
+    let map_title = if metadata.Title.is_empty() {
+        "Unknown map".to_string()
+    } else {
+        metadata.Title.clone()
+    };
+    let map_name = inputs
+        .map_names
+        .get(&map_title)
+        .and_then(|row| row.get("EN"))
+        .cloned()
+        .unwrap_or(map_title);
+
+    let extension = init_data
+        .m_syncLobbyState
+        .m_gameDescription
+        .m_hasExtensionMod;
+    let brutal_plus = init_data
+        .m_syncLobbyState
+        .m_lobbyState
+        .m_slots
+        .first()
+        .map(|value| value.m_brutalPlusDifficulty as u32)
+        .unwrap_or_default();
+
+    let length_numeric = ReplayNumericValue::Float(metadata.Duration);
+    let start_time = get_start_time(&events);
+    let last_deselect_event =
+        get_last_deselect_event(&events).unwrap_or(ReplayNumericValue::Float(metadata.Duration));
+
+    let metadata_players = &metadata.Players;
+    if metadata_players.is_empty() {
+        return Err(ReplayBaseParseError::InvalidReplayData(
+            "metadata Players must be array".to_string(),
+        ));
+    }
+
+    let player0_result = metadata_players
+        .first()
+        .map(|value| value.Result.clone())
+        .unwrap_or_default();
+    let player1_result = metadata_players
+        .get(1)
+        .map(|value| value.Result.clone())
+        .unwrap_or_default();
+    let result = if player0_result == "Win" || player1_result == "Win" {
+        "Victory".to_string()
+    } else {
+        "Defeat".to_string()
+    };
+
+    let accurate_length_numeric = if result == "Victory" && options.include_events {
+        last_deselect_event.subtract(&start_time)
+    } else {
+        length_numeric.subtract(&start_time)
+    };
+    let accurate_length = accurate_length_numeric.as_f64();
+    let end_time = if result == "Victory" && options.include_events {
+        last_deselect_event.as_f64()
+    } else {
+        metadata.Duration
+    };
+
+    let (mutators, weekly) = identify_mutators_for_replay(
+        &events,
+        &inputs.mutators_all,
+        &inputs.mutators_ui,
+        &inputs.mutator_ids,
+        &inputs.cached_mutators,
+        extension,
+        replay_path.to_string_lossy().contains("[MM]"),
+        Some(&init_data),
+    );
+
+    let raw_messages = message_events
+        .iter()
+        .filter_map(parse_message_event)
+        .collect::<Vec<ParsedReplayMessage>>();
+
+    Ok(Some(ReplayBaseParse {
+        context: ReplayParsedContext {
+            details,
+            init_data,
+            metadata,
+        },
+        build: ReplayBuildInfo {
+            replay_build: base_build,
+            protocol_build: resolve_protocol_build(replay_build, latest_build, selected_build),
+        },
+        file: replay_path.display().to_string(),
+        map_name,
+        extension,
+        brutal_plus,
+        result,
+        accurate_length,
+        accurate_length_force_float: matches!(
+            accurate_length_numeric,
+            ReplayNumericValue::Float(_)
+        ),
+        form_alength: format_duration(accurate_length),
+        length: duration_to_u64(length_numeric.as_f64()),
+        mutators,
+        weekly,
+        raw_messages,
+        hash: calculate_replay_hash(replay_path),
+        date: file_date_string(replay_path).map_err(|error| ReplayBaseParseError::IoRead {
+            path: replay_path.to_path_buf(),
+            message: error.to_string(),
+        })?,
+        detailed: options
+            .include_events
+            .then_some(ReplayDetailedParseContext {
+                events,
+                start_time: start_time.as_f64(),
+                end_time,
+            }),
+    }))
+}
+
+pub(crate) fn resolve_protocol_build(
+    replay_build: i64,
+    latest_build: i64,
+    selected_build: i64,
+) -> ProtocolBuildValue {
+    if let Some(mapped) = valid_protocol_mapping(replay_build) {
+        if supported_legacy_protocol(mapped) {
+            ProtocolBuildValue::Int(mapped as u32)
+        } else {
+            ProtocolBuildValue::Str(latest_build.to_string())
+        }
+    } else if replay_build == selected_build {
+        ProtocolBuildValue::Int(replay_build as u32)
+    } else {
+        ProtocolBuildValue::Str(latest_build.to_string())
+    }
+}
+
+pub(crate) fn parse_message_event(message: &MessageEvent) -> Option<ParsedReplayMessage> {
+    let text = if let Some(value) = message.m_string.as_ref().filter(|value| !value.is_empty()) {
+        value.clone()
+    } else if message.event == "NNet.Game.SPingMessage" {
+        "*pings*".to_string()
+    } else {
+        return None;
+    };
+    let player = message.user_id.map(|value| value + 1).unwrap_or_default() as u8;
+    let time = message.game_loop as f64 / 16.0;
+    Some(ParsedReplayMessage { text, player, time })
+}
+
+pub(crate) fn collect_user_leave_times(events: &[ReplayEvent]) -> IndexMap<i64, f64> {
+    let mut user_leave_times = IndexMap::new();
+    for event in events {
+        if event_name(event) != "NNet.Game.SGameUserLeaveEvent" {
+            continue;
+        }
+        let user = event_user_id(event)
+            .map(|value| value + 1)
+            .unwrap_or_default();
+        let leave_time = event_gameloop(event) as f64 / 16.0;
+        user_leave_times.insert(user, leave_time);
+    }
+    user_leave_times
+}
+
+pub(crate) fn sorted_messages_with_leave_events(
+    messages: &[ParsedReplayMessage],
+    user_leave_times: &IndexMap<i64, f64>,
+) -> Vec<ParsedReplayMessage> {
+    let mut rows = messages
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(index, message)| (message.time, index, message))
+        .collect::<Vec<(f64, usize, ParsedReplayMessage)>>();
+
+    let base_index = rows.len();
+    for (offset, (player, leave_time)) in user_leave_times.iter().enumerate() {
+        if *player != 1 && *player != 2 {
+            continue;
+        }
+        rows.push((
+            *leave_time,
+            base_index + offset,
+            ParsedReplayMessage {
+                player: *player as u8,
+                text: "*has left the game*".to_string(),
+                time: *leave_time,
+            },
+        ));
+    }
+
+    rows.sort_by(|left, right| {
+        left.0
+            .total_cmp(&right.0)
+            .then_with(|| left.1.cmp(&right.1))
+    });
+    rows.into_iter().map(|(_, _, message)| message).collect()
+}
+
+pub(crate) fn file_date_string(file: &Path) -> Result<String, std::io::Error> {
+    let modified = fs::metadata(file)?.modified()?;
+    let datetime: DateTime<Local> = DateTime::from(modified);
+    Ok(datetime.format("%Y:%m:%d:%H:%M:%S").to_string())
+}
+
+pub(crate) fn normalized_path_string(path: &Path) -> String {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        normalized.push(component.as_os_str());
+    }
+    normalized.display().to_string()
+}
+
+pub fn calculate_replay_hash(path: &Path) -> String {
+    match fs::read(path) {
+        Ok(bytes) => format!("{:x}", md5::compute(bytes)),
+        Err(_) => format!("{:x}", md5::compute(path.to_string_lossy().as_bytes())),
+    }
+}
+
+pub(crate) fn parse_masteries(values: &[u32]) -> [u32; 6] {
+    let mut out = [0_u32; 6];
+    for (index, value) in values.iter().take(6).enumerate() {
+        out[index] = *value;
+    }
+    out
+}
+
+pub(crate) fn event_name(event: &ReplayEvent) -> &str {
+    event._event()
+}
+
+pub(crate) fn event_gameloop(event: &ReplayEvent) -> i64 {
+    event._gameloop()
+}
+
+pub(crate) fn event_control_id(event: &ReplayEvent) -> Option<i64> {
+    match event {
+        ReplayEvent::Game(event) => event.m_control_id,
+        ReplayEvent::Tracker(_) => None,
+    }
+}
+
+pub(crate) fn event_event_type(event: &ReplayEvent) -> Option<i64> {
+    match event {
+        ReplayEvent::Game(event) => event.m_event_type,
+        ReplayEvent::Tracker(_) => None,
+    }
+}
+
+pub(crate) fn event_user_id(event: &ReplayEvent) -> Option<i64> {
+    match event {
+        ReplayEvent::Game(event) => event.user_id,
+        ReplayEvent::Tracker(_) => None,
+    }
+}
+
+pub(crate) fn difficulty_name(code: i64) -> &'static str {
+    match code {
+        1 => "Casual",
+        2 => "Normal",
+        3 => "Hard",
+        4 => "Brutal",
+        5 => "Custom",
+        6 => "Cheater",
+        _ => "Unknown",
+    }
+}
+
+pub(crate) fn region_name(code: i64) -> &'static str {
+    match code {
+        1 => "NA",
+        2 => "EU",
+        3 => "KR",
+        5 => "CN",
+        98 => "PTR",
+        _ => "",
+    }
+}
+
+pub(crate) fn format_duration(seconds: f64) -> String {
+    if !seconds.is_finite() || seconds <= 0.0 {
+        return "00:00".to_string();
+    }
+
+    let total = seconds.floor() as u64;
+    let hours = total / 3600;
+    let minutes = (total % 3600) / 60;
+    let secs = total % 60;
+    if hours > 0 {
+        format!("{hours:02}:{minutes:02}:{secs:02}")
+    } else {
+        format!("{minutes:02}:{secs:02}")
+    }
+}
+
+pub(crate) fn duration_to_u64(value: f64) -> u64 {
+    if !value.is_finite() || value <= 0.0 {
+        0
+    } else {
+        value.round_ties_even() as u64
+    }
+}
+
+pub(crate) fn valid_protocol_mapping(build: i64) -> Option<i64> {
+    match build {
+        81102 => Some(81433),
+        80871 => Some(81433),
+        76811 => Some(76114),
+        80188 => Some(78285),
+        79998 => Some(78285),
+        81433 => Some(83830),
+        84643 => Some(83830),
+        _ => None,
+    }
+}
+
+pub(crate) fn supported_legacy_protocol(build: i64) -> bool {
+    matches!(build, 76114 | 78285 | 83830)
+}
+
+pub(crate) fn get_last_deselect_event(events: &[ReplayEvent]) -> Option<ReplayNumericValue> {
+    let mut last_event = None;
+    for event in events {
+        if event_name(event) == "NNet.Game.SSelectionDeltaEvent" {
+            last_event = Some(ReplayNumericValue::Float(
+                event_gameloop(event) as f64 / 16.0 - 2.0,
+            ));
+        }
+    }
+    last_event
+}
+
+pub(crate) fn get_start_time(events: &[ReplayEvent]) -> ReplayNumericValue {
+    for event in events {
+        if let ReplayEvent::Tracker(event) = event {
+            if event.event == "NNet.Replay.Tracker.SPlayerStatsEvent"
+                && event.m_player_id == Some(1)
+            {
+                let minerals = event
+                    .m_stats
+                    .as_ref()
+                    .and_then(|stats| stats.m_score_value_minerals_collection_rate)
+                    .unwrap_or_default();
+                if minerals > 0.0 {
+                    return ReplayNumericValue::Float(event.game_loop as f64 / 16.0);
+                }
+            }
+
+            if event.event == "NNet.Replay.Tracker.SUpgradeEvent"
+                && matches!(event.m_player_id, Some(1 | 2))
+            {
+                let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
+                if upgrade_name.contains("Spray") {
+                    return ReplayNumericValue::Float(event.game_loop as f64 / 16.0);
+                }
+            }
+        }
+    }
+
+    ReplayNumericValue::Int(0)
+}
+
+fn cache_handle_id(handle: &str) -> String {
+    let tail = handle.rsplit('/').next().unwrap_or("");
+    tail.split('.').next().unwrap_or("").to_string()
+}
+
+pub(crate) fn mutator_from_button(button: i64, panel: i64, mutators: &[String]) -> Option<String> {
+    let idx = (button - 41) / 3 + (panel - 1) * 15;
+    if idx < 0 {
+        return None;
+    }
+    let Ok(index) = usize::try_from(idx) else {
+        return None;
+    };
+    mutators.get(index).cloned()
+}
+
+pub(crate) fn identify_mutators_for_replay(
+    events: &[ReplayEvent],
+    mutators_all: &[String],
+    mutators_ui: &[String],
+    mutator_ids: &crate::dictionary_data::MutatorIdsJson,
+    cached_mutators: &crate::dictionary_data::CachedMutatorsJson,
+    extension: bool,
+    mm: bool,
+    detailed_info: Option<&ReplayInitData>,
+) -> (Vec<String>, bool) {
+    let mut mutators = Vec::new();
+    let mut weekly = false;
+
+    if mm {
+        for event in events {
+            let ReplayEvent::Tracker(event) = event else {
+                continue;
+            };
+            if event.event != "NNet.Replay.Tracker.SUpgradeEvent" || event.m_player_id != Some(0) {
+                continue;
+            }
+            let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
+            if !upgrade_name.contains("mutatorinfo") {
+                continue;
+            }
+            let mutator_key = upgrade_name.get(12..).unwrap_or_default();
+            if mutator_ids.contains_key(mutator_key) {
+                mutators.push(mutator_key.to_string());
+            }
+        }
+    }
+
+    if extension {
+        if let Some(handles) =
+            detailed_info.map(|value| &value.m_syncLobbyState.m_gameDescription.m_cacheHandles)
+        {
+            for handle in handles {
+                let cached = cache_handle_id(handle);
+                if cached.is_empty() {
+                    continue;
+                }
+                if let Some(mutator_id) = cached_mutators.get(&cached) {
+                    mutators.push(mutator_id.clone());
+                    weekly = true;
+                }
+            }
+        }
+    }
+
+    if !extension {
+        if let Some(slot0) =
+            detailed_info.and_then(|value| value.m_syncLobbyState.m_lobbyState.m_slots.first())
+        {
+            let brutal_plus = slot0.m_brutalPlusDifficulty;
+            if brutal_plus > 0 {
+                for key in &slot0.m_retryMutationIndexes {
+                    if *key <= 0 {
+                        continue;
+                    }
+                    if let Ok(index) = usize::try_from(*key - 1) {
+                        if let Some(mutator) = mutators_all.get(index) {
+                            mutators.push(mutator.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if extension {
+        let mut actions = Vec::new();
+        let mut offset = 0_i64;
+        let mut last_gameloop = None;
+
+        for event in events {
+            let gameloop = event_gameloop(event);
+            let name = event_name(event);
+
+            if gameloop == 0
+                && name == "NNet.Game.STriggerDialogControlEvent"
+                && event_event_type(event) == Some(3)
+            {
+                let contains_selection_changed = matches!(
+                    event,
+                    ReplayEvent::Game(event)
+                        if event
+                            .m_event_data
+                            .as_ref()
+                            .is_some_and(|data| data.contains_selection_changed)
+                );
+                if contains_selection_changed {
+                    if let Some(control_id) = event_control_id(event) {
+                        offset = 129 - control_id;
+                    }
+                    continue;
+                }
+            }
+
+            if gameloop > 0
+                && Some(gameloop) != last_gameloop
+                && name == "NNet.Game.STriggerDialogControlEvent"
+                && event_user_id(event) == Some(0)
+            {
+                let contains_none = matches!(
+                    event,
+                    ReplayEvent::Game(event)
+                        if event.m_event_data.as_ref().is_some_and(|data| data.contains_none)
+                );
+                if !contains_none {
+                    if let Some(control_id) = event_control_id(event) {
+                        actions.push(control_id + offset);
+                        last_gameloop = Some(gameloop);
+                    }
+                    continue;
+                }
+            }
+
+            if let ReplayEvent::Tracker(event) = event {
+                if event.event == "NNet.Replay.Tracker.SUpgradeEvent"
+                    && matches!(event.m_player_id, Some(1 | 2))
+                {
+                    let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
+                    if upgrade_name.contains("Spray") {
+                        break;
+                    }
+                }
+            }
+        }
+
+        let mut panel = 1_i64;
+        for action in actions {
+            if (41..=83).contains(&action) {
+                if let Some(new_mutator) = mutator_from_button(action, panel, mutators_ui) {
+                    if !mutators.contains(&new_mutator) || new_mutator == "Random" {
+                        mutators.push(new_mutator);
+                    } else if new_mutator != "Random" {
+                        if let Some(position) =
+                            mutators.iter().position(|value| value == &new_mutator)
+                        {
+                            mutators.remove(position);
+                        }
+                    }
+                }
+            }
+
+            if action == 123 && panel > 1 {
+                panel -= 1;
+            }
+            if action == 124 && panel < 4 {
+                panel += 1;
+            }
+
+            if (88..=106).contains(&action) {
+                if let Ok(index) = usize::try_from((action - 88) / 2) {
+                    if index < mutators.len() {
+                        mutators.remove(index);
+                    }
+                }
+            }
+        }
+    }
+
+    (
+        mutators
+            .into_iter()
+            .map(|mutator| {
+                mutator
+                    .replace("Heroes from the Storm (old)", "Heroes from the Storm")
+                    .replace("Extreme Caution", "Afraid of the Dark")
+            })
+            .collect(),
+        weekly,
+    )
+}
+
 #[derive(Debug, Error)]
 pub enum DetailedReplayAnalysisError {
     #[error("failed to build protocol store: {0}")]
@@ -104,17 +860,6 @@ struct ParsedReplayAnalysisInput {
     events: Vec<ReplayEvent>,
     start_time: f64,
     end_time: f64,
-}
-
-fn protocol_store() -> Result<&'static ProtocolStore, DetailedReplayAnalysisError> {
-    static STORE: OnceLock<Result<ProtocolStore, String>> = OnceLock::new();
-    let store = STORE.get_or_init(|| {
-        build_protocol_store().map_err(|error| format!("failed to build protocol store: {error}"))
-    });
-
-    store
-        .as_ref()
-        .map_err(|message| DetailedReplayAnalysisError::ProtocolStore(message.clone()))
 }
 
 fn load_sc2_dictionary_data() -> Result<CacheGenerationData<'static>, DetailedReplayAnalysisError> {
@@ -147,151 +892,218 @@ pub fn cache_hidden_created_lost_units() -> Result<HashSet<String>, DetailedRepl
         .collect())
 }
 
-fn event_name(event: &ReplayEvent) -> &str {
-    event._event()
-}
-
-fn event_gameloop(event: &ReplayEvent) -> i64 {
-    event._gameloop()
-}
-
-fn event_user_id(event: &ReplayEvent) -> Option<i64> {
-    match event {
-        ReplayEvent::Game(event) => event.user_id,
-        ReplayEvent::Tracker(_) => None,
-    }
-}
-
-fn parse_masteries(values: &[u32]) -> [u32; 6] {
-    let mut out = [0_u32; 6];
-    for (index, value) in values.iter().take(6).enumerate() {
-        out[index] = *value;
-    }
-    out
-}
-
-fn file_date_string(file: &Path) -> Result<String, DetailedReplayAnalysisError> {
-    let modified = fs::metadata(file)
-        .and_then(|metadata| metadata.modified())
-        .map_err(|error| DetailedReplayAnalysisError::IoRead {
-            path: file.to_path_buf(),
-            message: error.to_string(),
-        })?;
-    let datetime: DateTime<Local> = DateTime::from(modified);
-    Ok(datetime.format("%Y:%m:%d:%H:%M:%S").to_string())
-}
-
-pub fn calculate_replay_hash(path: &Path) -> String {
-    match fs::read(path) {
-        Ok(bytes) => format!("{:x}", md5::compute(bytes)),
-        Err(_) => format!("{:x}", md5::compute(path.to_string_lossy().as_bytes())),
-    }
-}
-
-fn difficulty_name(code: i64) -> &'static str {
-    match code {
-        1 => "Casual",
-        2 => "Normal",
-        3 => "Hard",
-        4 => "Brutal",
-        _ => "",
-    }
-}
-
-fn format_duration(seconds: f64) -> String {
-    if !seconds.is_finite() || seconds <= 0.0 {
-        return "00:00".to_string();
-    }
-
-    let total = seconds.floor() as u64;
-    let hours = total / 3600;
-    let minutes = (total % 3600) / 60;
-    let secs = total % 60;
-    if hours > 0 {
-        format!("{hours:02}:{minutes:02}:{secs:02}")
-    } else {
-        format!("{minutes:02}:{secs:02}")
-    }
-}
-
-fn duration_to_u64(value: f64) -> u64 {
-    if !value.is_finite() || value <= 0.0 {
-        0
-    } else {
-        value.round_ties_even() as u64
-    }
-}
-
-fn region_name(code: i64) -> &'static str {
-    match code {
-        1 => "NA",
-        2 => "EU",
-        3 => "KR",
-        5 => "CN",
-        98 => "PTR",
-        _ => "",
-    }
-}
-
-fn valid_protocol_mapping(build: i64) -> Option<i64> {
-    match build {
-        81102 => Some(81433),
-        80871 => Some(81433),
-        76811 => Some(76114),
-        80188 => Some(78285),
-        79998 => Some(78285),
-        81433 => Some(83830),
-        84643 => Some(83830),
-        _ => None,
-    }
-}
-
-fn supported_legacy_protocol(build: i64) -> bool {
-    matches!(build, 76114 | 78285 | 83830)
-}
-
-fn get_last_deselect_event(events: &[ReplayEvent]) -> Option<f64> {
-    let mut last_event: Option<f64> = None;
-    for event in events {
-        if event_name(event) == "NNet.Game.SSelectionDeltaEvent" {
-            last_event = Some(event_gameloop(event) as f64 / 16.0 - 2.0);
+fn map_base_parse_error(error: ReplayBaseParseError) -> DetailedReplayAnalysisError {
+    match error {
+        ReplayBaseParseError::ProtocolStore(message) => {
+            DetailedReplayAnalysisError::ProtocolStore(message)
+        }
+        ReplayBaseParseError::ReplayParse { path, message } => {
+            DetailedReplayAnalysisError::ReplayParse { path, message }
+        }
+        ReplayBaseParseError::InvalidReplayData(message) => {
+            DetailedReplayAnalysisError::InvalidReplayData(message)
+        }
+        ReplayBaseParseError::IoRead { path, message } => {
+            DetailedReplayAnalysisError::IoRead { path, message }
         }
     }
-    last_event
-}
-
-fn get_start_time(events: &[ReplayEvent]) -> f64 {
-    for event in events {
-        if let ReplayEvent::Tracker(event) = event {
-            if event.event == "NNet.Replay.Tracker.SPlayerStatsEvent"
-                && event.m_player_id == Some(1)
-            {
-                let minerals = event
-                    .m_stats
-                    .as_ref()
-                    .and_then(|stats| stats.m_score_value_minerals_collection_rate)
-                    .unwrap_or_default();
-                if minerals > 0.0 {
-                    return event.game_loop as f64 / 16.0;
-                }
-            }
-
-            if event.event == "NNet.Replay.Tracker.SUpgradeEvent"
-                && matches!(event.m_player_id, Some(1 | 2))
-            {
-                let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
-                if upgrade_name.contains("Spray") {
-                    return event.game_loop as f64 / 16.0;
-                }
-            }
-        }
-    }
-
-    0.0
 }
 
 pub fn find_replay_player(players: &[ParsedReplayPlayer], pid: u8) -> Option<&ParsedReplayPlayer> {
     players.iter().find(|player| player.pid == pid)
+}
+
+fn empty_parsed_replay_player(pid: u8) -> ParsedReplayPlayer {
+    ParsedReplayPlayer {
+        pid,
+        name: String::new(),
+        handle: String::new(),
+        race: String::new(),
+        observer: false,
+        result: String::new(),
+        commander: String::new(),
+        commander_level: 0,
+        commander_mastery_level: 0,
+        prestige: 0,
+        prestige_name: String::new(),
+        apm: 0,
+        masteries: [0, 0, 0, 0, 0, 0],
+    }
+}
+
+fn parser_players_from_all_players(players: &[ParsedReplayPlayer]) -> Vec<ParsedReplayPlayer> {
+    let mut parser_players = vec![empty_parsed_replay_player(0)];
+    parser_players.extend(players.iter().take(2).cloned());
+    while parser_players.len() < 3 {
+        parser_players.push(empty_parsed_replay_player(2));
+    }
+    parser_players
+}
+
+pub(crate) fn build_replay_input_bundle(
+    base: ReplayBaseParse,
+    dictionaries: &CacheGenerationData<'_>,
+) -> Result<ReplayParsedInputBundle, ReplayBaseParseError> {
+    let details = &base.context.details;
+    let init_data = &base.context.init_data;
+    let metadata = &base.context.metadata;
+    let player_list = if details.m_playerList.is_empty() {
+        Err(ReplayBaseParseError::InvalidReplayData(
+            "details player list must be array".to_string(),
+        ))
+    } else {
+        Ok(&details.m_playerList)
+    }?;
+
+    let length = metadata.Duration;
+    let accurate_length = base.accurate_length;
+
+    let mut all_players = metadata
+        .Players
+        .iter()
+        .enumerate()
+        .map(|(index, player)| {
+            let pid = (index + 1) as u8;
+            let apm = if accurate_length == 0.0 {
+                0
+            } else {
+                (player.APM * length / accurate_length).round_ties_even() as u32
+            };
+            ParsedReplayPlayer {
+                pid,
+                apm,
+                result: player.Result.clone(),
+                ..empty_parsed_replay_player(pid)
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let mut region = String::new();
+    for (index, player) in player_list.iter().enumerate() {
+        let Some(target) = all_players.get_mut(index) else {
+            continue;
+        };
+        target.name = player.m_name.clone();
+        target.race = player.m_race.clone();
+        target.observer = player.m_observe != 0;
+
+        if index == 0 {
+            let region_code = player
+                .m_toon
+                .as_ref()
+                .map(|value| value.m_region)
+                .unwrap_or_default();
+            region = region_name(region_code).to_string();
+        }
+    }
+
+    let slots = &init_data.m_syncLobbyState.m_lobbyState.m_slots;
+    let mut commander_found = false;
+    for (index, slot) in slots.iter().enumerate() {
+        let Some(target) = all_players.get_mut(index) else {
+            continue;
+        };
+        let commander = slot.m_commander.clone();
+        let commander_level = slot.m_commanderLevel;
+        let commander_mastery_level = slot.m_commanderMasteryLevel;
+        let prestige = slot.m_selectedCommanderPrestige;
+        target.commander = commander.clone();
+        target.commander_level = commander_level as u32;
+        target.commander_mastery_level = commander_mastery_level as u32;
+        target.prestige = prestige as u32;
+        target.prestige_name = dictionaries
+            .prestige_names
+            .get(&commander)
+            .and_then(|row| row.get(&prestige))
+            .cloned()
+            .unwrap_or_default();
+        target.handle = slot.m_toonHandle.clone();
+        target.masteries = parse_masteries(&slot.m_commanderMasteryTalents);
+
+        if !commander.is_empty() {
+            commander_found = true;
+        }
+    }
+
+    let user_initial = &init_data.m_syncLobbyState.m_userInitialData;
+    for (index, user) in user_initial.iter().enumerate() {
+        let Some(target) = all_players.get_mut(index) else {
+            continue;
+        };
+        let user_name = user.m_name.clone();
+        if !user_name.is_empty() {
+            target.name = user_name;
+        }
+    }
+
+    let enemy_race_present = all_players.get(2).is_some();
+    let enemy_race = all_players
+        .get(2)
+        .map(|player| player.race.clone())
+        .unwrap_or_default();
+
+    let difficulty_from_slot =
+        |index: usize| -> Option<i64> { slots.get(index).map(|slot| slot.m_difficulty) };
+    let mut diff_1_code = difficulty_from_slot(2);
+    let mut diff_2_code = difficulty_from_slot(3);
+    if diff_1_code.is_none() {
+        diff_1_code = difficulty_from_slot(0).or_else(|| difficulty_from_slot(1));
+    }
+    if diff_2_code.is_none() {
+        diff_2_code = difficulty_from_slot(1);
+    }
+    let diff_1_name = difficulty_name(diff_1_code.unwrap_or(4)).to_string();
+    let diff_2_name = difficulty_name(diff_2_code.unwrap_or(4)).to_string();
+    let ext_difficulty = if base.brutal_plus > 0 {
+        format!("B+{}", base.brutal_plus)
+    } else if diff_1_name == diff_2_name {
+        diff_1_name.clone()
+    } else {
+        format!("{diff_1_name}/{diff_2_name}")
+    };
+
+    let parser = ParsedReplayInput {
+        file: base.file,
+        map_name: base.map_name,
+        extension: base.extension,
+        brutal_plus: base.brutal_plus,
+        result: base.result,
+        players: parser_players_from_all_players(&all_players),
+        difficulty: (diff_1_name, diff_2_name),
+        accurate_length,
+        form_alength: base.form_alength,
+        length: base.length,
+        mutators: base.mutators,
+        weekly: base.weekly,
+        messages: base.raw_messages,
+        hash: Some(base.hash),
+        build: base.build,
+        date: base.date,
+        enemy_race,
+        ext_difficulty,
+        region,
+    };
+
+    Ok(ReplayParsedInputBundle {
+        parser,
+        all_players,
+        accurate_length_force_float: base.accurate_length_force_float,
+        commander_found,
+        enemy_race_present,
+        detailed: base.detailed,
+    })
+}
+
+pub(crate) fn parse_replay_input_bundle(
+    replay_path: &Path,
+    dictionaries: &CacheGenerationData<'_>,
+    options: ReplayBaseParseOptions,
+) -> Result<Option<ReplayParsedInputBundle>, ReplayBaseParseError> {
+    let Some(base) = parse_replay_base(replay_path, dictionaries, options)? else {
+        return Ok(None);
+    };
+
+    build_replay_input_bundle(base, dictionaries).map(Some)
 }
 
 fn resolve_main_player_pid(players: &[ParsedReplayPlayer], handles: &HashSet<String>) -> i64 {
@@ -311,313 +1123,32 @@ fn parse_replay_file_input(
     replay_path: &Path,
 ) -> Result<ParsedReplayAnalysisInput, DetailedReplayAnalysisError> {
     let dictionaries = load_sc2_dictionary_data()?;
-    let store = protocol_store()?;
-    let parsed =
-        parse_file_with_store(replay_path, store, ReplayParseMode::Detailed).map_err(|error| {
-            DetailedReplayAnalysisError::ReplayParse {
-                path: replay_path.display().to_string(),
-                message: error.to_string(),
-            }
-        })?;
-
-    let replay_build = i64::from(parsed.base_build);
-    let latest_build = i64::from(
-        store
-            .latest()
-            .map_err(|error| DetailedReplayAnalysisError::ProtocolStore(error.to_string()))?
-            .build,
-    );
-    let selected_build = if store.build(parsed.base_build).is_ok() {
-        replay_build
-    } else {
-        store
-            .closest_build(parsed.base_build)
-            .map(i64::from)
-            .unwrap_or(latest_build)
-    };
-    let protocol_build = if let Some(mapped) = valid_protocol_mapping(replay_build) {
-        if supported_legacy_protocol(mapped) {
-            ProtocolBuildValue::Int(mapped as u32)
-        } else {
-            ProtocolBuildValue::Str(latest_build.to_string())
-        }
-    } else if replay_build == selected_build {
-        ProtocolBuildValue::Int(replay_build as u32)
-    } else {
-        ProtocolBuildValue::Str(latest_build.to_string())
-    };
-
-    let details = parsed.details.ok_or_else(|| {
-        DetailedReplayAnalysisError::InvalidReplayData("missing replay.details".to_string())
-    })?;
-    let init_data = parsed.init_data.ok_or_else(|| {
-        DetailedReplayAnalysisError::InvalidReplayData("missing replay.initData".to_string())
-    })?;
-    let metadata = parsed.metadata.ok_or_else(|| {
+    let parsed = parse_replay_input_bundle(
+        replay_path,
+        &dictionaries,
+        ReplayBaseParseOptions {
+            include_events: true,
+            ..ReplayBaseParseOptions::default()
+        },
+    )
+    .map_err(map_base_parse_error)?
+    .ok_or_else(|| {
         DetailedReplayAnalysisError::InvalidReplayData(
-            "missing replay.gamemetadata.json".to_string(),
+            "detailed replay parsing unexpectedly skipped the replay".to_string(),
         )
     })?;
 
-    let mut events = Vec::new();
-    events.extend(parsed.game_events.into_iter().map(ReplayEvent::Game));
-    events.extend(parsed.tracker_events.into_iter().map(ReplayEvent::Tracker));
-    events.sort_by_key(event_gameloop);
-
-    let map_title = if metadata.Title.is_empty() {
-        "Unknown map".to_string()
-    } else {
-        metadata.Title.clone()
-    };
-    let map_name = dictionaries
-        .map_names
-        .get(&map_title)
-        .and_then(|row| row.get("EN"))
-        .cloned()
-        .unwrap_or(map_title);
-    let _is_blizzard = details.m_isBlizzardMap;
-    let _disable_recover = details.m_disableRecoverGame.unwrap_or(false);
-
-    let extension = init_data
-        .m_syncLobbyState
-        .m_gameDescription
-        .m_hasExtensionMod;
-    let brutal_plus = init_data
-        .m_syncLobbyState
-        .m_lobbyState
-        .m_slots
-        .first()
-        .map(|value| value.m_brutalPlusDifficulty as u32)
-        .unwrap_or_default();
-
-    let length = metadata.Duration;
-    let start_time = get_start_time(&events);
-    let last_deselect_event = get_last_deselect_event(&events).unwrap_or(length);
-
-    let metadata_players = if metadata.Players.is_empty() {
-        Err(DetailedReplayAnalysisError::InvalidReplayData(
-            "metadata Players must be array".to_string(),
-        ))
-    } else {
-        Ok(&metadata.Players)
-    }
-    .map_err(|error| error)?;
-    let player0_result = metadata_players
-        .first()
-        .map(|value| value.Result.clone())
-        .unwrap_or_default();
-    let player1_result = metadata_players
-        .get(1)
-        .map(|value| value.Result.clone())
-        .unwrap_or_default();
-    let result = if player0_result == "Win" || player1_result == "Win" {
-        "Victory".to_string()
-    } else {
-        "Defeat".to_string()
-    };
-
-    let accurate_length = if result == "Victory" {
-        last_deselect_event - start_time
-    } else {
-        length - start_time
-    };
-    let end_time = if result == "Victory" {
-        last_deselect_event
-    } else {
-        length
-    };
-
-    let (mutators, weekly) = identify_mutators_for_cache(
-        &events,
-        &dictionaries.mutators_all,
-        &dictionaries.mutators_ui,
-        &dictionaries.mutator_ids,
-        &dictionaries.cached_mutators,
-        extension,
-        replay_path.to_string_lossy().contains("[MM]"),
-        Some(&init_data),
-    );
-
-    let mut parsed_players = vec![ParsedReplayPlayer {
-        pid: 0,
-        name: String::new(),
-        handle: String::new(),
-        race: String::new(),
-        observer: false,
-        result: String::new(),
-        commander: String::new(),
-        commander_level: 0,
-        commander_mastery_level: 0,
-        prestige: 0,
-        prestige_name: String::new(),
-        apm: 0,
-        masteries: [0, 0, 0, 0, 0, 0],
-    }];
-
-    for (index, player) in metadata_players.iter().take(2).enumerate() {
-        let pid = (index + 1) as u8;
-        let apm = (player.APM * length / accurate_length).round_ties_even() as u32;
-        let player_result = player.Result.clone();
-        parsed_players.push(ParsedReplayPlayer {
-            pid,
-            name: String::new(),
-            handle: String::new(),
-            race: String::new(),
-            observer: false,
-            result: player_result,
-            commander: String::new(),
-            commander_level: 0,
-            commander_mastery_level: 0,
-            prestige: 0,
-            prestige_name: String::new(),
-            apm,
-            masteries: [0, 0, 0, 0, 0, 0],
-        });
-    }
-    while parsed_players.len() < 3 {
-        parsed_players.push(ParsedReplayPlayer {
-            pid: 2,
-            name: String::new(),
-            handle: String::new(),
-            race: String::new(),
-            observer: false,
-            result: String::new(),
-            commander: String::new(),
-            commander_level: 0,
-            commander_mastery_level: 0,
-            prestige: 0,
-            prestige_name: String::new(),
-            apm: 0,
-            masteries: [0, 0, 0, 0, 0, 0],
-        });
-    }
-
-    let player_list = if details.m_playerList.is_empty() {
-        Err(DetailedReplayAnalysisError::InvalidReplayData(
-            "details player list must be array".to_string(),
-        ))
-    } else {
-        Ok(&details.m_playerList)
-    }
-    .map_err(|error| error)?;
-    let mut region = String::new();
-    for (index, player) in player_list.iter().take(2).enumerate() {
-        if let Some(target) = parsed_players.get_mut(index + 1) {
-            target.name = player.m_name.clone();
-            target.race = player.m_race.clone();
-            target.observer = player.m_observe != 0;
-            if index == 0 {
-                let region_code = player
-                    .m_toon
-                    .as_ref()
-                    .map(|value| value.m_region)
-                    .unwrap_or_default();
-                region = region_name(region_code).to_string();
-            }
-        }
-    }
-
-    let slots = &init_data.m_syncLobbyState.m_lobbyState.m_slots;
-    for (index, slot) in slots.iter().take(2).enumerate() {
-        if let Some(target) = parsed_players.get_mut(index + 1) {
-            let commander = slot.m_commander.clone();
-            let commander_level = slot.m_commanderLevel;
-            let commander_mastery_level = slot.m_commanderMasteryLevel;
-            let prestige = slot.m_selectedCommanderPrestige;
-            target.commander = commander.clone();
-            target.commander_level = commander_level as u32;
-            target.commander_mastery_level = commander_mastery_level as u32;
-            target.prestige = prestige as u32;
-            target.prestige_name = dictionaries
-                .prestige_names
-                .get(&commander)
-                .and_then(|row| row.get(&prestige))
-                .cloned()
-                .unwrap_or_default();
-            target.handle = slot.m_toonHandle.clone();
-            target.masteries = parse_masteries(&slot.m_commanderMasteryTalents);
-        }
-    }
-
-    let user_initial = &init_data.m_syncLobbyState.m_userInitialData;
-    for (index, user) in user_initial.iter().take(2).enumerate() {
-        if let Some(target) = parsed_players.get_mut(index + 1) {
-            let user_name = user.m_name.clone();
-            if !user_name.is_empty() {
-                target.name = user_name;
-            }
-        }
-    }
-
-    let enemy_race = slots
-        .get(2)
-        .and_then(|value| (!value.m_race.is_empty()).then(|| value.m_race.clone()))
-        .or_else(|| {
-            player_list
-                .get(2)
-                .and_then(|value| (!value.m_race.is_empty()).then(|| value.m_race.clone()))
-        })
-        .unwrap_or_default();
-    let diff_1 = slots.get(2).map(|value| value.m_difficulty).unwrap_or(4);
-    let diff_2 = slots.get(3).map(|value| value.m_difficulty).unwrap_or(4);
-    let diff_1_name = difficulty_name(diff_1).to_string();
-    let diff_2_name = difficulty_name(diff_2).to_string();
-    let ext_difficulty = if brutal_plus > 0 {
-        format!("B+{brutal_plus}")
-    } else if diff_1_name == diff_2_name {
-        diff_1_name.clone()
-    } else {
-        format!("{diff_1_name}/{diff_2_name}")
-    };
-
-    let messages = parsed
-        .message_events
-        .iter()
-        .filter_map(|message| {
-            let text =
-                if let Some(value) = message.m_string.as_ref().filter(|value| !value.is_empty()) {
-                    value.clone()
-                } else if message.event == "NNet.Game.SPingMessage" {
-                    "*pings*".to_string()
-                } else {
-                    return None;
-                };
-            let player = message.user_id.map(|value| value + 1).unwrap_or_default() as u8;
-            let time = message.game_loop as f64 / 16.0;
-            Some(ParsedReplayMessage { text, player, time })
-        })
-        .collect::<Vec<ParsedReplayMessage>>();
-
-    let parser = ParsedReplayInput {
-        file: replay_path.display().to_string(),
-        map_name,
-        extension,
-        brutal_plus,
-        result,
-        players: parsed_players,
-        difficulty: (diff_1_name, diff_2_name),
-        accurate_length,
-        form_alength: format_duration(accurate_length),
-        length: duration_to_u64(length),
-        mutators,
-        weekly,
-        messages,
-        hash: Some(calculate_replay_hash(replay_path)),
-        build: ReplayBuildInfo {
-            replay_build: parsed.base_build,
-            protocol_build,
-        },
-        date: file_date_string(replay_path)?,
-        enemy_race,
-        ext_difficulty,
-        region,
-    };
+    let detailed = parsed.detailed.clone().ok_or_else(|| {
+        DetailedReplayAnalysisError::InvalidReplayData(
+            "detailed replay parsing did not include event context".to_string(),
+        )
+    })?;
 
     Ok(ParsedReplayAnalysisInput {
-        parser,
-        events,
-        start_time,
-        end_time,
+        parser: parsed.parser,
+        events: detailed.events,
+        start_time: detailed.start_time,
+        end_time: detailed.end_time,
     })
 }
 
@@ -791,41 +1322,6 @@ fn build_stats_counter_dictionaries(
         tychus_ultimate_upgrades: dictionaries.tychus_ultimate_upgrades.clone(),
         outlaws: dictionaries.outlaws.clone(),
     }
-}
-
-fn sorted_messages_with_leave_events(
-    messages: &[ParsedReplayMessage],
-    user_leave_times: &IndexMap<i64, f64>,
-) -> Vec<ParsedReplayMessage> {
-    let mut rows = messages
-        .iter()
-        .cloned()
-        .enumerate()
-        .map(|(index, message)| (message.time, index, message))
-        .collect::<Vec<(f64, usize, ParsedReplayMessage)>>();
-
-    let base_index = rows.len();
-    for (offset, (player, leave_time)) in user_leave_times.iter().enumerate() {
-        if *player != 1 && *player != 2 {
-            continue;
-        }
-        rows.push((
-            *leave_time,
-            base_index + offset,
-            ParsedReplayMessage {
-                player: *player as u8,
-                text: "*has left the game*".to_string(),
-                time: *leave_time,
-            },
-        ));
-    }
-
-    rows.sort_by(|left, right| {
-        left.0
-            .total_cmp(&right.0)
-            .then_with(|| left.1.cmp(&right.1))
-    });
-    rows.into_iter().map(|(_, _, message)| message).collect()
 }
 
 fn switched_unit_counts(
