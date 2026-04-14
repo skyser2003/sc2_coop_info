@@ -1,10 +1,13 @@
-use crate::cache_overall_stats_generator::PlayerStatsSeries;
+use crate::cache_overall_stats_generator::{
+    CacheCountValue, CacheIconValue, CacheNumericValue, CachePlayer, CachePlayerStatsSeries,
+    CacheReplayEntry, CacheStatValue, CacheUnitStats, PlayerStatsSeries,
+};
 use crate::dictionary_data::{
     self, CacheGenerationData, DictionaryDataError, UnitAddKillsToJson, UnitNamesJson,
 };
 use crate::tauri_replay_analysis_impl::{
-    build_replay_report_detailed, ParsedReplayInput, ParsedReplayMessage, ParsedReplayPlayer,
-    PlayerPositions, ReplayReport, ReplayReportDetailedInput,
+    ParsedReplayInput, ParsedReplayMessage, ParsedReplayPlayer, PlayerPositions, ReplayReport,
+    ReplayReportDetailedInput,
 };
 use chrono::{DateTime, Local};
 use indexmap::IndexMap;
@@ -527,6 +530,55 @@ pub(crate) fn file_date_string(file: &Path) -> Result<String, std::io::Error> {
     Ok(datetime.format("%Y:%m:%d:%H:%M:%S").to_string())
 }
 
+fn normalize_player_slots(
+    players: &[ParsedReplayPlayer],
+    prepend_empty_pid0: bool,
+    player_limit: Option<usize>,
+) -> Vec<ParsedReplayPlayer> {
+    let mut normalized = Vec::with_capacity(players.len() + usize::from(prepend_empty_pid0) + 1);
+    if prepend_empty_pid0 {
+        normalized.push(empty_parsed_replay_player(0));
+    }
+    match player_limit {
+        Some(limit) => normalized.extend(players.iter().take(limit).cloned()),
+        None => normalized.extend(players.iter().cloned()),
+    }
+
+    if normalized.len() <= 2 {
+        while normalized.len() < 2 {
+            normalized.push(empty_parsed_replay_player(normalized.len() as u8));
+        }
+        normalized.push(empty_parsed_replay_player(2));
+    } else if normalized[2].pid != 2 {
+        normalized.insert(2, empty_parsed_replay_player(2));
+    }
+
+    normalized
+}
+
+pub(crate) fn normalized_cache_players_from_parser(
+    players: &[ParsedReplayPlayer],
+) -> Vec<ParsedReplayPlayer> {
+    normalize_player_slots(players, false, None)
+}
+
+pub(crate) fn normalized_cache_players_from_all_players(
+    players: &[ParsedReplayPlayer],
+) -> Vec<ParsedReplayPlayer> {
+    normalize_player_slots(players, true, None)
+}
+
+pub(crate) fn normalized_cache_messages_from_bundle(
+    parsed: &ReplayParsedInputBundle,
+) -> Vec<ParsedReplayMessage> {
+    let user_leave_times = parsed
+        .detailed
+        .as_ref()
+        .map(|context| collect_user_leave_times(&context.events))
+        .unwrap_or_default();
+    sorted_messages_with_leave_events(&parsed.parser.messages, &user_leave_times)
+}
+
 pub(crate) fn normalized_path_string(path: &Path) -> String {
     let mut normalized = PathBuf::new();
     for component in path.components() {
@@ -623,6 +675,21 @@ pub(crate) fn duration_to_u64(value: f64) -> u64 {
         0
     } else {
         value.round_ties_even() as u64
+    }
+}
+
+pub(crate) fn normalize_json_float(value: f64) -> f64 {
+    if !value.is_finite() {
+        return value;
+    }
+    if value == 0.0 {
+        return 0.0;
+    }
+    let rounded = (value * 1_000_000.0).round() / 1_000_000.0;
+    if rounded == 0.0 {
+        0.0
+    } else {
+        rounded
     }
 }
 
@@ -973,12 +1040,7 @@ fn empty_parsed_replay_player(pid: u8) -> ParsedReplayPlayer {
 }
 
 fn parser_players_from_all_players(players: &[ParsedReplayPlayer]) -> Vec<ParsedReplayPlayer> {
-    let mut parser_players = vec![empty_parsed_replay_player(0)];
-    parser_players.extend(players.iter().take(2).cloned());
-    while parser_players.len() < 3 {
-        parser_players.push(empty_parsed_replay_player(2));
-    }
-    parser_players
+    normalize_player_slots(players, true, Some(2))
 }
 
 pub(crate) fn build_replay_input_bundle(
@@ -1148,7 +1210,509 @@ pub(crate) fn parse_replay_input_bundle(
     build_replay_input_bundle(base, dictionaries).map(Some)
 }
 
-fn resolve_main_player_pid(players: &[ParsedReplayPlayer], handles: &HashSet<String>) -> i64 {
+fn empty_cache_player(pid: u8) -> CachePlayer {
+    CachePlayer {
+        pid,
+        apm: None,
+        commander: None,
+        commander_level: None,
+        commander_mastery_level: None,
+        handle: None,
+        icons: None,
+        kills: None,
+        masteries: None,
+        name: None,
+        observer: None,
+        prestige: None,
+        prestige_name: None,
+        race: None,
+        result: None,
+        units: None,
+    }
+}
+
+fn cache_commander_name(commander: &str) -> String {
+    match commander {
+        "Han & Horner" => "Horner".to_string(),
+        _ => commander.to_string(),
+    }
+}
+
+fn is_placeholder_player(player: &ParsedReplayPlayer) -> bool {
+    player.pid != 0
+        && player.name.is_empty()
+        && player.handle.is_empty()
+        && player.race.is_empty()
+        && !player.observer
+        && player.result.is_empty()
+        && player.commander.is_empty()
+        && player.commander_level == 0
+        && player.commander_mastery_level == 0
+        && player.prestige == 0
+        && player.prestige_name.is_empty()
+        && player.apm == 0
+        && player.masteries.iter().all(|value| *value == 0)
+}
+
+fn cache_player_from_parsed_player(player: &ParsedReplayPlayer) -> CachePlayer {
+    if player.pid == 0 || is_placeholder_player(player) {
+        return empty_cache_player(player.pid);
+    }
+
+    CachePlayer {
+        pid: player.pid,
+        apm: Some(player.apm),
+        commander: Some(cache_commander_name(player.commander.as_str())),
+        commander_level: Some(player.commander_level),
+        commander_mastery_level: Some(player.commander_mastery_level),
+        handle: Some(player.handle.clone()),
+        icons: None,
+        kills: None,
+        masteries: Some(player.masteries),
+        name: Some(player.name.clone()),
+        observer: Some(player.observer),
+        prestige: Some(player.prestige),
+        prestige_name: Some(player.prestige_name.clone()),
+        race: Some(player.race.clone()),
+        result: Some(player.result.clone()),
+        units: None,
+    }
+}
+
+fn cache_army_value(value: f64, force_float: bool) -> CacheStatValue {
+    if !value.is_finite() || value < 0.0 {
+        return CacheStatValue::Integer(0);
+    }
+    if force_float {
+        return CacheStatValue::Float(value);
+    }
+    if value == 0.0 {
+        return CacheStatValue::Integer(0);
+    }
+    if value.fract().abs() < 1e-9 {
+        CacheStatValue::Integer(duration_to_u64(value))
+    } else {
+        CacheStatValue::Float(value)
+    }
+}
+
+fn cache_numeric_value(value: f64, force_float: bool) -> CacheNumericValue {
+    if force_float {
+        CacheNumericValue::Float(value)
+    } else if !value.is_finite() || value <= 0.0 {
+        CacheNumericValue::Integer(0)
+    } else if value.fract().abs() < 1e-9 {
+        CacheNumericValue::Integer(duration_to_u64(value))
+    } else {
+        CacheNumericValue::Float(value)
+    }
+}
+
+fn convert_player_stats(
+    player_stats: &BTreeMap<u8, PlayerStatsSeries>,
+) -> BTreeMap<u8, CachePlayerStatsSeries> {
+    let mut out = BTreeMap::new();
+    for (player_id, stats) in player_stats {
+        out.insert(
+            *player_id,
+            CachePlayerStatsSeries {
+                name: stats.name.clone(),
+                supply: stats.supply.clone(),
+                mining: stats.mining.clone(),
+                army: stats
+                    .army
+                    .iter()
+                    .enumerate()
+                    .map(|(index, value)| {
+                        cache_army_value(*value, stats.army_force_float_indices.contains(&index))
+                    })
+                    .collect(),
+                killed: stats
+                    .killed
+                    .iter()
+                    .map(|value| duration_to_u64(*value))
+                    .collect(),
+            },
+        );
+    }
+    out
+}
+
+fn convert_numeric_units(
+    units: &BTreeMap<String, UnitStats>,
+    hidden_created_lost: Option<&HashSet<String>>,
+) -> BTreeMap<String, CacheUnitStats> {
+    let mut out = BTreeMap::new();
+    for (unit_name, (created, lost, kills, kill_fraction)) in units {
+        let hide_counts =
+            hidden_created_lost.is_some_and(|values| values.contains(unit_name.as_str()));
+        out.insert(
+            unit_name.clone(),
+            CacheUnitStats(
+                if hide_counts {
+                    CacheCountValue::Hidden("-".to_string())
+                } else {
+                    CacheCountValue::Count(*created)
+                },
+                if hide_counts {
+                    CacheCountValue::Hidden("-".to_string())
+                } else {
+                    CacheCountValue::Count(*lost)
+                },
+                *kills,
+                *kill_fraction,
+            ),
+        );
+    }
+    out
+}
+
+fn convert_icon_map(
+    icons: &BTreeMap<String, u64>,
+    outlaw_order: Option<Vec<String>>,
+) -> BTreeMap<String, CacheIconValue> {
+    let mut out = BTreeMap::new();
+    for (icon_key, count) in icons {
+        out.insert(icon_key.clone(), CacheIconValue::Count(*count));
+    }
+    if let Some(order) = outlaw_order {
+        out.insert("outlaws".to_string(), CacheIconValue::Order(order));
+    }
+    out
+}
+
+fn cache_entry_from_parser_projection(
+    parser: &ParsedReplayInput,
+    players: &[ParsedReplayPlayer],
+    messages: &[ParsedReplayMessage],
+    accurate_length_force_float: bool,
+    enemy_race_present: bool,
+    detailed_fallback: bool,
+) -> CacheReplayEntry {
+    let accurate_length = normalize_json_float(parser.accurate_length);
+    let accurate_length = if detailed_fallback {
+        CacheNumericValue::Float(accurate_length)
+    } else {
+        cache_numeric_value(accurate_length, accurate_length_force_float)
+    };
+    let enemy_race = if detailed_fallback {
+        Some(parser.enemy_race.clone())
+    } else {
+        enemy_race_present.then_some(parser.enemy_race.clone())
+    };
+
+    CacheReplayEntry {
+        accurate_length,
+        amon_units: None,
+        bonus: None,
+        brutal_plus: parser.brutal_plus,
+        build: parser.build.clone(),
+        comp: None,
+        date: parser.date.clone(),
+        difficulty: parser.difficulty.clone(),
+        enemy_race,
+        ext_difficulty: parser.ext_difficulty.clone(),
+        extension: parser.extension,
+        file: normalized_path_string(Path::new(&parser.file)),
+        form_alength: parser.form_alength.clone(),
+        detailed_analysis: false,
+        hash: parser.hash.clone().unwrap_or_default(),
+        length: parser.length,
+        map_name: parser.map_name.clone(),
+        messages: messages.to_vec(),
+        mutators: parser.mutators.clone(),
+        player_stats: None,
+        players: players
+            .iter()
+            .map(cache_player_from_parsed_player)
+            .collect(),
+        region: parser.region.clone(),
+        result: parser.result.clone(),
+        weekly: parser.weekly,
+    }
+}
+
+pub(crate) fn build_basic_cache_entry(parsed: &ReplayParsedInputBundle) -> CacheReplayEntry {
+    let players = normalized_cache_players_from_all_players(&parsed.all_players);
+    let messages = normalized_cache_messages_from_bundle(parsed);
+    cache_entry_from_parser_projection(
+        &parsed.parser,
+        &players,
+        &messages,
+        parsed.accurate_length_force_float,
+        parsed.enemy_race_present,
+        false,
+    )
+}
+
+fn fallback_cache_entry_from_parser(parser: &ParsedReplayInput) -> CacheReplayEntry {
+    let players = normalized_cache_players_from_parser(&parser.players);
+    cache_entry_from_parser_projection(
+        parser,
+        &players,
+        &parser.messages,
+        false,
+        !parser.enemy_race.is_empty(),
+        true,
+    )
+}
+
+fn apply_basic_cache_overrides(entry: &mut CacheReplayEntry, basic: &CacheReplayEntry) {
+    entry.brutal_plus = basic.brutal_plus;
+    entry.build = basic.build.clone();
+    entry.date = basic.date.clone();
+    entry.difficulty = basic.difficulty.clone();
+    entry.enemy_race = basic.enemy_race.clone();
+    entry.ext_difficulty = basic.ext_difficulty.clone();
+    entry.extension = basic.extension;
+    entry.file = basic.file.clone();
+    entry.hash = basic.hash.clone();
+    entry.length = basic.length;
+    entry.map_name = basic.map_name.clone();
+    entry.result = basic.result.clone();
+}
+
+fn apply_detailed_player_overlay(
+    players: &mut Vec<CachePlayer>,
+    report: &ReplayReport,
+    hidden_created_lost: &HashSet<String>,
+) {
+    *players = players
+        .iter()
+        .take(3)
+        .cloned()
+        .collect::<Vec<CachePlayer>>();
+    while players.len() < 3 {
+        players.push(empty_cache_player(players.len() as u8));
+    }
+
+    let main_index = match report.positions.main {
+        1 | 2 => usize::from(report.positions.main),
+        _ => 1,
+    };
+
+    for player_index in [1_usize, 2_usize] {
+        let use_main = player_index == main_index;
+        let player = players
+            .get_mut(player_index)
+            .expect("players vector must contain pids 0, 1, and 2");
+        player.kills = Some(if use_main {
+            report.main_kills
+        } else {
+            report.ally_kills
+        });
+        let commander_name = if use_main {
+            report.main_commander.as_str()
+        } else {
+            report.ally_commander.as_str()
+        };
+        player.icons = Some(convert_icon_map(
+            if use_main {
+                &report.main_icons
+            } else {
+                &report.ally_icons
+            },
+            if commander_name == "Tychus" {
+                Some(report.outlaw_order.clone().unwrap_or_default())
+            } else {
+                None
+            },
+        ));
+        player.units = Some(convert_numeric_units(
+            if use_main {
+                &report.main_units
+            } else {
+                &report.ally_units
+            },
+            Some(hidden_created_lost),
+        ));
+    }
+}
+
+pub(crate) fn build_cache_entry_from_report(
+    report: &ReplayReport,
+    basic: Option<&CacheReplayEntry>,
+    hidden_created_lost: &HashSet<String>,
+) -> CacheReplayEntry {
+    let mut entry = fallback_cache_entry_from_parser(&report.parser);
+    if let Some(basic) = basic {
+        apply_basic_cache_overrides(&mut entry, basic);
+    }
+    entry.amon_units = Some(convert_numeric_units(&report.amon_units, None));
+    entry.bonus = Some(report.bonus.clone());
+    entry.comp = Some(report.comp.clone());
+    entry.player_stats = Some(convert_player_stats(&report.player_stats));
+    apply_detailed_player_overlay(&mut entry.players, report, hidden_created_lost);
+    entry.detailed_analysis = true;
+    entry
+}
+
+fn unknown_replay_player(pid: u8) -> ParsedReplayPlayer {
+    ParsedReplayPlayer {
+        pid,
+        name: "Unknown".to_string(),
+        handle: String::new(),
+        race: String::new(),
+        observer: false,
+        result: String::new(),
+        commander: "Unknown".to_string(),
+        commander_level: 0,
+        commander_mastery_level: 0,
+        prestige: 0,
+        prestige_name: String::new(),
+        apm: 0,
+        masteries: [0, 0, 0, 0, 0, 0],
+    }
+}
+
+fn replay_player_or_unknown(players: &[ParsedReplayPlayer], pid: u8) -> ParsedReplayPlayer {
+    find_replay_player(players, pid)
+        .cloned()
+        .unwrap_or_else(|| unknown_replay_player(pid))
+}
+
+fn normalized_report_commander_name(raw: &str) -> String {
+    if raw.trim().is_empty() {
+        "Unknown".to_string()
+    } else {
+        raw.to_string()
+    }
+}
+
+fn empty_player_stats_series(name: String) -> PlayerStatsSeries {
+    PlayerStatsSeries {
+        name,
+        supply: Vec::new(),
+        mining: Vec::new(),
+        army: Vec::new(),
+        killed: Vec::new(),
+        army_force_float_indices: Default::default(),
+    }
+}
+
+fn report_player_stats_with_names(
+    incoming: Option<BTreeMap<u8, PlayerStatsSeries>>,
+    main_name: &str,
+    ally_name: &str,
+) -> BTreeMap<u8, PlayerStatsSeries> {
+    let mut player_stats = incoming.unwrap_or_default();
+    player_stats
+        .entry(1)
+        .or_insert_with(|| empty_player_stats_series(main_name.to_string()))
+        .name = main_name.to_string();
+    player_stats
+        .entry(2)
+        .or_insert_with(|| empty_player_stats_series(ally_name.to_string()))
+        .name = ally_name.to_string();
+    player_stats
+}
+
+fn report_main_player_pid(
+    detailed_input: &ReplayReportDetailedInput,
+    replay: &ParsedReplayInput,
+    main_player_handles: &HashSet<String>,
+) -> u8 {
+    if let Some(positions) = detailed_input.positions.as_ref() {
+        if matches!(positions.main, 1 | 2) {
+            return positions.main;
+        }
+    }
+
+    if let Some(main_position) = detailed_input.main_position {
+        if matches!(main_position, 1 | 2) {
+            return main_position;
+        }
+    }
+
+    selected_main_player_pid(&replay.players, main_player_handles)
+}
+
+pub(crate) fn build_replay_report_from_detailed_input(
+    replay_file: &str,
+    detailed_input: &ReplayReportDetailedInput,
+    main_player_handles: &HashSet<String>,
+) -> ReplayReport {
+    let replay = &detailed_input.parser;
+    let main_pid = report_main_player_pid(detailed_input, replay, main_player_handles);
+    let ally_pid = if main_pid == 1 { 2 } else { 1 };
+    let main_player = replay_player_or_unknown(&replay.players, main_pid);
+    let ally_player = replay_player_or_unknown(&replay.players, ally_pid);
+    let player_stats = report_player_stats_with_names(
+        detailed_input.player_stats.clone(),
+        &main_player.name,
+        &ally_player.name,
+    );
+
+    let report_length = detailed_input.length.unwrap_or(replay.accurate_length);
+    let parser_accurate_length =
+        if replay.accurate_length.is_finite() && replay.accurate_length > 0.0 {
+            replay.accurate_length
+        } else {
+            report_length
+        };
+    let parser_hash = replay
+        .hash
+        .clone()
+        .or_else(|| detailed_input.replay_hash.clone());
+    let mut parser = replay.clone();
+    parser.accurate_length = parser_accurate_length;
+    parser.hash = parser_hash;
+
+    ReplayReport {
+        file: replay_file.to_string(),
+        replaydata: true,
+        map_name: replay.map_name.clone(),
+        extension: replay.extension,
+        brutal_plus: replay.brutal_plus,
+        result: replay.result.clone(),
+        main: main_player.name.clone(),
+        ally: ally_player.name.clone(),
+        main_apm: main_player.apm,
+        ally_apm: ally_player.apm,
+        positions: PlayerPositions {
+            main: main_pid,
+            ally: ally_pid,
+        },
+        difficulty: replay.difficulty.1.clone(),
+        main_icons: detailed_input.main_icons.clone().unwrap_or_default(),
+        ally_icons: detailed_input.ally_icons.clone().unwrap_or_default(),
+        player_stats,
+        bonus: detailed_input.bonus.clone().unwrap_or_default(),
+        comp: detailed_input.comp.clone().unwrap_or_default(),
+        length: report_length,
+        parser,
+        mutators: replay.mutators.clone(),
+        weekly: replay.weekly,
+        main_commander: normalized_report_commander_name(main_player.commander.as_str()),
+        main_commander_level: main_player.commander_level,
+        main_masteries: main_player.masteries,
+        main_kills: detailed_input.main_kills.unwrap_or(0),
+        main_prestige: main_player.prestige_name,
+        ally_commander: normalized_report_commander_name(ally_player.commander.as_str()),
+        ally_commander_level: ally_player.commander_level,
+        ally_masteries: ally_player.masteries,
+        ally_kills: detailed_input.ally_kills.unwrap_or(0),
+        ally_prestige: ally_player.prestige_name,
+        main_units: detailed_input.main_units.clone().unwrap_or_default(),
+        ally_units: detailed_input.ally_units.clone().unwrap_or_default(),
+        amon_units: detailed_input.amon_units.clone().unwrap_or_default(),
+        outlaw_order: detailed_input.outlaw_order.clone(),
+    }
+}
+
+pub(crate) fn build_replay_report_from_parser(
+    replay_file: &str,
+    replay: &ParsedReplayInput,
+    main_player_handles: &HashSet<String>,
+) -> ReplayReport {
+    let input = ReplayReportDetailedInput::from_parser(replay.clone());
+    build_replay_report_from_detailed_input(replay_file, &input, main_player_handles)
+}
+
+pub(crate) fn selected_main_player_pid(
+    players: &[ParsedReplayPlayer],
+    handles: &HashSet<String>,
+) -> u8 {
     if handles.is_empty() {
         return 1;
     }
@@ -1157,7 +1721,7 @@ fn resolve_main_player_pid(players: &[ParsedReplayPlayer], handles: &HashSet<Str
         .iter()
         .filter(|player| player.pid == 1 || player.pid == 2)
         .find(|player| handles.contains(player.handle.as_str()))
-        .map(|player| i64::from(player.pid))
+        .map(|player| player.pid)
         .unwrap_or(1)
 }
 
@@ -1729,7 +2293,10 @@ fn analyze_replay_file_impl(
         end_time,
     } = parsed_input;
 
-    let main_player = resolve_main_player_pid(&parser.players, main_player_handles);
+    let main_player = i64::from(selected_main_player_pid(
+        &parser.players,
+        main_player_handles,
+    ));
     let ally_player = if main_player == 2 { 1 } else { 2 };
 
     let main_player_row = find_replay_player(&parser.players, main_player as u8);
@@ -2420,7 +2987,7 @@ fn analyze_replay_file_impl(
         detailed_input.outlaw_order = Some(outlaw_order);
     }
 
-    Ok(build_replay_report_detailed(
+    Ok(build_replay_report_from_detailed_input(
         &detailed_input.parser.file,
         &detailed_input,
         main_player_handles,

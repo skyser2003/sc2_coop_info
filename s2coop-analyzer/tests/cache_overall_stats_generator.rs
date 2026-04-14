@@ -1,7 +1,6 @@
 use s2coop_analyzer::cache_overall_stats_generator::{
-    load_existing_detailed_analysis_cache, partition_cached_candidates,
-    persist_simple_analysis_cache, CacheNumericValue, CachePlayer, CacheReplayEntry,
-    CandidateReplay, ProtocolBuildValue, ReplayBuildInfo, ReplayMessage,
+    load_existing_detailed_analysis_cache, persist_simple_analysis_cache, CacheNumericValue,
+    CachePlayer, CacheReplayEntry, ProtocolBuildValue, ReplayBuildInfo, ReplayMessage,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -72,13 +71,6 @@ fn sample_cached_entry(hash: &str, file: &str, detailed_analysis: bool) -> Cache
     }
 }
 
-fn sample_candidate(hash: &str, file: &str) -> CandidateReplay {
-    CandidateReplay {
-        path: PathBuf::from(file),
-        basic: sample_cached_entry(hash, file, false),
-    }
-}
-
 fn unique_temp_path(file_name: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -93,7 +85,7 @@ fn unique_temp_path(file_name: &str) -> PathBuf {
 }
 
 #[test]
-fn existing_detailed_analysis_cache_reuses_matching_hashes_only() {
+fn load_existing_detailed_analysis_cache_only_keeps_detailed_entries() {
     let cache_path = unique_temp_path("cache_overall_stats.json");
     let cache_dir = cache_path
         .parent()
@@ -113,31 +105,6 @@ fn existing_detailed_analysis_cache_reuses_matching_hashes_only() {
     assert_eq!(loaded_cache.len(), 1);
     assert!(loaded_cache.contains_key("reuse-hash"));
     assert!(!loaded_cache.contains_key("pending-hash"));
-
-    let (reused_entries, pending_candidates) = partition_cached_candidates(
-        vec![
-            sample_candidate("reuse-hash", "current-path.SC2Replay"),
-            sample_candidate("pending-hash", "needs-analysis.SC2Replay"),
-        ],
-        &loaded_cache,
-    );
-
-    assert_eq!(reused_entries.len(), 1);
-    assert_eq!(pending_candidates.len(), 1);
-    let reused_entry = reused_entries
-        .get("reuse-hash")
-        .expect("reused entry should be keyed by replay hash");
-    assert_eq!(reused_entry.hash, "reuse-hash");
-    assert_eq!(reused_entry.file, "current-path.SC2Replay");
-    assert!(reused_entry.detailed_analysis);
-    let pending_candidate = pending_candidates
-        .get("pending-hash")
-        .expect("pending candidate should be keyed by replay hash");
-    assert_eq!(pending_candidate.basic.hash, "pending-hash");
-    assert_eq!(
-        pending_candidate.path,
-        PathBuf::from("needs-analysis.SC2Replay")
-    );
 
     let _ = fs::remove_file(&cache_path);
     let _ = fs::remove_dir_all(&cache_dir);

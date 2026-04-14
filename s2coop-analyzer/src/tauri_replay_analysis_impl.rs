@@ -1,4 +1,7 @@
 use crate::cache_overall_stats_generator::{PlayerStatsSeries, ReplayBuildInfo};
+use crate::detailed_replay_analysis::{
+    build_replay_report_from_detailed_input, build_replay_report_from_parser,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 
@@ -158,169 +161,12 @@ impl ReplayReportDetailedInput {
     }
 }
 
-fn find_main_player_pid(replay: &ParsedReplayInput, main_player_handles: &HashSet<String>) -> u8 {
-    if main_player_handles.is_empty() {
-        return 1;
-    }
-
-    replay
-        .players
-        .iter()
-        .filter(|player| player.pid == 1 || player.pid == 2)
-        .find(|player| main_player_handles.contains(player.handle.as_str()))
-        .map(|player| player.pid)
-        .unwrap_or(1)
-}
-
-fn find_player_or_unknown(replay: &ParsedReplayInput, pid: u8) -> ParsedReplayPlayer {
-    if let Some(found) = replay.players.iter().find(|player| player.pid == pid) {
-        return found.clone();
-    }
-
-    ParsedReplayPlayer {
-        pid,
-        name: "Unknown".to_string(),
-        handle: String::new(),
-        race: String::new(),
-        observer: false,
-        result: String::new(),
-        commander: "Unknown".to_string(),
-        commander_level: 0,
-        commander_mastery_level: 0,
-        prestige: 0,
-        prestige_name: String::new(),
-        apm: 0,
-        masteries: [0, 0, 0, 0, 0, 0],
-    }
-}
-
-fn normalized_commander_name(raw: &str) -> String {
-    if raw.trim().is_empty() {
-        "Unknown".to_string()
-    } else {
-        raw.to_string()
-    }
-}
-
-fn empty_player_stats_series(name: String) -> PlayerStatsSeries {
-    PlayerStatsSeries {
-        name,
-        supply: Vec::new(),
-        mining: Vec::new(),
-        army: Vec::new(),
-        killed: Vec::new(),
-        army_force_float_indices: Default::default(),
-    }
-}
-
-fn resolve_main_player_pid(
-    detailed_input: &ReplayReportDetailedInput,
-    replay: &ParsedReplayInput,
-    main_player_handles: &HashSet<String>,
-) -> u8 {
-    if let Some(positions) = detailed_input.positions.as_ref() {
-        if matches!(positions.main, 1 | 2) {
-            return positions.main;
-        }
-    }
-
-    if let Some(main_position) = detailed_input.main_position {
-        if matches!(main_position, 1 | 2) {
-            return main_position;
-        }
-    }
-
-    find_main_player_pid(replay, main_player_handles)
-}
-
-fn player_stats_with_names(
-    incoming: Option<BTreeMap<u8, PlayerStatsSeries>>,
-    main_name: &str,
-    ally_name: &str,
-) -> BTreeMap<u8, PlayerStatsSeries> {
-    let mut player_stats = incoming.unwrap_or_default();
-    player_stats
-        .entry(1)
-        .or_insert_with(|| empty_player_stats_series(main_name.to_string()))
-        .name = main_name.to_string();
-    player_stats
-        .entry(2)
-        .or_insert_with(|| empty_player_stats_series(ally_name.to_string()))
-        .name = ally_name.to_string();
-    player_stats
-}
-
 pub fn build_replay_report_detailed(
     replay_file: &str,
     detailed_input: &ReplayReportDetailedInput,
     main_player_handles: &HashSet<String>,
 ) -> ReplayReport {
-    let replay = &detailed_input.parser;
-    let main_pid = resolve_main_player_pid(detailed_input, replay, main_player_handles);
-    let ally_pid = if main_pid == 1 { 2 } else { 1 };
-    let main_player = find_player_or_unknown(replay, main_pid);
-    let ally_player = find_player_or_unknown(replay, ally_pid);
-    let player_stats = player_stats_with_names(
-        detailed_input.player_stats.clone(),
-        &main_player.name,
-        &ally_player.name,
-    );
-
-    let report_length = detailed_input.length.unwrap_or(replay.accurate_length);
-    let parser_accurate_length =
-        if replay.accurate_length.is_finite() && replay.accurate_length > 0.0 {
-            replay.accurate_length
-        } else {
-            report_length
-        };
-    let parser_hash = replay
-        .hash
-        .clone()
-        .or_else(|| detailed_input.replay_hash.clone());
-    let mut parser = replay.clone();
-    parser.accurate_length = parser_accurate_length;
-    parser.hash = parser_hash;
-
-    ReplayReport {
-        file: replay_file.to_string(),
-        replaydata: true,
-        map_name: replay.map_name.clone(),
-        extension: replay.extension,
-        brutal_plus: replay.brutal_plus,
-        result: replay.result.clone(),
-        main: main_player.name.clone(),
-        ally: ally_player.name.clone(),
-        main_apm: main_player.apm,
-        ally_apm: ally_player.apm,
-        positions: PlayerPositions {
-            main: main_pid,
-            ally: ally_pid,
-        },
-        difficulty: replay.difficulty.1.clone(),
-        main_icons: detailed_input.main_icons.clone().unwrap_or_default(),
-        ally_icons: detailed_input.ally_icons.clone().unwrap_or_default(),
-        player_stats,
-        bonus: detailed_input.bonus.clone().unwrap_or_default(),
-        comp: detailed_input.comp.clone().unwrap_or_default(),
-        length: report_length,
-        parser,
-        mutators: replay.mutators.clone(),
-        weekly: replay.weekly,
-        main_commander: normalized_commander_name(main_player.commander.as_str()),
-        main_commander_level: main_player.commander_level,
-        main_masteries: main_player.masteries,
-        main_kills: detailed_input.main_kills.unwrap_or(0),
-        main_prestige: main_player.prestige_name,
-        ally_commander: normalized_commander_name(ally_player.commander.as_str()),
-        ally_commander_level: ally_player.commander_level,
-        ally_masteries: ally_player.masteries,
-        ally_kills: detailed_input.ally_kills.unwrap_or(0),
-        ally_prestige: ally_player.prestige_name,
-        main_units: detailed_input.main_units.clone().unwrap_or_default(),
-        ally_units: detailed_input.ally_units.clone().unwrap_or_default(),
-        amon_units: detailed_input.amon_units.clone().unwrap_or_default(),
-        outlaw_order: detailed_input.outlaw_order.clone(),
-    }
+    build_replay_report_from_detailed_input(replay_file, detailed_input, main_player_handles)
 }
 
 pub fn build_replay_report(
@@ -328,6 +174,5 @@ pub fn build_replay_report(
     replay: &ParsedReplayInput,
     main_player_handles: &HashSet<String>,
 ) -> ReplayReport {
-    let input = ReplayReportDetailedInput::from_parser(replay.clone());
-    build_replay_report_detailed(replay_file, &input, main_player_handles)
+    build_replay_report_from_parser(replay_file, replay, main_player_handles)
 }
