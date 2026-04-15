@@ -1,8 +1,7 @@
 use notify::{Config as NotifyConfig, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use rfd::FileDialog;
 use s2coop_analyzer::cache_overall_stats_generator::{
-    generate_cache_overall_stats_with_runtime_and_logger, write_cache_file, CacheReplayEntry,
-    GenerateCacheConfig, GenerateCacheRuntimeOptions, GenerateCacheStopController,
+    CacheReplayEntry, GenerateCacheConfig, GenerateCacheRuntimeOptions, GenerateCacheStopController,
 };
 use s2coop_analyzer::detailed_replay_analysis::calculate_replay_hash;
 use s2coop_analyzer::dictionary_data;
@@ -2170,11 +2169,11 @@ fn generate_detailed_analysis_cache(
         }
     };
 
-    generate_cache_overall_stats_with_runtime_and_logger(
-        &GenerateCacheConfig {
-            account_dir,
-            output_file: output_file.clone(),
-        },
+    GenerateCacheConfig {
+        account_dir,
+        output_file: output_file.clone(),
+    }
+    .generate_with_runtime_and_logger(
         &logger,
         &GenerateCacheRuntimeOptions {
             worker_count: Some(worker_count),
@@ -2837,10 +2836,7 @@ fn spawn_analysis_task(
         if include_detailed {
             let cache_path = get_cache_path();
             if let Err(error) =
-                s2coop_analyzer::cache_overall_stats_generator::persist_simple_analysis_cache(
-                    &final_cache_entries,
-                    &cache_path,
-                )
+                CacheReplayEntry::persist_simple_analysis(&final_cache_entries, &cache_path)
             {
                 crate::sco_log!("[SCO/stats] failed to persist final merged cache: {error}");
             }
@@ -3366,7 +3362,7 @@ pub fn persist_detailed_cache_entry_to_path(
             .then_with(|| right.file.cmp(&left.file))
     });
 
-    write_cache_file(&entries, cache_path).map_err(|err| err.to_string())
+    CacheReplayEntry::write_entries(&entries, cache_path).map_err(|err| err.to_string())
 }
 
 fn persist_detailed_cache_entry(entry: &CacheReplayEntry) -> Result<(), String> {

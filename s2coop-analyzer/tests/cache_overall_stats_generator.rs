@@ -1,6 +1,6 @@
 use s2coop_analyzer::cache_overall_stats_generator::{
-    load_existing_detailed_analysis_cache, persist_simple_analysis_cache, CacheNumericValue,
-    CachePlayer, CacheReplayEntry, ProtocolBuildValue, ReplayBuildInfo, ReplayMessage,
+    CacheNumericValue, CachePlayer, CacheReplayEntry, ProtocolBuildValue, ReplayBuildInfo,
+    ReplayMessage,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -101,7 +101,7 @@ fn load_existing_detailed_analysis_cache_only_keeps_detailed_entries() {
         serde_json::to_vec(&cache_entries).expect("failed to serialize temp cache entries");
     fs::write(&cache_path, payload).expect("failed to write temp cache file");
 
-    let loaded_cache = load_existing_detailed_analysis_cache(&cache_path, None);
+    let loaded_cache = CacheReplayEntry::load_existing_detailed_analysis(&cache_path, None);
     assert_eq!(loaded_cache.len(), 1);
     assert!(loaded_cache.contains_key("reuse-hash"));
     assert!(!loaded_cache.contains_key("pending-hash"));
@@ -126,7 +126,7 @@ fn persist_simple_analysis_cache_preserves_existing_simple_entries() {
     fs::write(&cache_path, payload).expect("failed to write cache file");
 
     let new_simple = sample_cached_entry("simple-new", "new.SC2Replay", false);
-    persist_simple_analysis_cache(std::slice::from_ref(&new_simple), &cache_path)
+    CacheReplayEntry::persist_simple_analysis(std::slice::from_ref(&new_simple), &cache_path)
         .expect("simple cache persistence should succeed");
 
     let persisted_payload = fs::read(&cache_path).expect("cache file should exist");

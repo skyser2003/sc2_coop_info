@@ -1,6 +1,6 @@
 use s2coop_analyzer::cache_overall_stats_generator::{ProtocolBuildValue, ReplayBuildInfo};
 use s2coop_analyzer::tauri_replay_analysis_impl::{
-    build_replay_report, ParsedReplayInput, ParsedReplayMessage, ParsedReplayPlayer,
+    ParsedReplayInput, ParsedReplayMessage, ParsedReplayPlayer, ReplayReport,
 };
 use serde_json::Value;
 use std::collections::{BTreeSet, HashSet};
@@ -68,7 +68,7 @@ fn replay_report_has_expected_top_level_schema() {
     };
 
     let main_handles = HashSet::from(["1-S2-1-111".to_string()]);
-    let report = build_replay_report(&replay.file, &replay, &main_handles);
+    let report = ReplayReport::from_parser(&replay.file, &replay, &main_handles);
 
     let report_json = serde_json::to_value(&report).expect("report should serialize");
     let keys = object_keys(&report_json);
@@ -144,7 +144,7 @@ fn replay_report_uses_handle_to_choose_main_player_position() {
     };
 
     let main_handles = HashSet::from(["2-S2-1-222".to_string()]);
-    let report = build_replay_report(&replay.file, &replay, &main_handles);
+    let report = ReplayReport::from_parser(&replay.file, &replay, &main_handles);
     let json = serde_json::to_value(report).expect("report should serialize");
 
     let positions = json

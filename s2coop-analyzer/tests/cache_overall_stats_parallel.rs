@@ -1,6 +1,4 @@
-use s2coop_analyzer::cache_overall_stats_generator::{
-    generate_cache_overall_stats, CacheReplayEntry, GenerateCacheConfig,
-};
+use s2coop_analyzer::cache_overall_stats_generator::{CacheReplayEntry, GenerateCacheConfig};
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
@@ -32,15 +30,17 @@ fn generate_cache_parallel_runs_are_deterministic() {
     let first_output = temp_dir.path().join("cache_overall_stats_first");
     let second_output = temp_dir.path().join("cache_overall_stats_second");
 
-    let first_summary = generate_cache_overall_stats(&GenerateCacheConfig {
+    let first_summary = GenerateCacheConfig {
         account_dir: account_dir.clone(),
         output_file: first_output.clone(),
-    })
+    }
+    .generate()
     .expect("first cache generation should succeed");
-    let second_summary = generate_cache_overall_stats(&GenerateCacheConfig {
+    let second_summary = GenerateCacheConfig {
         account_dir,
         output_file: second_output.clone(),
-    })
+    }
+    .generate()
     .expect("second cache generation should succeed");
 
     assert_eq!(first_summary.scanned_replays, 0);

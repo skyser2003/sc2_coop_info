@@ -2,10 +2,7 @@ use crate::cache_overall_stats_detailed_analysis::{
     run_test_cache_overall_stats_detailed_analysis, TestCacheOverallStatsDetailedAnalysisArgs,
     TestCacheOverallStatsDetailedAnalysisError,
 };
-use crate::cache_overall_stats_generator::{
-    generate_cache_overall_stats, generate_cache_overall_stats_with_logger, GenerateCacheConfig,
-    GenerateCacheError,
-};
+use crate::cache_overall_stats_generator::{GenerateCacheConfig, GenerateCacheError};
 use std::path::PathBuf;
 use thiserror::Error;
 
@@ -191,9 +188,9 @@ fn run_cli_impl(
                 output_file: args.output_file,
             };
             let summary = if let Some(logger) = logger {
-                generate_cache_overall_stats_with_logger(&config, logger)?
+                config.generate_with_logger(logger)?
             } else {
-                generate_cache_overall_stats(&config)?
+                config.generate()?
             };
 
             Ok(format!(

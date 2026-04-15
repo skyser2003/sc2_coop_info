@@ -1,6 +1,4 @@
-use s2coop_analyzer::cache_overall_stats_generator::{
-    generate_cache_overall_stats, pretty_output_path, GenerateCacheConfig,
-};
+use s2coop_analyzer::cache_overall_stats_generator::{pretty_output_path, GenerateCacheConfig};
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
@@ -26,10 +24,11 @@ fn generate_cache_writes_pretty_sibling_file() {
     write_replay_file(&account_dir.join("1-S2-1-42").join("single.SC2Replay"));
 
     let output_file = temp_dir.path().join("cache_overall_stats");
-    let summary = generate_cache_overall_stats(&GenerateCacheConfig {
+    let summary = GenerateCacheConfig {
         account_dir,
         output_file: output_file.clone(),
-    })
+    }
+    .generate()
     .expect("cache generation should succeed");
 
     let pretty_file = pretty_output_path(&summary.output_file);

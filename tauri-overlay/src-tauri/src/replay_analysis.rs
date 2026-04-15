@@ -1,9 +1,8 @@
 use chrono::{Local, NaiveDate};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use s2coop_analyzer::cache_overall_stats_generator::{
-    cache_entry_from_report, parse_basic_cache_entry, pretty_output_path, write_cache_file,
-    write_pretty_cache_file, CacheIconValue, CacheNumericValue, CachePlayer, CacheReplayEntry,
-    CacheUnitStats, ReplayMessage,
+    pretty_output_path, write_pretty_cache_file, CacheIconValue, CacheNumericValue, CachePlayer,
+    CacheReplayEntry, CacheUnitStats, ReplayMessage,
 };
 use s2coop_analyzer::detailed_replay_analysis::{
     analyze_replay_file, cache_hidden_created_lost_units,
@@ -773,7 +772,7 @@ fn recover_cache_entries_from_temp(cache_path: &Path, log_label: &str) -> Vec<Ca
             .then_with(|| right.file.cmp(&left.file))
     });
 
-    if let Err(error) = write_cache_file(&entries, cache_path) {
+    if let Err(error) = CacheReplayEntry::write_entries(&entries, cache_path) {
         crate::sco_log!(
             "[SCO/cache] failed to persist recovered cache '{}': {error}",
             cache_path.display()
@@ -2938,7 +2937,7 @@ impl ReplayAnalysis {
         match analyze_replay_file(path, &empty_handles) {
             Ok(report) => {
                 let replay = replay_info_from_report(path, &report).sanitized();
-                let entry = cache_entry_from_report(&report, &hidden_created_lost);
+                let entry = CacheReplayEntry::from_report(&report, &hidden_created_lost);
                 crate::sco_log!(
                     "[SCO/replay] parsed file='{}' for cache persistence in {}ms",
                     file_label,
@@ -2961,7 +2960,7 @@ impl ReplayAnalysis {
     }
 
     pub fn summarize_replay_lightweight(path: &Path) -> ReplayInfo {
-        parse_basic_cache_entry(path)
+        CacheReplayEntry::parse_basic(path)
             .map(|entry| replay_info_from_cache_entry(&entry).sanitized())
             .unwrap_or_else(|| unparsed_replay(path))
     }
@@ -3087,7 +3086,7 @@ impl ReplayAnalysis {
                     .map(|(_index, path)| {
                         let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                             let replay = Self::summarize_replay_lightweight(&path);
-                            let cache_entry = parse_basic_cache_entry(&path);
+                            let cache_entry = CacheReplayEntry::parse_basic(&path);
                             (replay, cache_entry)
                         }));
                         let (replay, cache_entry) = match parsed {
@@ -3212,10 +3211,7 @@ impl ReplayAnalysis {
             simple_cache_entries.len()
         );
         if let Err(error) =
-            s2coop_analyzer::cache_overall_stats_generator::persist_simple_analysis_cache(
-                &simple_cache_entries,
-                &get_cache_path(),
-            )
+            CacheReplayEntry::persist_simple_analysis(&simple_cache_entries, &get_cache_path())
         {
             crate::sco_log!("[SCO/cache] failed to persist simple analysis cache batch: {error}");
         }

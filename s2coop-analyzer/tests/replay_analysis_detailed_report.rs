@@ -1,7 +1,7 @@
 use s2coop_analyzer::cache_overall_stats_generator::{ProtocolBuildValue, ReplayBuildInfo};
 use s2coop_analyzer::tauri_replay_analysis_impl::{
-    build_replay_report, build_replay_report_detailed, ParsedReplayInput, ParsedReplayMessage,
-    ParsedReplayPlayer, PlayerPositions, ReplayReportDetailedInput,
+    ParsedReplayInput, ParsedReplayMessage, ParsedReplayPlayer, PlayerPositions, ReplayReport,
+    ReplayReportDetailedInput,
 };
 use std::collections::{BTreeMap, HashSet};
 
@@ -77,7 +77,8 @@ fn detailed_builder_applies_positions_hash_length_and_payload_fields() {
         (9, 10, 11, 12.0),
     )]));
 
-    let report = build_replay_report_detailed(&detailed.parser.file, &detailed, &HashSet::new());
+    let report =
+        ReplayReport::from_detailed_input(&detailed.parser.file, &detailed, &HashSet::new());
 
     assert_eq!(report.positions.main, 2);
     assert_eq!(report.positions.ally, 1);
@@ -120,8 +121,8 @@ fn detailed_builder_defaults_match_default_builder() {
     let main_handles = HashSet::from(["1-S2-1-111".to_string()]);
     let detailed = ReplayReportDetailedInput::from_parser(replay.clone());
 
-    let report = build_replay_report(&replay.file, &replay, &main_handles);
-    let detailed_built = build_replay_report_detailed(&replay.file, &detailed, &main_handles);
+    let report = ReplayReport::from_parser(&replay.file, &replay, &main_handles);
+    let detailed_built = ReplayReport::from_detailed_input(&replay.file, &detailed, &main_handles);
 
     assert_eq!(detailed_built, report);
 }

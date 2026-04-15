@@ -1,10 +1,9 @@
 use s2coop_analyzer::cache_overall_stats_generator::{
-    cache_entry_from_report, CacheNumericValue, PlayerStatsSeries, ProtocolBuildValue,
-    ReplayBuildInfo,
+    CacheNumericValue, CacheReplayEntry, PlayerStatsSeries, ProtocolBuildValue, ReplayBuildInfo,
 };
 use s2coop_analyzer::tauri_replay_analysis_impl::{
-    build_replay_report_detailed, ParsedReplayInput, ParsedReplayMessage, ParsedReplayPlayer,
-    PlayerPositions, ReplayReportDetailedInput,
+    ParsedReplayInput, ParsedReplayMessage, ParsedReplayPlayer, PlayerPositions, ReplayReport,
+    ReplayReportDetailedInput,
 };
 use std::collections::{BTreeMap, HashSet};
 
@@ -119,8 +118,8 @@ fn detailed_cache_entry_preserves_shared_base_fields() {
         ),
     ]));
 
-    let report = build_replay_report_detailed(&parser.file, &detailed, &HashSet::new());
-    let entry = cache_entry_from_report(&report, &HashSet::new());
+    let report = ReplayReport::from_detailed_input(&parser.file, &detailed, &HashSet::new());
+    let entry = CacheReplayEntry::from_report(&report, &HashSet::new());
 
     assert_eq!(entry.brutal_plus, parser.brutal_plus);
     assert_eq!(entry.build, parser.build.clone());

@@ -1,10 +1,10 @@
 use s2coop_analyzer::cache_overall_stats_generator::{
-    cache_entry_from_report, serialize_cache_entries, CacheCountValue, CacheUnitStats,
-    PlayerStatsSeries, ProtocolBuildValue, ReplayBuildInfo,
+    CacheCountValue, CacheReplayEntry, CacheUnitStats, PlayerStatsSeries, ProtocolBuildValue,
+    ReplayBuildInfo,
 };
 use s2coop_analyzer::tauri_replay_analysis_impl::{
-    build_replay_report_detailed, ParsedReplayInput, ParsedReplayMessage, ParsedReplayPlayer,
-    PlayerPositions, ReplayReportDetailedInput,
+    ParsedReplayInput, ParsedReplayMessage, ParsedReplayPlayer, PlayerPositions, ReplayReport,
+    ReplayReportDetailedInput,
 };
 use std::collections::{BTreeMap, HashSet};
 
@@ -126,9 +126,10 @@ fn cache_entry_matches_python_style_detailed_report_formatting() {
         ),
     ]));
 
-    let report = build_replay_report_detailed(&detailed.parser.file, &detailed, &HashSet::new());
+    let report =
+        ReplayReport::from_detailed_input(&detailed.parser.file, &detailed, &HashSet::new());
     let hidden_units = HashSet::from(["Abathur's Top Bar".to_string()]);
-    let entry = cache_entry_from_report(&report, &hidden_units);
+    let entry = CacheReplayEntry::from_report(&report, &hidden_units);
 
     assert_eq!(entry.length, 400);
     assert_eq!(entry.form_alength, "09:20");
@@ -152,9 +153,10 @@ fn cache_entry_matches_python_style_detailed_report_formatting() {
         ))
     );
 
-    let serialized =
-        String::from_utf8(serialize_cache_entries(&[entry]).expect("serialization must succeed"))
-            .expect("serialized json must be utf-8");
+    let serialized = String::from_utf8(
+        CacheReplayEntry::serialize_entries(&[entry]).expect("serialization must succeed"),
+    )
+    .expect("serialized json must be utf-8");
 
     assert!(serialized.starts_with("[{\"accurate_length\":560.0,\"amon_units\":"));
     assert!(serialized.contains("\"army\":[300,500]"));

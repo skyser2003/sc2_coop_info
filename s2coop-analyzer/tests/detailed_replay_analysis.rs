@@ -1,7 +1,4 @@
 use s2coop_analyzer::cache_overall_stats_generator::{ProtocolBuildValue, ReplayBuildInfo};
-use s2coop_analyzer::detailed_replay_analysis::{
-    apply_parser_player_overrides, find_replay_player,
-};
 use s2coop_analyzer::tauri_replay_analysis_impl::{ParsedReplayInput, ParsedReplayPlayer};
 use std::collections::HashMap;
 
@@ -88,21 +85,14 @@ fn parser_player_overrides_preserve_non_empty_slot_commanders() {
     let mastery_by_player = HashMap::from([(1_i64, [0_i64; 6]), (2_i64, [0_i64; 6])]);
     let prestige_by_player = HashMap::<i64, String>::new();
 
-    apply_parser_player_overrides(
-        &mut parser,
+    parser.apply_player_overrides(
         &commander_by_player,
         &mastery_by_player,
         &prestige_by_player,
     );
 
-    assert_eq!(
-        find_replay_player(&parser.players, 1).unwrap().commander,
-        "Horner"
-    );
-    assert_eq!(
-        find_replay_player(&parser.players, 2).unwrap().commander,
-        "Vorazun"
-    );
+    assert_eq!(parser.player(1).unwrap().commander, "Horner");
+    assert_eq!(parser.player(2).unwrap().commander, "Vorazun");
 }
 
 #[test]
@@ -115,19 +105,12 @@ fn parser_player_overrides_fill_missing_commanders_from_events() {
     let mastery_by_player = HashMap::from([(1_i64, [0_i64; 6]), (2_i64, [0_i64; 6])]);
     let prestige_by_player = HashMap::<i64, String>::new();
 
-    apply_parser_player_overrides(
-        &mut parser,
+    parser.apply_player_overrides(
         &commander_by_player,
         &mastery_by_player,
         &prestige_by_player,
     );
 
-    assert_eq!(
-        find_replay_player(&parser.players, 1).unwrap().commander,
-        "Han & Horner"
-    );
-    assert_eq!(
-        find_replay_player(&parser.players, 2).unwrap().commander,
-        "Vorazun"
-    );
+    assert_eq!(parser.player(1).unwrap().commander, "Han & Horner");
+    assert_eq!(parser.player(2).unwrap().commander, "Vorazun");
 }

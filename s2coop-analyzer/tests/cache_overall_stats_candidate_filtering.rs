@@ -1,6 +1,4 @@
-use s2coop_analyzer::cache_overall_stats_generator::{
-    generate_cache_overall_stats, pretty_output_path, GenerateCacheConfig,
-};
+use s2coop_analyzer::cache_overall_stats_generator::{pretty_output_path, GenerateCacheConfig};
 use std::fs;
 use tempfile::TempDir;
 
@@ -13,10 +11,11 @@ fn generate_cache_skips_invalid_replay_candidates() {
         .expect("failed to write invalid replay placeholder");
 
     let output_file = temp_dir.path().join("cache_overall_stats");
-    let summary = generate_cache_overall_stats(&GenerateCacheConfig {
+    let summary = GenerateCacheConfig {
         account_dir,
         output_file: output_file.clone(),
-    })
+    }
+    .generate()
     .expect("cache generation should succeed for invalid replay placeholders");
 
     assert_eq!(summary.scanned_replays, 0);

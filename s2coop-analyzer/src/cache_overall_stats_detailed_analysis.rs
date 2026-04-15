@@ -1,6 +1,5 @@
 use crate::cache_overall_stats_generator::{
-    generate_cache_overall_stats, generate_cache_overall_stats_with_logger, pretty_output_path,
-    write_pretty_cache_file, GenerateCacheConfig, GenerateCacheError,
+    pretty_output_path, write_pretty_cache_file, GenerateCacheConfig, GenerateCacheError,
 };
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -126,9 +125,9 @@ pub fn run_test_cache_overall_stats_detailed_analysis(
         output_file: generated_output.clone(),
     };
     let summary = if let Some(logger) = logger {
-        generate_cache_overall_stats_with_logger(&config, logger)?
+        config.generate_with_logger(logger)?
     } else {
-        generate_cache_overall_stats(&config)?
+        config.generate()?
     };
 
     if !generated_output.is_file() {
