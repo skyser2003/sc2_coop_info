@@ -488,6 +488,10 @@ pub trait TypeDecoder {
     }
     fn instance_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError>;
     fn integer_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<i128, DecodeError>;
+    fn struct_from_typeinfo(
+        &mut self,
+        typeinfo: &TypeInfo,
+    ) -> Result<BTreeMap<String, Value>, DecodeError>;
 }
 
 pub struct BitPackedDecoder {
@@ -572,7 +576,7 @@ impl BitPackedDecoder {
         Ok(Value::Bytes(self.buffer.read_aligned_bytes(length)?))
     }
 
-    fn choice(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
+    fn choice(&mut self, typeinfo: &TypeInfo) -> Result<BTreeMap<String, Value>, DecodeError> {
         let args = typeinfo.args();
         let bounds = args
             .first()
@@ -586,7 +590,7 @@ impl BitPackedDecoder {
         let value = self.instance(field.typeid())?;
         let mut object = BTreeMap::new();
         object.insert(field.name().to_string(), value);
-        Ok(Value::Object(object))
+        Ok(object)
     }
 
     fn fourcc(&mut self) -> Result<Value, DecodeError> {
@@ -625,25 +629,51 @@ impl BitPackedDecoder {
         Ok(Value::Float(f64::from_bits(bits)))
     }
 
-    fn object(&mut self, fields: &[StructField]) -> Result<Value, DecodeError> {
+    fn object(&mut self, typeinfo: &TypeInfo) -> Result<BTreeMap<String, Value>, DecodeError> {
+        if typeinfo.op() != TypeOp::Struct {
+            return Err(DecodeError::UnexpectedType(format!(
+                "typeid={} op={} does not decode to struct",
+                typeinfo.typeid(),
+                typeinfo.op_name()
+            )));
+        }
+
+        let fields = typeinfo.struct_fields()?;
         let mut map = BTreeMap::new();
         for field in fields {
             if field.is_parent() {
-                let parent = self.instance(field.typeid())?;
+                let parent_typeinfo =
+                    lookup_typeinfo(self.typeinfos.as_ref(), field.typeid())?.clone();
+                if parent_typeinfo.op() == TypeOp::Struct {
+                    let parent_map = self.object(&parent_typeinfo)?;
+                    if fields.len() == 1 {
+                        return Ok(parent_map);
+                    }
+                    for (k, v) in parent_map {
+                        map.insert(k, v);
+                    }
+                    continue;
+                }
+
+                let parent = self.instance_from_typeinfo(&parent_typeinfo)?;
                 match parent {
                     Value::Object(parent_map) => {
                         if fields.len() == 1 {
-                            return Ok(Value::Object(parent_map));
+                            return Ok(parent_map);
                         }
                         for (k, v) in parent_map {
                             map.insert(k, v);
                         }
                     }
-                    _ => {
+                    other => {
                         if fields.len() == 1 {
-                            return Ok(parent);
+                            return Err(DecodeError::UnexpectedType(format!(
+                                "typeid={} op={} does not decode to struct",
+                                typeinfo.typeid(),
+                                typeinfo.op_name()
+                            )));
                         }
-                        map.insert("__parent".to_string(), parent);
+                        map.insert("__parent".to_string(), other);
                     }
                 }
             } else {
@@ -651,7 +681,7 @@ impl BitPackedDecoder {
             }
         }
 
-        Ok(Value::Object(map))
+        Ok(map)
     }
 
     fn dispatch(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
@@ -661,14 +691,14 @@ impl BitPackedDecoder {
             TypeOp::BitArray => self.bitarray(args),
             TypeOp::Blob => self.blob(args),
             TypeOp::Bool => Ok(Value::Bool(self.buffer.read_bits(1)? != 0)),
-            TypeOp::Choice => self.choice(typeinfo),
+            TypeOp::Choice => Ok(Value::Object(self.choice(typeinfo)?)),
             TypeOp::Fourcc => self.fourcc(),
             TypeOp::Int => Ok(Value::Int(self.int(&args[0])?)),
             TypeOp::Null => Ok(Value::Null),
             TypeOp::Optional => self.optional(args),
             TypeOp::Real32 => self.real32(),
             TypeOp::Real64 => self.real64(),
-            TypeOp::Struct => self.object(typeinfo.struct_fields()?),
+            TypeOp::Struct => Ok(Value::Object(self.object(typeinfo)?)),
         }
     }
 }
@@ -740,6 +770,13 @@ impl TypeDecoder for BitPackedDecoder {
                 typeinfo.op_name()
             ))),
         }
+    }
+
+    fn struct_from_typeinfo(
+        &mut self,
+        typeinfo: &TypeInfo,
+    ) -> Result<BTreeMap<String, Value>, DecodeError> {
+        self.object(typeinfo)
     }
 }
 
@@ -895,18 +932,18 @@ impl VersionedDecoder {
         Ok(Value::Bool(self.buffer.read_bits(8)? != 0))
     }
 
-    fn choice(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
+    fn choice(&mut self, typeinfo: &TypeInfo) -> Result<BTreeMap<String, Value>, DecodeError> {
         self.expect_skip(3)?;
         let tag = self.vint()?;
         if let Some(field) = typeinfo.choice_fields()?.get(&tag) {
             let value = self.instance(field.typeid())?;
             let mut object = BTreeMap::new();
             object.insert(field.name().to_string(), value);
-            return Ok(Value::Object(object));
+            return Ok(object);
         }
 
         self.skip_instance()?;
-        Ok(Value::Object(BTreeMap::new()))
+        Ok(BTreeMap::new())
     }
 
     fn fourcc(&mut self) -> Result<Value, DecodeError> {
@@ -950,7 +987,15 @@ impl VersionedDecoder {
         Ok(Value::Float(f64::from_bits(bits)))
     }
 
-    fn object(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
+    fn object(&mut self, typeinfo: &TypeInfo) -> Result<BTreeMap<String, Value>, DecodeError> {
+        if typeinfo.op() != TypeOp::Struct {
+            return Err(DecodeError::UnexpectedType(format!(
+                "typeid={} op={} does not decode to struct",
+                typeinfo.typeid(),
+                typeinfo.op_name()
+            )));
+        }
+
         self.expect_skip(5)?;
         let fields = typeinfo.struct_fields()?;
         let field_map = typeinfo.struct_fields_by_tag()?;
@@ -968,21 +1013,38 @@ impl VersionedDecoder {
             };
 
             if field.is_parent() {
-                let parent = self.instance(field.typeid())?;
+                let parent_typeinfo =
+                    lookup_typeinfo(self.typeinfos.as_ref(), field.typeid())?.clone();
+                if parent_typeinfo.op() == TypeOp::Struct {
+                    let parent_map = self.object(&parent_typeinfo)?;
+                    if fields.len() == 1 {
+                        return Ok(parent_map);
+                    }
+                    for (k, v) in parent_map {
+                        result.insert(k, v);
+                    }
+                    continue;
+                }
+
+                let parent = self.instance_from_typeinfo(&parent_typeinfo)?;
                 match parent {
                     Value::Object(parent_map) => {
                         if fields.len() == 1 {
-                            return Ok(Value::Object(parent_map));
+                            return Ok(parent_map);
                         }
                         for (k, v) in parent_map {
                             result.insert(k, v);
                         }
                     }
-                    _ => {
+                    other => {
                         if fields.len() == 1 {
-                            return Ok(parent);
+                            return Err(DecodeError::UnexpectedType(format!(
+                                "typeid={} op={} does not decode to struct",
+                                typeinfo.typeid(),
+                                typeinfo.op_name()
+                            )));
                         }
-                        result.insert("__parent".to_string(), parent);
+                        result.insert("__parent".to_string(), other);
                     }
                 }
             } else {
@@ -990,7 +1052,7 @@ impl VersionedDecoder {
             }
         }
 
-        Ok(Value::Object(result))
+        Ok(result)
     }
 
     fn dispatch(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
@@ -1000,14 +1062,14 @@ impl VersionedDecoder {
             TypeOp::BitArray => self.bitarray(args),
             TypeOp::Blob => self.blob(args),
             TypeOp::Bool => self.bool(),
-            TypeOp::Choice => self.choice(typeinfo),
+            TypeOp::Choice => Ok(Value::Object(self.choice(typeinfo)?)),
             TypeOp::Fourcc => self.fourcc(),
             TypeOp::Int => self.int(),
             TypeOp::Null => Ok(Value::Null),
             TypeOp::Optional => self.optional(args),
             TypeOp::Real32 => self.real32(),
             TypeOp::Real64 => self.real64(),
-            TypeOp::Struct => self.object(typeinfo),
+            TypeOp::Struct => Ok(Value::Object(self.object(typeinfo)?)),
         }
     }
 }
@@ -1108,6 +1170,13 @@ impl TypeDecoder for VersionedDecoder {
             ))),
         }
     }
+
+    fn struct_from_typeinfo(
+        &mut self,
+        typeinfo: &TypeInfo,
+    ) -> Result<BTreeMap<String, Value>, DecodeError> {
+        self.object(typeinfo)
+    }
 }
 
 fn decode_event_stream<D: TypeDecoder>(
@@ -1158,44 +1227,36 @@ fn decode_event_stream<D: TypeDecoder>(
                 .and_then(|value| value.as_ref())
                 .ok_or_else(|| DecodeError::Corrupted(format!("eventid({eventid}) unknown")))?;
 
-            let mut event = decoder.instance_from_typeinfo(event_typeinfo.typeinfo())?;
-            match &mut event {
-                Value::Object(map) => {
-                    map.insert(
-                        "_event".to_string(),
-                        Value::String(event_typeinfo.name().to_string()),
-                    );
-                    map.insert("_eventid".to_string(), Value::Int(eventid as i128));
-                    map.insert("_gameloop".to_string(), Value::Int(gameloop));
-                    if let Some(userid) = userid {
-                        map.insert("_userid".to_string(), userid);
+            let mut event_map = match decoder.struct_from_typeinfo(event_typeinfo.typeinfo()) {
+                Ok(map) => map,
+                Err(DecodeError::UnexpectedType(_)) => {
+                    match decoder.instance_from_typeinfo(event_typeinfo.typeinfo())? {
+                        Value::Object(map) => map,
+                        event => {
+                            let mut map = BTreeMap::new();
+                            map.insert("event".to_string(), event);
+                            map
+                        }
                     }
-                    map.insert(
-                        "_bits".to_string(),
-                        Value::Int((decoder.used_bits() - start_bits) as i128),
-                    );
                 }
-                _ => {
-                    let mut map = BTreeMap::new();
-                    map.insert(
-                        "_event".to_string(),
-                        Value::String(event_typeinfo.name().to_string()),
-                    );
-                    map.insert("_eventid".to_string(), Value::Int(eventid as i128));
-                    map.insert("_gameloop".to_string(), Value::Int(gameloop));
-                    if let Some(userid) = userid {
-                        map.insert("_userid".to_string(), userid);
-                    }
-                    map.insert(
-                        "_bits".to_string(),
-                        Value::Int((decoder.used_bits() - start_bits) as i128),
-                    );
-                    map.insert("event".to_string(), event);
-                    event = Value::Object(map);
-                }
-            }
+                Err(error) => return Err(error),
+            };
 
-            Ok(event)
+            event_map.insert(
+                "_event".to_string(),
+                Value::String(event_typeinfo.name().to_string()),
+            );
+            event_map.insert("_eventid".to_string(), Value::Int(eventid as i128));
+            event_map.insert("_gameloop".to_string(), Value::Int(gameloop));
+            if let Some(userid) = userid {
+                event_map.insert("_userid".to_string(), userid);
+            }
+            event_map.insert(
+                "_bits".to_string(),
+                Value::Int((decoder.used_bits() - start_bits) as i128),
+            );
+
+            Ok(Value::Object(event_map))
         })();
 
         let event = match event_result {
