@@ -123,6 +123,7 @@ pub fn run_test_cache_overall_stats_detailed_analysis(
     let config = GenerateCacheConfig {
         account_dir,
         output_file: generated_output.clone(),
+        recent_replay_count: None,
     };
     let summary = if let Some(logger) = logger {
         config.generate_with_logger(logger)?

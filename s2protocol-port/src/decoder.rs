@@ -6,11 +6,94 @@ use crate::{
 };
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
+use std::sync::Arc;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TypeOp {
+    Array,
+    BitArray,
+    Blob,
+    Bool,
+    Choice,
+    Fourcc,
+    Int,
+    Null,
+    Optional,
+    Real32,
+    Real64,
+    Struct,
+}
+
+impl TypeOp {
+    fn parse(op_name: &str) -> Result<Self, DecodeError> {
+        match op_name {
+            "_array" => Ok(Self::Array),
+            "_bitarray" => Ok(Self::BitArray),
+            "_blob" => Ok(Self::Blob),
+            "_bool" => Ok(Self::Bool),
+            "_choice" => Ok(Self::Choice),
+            "_fourcc" => Ok(Self::Fourcc),
+            "_int" => Ok(Self::Int),
+            "_null" => Ok(Self::Null),
+            "_optional" => Ok(Self::Optional),
+            "_real32" => Ok(Self::Real32),
+            "_real64" => Ok(Self::Real64),
+            "_struct" => Ok(Self::Struct),
+            other => Err(DecodeError::Json(format!(
+                "unsupported typeinfo opcode {other}"
+            ))),
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Array => "_array",
+            Self::BitArray => "_bitarray",
+            Self::Blob => "_blob",
+            Self::Bool => "_bool",
+            Self::Choice => "_choice",
+            Self::Fourcc => "_fourcc",
+            Self::Int => "_int",
+            Self::Null => "_null",
+            Self::Optional => "_optional",
+            Self::Real32 => "_real32",
+            Self::Real64 => "_real64",
+            Self::Struct => "_struct",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct TypeInfo {
+    op: TypeOp,
+    args: Arc<[JsonValue]>,
+}
+
+impl TypeInfo {
+    pub(crate) fn new(op_name: &str, args: Vec<JsonValue>) -> Result<Self, DecodeError> {
+        Ok(Self {
+            op: TypeOp::parse(op_name)?,
+            args: Arc::from(args),
+        })
+    }
+
+    fn op(&self) -> TypeOp {
+        self.op
+    }
+
+    fn op_name(&self) -> &'static str {
+        self.op.as_str()
+    }
+
+    fn args(&self) -> &[JsonValue] {
+        &self.args
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ProtocolDefinition {
     pub build: u32,
-    pub typeinfos: Vec<(String, Vec<JsonValue>)>,
+    pub(crate) typeinfos: Arc<[TypeInfo]>,
     pub game_event_types: Vec<(u32, u32, String)>,
     pub message_event_types: Vec<(u32, u32, String)>,
     pub tracker_event_types: Vec<(u32, u32, String)>,
@@ -29,11 +112,11 @@ impl ProtocolDefinition {
         &self,
         contents: &[u8],
     ) -> Result<Vec<GameEvent>, DecodeError> {
-        let mut decoder = BitPackedDecoder::new(contents, &self.typeinfos);
+        let mut decoder = BitPackedDecoder::new(contents, Arc::clone(&self.typeinfos));
         decode_event_stream(
             &mut decoder,
-            Some(self.game_eventid_typeid),
             &self.game_event_types,
+            Some(self.game_eventid_typeid),
             true,
             self.replay_userid_typeid,
             self.svaruint32_typeid,
@@ -46,11 +129,11 @@ impl ProtocolDefinition {
         &self,
         contents: &[u8],
     ) -> Result<Vec<MessageEvent>, DecodeError> {
-        let mut decoder = BitPackedDecoder::new(contents, &self.typeinfos);
+        let mut decoder = BitPackedDecoder::new(contents, Arc::clone(&self.typeinfos));
         decode_event_stream(
             &mut decoder,
-            Some(self.message_eventid_typeid),
             &self.message_event_types,
+            Some(self.message_eventid_typeid),
             true,
             self.replay_userid_typeid,
             self.svaruint32_typeid,
@@ -67,11 +150,11 @@ impl ProtocolDefinition {
             return Ok(Vec::new());
         };
 
-        let mut decoder = VersionedDecoder::new(contents, &self.typeinfos);
+        let mut decoder = VersionedDecoder::new(contents, Arc::clone(&self.typeinfos));
         decode_event_stream_tolerant(
             &mut decoder,
-            Some(eventid_typeid),
             &self.tracker_event_types,
+            Some(eventid_typeid),
             false,
             self.replay_userid_typeid,
             self.svaruint32_typeid,
@@ -80,17 +163,17 @@ impl ProtocolDefinition {
     }
 
     pub fn decode_replay_header(&self, contents: &[u8]) -> Result<Value, DecodeError> {
-        let mut decoder = VersionedDecoder::new(contents, &self.typeinfos);
+        let mut decoder = VersionedDecoder::new(contents, Arc::clone(&self.typeinfos));
         decoder.instance(self.replay_header_typeid)
     }
 
     pub fn decode_replay_details(&self, contents: &[u8]) -> Result<Value, DecodeError> {
-        let mut decoder = VersionedDecoder::new(contents, &self.typeinfos);
+        let mut decoder = VersionedDecoder::new(contents, Arc::clone(&self.typeinfos));
         decoder.instance(self.game_details_typeid)
     }
 
     pub fn decode_replay_initdata(&self, contents: &[u8]) -> Result<Value, DecodeError> {
-        let mut decoder = BitPackedDecoder::new(contents, &self.typeinfos);
+        let mut decoder = BitPackedDecoder::new(contents, Arc::clone(&self.typeinfos));
         decoder.instance(self.replay_initdata_typeid)
     }
 
@@ -167,19 +250,25 @@ pub trait TypeDecoder {
     fn done(&self) -> bool;
     fn used_bits(&self) -> usize;
     fn byte_align(&mut self);
+    fn typeinfo(&self, typeid: usize) -> Result<TypeInfo, DecodeError>;
     fn instance(&mut self, typeid: usize) -> Result<Value, DecodeError>;
+    fn instance_from_typeinfo(
+        &mut self,
+        typeid: usize,
+        typeinfo: &TypeInfo,
+    ) -> Result<Value, DecodeError>;
 }
 
 pub struct BitPackedDecoder {
     buffer: BitPackedBuffer,
-    typeinfos: Vec<(String, Vec<JsonValue>)>,
+    typeinfos: Arc<[TypeInfo]>,
 }
 
 impl BitPackedDecoder {
-    pub fn new(contents: &[u8], typeinfos: &[(String, Vec<JsonValue>)]) -> Self {
+    pub fn new(contents: &[u8], typeinfos: Arc<[TypeInfo]>) -> Self {
         Self {
             buffer: BitPackedBuffer::new(contents, true),
-            typeinfos: typeinfos.to_vec(),
+            typeinfos,
         }
     }
 
@@ -369,23 +458,21 @@ impl BitPackedDecoder {
         Ok(Value::Object(map))
     }
 
-    fn dispatch(&mut self, op: &str, args: &[JsonValue]) -> Result<Value, DecodeError> {
-        match op {
-            "_array" => self.array(args),
-            "_bitarray" => self.bitarray(args),
-            "_blob" => self.blob(args),
-            "_bool" => Ok(Value::Bool(self.buffer.read_bits(1)? != 0)),
-            "_choice" => self.choice(args),
-            "_fourcc" => self.fourcc(),
-            "_int" => Ok(Value::Int(self.int(&args[0])?)),
-            "_null" => Ok(Value::Null),
-            "_optional" => self.optional(args),
-            "_real32" => self.real32(),
-            "_real64" => self.real64(),
-            "_struct" => self.object(args),
-            other => Err(DecodeError::Corrupted(format!(
-                "unsupported bitpacked opcode {other}"
-            ))),
+    fn dispatch(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
+        let args = typeinfo.args();
+        match typeinfo.op() {
+            TypeOp::Array => self.array(args),
+            TypeOp::BitArray => self.bitarray(args),
+            TypeOp::Blob => self.blob(args),
+            TypeOp::Bool => Ok(Value::Bool(self.buffer.read_bits(1)? != 0)),
+            TypeOp::Choice => self.choice(args),
+            TypeOp::Fourcc => self.fourcc(),
+            TypeOp::Int => Ok(Value::Int(self.int(&args[0])?)),
+            TypeOp::Null => Ok(Value::Null),
+            TypeOp::Optional => self.optional(args),
+            TypeOp::Real32 => self.real32(),
+            TypeOp::Real64 => self.real64(),
+            TypeOp::Struct => self.object(args),
         }
     }
 }
@@ -403,40 +490,53 @@ impl TypeDecoder for BitPackedDecoder {
         self.buffer.byte_align();
     }
 
-    fn instance(&mut self, typeid: usize) -> Result<Value, DecodeError> {
-        let (op, args) = self
-            .typeinfos
+    fn typeinfo(&self, typeid: usize) -> Result<TypeInfo, DecodeError> {
+        self.typeinfos
             .get(typeid)
             .cloned()
-            .ok_or_else(|| DecodeError::Corrupted(format!("typeid {typeid} out of range")))?;
+            .ok_or_else(|| DecodeError::Corrupted(format!("typeid {typeid} out of range")))
+    }
+
+    fn instance(&mut self, typeid: usize) -> Result<Value, DecodeError> {
+        let typeinfo = self.typeinfo(typeid)?;
+        self.instance_from_typeinfo(typeid, &typeinfo)
+    }
+
+    fn instance_from_typeinfo(
+        &mut self,
+        typeid: usize,
+        typeinfo: &TypeInfo,
+    ) -> Result<Value, DecodeError> {
         if std::env::var("S2_DEBUG_DECODER").is_ok() {
             eprintln!(
-                "[bitpacked] typeid={typeid} op={op} used_bits={}",
+                "[bitpacked] typeid={typeid} op={} used_bits={}",
+                typeinfo.op_name(),
                 self.used_bits()
             );
         }
 
-        if op == "_int" {
+        if typeinfo.op() == TypeOp::Int {
+            let args = typeinfo.args();
             if args.is_empty() {
                 return Err(DecodeError::Corrupted("_int args".into()));
             }
             return Ok(Value::Int(self.int(&args[0])?));
         }
 
-        self.dispatch(op.as_str(), &args)
+        self.dispatch(typeinfo)
     }
 }
 
 pub struct VersionedDecoder {
     buffer: BitPackedBuffer,
-    typeinfos: Vec<(String, Vec<JsonValue>)>,
+    typeinfos: Arc<[TypeInfo]>,
 }
 
 impl VersionedDecoder {
-    pub fn new(contents: &[u8], typeinfos: &[(String, Vec<JsonValue>)]) -> Self {
+    pub fn new(contents: &[u8], typeinfos: Arc<[TypeInfo]>) -> Self {
         Self {
             buffer: BitPackedBuffer::new(contents, true),
-            typeinfos: typeinfos.to_vec(),
+            typeinfos,
         }
     }
 
@@ -734,23 +834,21 @@ impl VersionedDecoder {
         Ok(Value::Object(result))
     }
 
-    fn dispatch(&mut self, op: &str, args: &[JsonValue]) -> Result<Value, DecodeError> {
-        match op {
-            "_array" => self.array(args),
-            "_bitarray" => self.bitarray(args),
-            "_blob" => self.blob(args),
-            "_bool" => self.bool(),
-            "_choice" => self.choice(args),
-            "_fourcc" => self.fourcc(),
-            "_int" => self.int(),
-            "_null" => Ok(Value::Null),
-            "_optional" => self.optional(args),
-            "_real32" => self.real32(),
-            "_real64" => self.real64(),
-            "_struct" => self.object(args),
-            other => Err(DecodeError::Corrupted(format!(
-                "unsupported versioned opcode {other}"
-            ))),
+    fn dispatch(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
+        let args = typeinfo.args();
+        match typeinfo.op() {
+            TypeOp::Array => self.array(args),
+            TypeOp::BitArray => self.bitarray(args),
+            TypeOp::Blob => self.blob(args),
+            TypeOp::Bool => self.bool(),
+            TypeOp::Choice => self.choice(args),
+            TypeOp::Fourcc => self.fourcc(),
+            TypeOp::Int => self.int(),
+            TypeOp::Null => Ok(Value::Null),
+            TypeOp::Optional => self.optional(args),
+            TypeOp::Real32 => self.real32(),
+            TypeOp::Real64 => self.real64(),
+            TypeOp::Struct => self.object(args),
         }
     }
 }
@@ -797,30 +895,43 @@ impl TypeDecoder for VersionedDecoder {
         self.buffer.byte_align();
     }
 
-    fn instance(&mut self, typeid: usize) -> Result<Value, DecodeError> {
-        let (op, args) = self
-            .typeinfos
+    fn typeinfo(&self, typeid: usize) -> Result<TypeInfo, DecodeError> {
+        self.typeinfos
             .get(typeid)
             .cloned()
-            .ok_or_else(|| DecodeError::Corrupted(format!("typeid {typeid} out of range")))?;
+            .ok_or_else(|| DecodeError::Corrupted(format!("typeid {typeid} out of range")))
+    }
+
+    fn instance(&mut self, typeid: usize) -> Result<Value, DecodeError> {
+        let typeinfo = self.typeinfo(typeid)?;
+        self.instance_from_typeinfo(typeid, &typeinfo)
+    }
+
+    fn instance_from_typeinfo(
+        &mut self,
+        typeid: usize,
+        typeinfo: &TypeInfo,
+    ) -> Result<Value, DecodeError> {
         if std::env::var("S2_DEBUG_DECODER").is_ok() {
             eprintln!(
-                "[versioned] typeid={typeid} op={op} used_bits={}",
+                "[versioned] typeid={typeid} op={} used_bits={}",
+                typeinfo.op_name(),
                 self.used_bits()
             );
         }
 
         let used_bits = self.used_bits();
-        self.dispatch(op.as_str(), &args)
-            .map_err(|error| match error {
-                DecodeError::Corrupted(message) => DecodeError::Corrupted(format!(
-                    "typeid={typeid} op={op} used_bits={used_bits}: {message}"
-                )),
-                DecodeError::Truncated => DecodeError::Corrupted(format!(
-                    "typeid={typeid} op={op} used_bits={used_bits}: buffer truncated"
-                )),
-                other => other,
-            })
+        self.dispatch(typeinfo).map_err(|error| match error {
+            DecodeError::Corrupted(message) => DecodeError::Corrupted(format!(
+                "typeid={typeid} op={} used_bits={used_bits}: {message}",
+                typeinfo.op_name()
+            )),
+            DecodeError::Truncated => DecodeError::Corrupted(format!(
+                "typeid={typeid} op={} used_bits={used_bits}: buffer truncated",
+                typeinfo.op_name()
+            )),
+            other => other,
+        })
     }
 }
 
@@ -838,8 +949,8 @@ pub fn decode_varuint_value(value: &Value) -> Result<i128, DecodeError> {
 
 fn decode_event_stream<D: TypeDecoder>(
     decoder: &mut D,
-    eventid_typeid: Option<usize>,
     event_types: &[(u32, u32, String)],
+    eventid_typeid: Option<usize>,
     decode_user_id: bool,
     replay_userid_typeid: Option<usize>,
     svaruint32_typeid: usize,
@@ -849,6 +960,12 @@ fn decode_event_stream<D: TypeDecoder>(
         return Ok(Vec::new());
     };
 
+    let svaruint32_typeinfo = decoder.typeinfo(svaruint32_typeid)?;
+    let replay_userid_typeinfo = replay_userid_typeid
+        .map(|typeid| decoder.typeinfo(typeid).map(|typeinfo| (typeid, typeinfo)))
+        .transpose()?;
+    let eventid_typeinfo = decoder.typeinfo(eventid_typeid)?;
+
     let mut events = Vec::new();
     let mut gameloop = 0i128;
 
@@ -856,18 +973,21 @@ fn decode_event_stream<D: TypeDecoder>(
         let start_bits = decoder.used_bits();
 
         let event_result = (|| -> Result<Value, DecodeError> {
-            let delta = decode_varuint_value(&decoder.instance(svaruint32_typeid)?)?;
+            let delta = decode_varuint_value(
+                &decoder.instance_from_typeinfo(svaruint32_typeid, &svaruint32_typeinfo)?,
+            )?;
             gameloop += delta;
 
             let userid = if decode_user_id {
-                replay_userid_typeid
-                    .map(|typeid| decoder.instance(typeid))
+                replay_userid_typeinfo
+                    .as_ref()
+                    .map(|(typeid, typeinfo)| decoder.instance_from_typeinfo(*typeid, typeinfo))
                     .transpose()?
             } else {
                 None
             };
 
-            let eventid_raw = decoder.instance(eventid_typeid)?;
+            let eventid_raw = decoder.instance_from_typeinfo(eventid_typeid, &eventid_typeinfo)?;
             let eventid = eventid_raw
                 .as_i128()
                 .and_then(|v| u32::try_from(v).ok())
@@ -933,16 +1053,16 @@ fn decode_event_stream<D: TypeDecoder>(
 
 fn decode_event_stream_tolerant<D: TypeDecoder>(
     decoder: &mut D,
-    eventid_typeid: Option<usize>,
     event_types: &[(u32, u32, String)],
+    eventid_typeid: Option<usize>,
     decode_user_id: bool,
     replay_userid_typeid: Option<usize>,
     svaruint32_typeid: usize,
 ) -> Result<Vec<Value>, DecodeError> {
     decode_event_stream(
         decoder,
-        eventid_typeid,
         event_types,
+        eventid_typeid,
         decode_user_id,
         replay_userid_typeid,
         svaruint32_typeid,

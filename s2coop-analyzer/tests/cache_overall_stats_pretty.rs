@@ -27,6 +27,7 @@ fn generate_cache_writes_pretty_sibling_file() {
     let summary = GenerateCacheConfig {
         account_dir,
         output_file: output_file.clone(),
+        recent_replay_count: None,
     }
     .generate()
     .expect("cache generation should succeed");

@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$HeadRef = "HEAD",
+    [Nullable[int]]$RecentReplayCount = $null,
     [switch]$KeepArtifacts
 )
 
@@ -83,7 +84,8 @@ function Invoke-GenerateCache {
     )
 
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-    $output = & $ExePath "generate-cache" "--account-dir" $AccountDir "--output" $OutputFile 2>&1
+    $arguments = @("generate-cache", "--account-dir", $AccountDir, "--output", $OutputFile)
+    $output = & $ExePath @arguments 2>&1
     $exitCode = $LASTEXITCODE
     $stopwatch.Stop()
 
@@ -115,11 +117,51 @@ function Get-FileDigest {
     }
 }
 
+function New-RecentReplaySubset {
+    param(
+        [string]$SourceAccountDir,
+        [string]$DestinationAccountDir,
+        [int]$ReplayCount
+    )
+
+    if ($ReplayCount -le 0) {
+        throw "RecentReplayCount must be greater than zero when supplied."
+    }
+
+    $replayFiles = Get-ChildItem -LiteralPath $SourceAccountDir -Recurse -File |
+        Where-Object { $_.Extension -ieq ".SC2Replay" } |
+        Sort-Object -Property @{ Expression = { $_.LastWriteTimeUtc }; Descending = $true }, @{ Expression = { $_.FullName.ToLowerInvariant() }; Descending = $false } |
+        Select-Object -First $ReplayCount
+
+    if ($replayFiles.Count -eq 0) {
+        throw "No replay files found under account directory: $SourceAccountDir"
+    }
+
+    foreach ($replayFile in $replayFiles) {
+        $relativePath = [System.IO.Path]::GetRelativePath($SourceAccountDir, $replayFile.FullName)
+        $destinationPath = Join-Path $DestinationAccountDir $relativePath
+        $destinationParent = Split-Path -Parent $destinationPath
+        if (-not (Test-Path -LiteralPath $destinationParent)) {
+            New-Item -ItemType Directory -Path $destinationParent -Force | Out-Null
+        }
+        Copy-Item -LiteralPath $replayFile.FullName -Destination $destinationPath -Force
+    }
+
+    return $replayFiles.Count
+}
+
 New-Item -ItemType Directory -Path $tempRoot | Out-Null
 
 try {
     Import-EnvFile -Path (Join-Path $repoRoot ".env")
     $accountDir = Resolve-AccountDir
+    $benchmarkAccountDir = $accountDir
+    $selectedReplayCount = $null
+    if ($null -ne $RecentReplayCount) {
+        $subsetRoot = Join-Path $tempRoot "StarCraft II"
+        $benchmarkAccountDir = Join-Path $subsetRoot "Accounts"
+        $selectedReplayCount = New-RecentReplaySubset -SourceAccountDir $accountDir -DestinationAccountDir $benchmarkAccountDir -ReplayCount $RecentReplayCount
+    }
     $headCommit = (& git -C $repoRoot rev-parse $HeadRef).Trim()
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($headCommit)) {
         throw "Failed to resolve git ref '$HeadRef'."
@@ -156,8 +198,8 @@ try {
     $currentExe = Join-Path $repoRoot "s2coop-analyzer\target\release\s2coop-analyzer-cli.exe"
     $headExe = Join-Path $headWorktree "s2coop-analyzer\target\release\s2coop-analyzer-cli.exe"
 
-    $currentRun = Invoke-GenerateCache -ExePath $currentExe -AccountDir $accountDir -OutputFile $currentOutput
-    $headRun = Invoke-GenerateCache -ExePath $headExe -AccountDir $accountDir -OutputFile $headOutput
+    $currentRun = Invoke-GenerateCache -ExePath $currentExe -AccountDir $benchmarkAccountDir -OutputFile $currentOutput
+    $headRun = Invoke-GenerateCache -ExePath $headExe -AccountDir $benchmarkAccountDir -OutputFile $headOutput
 
     $currentDigest = Get-FileDigest -Path $currentOutput
     $headDigest = Get-FileDigest -Path $headOutput
@@ -172,6 +214,12 @@ try {
     Write-Host "Head ref: $HeadRef"
     Write-Host "Head commit: $headCommit"
     Write-Host "Account dir: $accountDir"
+    if ($null -ne $RecentReplayCount) {
+        Write-Host "Replay scope: recent $selectedReplayCount files"
+        Write-Host "Benchmark account dir: $benchmarkAccountDir"
+    } else {
+        Write-Host "Replay scope: all replay files"
+    }
     Write-Host "Current entry count: $($currentRun.EntryCount)"
     Write-Host "HEAD entry count: $($headRun.EntryCount)"
     Write-Host "Main cache byte-identical: $mainEqual"

@@ -26,6 +26,31 @@ fn parse_generate_cache_command() {
         Command::GenerateCache(GenerateCacheArgs {
             account_dir: PathBuf::from("fixtures/replays"),
             output_file: PathBuf::from("cache_overall_stats"),
+            recent_replay_count: None,
+        })
+    );
+}
+
+#[test]
+fn parse_generate_cache_command_with_recent_files() {
+    let args = vec![
+        "s2coop-analyzer-cli".to_string(),
+        "generate-cache".to_string(),
+        "--account-dir".to_string(),
+        "fixtures/replays".to_string(),
+        "--output".to_string(),
+        "cache_overall_stats".to_string(),
+        "--recent-files".to_string(),
+        "100".to_string(),
+    ];
+
+    let command = parse_cli_args(&args).expect("cli should parse");
+    assert_eq!(
+        command,
+        Command::GenerateCache(GenerateCacheArgs {
+            account_dir: PathBuf::from("fixtures/replays"),
+            output_file: PathBuf::from("cache_overall_stats"),
+            recent_replay_count: Some(100),
         })
     );
 }

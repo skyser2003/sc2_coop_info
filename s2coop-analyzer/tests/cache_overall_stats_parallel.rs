@@ -33,12 +33,14 @@ fn generate_cache_parallel_runs_are_deterministic() {
     let first_summary = GenerateCacheConfig {
         account_dir: account_dir.clone(),
         output_file: first_output.clone(),
+        recent_replay_count: None,
     }
     .generate()
     .expect("first cache generation should succeed");
     let second_summary = GenerateCacheConfig {
         account_dir,
         output_file: second_output.clone(),
+        recent_replay_count: None,
     }
     .generate()
     .expect("second cache generation should succeed");

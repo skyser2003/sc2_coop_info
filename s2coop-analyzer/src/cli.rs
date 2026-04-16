@@ -10,6 +10,7 @@ use thiserror::Error;
 pub struct GenerateCacheArgs {
     pub account_dir: PathBuf,
     pub output_file: PathBuf,
+    pub recent_replay_count: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,6 +28,8 @@ pub enum CliParseError {
     MissingArgumentValue(String),
     #[error("unknown argument for generate-cache: {0}")]
     UnknownGenerateCacheArgument(String),
+    #[error("invalid value for argument {0}: {1}")]
+    InvalidArgumentValue(String, String),
     #[error("unknown argument for test-cache-overall-stats-detailed-analysis: {0}")]
     UnknownTestCacheOverallStatsDetailedAnalysisArgument(String),
     #[error("missing required arguments: {0}")]
@@ -63,6 +66,7 @@ pub fn parse_cli_args(raw_args: &[String]) -> Result<Command, CliParseError> {
 fn parse_generate_cache_args(args: &[String]) -> Result<GenerateCacheArgs, CliParseError> {
     let mut account_dir: Option<PathBuf> = None;
     let mut output_file: Option<PathBuf> = None;
+    let mut recent_replay_count: Option<usize> = None;
 
     let mut index = 0_usize;
     while index < args.len() {
@@ -72,6 +76,7 @@ fn parse_generate_cache_args(args: &[String]) -> Result<GenerateCacheArgs, CliPa
                 return Ok(GenerateCacheArgs {
                     account_dir: PathBuf::new(),
                     output_file: PathBuf::new(),
+                    recent_replay_count: None,
                 });
             }
             "--account-dir" => {
@@ -86,6 +91,25 @@ fn parse_generate_cache_args(args: &[String]) -> Result<GenerateCacheArgs, CliPa
                     return Err(CliParseError::MissingArgumentValue(flag.to_string()));
                 };
                 output_file = Some(PathBuf::from(value));
+                index += 2;
+            }
+            "--recent-files" => {
+                let Some(value) = args.get(index + 1) else {
+                    return Err(CliParseError::MissingArgumentValue(flag.to_string()));
+                };
+                let parsed = value.parse::<usize>().map_err(|error| {
+                    CliParseError::InvalidArgumentValue(
+                        flag.to_string(),
+                        format!("expected a positive integer, got '{value}': {error}"),
+                    )
+                })?;
+                if parsed == 0 {
+                    return Err(CliParseError::InvalidArgumentValue(
+                        flag.to_string(),
+                        "expected a positive integer greater than zero".to_string(),
+                    ));
+                }
+                recent_replay_count = Some(parsed);
                 index += 2;
             }
             other => {
@@ -111,6 +135,7 @@ fn parse_generate_cache_args(args: &[String]) -> Result<GenerateCacheArgs, CliPa
     Ok(GenerateCacheArgs {
         account_dir: account_dir.expect("validated account_dir"),
         output_file: output_file.expect("validated output_file"),
+        recent_replay_count,
     })
 }
 
@@ -186,6 +211,7 @@ fn run_cli_impl(
             let config = GenerateCacheConfig {
                 account_dir: args.account_dir,
                 output_file: args.output_file,
+                recent_replay_count: args.recent_replay_count,
             };
             let summary = if let Some(logger) = logger {
                 config.generate_with_logger(logger)?
@@ -217,12 +243,13 @@ fn run_cli_impl(
 pub fn usage_text() -> String {
     [
         "Usage:",
-        "  s2coop-analyzer-cli generate-cache --account-dir <DIR> --output <FILE>",
+        "  s2coop-analyzer-cli generate-cache --account-dir <DIR> --output <FILE> [--recent-files <COUNT>]",
         "  s2coop-analyzer-cli test-cache-overall-stats-detailed-analysis [--account-dir <DIR>] [--output <FILE>] [--original <FILE>]",
         "",
         "Notes:",
         "  - This generates deterministic cache_overall_stats entries.",
         "  - Detailed replay analysis is enabled for each replay file.",
+        "  - --recent-files limits processing to the most recently modified replay files.",
         "  - test-cache-overall-stats-detailed-analysis defaults to .env SC2 account paths and ../original/cache_overall_stats.",
     ]
     .join("\n")

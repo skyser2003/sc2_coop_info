@@ -17,7 +17,7 @@ use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering},
     Arc,
 };
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use walkdir::WalkDir;
 
@@ -143,6 +143,7 @@ pub struct CacheReplayEntry {
 pub struct GenerateCacheConfig {
     pub account_dir: PathBuf,
     pub output_file: PathBuf,
+    pub recent_replay_count: Option<usize>,
 }
 
 impl GenerateCacheConfig {
@@ -279,8 +280,11 @@ impl GenerateCacheConfig {
             }
         };
 
-        let mut all_entries = HashMap::new();
-        all_entries.extend(existing_detailed_analysis_entries);
+        let mut all_entries = if self.recent_replay_count.is_some() {
+            HashMap::new()
+        } else {
+            existing_detailed_analysis_entries
+        };
         all_entries.extend(entries);
 
         let mut all_entries = all_entries.into_values().collect::<Vec<_>>();
@@ -309,7 +313,7 @@ impl GenerateCacheConfig {
         Ok(())
     }
 
-    fn collect_replay_files(&self) -> Vec<PathBuf> {
+    pub fn collect_replay_files(&self) -> Vec<PathBuf> {
         let mut replay_files = WalkDir::new(&self.account_dir)
             .into_iter()
             .filter_map(Result::ok)
@@ -321,6 +325,19 @@ impl GenerateCacheConfig {
                     .is_some_and(|extension| extension == "SC2Replay")
             })
             .collect::<Vec<PathBuf>>();
+
+        if let Some(recent_replay_count) = self.recent_replay_count {
+            let mut candidates = replay_files
+                .into_iter()
+                .map(|path| ReplayFileCandidate::from_path(path.as_path()))
+                .collect::<Vec<ReplayFileCandidate>>();
+            candidates.sort_unstable_by(ReplayFileCandidate::compare_recent_first);
+            candidates.truncate(recent_replay_count);
+            return candidates
+                .into_iter()
+                .map(|candidate| candidate.path)
+                .collect::<Vec<PathBuf>>();
+        }
 
         replay_files.sort_by(|left, right| {
             let left_norm = left.to_string_lossy().to_ascii_lowercase();
@@ -386,6 +403,35 @@ impl GenerateCacheConfig {
 
     fn temp_file_path(&self) -> PathBuf {
         self.output_file.with_extension("temp.jsonl")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ReplayFileCandidate {
+    path: PathBuf,
+    modified: SystemTime,
+}
+
+impl ReplayFileCandidate {
+    fn from_path(path: &Path) -> Self {
+        let modified = fs::metadata(path)
+            .and_then(|metadata| metadata.modified())
+            .unwrap_or(UNIX_EPOCH);
+        Self {
+            path: path.to_path_buf(),
+            modified,
+        }
+    }
+
+    fn compare_recent_first(left: &Self, right: &Self) -> std::cmp::Ordering {
+        right
+            .modified
+            .cmp(&left.modified)
+            .then_with(|| left.normalized_path().cmp(&right.normalized_path()))
+    }
+
+    fn normalized_path(&self) -> String {
+        self.path.to_string_lossy().to_ascii_lowercase()
     }
 }
 

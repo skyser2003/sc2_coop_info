@@ -1,4 +1,4 @@
-use crate::decoder::ProtocolDefinition;
+use crate::decoder::{ProtocolDefinition, TypeInfo};
 use crate::error::DecodeError;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -43,11 +43,10 @@ impl ProtocolStore {
                     return Err(DecodeError::Json("typeinfo entry not length 2".into()));
                 }
 
-                let name = entry
+                let op_name = entry
                     .first()
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| DecodeError::Json("typeinfo name missing".into()))?
-                    .to_string();
+                    .ok_or_else(|| DecodeError::Json("typeinfo name missing".into()))?;
 
                 let args = match &entry[1] {
                     JsonValue::Array(v) => v.clone(),
@@ -56,7 +55,7 @@ impl ProtocolStore {
                     _ => vec![entry[1].clone()],
                 };
 
-                typeinfos.push((name, args));
+                typeinfos.push(TypeInfo::new(op_name, args)?);
             }
 
             let game_event_types = parse_event_map(proto.get("game_event_types"))?;
@@ -65,7 +64,7 @@ impl ProtocolStore {
 
             let build_def = ProtocolDefinition {
                 build,
-                typeinfos,
+                typeinfos: typeinfos.into(),
                 game_event_types,
                 message_event_types,
                 tracker_event_types,
