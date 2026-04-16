@@ -2172,6 +2172,7 @@ fn generate_detailed_analysis_cache(
     GenerateCacheConfig {
         account_dir,
         output_file: output_file.clone(),
+        recent_replay_count: None,
     }
     .generate_with_runtime_and_logger(
         &logger,
