@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$HeadRef = "HEAD",
+    [Alias("HeadRef")]
+    [string]$ComparisonRef = "HEAD",
     [Nullable[int]]$RecentReplayCount = $null,
     [switch]$KeepArtifacts
 )
@@ -10,11 +11,11 @@ Set-StrictMode -Version Latest
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("sc2coop-cache-compare-" + [guid]::NewGuid().ToString("N"))
-$headWorktree = Join-Path $tempRoot "head-worktree"
+$comparisonWorktree = Join-Path $tempRoot "comparison-worktree"
 $currentOutput = Join-Path $tempRoot "current-cache_overall_stats.json"
-$headOutput = Join-Path $tempRoot "head-cache_overall_stats.json"
+$comparisonOutput = Join-Path $tempRoot "comparison-cache_overall_stats.json"
 $currentPrettyOutput = Join-Path $tempRoot "current-cache_overall_stats_pretty.json"
-$headPrettyOutput = Join-Path $tempRoot "head-cache_overall_stats_pretty.json"
+$comparisonPrettyOutput = Join-Path $tempRoot "comparison-cache_overall_stats_pretty.json"
 $shouldKeepArtifacts = $KeepArtifacts.IsPresent
 
 function Import-EnvFile {
@@ -162,9 +163,9 @@ try {
         $benchmarkAccountDir = Join-Path $subsetRoot "Accounts"
         $selectedReplayCount = New-RecentReplaySubset -SourceAccountDir $accountDir -DestinationAccountDir $benchmarkAccountDir -ReplayCount $RecentReplayCount
     }
-    $headCommit = (& git -C $repoRoot rev-parse $HeadRef).Trim()
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($headCommit)) {
-        throw "Failed to resolve git ref '$HeadRef'."
+    $comparisonCommit = (& git -C $repoRoot rev-parse $ComparisonRef).Trim()
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($comparisonCommit)) {
+        throw "Failed to resolve git ref '$ComparisonRef'."
     }
 
     Invoke-Checked -FilePath "cargo" -Arguments @(
@@ -182,8 +183,8 @@ try {
         "worktree",
         "add",
         "--detach",
-        $headWorktree,
-        $headCommit
+        $comparisonWorktree,
+        $comparisonCommit
     ) -WorkingDirectory $repoRoot
 
     Invoke-Checked -FilePath "cargo" -Arguments @(
@@ -193,26 +194,26 @@ try {
         "s2coop-analyzer/Cargo.toml",
         "--bin",
         "s2coop-analyzer-cli"
-    ) -WorkingDirectory $headWorktree
+    ) -WorkingDirectory $comparisonWorktree
 
     $currentExe = Join-Path $repoRoot "s2coop-analyzer\target\release\s2coop-analyzer-cli.exe"
-    $headExe = Join-Path $headWorktree "s2coop-analyzer\target\release\s2coop-analyzer-cli.exe"
+    $comparisonExe = Join-Path $comparisonWorktree "s2coop-analyzer\target\release\s2coop-analyzer-cli.exe"
 
     $currentRun = Invoke-GenerateCache -ExePath $currentExe -AccountDir $benchmarkAccountDir -OutputFile $currentOutput
-    $headRun = Invoke-GenerateCache -ExePath $headExe -AccountDir $benchmarkAccountDir -OutputFile $headOutput
+    $comparisonRun = Invoke-GenerateCache -ExePath $comparisonExe -AccountDir $benchmarkAccountDir -OutputFile $comparisonOutput
 
     $currentDigest = Get-FileDigest -Path $currentOutput
-    $headDigest = Get-FileDigest -Path $headOutput
+    $comparisonDigest = Get-FileDigest -Path $comparisonOutput
     $currentPrettyDigest = Get-FileDigest -Path $currentPrettyOutput
-    $headPrettyDigest = Get-FileDigest -Path $headPrettyOutput
+    $comparisonPrettyDigest = Get-FileDigest -Path $comparisonPrettyOutput
 
-    $mainEqual = $currentDigest.Hash -eq $headDigest.Hash -and $currentDigest.Size -eq $headDigest.Size
-    $prettyEqual = $currentPrettyDigest.Hash -eq $headPrettyDigest.Hash -and $currentPrettyDigest.Size -eq $headPrettyDigest.Size
-    $deltaSeconds = $currentRun.ElapsedSeconds - $headRun.ElapsedSeconds
-    $ratio = if ($headRun.ElapsedSeconds -le 0) { 0.0 } else { $currentRun.ElapsedSeconds / $headRun.ElapsedSeconds }
+    $mainEqual = $currentDigest.Hash -eq $comparisonDigest.Hash -and $currentDigest.Size -eq $comparisonDigest.Size
+    $prettyEqual = $currentPrettyDigest.Hash -eq $comparisonPrettyDigest.Hash -and $currentPrettyDigest.Size -eq $comparisonPrettyDigest.Size
+    $deltaSeconds = $currentRun.ElapsedSeconds - $comparisonRun.ElapsedSeconds
+    $ratio = if ($comparisonRun.ElapsedSeconds -le 0) { 0.0 } else { $currentRun.ElapsedSeconds / $comparisonRun.ElapsedSeconds }
 
-    Write-Host "Head ref: $HeadRef"
-    Write-Host "Head commit: $headCommit"
+    Write-Host "Comparison ref: $ComparisonRef"
+    Write-Host "Comparison commit: $comparisonCommit"
     Write-Host "Account dir: $accountDir"
     if ($null -ne $RecentReplayCount) {
         Write-Host "Replay scope: recent $selectedReplayCount files"
@@ -221,15 +222,15 @@ try {
         Write-Host "Replay scope: all replay files"
     }
     Write-Host "Current entry count: $($currentRun.EntryCount)"
-    Write-Host "HEAD entry count: $($headRun.EntryCount)"
+    Write-Host "Comparison entry count: $($comparisonRun.EntryCount)"
     Write-Host "Main cache byte-identical: $mainEqual"
     Write-Host "Pretty cache byte-identical: $prettyEqual"
     Write-Host ("Current elapsed seconds: {0:N3}" -f $currentRun.ElapsedSeconds)
-    Write-Host ("HEAD elapsed seconds: {0:N3}" -f $headRun.ElapsedSeconds)
-    Write-Host ("Delta seconds (current - HEAD): {0:N3}" -f $deltaSeconds)
-    Write-Host ("Runtime ratio (current / HEAD): {0:N4}x" -f $ratio)
+    Write-Host ("Comparison elapsed seconds: {0:N3}" -f $comparisonRun.ElapsedSeconds)
+    Write-Host ("Delta seconds (current - comparison): {0:N3}" -f $deltaSeconds)
+    Write-Host ("Runtime ratio (current / comparison): {0:N4}x" -f $ratio)
     Write-Host "Current output: $currentOutput"
-    Write-Host "HEAD output: $headOutput"
+    Write-Host "Comparison output: $comparisonOutput"
     if (-not $mainEqual -or -not $prettyEqual) {
         $shouldKeepArtifacts = $true
         Write-Host "Artifacts kept for inspection: $tempRoot"
@@ -239,8 +240,8 @@ try {
     }
 }
 finally {
-    if (Test-Path -LiteralPath $headWorktree) {
-        & git -C $repoRoot worktree remove --force $headWorktree | Out-Null
+    if (Test-Path -LiteralPath $comparisonWorktree) {
+        & git -C $repoRoot worktree remove --force $comparisonWorktree | Out-Null
     }
 
     if (-not $shouldKeepArtifacts -and (Test-Path -LiteralPath $tempRoot)) {
