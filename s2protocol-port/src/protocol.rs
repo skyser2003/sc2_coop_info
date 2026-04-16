@@ -36,7 +36,7 @@ impl ProtocolStore {
                 .ok_or_else(|| DecodeError::Json("missing typeinfos".into()))?;
 
             let mut typeinfos = Vec::with_capacity(typeinfos_raw.len());
-            for item in typeinfos_raw {
+            for (typeid, item) in typeinfos_raw.iter().enumerate() {
                 let entry = item
                     .as_array()
                     .ok_or_else(|| DecodeError::Json("typeinfo entry is not array".into()))?;
@@ -56,7 +56,7 @@ impl ProtocolStore {
                     _ => vec![entry[1].clone()],
                 };
 
-                typeinfos.push(TypeInfo::new(op_name, args)?);
+                typeinfos.push(TypeInfo::new(typeid, op_name, args)?);
             }
 
             let game_event_types = parse_event_map(proto.get("game_event_types"))?;
@@ -229,7 +229,7 @@ fn build_event_typeinfos(
             )));
         }
 
-        lookup[event_index] = Some(EventTypeInfo::new(type_index, typeinfo, name.clone()));
+        lookup[event_index] = Some(EventTypeInfo::new(typeinfo, name.clone()));
     }
 
     Ok(Arc::from(lookup))

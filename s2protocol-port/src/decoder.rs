@@ -65,6 +65,7 @@ impl TypeOp {
 
 #[derive(Debug, Clone)]
 pub(crate) struct TypeInfo {
+    typeid: usize,
     op: TypeOp,
     args: Arc<[JsonValue]>,
     choice_fields: Option<Arc<BTreeMap<i128, ChoiceField>>>,
@@ -73,7 +74,11 @@ pub(crate) struct TypeInfo {
 }
 
 impl TypeInfo {
-    pub(crate) fn new(op_name: &str, args: Vec<JsonValue>) -> Result<Self, DecodeError> {
+    pub(crate) fn new(
+        typeid: usize,
+        op_name: &str,
+        args: Vec<JsonValue>,
+    ) -> Result<Self, DecodeError> {
         let op = TypeOp::parse(op_name)?;
         let choice_fields = if op == TypeOp::Choice {
             Some(Arc::new(parse_choice_fields(&args)?))
@@ -92,12 +97,17 @@ impl TypeInfo {
             .map(Arc::new);
 
         Ok(Self {
+            typeid,
             op,
             args: Arc::from(args),
             choice_fields,
             struct_fields,
             struct_fields_by_tag,
         })
+    }
+
+    fn typeid(&self) -> usize {
+        self.typeid
     }
 
     fn op(&self) -> TypeOp {
@@ -286,22 +296,16 @@ fn json_to_i128(value: &JsonValue) -> Result<i128, DecodeError> {
 
 #[derive(Debug, Clone)]
 pub(crate) struct EventTypeInfo {
-    typeid: usize,
     typeinfo: TypeInfo,
     name: Arc<str>,
 }
 
 impl EventTypeInfo {
-    pub(crate) fn new(typeid: usize, typeinfo: TypeInfo, name: String) -> Self {
+    pub(crate) fn new(typeinfo: TypeInfo, name: String) -> Self {
         Self {
-            typeid,
             typeinfo,
             name: Arc::<str>::from(name),
         }
-    }
-
-    fn typeid(&self) -> usize {
-        self.typeid
     }
 
     fn typeinfo(&self) -> &TypeInfo {
@@ -477,12 +481,13 @@ pub trait TypeDecoder {
     fn used_bits(&self) -> usize;
     fn byte_align(&mut self);
     fn typeinfos(&self) -> Arc<[TypeInfo]>;
-    fn instance(&mut self, typeid: usize) -> Result<Value, DecodeError>;
-    fn instance_from_typeinfo(
-        &mut self,
-        typeid: usize,
-        typeinfo: &TypeInfo,
-    ) -> Result<Value, DecodeError>;
+    fn instance(&mut self, typeid: usize) -> Result<Value, DecodeError> {
+        let typeinfos = self.typeinfos();
+        let typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
+        self.instance_from_typeinfo(typeinfo)
+    }
+    fn instance_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError>;
+    fn integer_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<i128, DecodeError>;
 }
 
 pub struct BitPackedDecoder {
@@ -685,22 +690,13 @@ impl TypeDecoder for BitPackedDecoder {
         Arc::clone(&self.typeinfos)
     }
 
-    fn instance(&mut self, typeid: usize) -> Result<Value, DecodeError> {
-        let typeinfos = Arc::clone(&self.typeinfos);
-        let typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
-        self.instance_from_typeinfo(typeid, typeinfo)
-    }
-
-    fn instance_from_typeinfo(
-        &mut self,
-        typeid: usize,
-        typeinfo: &TypeInfo,
-    ) -> Result<Value, DecodeError> {
+    fn instance_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
         if std::env::var("S2_DEBUG_DECODER").is_ok() {
             eprintln!(
                 "[bitpacked] typeid={typeid} op={} used_bits={}",
                 typeinfo.op_name(),
-                self.used_bits()
+                self.used_bits(),
+                typeid = typeinfo.typeid()
             );
         }
 
@@ -713,6 +709,37 @@ impl TypeDecoder for BitPackedDecoder {
         }
 
         self.dispatch(typeinfo)
+    }
+
+    fn integer_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<i128, DecodeError> {
+        match typeinfo.op() {
+            TypeOp::Int => {
+                let args = typeinfo.args();
+                let bounds = args
+                    .first()
+                    .ok_or_else(|| DecodeError::Corrupted("_int args".into()))?;
+                self.int(bounds)
+            }
+            TypeOp::Choice => {
+                let args = typeinfo.args();
+                let bounds = args
+                    .first()
+                    .ok_or_else(|| DecodeError::Corrupted("_choice bounds".into()))?;
+                let tag = self.int(bounds)?;
+                let field = typeinfo
+                    .choice_fields()?
+                    .get(&tag)
+                    .ok_or_else(|| DecodeError::Corrupted(format!("invalid choice tag {tag}")))?;
+                let typeinfos = Arc::clone(&self.typeinfos);
+                let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+                self.integer_from_typeinfo(child_typeinfo)
+            }
+            _ => Err(DecodeError::Corrupted(format!(
+                "typeid={} op={} does not decode to integer",
+                typeinfo.typeid(),
+                typeinfo.op_name()
+            ))),
+        }
     }
 }
 
@@ -1031,22 +1058,13 @@ impl TypeDecoder for VersionedDecoder {
         Arc::clone(&self.typeinfos)
     }
 
-    fn instance(&mut self, typeid: usize) -> Result<Value, DecodeError> {
-        let typeinfos = Arc::clone(&self.typeinfos);
-        let typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
-        self.instance_from_typeinfo(typeid, typeinfo)
-    }
-
-    fn instance_from_typeinfo(
-        &mut self,
-        typeid: usize,
-        typeinfo: &TypeInfo,
-    ) -> Result<Value, DecodeError> {
+    fn instance_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
         if std::env::var("S2_DEBUG_DECODER").is_ok() {
             eprintln!(
                 "[versioned] typeid={typeid} op={} used_bits={}",
                 typeinfo.op_name(),
-                self.used_bits()
+                self.used_bits(),
+                typeid = typeinfo.typeid()
             );
         }
 
@@ -1054,26 +1072,41 @@ impl TypeDecoder for VersionedDecoder {
         self.dispatch(typeinfo).map_err(|error| match error {
             DecodeError::Corrupted(message) => DecodeError::Corrupted(format!(
                 "typeid={typeid} op={} used_bits={used_bits}: {message}",
-                typeinfo.op_name()
+                typeinfo.op_name(),
+                typeid = typeinfo.typeid()
             )),
             DecodeError::Truncated => DecodeError::Corrupted(format!(
                 "typeid={typeid} op={} used_bits={used_bits}: buffer truncated",
-                typeinfo.op_name()
+                typeinfo.op_name(),
+                typeid = typeinfo.typeid()
             )),
             other => other,
         })
     }
-}
 
-pub fn decode_varuint_value(value: &Value) -> Result<i128, DecodeError> {
-    match value {
-        Value::Int(v) => Ok(*v),
-        Value::Object(map) => map
-            .values()
-            .next()
-            .and_then(|v| v.as_i128())
-            .ok_or_else(|| DecodeError::Corrupted("invalid svaruint object".into())),
-        _ => Err(DecodeError::Corrupted("invalid svaruint type".into())),
+    fn integer_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<i128, DecodeError> {
+        match typeinfo.op() {
+            TypeOp::Int => {
+                self.expect_skip(9)?;
+                self.vint()
+            }
+            TypeOp::Choice => {
+                self.expect_skip(3)?;
+                let tag = self.vint()?;
+                let field = typeinfo
+                    .choice_fields()?
+                    .get(&tag)
+                    .ok_or_else(|| DecodeError::Corrupted(format!("invalid choice tag {tag}")))?;
+                let typeinfos = Arc::clone(&self.typeinfos);
+                let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+                self.integer_from_typeinfo(child_typeinfo)
+            }
+            _ => Err(DecodeError::Corrupted(format!(
+                "typeid={} op={} does not decode to integer",
+                typeinfo.typeid(),
+                typeinfo.op_name()
+            ))),
+        }
     }
 }
 
@@ -1093,9 +1126,7 @@ fn decode_event_stream<D: TypeDecoder>(
     let typeinfos = decoder.typeinfos();
     let svaruint32_typeinfo = lookup_typeinfo(typeinfos.as_ref(), svaruint32_typeid)?;
     let replay_userid_typeinfo = replay_userid_typeid
-        .map(|typeid| {
-            lookup_typeinfo(typeinfos.as_ref(), typeid).map(|typeinfo| (typeid, typeinfo))
-        })
+        .map(|typeid| lookup_typeinfo(typeinfos.as_ref(), typeid))
         .transpose()?;
     let eventid_typeinfo = lookup_typeinfo(typeinfos.as_ref(), eventid_typeid)?;
 
@@ -1106,25 +1137,20 @@ fn decode_event_stream<D: TypeDecoder>(
         let start_bits = decoder.used_bits();
 
         let event_result = (|| -> Result<Value, DecodeError> {
-            let delta = decode_varuint_value(
-                &decoder.instance_from_typeinfo(svaruint32_typeid, svaruint32_typeinfo)?,
-            )?;
+            let delta = decoder.integer_from_typeinfo(svaruint32_typeinfo)?;
             gameloop += delta;
 
             let userid = if decode_user_id {
                 replay_userid_typeinfo
                     .as_ref()
-                    .map(|(typeid, typeinfo)| decoder.instance_from_typeinfo(*typeid, typeinfo))
+                    .map(|typeinfo| decoder.instance_from_typeinfo(typeinfo))
                     .transpose()?
             } else {
                 None
             };
 
-            let eventid_raw = decoder.instance_from_typeinfo(eventid_typeid, eventid_typeinfo)?;
-            let eventid = eventid_raw
-                .as_i128()
-                .and_then(|v| u32::try_from(v).ok())
-                .ok_or_else(|| DecodeError::Corrupted("invalid event id".into()))?;
+            let eventid = u32::try_from(decoder.integer_from_typeinfo(eventid_typeinfo)?)
+                .map_err(|_| DecodeError::Corrupted("invalid event id".into()))?;
 
             let event_typeinfo = usize::try_from(eventid)
                 .ok()
@@ -1132,8 +1158,7 @@ fn decode_event_stream<D: TypeDecoder>(
                 .and_then(|value| value.as_ref())
                 .ok_or_else(|| DecodeError::Corrupted(format!("eventid({eventid}) unknown")))?;
 
-            let mut event = decoder
-                .instance_from_typeinfo(event_typeinfo.typeid(), event_typeinfo.typeinfo())?;
+            let mut event = decoder.instance_from_typeinfo(event_typeinfo.typeinfo())?;
             match &mut event {
                 Value::Object(map) => {
                     map.insert(
