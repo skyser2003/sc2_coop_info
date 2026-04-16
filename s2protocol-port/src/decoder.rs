@@ -67,13 +67,36 @@ impl TypeOp {
 pub(crate) struct TypeInfo {
     op: TypeOp,
     args: Arc<[JsonValue]>,
+    choice_fields: Option<Arc<BTreeMap<i128, ChoiceField>>>,
+    struct_fields: Option<Arc<[StructField]>>,
+    struct_fields_by_tag: Option<Arc<BTreeMap<i128, StructField>>>,
 }
 
 impl TypeInfo {
     pub(crate) fn new(op_name: &str, args: Vec<JsonValue>) -> Result<Self, DecodeError> {
+        let op = TypeOp::parse(op_name)?;
+        let choice_fields = if op == TypeOp::Choice {
+            Some(Arc::new(parse_choice_fields(&args)?))
+        } else {
+            None
+        };
+        let struct_fields = if op == TypeOp::Struct {
+            Some(Arc::from(parse_struct_fields(&args)?))
+        } else {
+            None
+        };
+        let struct_fields_by_tag = struct_fields
+            .as_deref()
+            .map(build_struct_field_tag_lookup)
+            .transpose()?
+            .map(Arc::new);
+
         Ok(Self {
-            op: TypeOp::parse(op_name)?,
+            op,
             args: Arc::from(args),
+            choice_fields,
+            struct_fields,
+            struct_fields_by_tag,
         })
     }
 
@@ -88,6 +111,206 @@ impl TypeInfo {
     fn args(&self) -> &[JsonValue] {
         &self.args
     }
+
+    fn choice_fields(&self) -> Result<&BTreeMap<i128, ChoiceField>, DecodeError> {
+        self.choice_fields
+            .as_deref()
+            .ok_or_else(|| DecodeError::Corrupted("_choice map".into()))
+    }
+
+    fn struct_fields(&self) -> Result<&[StructField], DecodeError> {
+        self.struct_fields
+            .as_deref()
+            .ok_or_else(|| DecodeError::Corrupted("_struct fields".into()))
+    }
+
+    fn struct_fields_by_tag(&self) -> Result<&BTreeMap<i128, StructField>, DecodeError> {
+        self.struct_fields_by_tag
+            .as_deref()
+            .ok_or_else(|| DecodeError::Corrupted("_struct fields".into()))
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ChoiceField {
+    name: Arc<str>,
+    typeid: usize,
+}
+
+impl ChoiceField {
+    fn new(name: String, typeid: usize) -> Self {
+        Self {
+            name: Arc::<str>::from(name),
+            typeid,
+        }
+    }
+
+    fn name(&self) -> &str {
+        self.name.as_ref()
+    }
+
+    fn typeid(&self) -> usize {
+        self.typeid
+    }
+}
+
+#[derive(Debug, Clone)]
+struct StructField {
+    name: Arc<str>,
+    typeid: usize,
+    tag: Option<i128>,
+    is_parent: bool,
+}
+
+impl StructField {
+    fn new(name: String, typeid: usize, tag: Option<i128>) -> Self {
+        let is_parent = name == "__parent";
+        Self {
+            name: Arc::<str>::from(name),
+            typeid,
+            tag,
+            is_parent,
+        }
+    }
+
+    fn name(&self) -> &str {
+        self.name.as_ref()
+    }
+
+    fn typeid(&self) -> usize {
+        self.typeid
+    }
+
+    fn is_parent(&self) -> bool {
+        self.is_parent
+    }
+}
+
+fn parse_choice_fields(args: &[JsonValue]) -> Result<BTreeMap<i128, ChoiceField>, DecodeError> {
+    let map = args
+        .get(1)
+        .and_then(JsonValue::as_object)
+        .ok_or_else(|| DecodeError::Corrupted("_choice map".into()))?;
+
+    map.iter()
+        .map(|(tag, field)| {
+            let parsed_tag = tag
+                .parse::<i128>()
+                .map_err(|_| DecodeError::Corrupted("_choice key".into()))?;
+            let choice_field = parse_choice_field(field)?;
+            Ok((parsed_tag, choice_field))
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()
+}
+
+fn parse_choice_field(value: &JsonValue) -> Result<ChoiceField, DecodeError> {
+    let field = value
+        .as_array()
+        .ok_or_else(|| DecodeError::Corrupted("_choice value".into()))?;
+
+    let field_name = field
+        .first()
+        .and_then(JsonValue::as_str)
+        .ok_or_else(|| DecodeError::Corrupted("_choice field name".into()))?;
+    let typeid = field
+        .get(1)
+        .and_then(JsonValue::as_u64)
+        .ok_or_else(|| DecodeError::Corrupted("_choice field typeid".into()))?
+        as usize;
+
+    Ok(ChoiceField::new(field_name.to_string(), typeid))
+}
+
+fn parse_struct_fields(args: &[JsonValue]) -> Result<Vec<StructField>, DecodeError> {
+    let fields = args
+        .first()
+        .and_then(JsonValue::as_array)
+        .ok_or_else(|| DecodeError::Corrupted("_struct fields".into()))?;
+
+    fields
+        .iter()
+        .map(parse_struct_field)
+        .collect::<Result<Vec<_>, _>>()
+}
+
+fn build_struct_field_tag_lookup(
+    fields: &[StructField],
+) -> Result<BTreeMap<i128, StructField>, DecodeError> {
+    let mut field_map = BTreeMap::new();
+
+    for field in fields {
+        let Some(tag) = field.tag else {
+            continue;
+        };
+
+        if field_map.insert(tag, field.clone()).is_some() {
+            return Err(DecodeError::Corrupted(format!(
+                "duplicate _struct tag {tag}"
+            )));
+        }
+    }
+
+    Ok(field_map)
+}
+
+fn parse_struct_field(value: &JsonValue) -> Result<StructField, DecodeError> {
+    let field = value
+        .as_array()
+        .ok_or_else(|| DecodeError::Corrupted("_struct field".into()))?;
+
+    if field.len() < 2 {
+        return Err(DecodeError::Corrupted("_struct field len".into()));
+    }
+
+    let field_name = field
+        .first()
+        .and_then(JsonValue::as_str)
+        .ok_or_else(|| DecodeError::Corrupted("_struct field name".into()))?;
+    let typeid = field
+        .get(1)
+        .and_then(JsonValue::as_u64)
+        .ok_or_else(|| DecodeError::Corrupted("_struct field typeid".into()))?
+        as usize;
+    let tag = field.get(2).map(json_to_i128).transpose()?;
+
+    Ok(StructField::new(field_name.to_string(), typeid, tag))
+}
+
+fn json_to_i128(value: &JsonValue) -> Result<i128, DecodeError> {
+    value
+        .as_i64()
+        .map(i128::from)
+        .or_else(|| value.as_u64().map(i128::from))
+        .ok_or_else(|| DecodeError::Corrupted("expected integer json value".into()))
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct EventTypeInfo {
+    typeid: usize,
+    typeinfo: TypeInfo,
+    name: Arc<str>,
+}
+
+impl EventTypeInfo {
+    pub(crate) fn new(typeid: usize, typeinfo: TypeInfo, name: String) -> Self {
+        Self {
+            typeid,
+            typeinfo,
+            name: Arc::<str>::from(name),
+        }
+    }
+
+    fn typeid(&self) -> usize {
+        self.typeid
+    }
+
+    fn typeinfo(&self) -> &TypeInfo {
+        &self.typeinfo
+    }
+
+    fn name(&self) -> &str {
+        self.name.as_ref()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -97,6 +320,9 @@ pub struct ProtocolDefinition {
     pub game_event_types: Vec<(u32, u32, String)>,
     pub message_event_types: Vec<(u32, u32, String)>,
     pub tracker_event_types: Vec<(u32, u32, String)>,
+    pub(crate) game_event_typeinfos: Arc<[Option<EventTypeInfo>]>,
+    pub(crate) message_event_typeinfos: Arc<[Option<EventTypeInfo>]>,
+    pub(crate) tracker_event_typeinfos: Arc<[Option<EventTypeInfo>]>,
     pub game_eventid_typeid: usize,
     pub message_eventid_typeid: usize,
     pub tracker_eventid_typeid: Option<usize>,
@@ -115,7 +341,7 @@ impl ProtocolDefinition {
         let mut decoder = BitPackedDecoder::new(contents, Arc::clone(&self.typeinfos));
         decode_event_stream(
             &mut decoder,
-            &self.game_event_types,
+            &self.game_event_typeinfos,
             Some(self.game_eventid_typeid),
             true,
             self.replay_userid_typeid,
@@ -132,7 +358,7 @@ impl ProtocolDefinition {
         let mut decoder = BitPackedDecoder::new(contents, Arc::clone(&self.typeinfos));
         decode_event_stream(
             &mut decoder,
-            &self.message_event_types,
+            &self.message_event_typeinfos,
             Some(self.message_eventid_typeid),
             true,
             self.replay_userid_typeid,
@@ -153,7 +379,7 @@ impl ProtocolDefinition {
         let mut decoder = VersionedDecoder::new(contents, Arc::clone(&self.typeinfos));
         decode_event_stream_tolerant(
             &mut decoder,
-            &self.tracker_event_types,
+            &self.tracker_event_typeinfos,
             Some(eventid_typeid),
             false,
             self.replay_userid_typeid,
@@ -250,7 +476,7 @@ pub trait TypeDecoder {
     fn done(&self) -> bool;
     fn used_bits(&self) -> usize;
     fn byte_align(&mut self);
-    fn typeinfo(&self, typeid: usize) -> Result<TypeInfo, DecodeError>;
+    fn typeinfos(&self) -> Arc<[TypeInfo]>;
     fn instance(&mut self, typeid: usize) -> Result<Value, DecodeError>;
     fn instance_from_typeinfo(
         &mut self,
@@ -262,6 +488,12 @@ pub trait TypeDecoder {
 pub struct BitPackedDecoder {
     buffer: BitPackedBuffer,
     typeinfos: Arc<[TypeInfo]>,
+}
+
+fn lookup_typeinfo(typeinfos: &[TypeInfo], typeid: usize) -> Result<&TypeInfo, DecodeError> {
+    typeinfos
+        .get(typeid)
+        .ok_or_else(|| DecodeError::Corrupted(format!("typeid {typeid} out of range")))
 }
 
 impl BitPackedDecoder {
@@ -335,39 +567,21 @@ impl BitPackedDecoder {
         Ok(Value::Bytes(self.buffer.read_aligned_bytes(length)?))
     }
 
-    fn choice(&mut self, args: &[JsonValue]) -> Result<Value, DecodeError> {
-        let tag = self.int(&args[0])?;
-        let map = args
-            .get(1)
-            .and_then(|v| v.as_object())
-            .ok_or_else(|| DecodeError::Corrupted("_choice map".into()))?;
+    fn choice(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
+        let args = typeinfo.args();
+        let bounds = args
+            .first()
+            .ok_or_else(|| DecodeError::Corrupted("_choice bounds".into()))?;
+        let tag = self.int(bounds)?;
+        let field = typeinfo
+            .choice_fields()?
+            .get(&tag)
+            .ok_or_else(|| DecodeError::Corrupted(format!("invalid choice tag {tag}")))?;
 
-        for (encoded_tag, value) in map {
-            let expected = encoded_tag
-                .parse::<i128>()
-                .map_err(|_| DecodeError::Corrupted("_choice key".into()))?;
-            if expected == tag {
-                let field = value
-                    .as_array()
-                    .ok_or_else(|| DecodeError::Corrupted("_choice value".into()))?;
-                let field_name = field
-                    .first()
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| DecodeError::Corrupted("_choice field name".into()))?;
-                let field_typeid = field
-                    .get(1)
-                    .and_then(|v| v.as_u64())
-                    .ok_or_else(|| DecodeError::Corrupted("_choice field typeid".into()))?
-                    as usize;
-
-                let value = self.instance(field_typeid)?;
-                let mut object = BTreeMap::new();
-                object.insert(field_name.to_string(), value);
-                return Ok(Value::Object(object));
-            }
-        }
-
-        Err(DecodeError::Corrupted(format!("invalid choice tag {tag}")))
+        let value = self.instance(field.typeid())?;
+        let mut object = BTreeMap::new();
+        object.insert(field.name().to_string(), value);
+        Ok(Value::Object(object))
     }
 
     fn fourcc(&mut self) -> Result<Value, DecodeError> {
@@ -406,34 +620,11 @@ impl BitPackedDecoder {
         Ok(Value::Float(f64::from_bits(bits)))
     }
 
-    fn object(&mut self, args: &[JsonValue]) -> Result<Value, DecodeError> {
-        let fields = args
-            .first()
-            .and_then(|v| v.as_array())
-            .ok_or_else(|| DecodeError::Corrupted("_struct fields".into()))?;
-
+    fn object(&mut self, fields: &[StructField]) -> Result<Value, DecodeError> {
         let mut map = BTreeMap::new();
         for field in fields {
-            let field = field
-                .as_array()
-                .ok_or_else(|| DecodeError::Corrupted("_struct field".into()))?;
-
-            if field.len() < 2 {
-                return Err(DecodeError::Corrupted("_struct field len".into()));
-            }
-
-            let field_name = field
-                .first()
-                .and_then(JsonValue::as_str)
-                .ok_or_else(|| DecodeError::Corrupted("_struct field name".into()))?;
-            let typeid = field
-                .get(1)
-                .and_then(|v| v.as_u64())
-                .ok_or_else(|| DecodeError::Corrupted("_struct field typeid".into()))?
-                as usize;
-
-            if field_name == "__parent" {
-                let parent = self.instance(typeid)?;
+            if field.is_parent() {
+                let parent = self.instance(field.typeid())?;
                 match parent {
                     Value::Object(parent_map) => {
                         if fields.len() == 1 {
@@ -451,7 +642,7 @@ impl BitPackedDecoder {
                     }
                 }
             } else {
-                map.insert(field_name.to_string(), self.instance(typeid)?);
+                map.insert(field.name().to_string(), self.instance(field.typeid())?);
             }
         }
 
@@ -465,14 +656,14 @@ impl BitPackedDecoder {
             TypeOp::BitArray => self.bitarray(args),
             TypeOp::Blob => self.blob(args),
             TypeOp::Bool => Ok(Value::Bool(self.buffer.read_bits(1)? != 0)),
-            TypeOp::Choice => self.choice(args),
+            TypeOp::Choice => self.choice(typeinfo),
             TypeOp::Fourcc => self.fourcc(),
             TypeOp::Int => Ok(Value::Int(self.int(&args[0])?)),
             TypeOp::Null => Ok(Value::Null),
             TypeOp::Optional => self.optional(args),
             TypeOp::Real32 => self.real32(),
             TypeOp::Real64 => self.real64(),
-            TypeOp::Struct => self.object(args),
+            TypeOp::Struct => self.object(typeinfo.struct_fields()?),
         }
     }
 }
@@ -490,16 +681,14 @@ impl TypeDecoder for BitPackedDecoder {
         self.buffer.byte_align();
     }
 
-    fn typeinfo(&self, typeid: usize) -> Result<TypeInfo, DecodeError> {
-        self.typeinfos
-            .get(typeid)
-            .cloned()
-            .ok_or_else(|| DecodeError::Corrupted(format!("typeid {typeid} out of range")))
+    fn typeinfos(&self) -> Arc<[TypeInfo]> {
+        Arc::clone(&self.typeinfos)
     }
 
     fn instance(&mut self, typeid: usize) -> Result<Value, DecodeError> {
-        let typeinfo = self.typeinfo(typeid)?;
-        self.instance_from_typeinfo(typeid, &typeinfo)
+        let typeinfos = Arc::clone(&self.typeinfos);
+        let typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
+        self.instance_from_typeinfo(typeid, typeinfo)
     }
 
     fn instance_from_typeinfo(
@@ -679,37 +868,14 @@ impl VersionedDecoder {
         Ok(Value::Bool(self.buffer.read_bits(8)? != 0))
     }
 
-    fn choice(&mut self, args: &[JsonValue]) -> Result<Value, DecodeError> {
+    fn choice(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
         self.expect_skip(3)?;
         let tag = self.vint()?;
-        let map = args
-            .get(1)
-            .and_then(|v| v.as_object())
-            .ok_or_else(|| DecodeError::Corrupted("_choice map".into()))?;
-
-        for (encoded_tag, value) in map {
-            let expected = encoded_tag
-                .parse::<i128>()
-                .map_err(|_| DecodeError::Corrupted("_choice tag".into()))?;
-            if expected == tag {
-                let tuple = value
-                    .as_array()
-                    .ok_or_else(|| DecodeError::Corrupted("_choice value".into()))?;
-                let field_name = tuple
-                    .first()
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| DecodeError::Corrupted("_choice field name".into()))?;
-                let field_typeid = tuple
-                    .get(1)
-                    .and_then(|v| v.as_u64())
-                    .ok_or_else(|| DecodeError::Corrupted("_choice typeid".into()))?
-                    as usize;
-
-                let value = self.instance(field_typeid)?;
-                let mut object = BTreeMap::new();
-                object.insert(field_name.to_string(), value);
-                return Ok(Value::Object(object));
-            }
+        if let Some(field) = typeinfo.choice_fields()?.get(&tag) {
+            let value = self.instance(field.typeid())?;
+            let mut object = BTreeMap::new();
+            object.insert(field.name().to_string(), value);
+            return Ok(Value::Object(object));
         }
 
         self.skip_instance()?;
@@ -757,50 +923,16 @@ impl VersionedDecoder {
         Ok(Value::Float(f64::from_bits(bits)))
     }
 
-    fn object(&mut self, args: &[JsonValue]) -> Result<Value, DecodeError> {
+    fn object(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
         self.expect_skip(5)?;
-        let fields = args
-            .first()
-            .and_then(|v| v.as_array())
-            .ok_or_else(|| DecodeError::Corrupted("_struct fields".into()))?;
-
+        let fields = typeinfo.struct_fields()?;
+        let field_map = typeinfo.struct_fields_by_tag()?;
         let field_count = self.vint()? as usize;
         let mut result = BTreeMap::new();
 
         for _ in 0..field_count {
             let tag = self.vint()?;
-            let mut parsed = None;
-
-            for field in fields {
-                let tuple = field
-                    .as_array()
-                    .ok_or_else(|| DecodeError::Corrupted("_struct field".into()))?;
-                if tuple.len() < 3 {
-                    return Err(DecodeError::Corrupted("_struct field tuple".into()));
-                }
-
-                let field_tag = tuple[2]
-                    .as_i64()
-                    .or_else(|| tuple[2].as_u64().map(|v| v as i64))
-                    .ok_or_else(|| DecodeError::Corrupted("_struct field tag".into()))?;
-
-                if field_tag as i128 == tag {
-                    let field_name = tuple
-                        .first()
-                        .and_then(|v| v.as_str())
-                        .ok_or_else(|| DecodeError::Corrupted("_struct field name".into()))?;
-                    let typeid = tuple
-                        .get(1)
-                        .and_then(|v| v.as_u64())
-                        .ok_or_else(|| DecodeError::Corrupted("_struct field typeid".into()))?
-                        as usize;
-
-                    parsed = Some((field_name.to_string(), typeid));
-                    break;
-                }
-            }
-
-            let (field_name, typeid) = match parsed {
+            let field = match field_map.get(&tag) {
                 Some(v) => v,
                 None => {
                     self.skip_instance()?;
@@ -808,8 +940,8 @@ impl VersionedDecoder {
                 }
             };
 
-            if field_name == "__parent" {
-                let parent = self.instance(typeid)?;
+            if field.is_parent() {
+                let parent = self.instance(field.typeid())?;
                 match parent {
                     Value::Object(parent_map) => {
                         if fields.len() == 1 {
@@ -827,7 +959,7 @@ impl VersionedDecoder {
                     }
                 }
             } else {
-                result.insert(field_name, self.instance(typeid)?);
+                result.insert(field.name().to_string(), self.instance(field.typeid())?);
             }
         }
 
@@ -841,14 +973,14 @@ impl VersionedDecoder {
             TypeOp::BitArray => self.bitarray(args),
             TypeOp::Blob => self.blob(args),
             TypeOp::Bool => self.bool(),
-            TypeOp::Choice => self.choice(args),
+            TypeOp::Choice => self.choice(typeinfo),
             TypeOp::Fourcc => self.fourcc(),
             TypeOp::Int => self.int(),
             TypeOp::Null => Ok(Value::Null),
             TypeOp::Optional => self.optional(args),
             TypeOp::Real32 => self.real32(),
             TypeOp::Real64 => self.real64(),
-            TypeOp::Struct => self.object(args),
+            TypeOp::Struct => self.object(typeinfo),
         }
     }
 }
@@ -895,16 +1027,14 @@ impl TypeDecoder for VersionedDecoder {
         self.buffer.byte_align();
     }
 
-    fn typeinfo(&self, typeid: usize) -> Result<TypeInfo, DecodeError> {
-        self.typeinfos
-            .get(typeid)
-            .cloned()
-            .ok_or_else(|| DecodeError::Corrupted(format!("typeid {typeid} out of range")))
+    fn typeinfos(&self) -> Arc<[TypeInfo]> {
+        Arc::clone(&self.typeinfos)
     }
 
     fn instance(&mut self, typeid: usize) -> Result<Value, DecodeError> {
-        let typeinfo = self.typeinfo(typeid)?;
-        self.instance_from_typeinfo(typeid, &typeinfo)
+        let typeinfos = Arc::clone(&self.typeinfos);
+        let typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
+        self.instance_from_typeinfo(typeid, typeinfo)
     }
 
     fn instance_from_typeinfo(
@@ -949,7 +1079,7 @@ pub fn decode_varuint_value(value: &Value) -> Result<i128, DecodeError> {
 
 fn decode_event_stream<D: TypeDecoder>(
     decoder: &mut D,
-    event_types: &[(u32, u32, String)],
+    event_typeinfos: &[Option<EventTypeInfo>],
     eventid_typeid: Option<usize>,
     decode_user_id: bool,
     replay_userid_typeid: Option<usize>,
@@ -960,11 +1090,14 @@ fn decode_event_stream<D: TypeDecoder>(
         return Ok(Vec::new());
     };
 
-    let svaruint32_typeinfo = decoder.typeinfo(svaruint32_typeid)?;
+    let typeinfos = decoder.typeinfos();
+    let svaruint32_typeinfo = lookup_typeinfo(typeinfos.as_ref(), svaruint32_typeid)?;
     let replay_userid_typeinfo = replay_userid_typeid
-        .map(|typeid| decoder.typeinfo(typeid).map(|typeinfo| (typeid, typeinfo)))
+        .map(|typeid| {
+            lookup_typeinfo(typeinfos.as_ref(), typeid).map(|typeinfo| (typeid, typeinfo))
+        })
         .transpose()?;
-    let eventid_typeinfo = decoder.typeinfo(eventid_typeid)?;
+    let eventid_typeinfo = lookup_typeinfo(typeinfos.as_ref(), eventid_typeid)?;
 
     let mut events = Vec::new();
     let mut gameloop = 0i128;
@@ -974,7 +1107,7 @@ fn decode_event_stream<D: TypeDecoder>(
 
         let event_result = (|| -> Result<Value, DecodeError> {
             let delta = decode_varuint_value(
-                &decoder.instance_from_typeinfo(svaruint32_typeid, &svaruint32_typeinfo)?,
+                &decoder.instance_from_typeinfo(svaruint32_typeid, svaruint32_typeinfo)?,
             )?;
             gameloop += delta;
 
@@ -987,22 +1120,26 @@ fn decode_event_stream<D: TypeDecoder>(
                 None
             };
 
-            let eventid_raw = decoder.instance_from_typeinfo(eventid_typeid, &eventid_typeinfo)?;
+            let eventid_raw = decoder.instance_from_typeinfo(eventid_typeid, eventid_typeinfo)?;
             let eventid = eventid_raw
                 .as_i128()
                 .and_then(|v| u32::try_from(v).ok())
                 .ok_or_else(|| DecodeError::Corrupted("invalid event id".into()))?;
 
-            let (typeid, name) = event_types
-                .iter()
-                .find(|(id, _, _)| *id == eventid)
-                .map(|(_, typeid, name)| (*typeid, name.clone()))
+            let event_typeinfo = usize::try_from(eventid)
+                .ok()
+                .and_then(|index| event_typeinfos.get(index))
+                .and_then(|value| value.as_ref())
                 .ok_or_else(|| DecodeError::Corrupted(format!("eventid({eventid}) unknown")))?;
 
-            let mut event = decoder.instance(typeid as usize)?;
+            let mut event = decoder
+                .instance_from_typeinfo(event_typeinfo.typeid(), event_typeinfo.typeinfo())?;
             match &mut event {
                 Value::Object(map) => {
-                    map.insert("_event".to_string(), Value::String(name));
+                    map.insert(
+                        "_event".to_string(),
+                        Value::String(event_typeinfo.name().to_string()),
+                    );
                     map.insert("_eventid".to_string(), Value::Int(eventid as i128));
                     map.insert("_gameloop".to_string(), Value::Int(gameloop));
                     if let Some(userid) = userid {
@@ -1015,7 +1152,10 @@ fn decode_event_stream<D: TypeDecoder>(
                 }
                 _ => {
                     let mut map = BTreeMap::new();
-                    map.insert("_event".to_string(), Value::String(name));
+                    map.insert(
+                        "_event".to_string(),
+                        Value::String(event_typeinfo.name().to_string()),
+                    );
                     map.insert("_eventid".to_string(), Value::Int(eventid as i128));
                     map.insert("_gameloop".to_string(), Value::Int(gameloop));
                     if let Some(userid) = userid {
@@ -1053,7 +1193,7 @@ fn decode_event_stream<D: TypeDecoder>(
 
 fn decode_event_stream_tolerant<D: TypeDecoder>(
     decoder: &mut D,
-    event_types: &[(u32, u32, String)],
+    event_typeinfos: &[Option<EventTypeInfo>],
     eventid_typeid: Option<usize>,
     decode_user_id: bool,
     replay_userid_typeid: Option<usize>,
@@ -1061,7 +1201,7 @@ fn decode_event_stream_tolerant<D: TypeDecoder>(
 ) -> Result<Vec<Value>, DecodeError> {
     decode_event_stream(
         decoder,
-        event_types,
+        event_typeinfos,
         eventid_typeid,
         decode_user_id,
         replay_userid_typeid,

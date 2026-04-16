@@ -1,7 +1,8 @@
-use crate::decoder::{ProtocolDefinition, TypeInfo};
+use crate::decoder::{EventTypeInfo, ProtocolDefinition, TypeInfo};
 use crate::error::DecodeError;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct ProtocolStore {
@@ -61,13 +62,23 @@ impl ProtocolStore {
             let game_event_types = parse_event_map(proto.get("game_event_types"))?;
             let message_event_types = parse_event_map(proto.get("message_event_types"))?;
             let tracker_event_types = parse_event_map(proto.get("tracker_event_types"))?;
+            let typeinfos: Arc<[TypeInfo]> = typeinfos.into();
+            let game_event_typeinfos =
+                build_event_typeinfos(&game_event_types, typeinfos.as_ref())?;
+            let message_event_typeinfos =
+                build_event_typeinfos(&message_event_types, typeinfos.as_ref())?;
+            let tracker_event_typeinfos =
+                build_event_typeinfos(&tracker_event_types, typeinfos.as_ref())?;
 
             let build_def = ProtocolDefinition {
                 build,
-                typeinfos: typeinfos.into(),
+                typeinfos,
                 game_event_types,
                 message_event_types,
                 tracker_event_types,
+                game_event_typeinfos,
+                message_event_typeinfos,
+                tracker_event_typeinfos,
                 game_eventid_typeid: to_usize(proto, "game_eventid_typeid")?,
                 message_eventid_typeid: to_usize(proto, "message_eventid_typeid")?,
                 tracker_eventid_typeid: to_usize_opt(proto, "tracker_eventid_typeid"),
@@ -183,6 +194,45 @@ fn parse_event_map(value: Option<&JsonValue>) -> Result<Vec<(u32, u32, String)>,
     }
 
     Ok(entries)
+}
+
+fn build_event_typeinfos(
+    event_types: &[(u32, u32, String)],
+    typeinfos: &[TypeInfo],
+) -> Result<Arc<[Option<EventTypeInfo>]>, DecodeError> {
+    let max_event_id = event_types
+        .iter()
+        .map(|(event_id, _, _)| usize::try_from(*event_id))
+        .collect::<Result<Vec<usize>, _>>()
+        .map_err(|_| DecodeError::Json("event id does not fit in usize".into()))?
+        .into_iter()
+        .max();
+
+    let Some(max_event_id) = max_event_id else {
+        return Ok(Arc::from(Vec::<Option<EventTypeInfo>>::new()));
+    };
+
+    let mut lookup = vec![None; max_event_id + 1];
+    for (event_id, typeid, name) in event_types {
+        let event_index = usize::try_from(*event_id)
+            .map_err(|_| DecodeError::Json("event id does not fit in usize".into()))?;
+        let type_index = usize::try_from(*typeid)
+            .map_err(|_| DecodeError::Json("event typeid does not fit in usize".into()))?;
+        let typeinfo = typeinfos
+            .get(type_index)
+            .cloned()
+            .ok_or_else(|| DecodeError::Json(format!("event typeid {type_index} out of range")))?;
+
+        if lookup[event_index].is_some() {
+            return Err(DecodeError::Json(format!(
+                "duplicate event id {event_index} in protocol map"
+            )));
+        }
+
+        lookup[event_index] = Some(EventTypeInfo::new(type_index, typeinfo, name.clone()));
+    }
+
+    Ok(Arc::from(lookup))
 }
 
 pub fn build_protocol_store() -> Result<ProtocolStore, DecodeError> {
