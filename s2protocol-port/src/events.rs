@@ -1,6 +1,21 @@
 use crate::value::Value;
 use std::collections::BTreeMap;
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DecodedEventMetadata<'a> {
+    pub event: &'a str,
+    pub event_id: u32,
+    pub game_loop: i128,
+    pub user_id: Option<Value>,
+    pub bits: i128,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DecodedEvent<'a> {
+    pub metadata: DecodedEventMetadata<'a>,
+    pub fields: BTreeMap<String, Value>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct TriggerEventData {
     pub contains_selection_changed: bool,
@@ -115,16 +130,14 @@ impl ReplayEvent {
 }
 
 impl GameEvent {
-    pub(crate) fn from_value(value: Value) -> Self {
-        let map = object_map(&value);
+    pub(crate) fn from_decoded_event(event: DecodedEvent<'_>) -> Self {
+        let map = Some(&event.fields);
         Self {
-            event: string_field(map, "_event").unwrap_or_default(),
-            event_id: i64_field(map, "_eventid")
-                .and_then(|value| u32::try_from(value).ok())
-                .unwrap_or_default(),
-            game_loop: i64_field(map, "_gameloop").unwrap_or_default(),
-            user_id: nested_i64_field(map, &["_userid", "m_userId"]),
-            bits: i64_field(map, "_bits").unwrap_or_default(),
+            event: event.metadata.event.to_owned(),
+            event_id: event.metadata.event_id,
+            game_loop: i64::try_from(event.metadata.game_loop).unwrap_or_default(),
+            user_id: event.metadata.user_id.as_ref().and_then(decoded_user_id),
+            bits: i64::try_from(event.metadata.bits).unwrap_or_default(),
             m_control_id: i64_field(map, "m_controlId"),
             m_event_type: i64_field(map, "m_eventType"),
             m_event_data: map
@@ -144,31 +157,27 @@ impl GameEvent {
 }
 
 impl MessageEvent {
-    pub(crate) fn from_value(value: Value) -> Self {
-        let map = object_map(&value);
+    pub(crate) fn from_decoded_event(event: DecodedEvent<'_>) -> Self {
+        let map = Some(&event.fields);
         Self {
-            event: string_field(map, "_event").unwrap_or_default(),
-            event_id: i64_field(map, "_eventid")
-                .and_then(|value| u32::try_from(value).ok())
-                .unwrap_or_default(),
-            game_loop: i64_field(map, "_gameloop").unwrap_or_default(),
-            user_id: nested_i64_field(map, &["_userid", "m_userId"]),
-            bits: i64_field(map, "_bits").unwrap_or_default(),
+            event: event.metadata.event.to_owned(),
+            event_id: event.metadata.event_id,
+            game_loop: i64::try_from(event.metadata.game_loop).unwrap_or_default(),
+            user_id: event.metadata.user_id.as_ref().and_then(decoded_user_id),
+            bits: i64::try_from(event.metadata.bits).unwrap_or_default(),
             m_string: string_field(map, "m_string"),
         }
     }
 }
 
 impl TrackerEvent {
-    pub(crate) fn from_value(value: Value) -> Self {
-        let map = object_map(&value);
+    pub(crate) fn from_decoded_event(event: DecodedEvent<'_>) -> Self {
+        let map = Some(&event.fields);
         Self {
-            event: string_field(map, "_event").unwrap_or_default(),
-            event_id: i64_field(map, "_eventid")
-                .and_then(|value| u32::try_from(value).ok())
-                .unwrap_or_default(),
-            game_loop: i64_field(map, "_gameloop").unwrap_or_default(),
-            bits: i64_field(map, "_bits").unwrap_or_default(),
+            event: event.metadata.event.to_owned(),
+            event_id: event.metadata.event_id,
+            game_loop: i64::try_from(event.metadata.game_loop).unwrap_or_default(),
+            bits: i64::try_from(event.metadata.bits).unwrap_or_default(),
             m_player_id: i64_field(map, "m_playerId"),
             m_upgrade_type_name: string_field(map, "m_upgradeTypeName"),
             m_count: i64_field(map, "m_count"),
@@ -195,6 +204,15 @@ fn parse_trigger_event_data(value: &Value) -> TriggerEventData {
     TriggerEventData {
         contains_selection_changed: value_contains(value, "SelectionChanged"),
         contains_none: value_contains(value, "None"),
+    }
+}
+
+fn decoded_user_id(value: &Value) -> Option<i64> {
+    match value {
+        Value::Object(map) => {
+            i64_field(Some(map), "m_userId").or_else(|| nested_i64_field(Some(map), &["m_userId"]))
+        }
+        _ => value_as_i64(value),
     }
 }
 

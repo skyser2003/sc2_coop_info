@@ -1,7 +1,7 @@
 use crate::bitstream::BitPackedBuffer;
 use crate::{
     error::DecodeError,
-    events::{GameEvent, MessageEvent, TrackerEvent},
+    events::{DecodedEvent, DecodedEventMetadata, GameEvent, MessageEvent, TrackerEvent},
     value::Value,
 };
 use serde_json::Value as JsonValue;
@@ -352,7 +352,12 @@ impl ProtocolDefinition {
             self.svaruint32_typeid,
             false,
         )
-        .map(|events| events.into_iter().map(GameEvent::from_value).collect())
+        .map(|events| {
+            events
+                .into_iter()
+                .map(GameEvent::from_decoded_event)
+                .collect()
+        })
     }
 
     pub fn decode_replay_message_events(
@@ -369,7 +374,12 @@ impl ProtocolDefinition {
             self.svaruint32_typeid,
             false,
         )
-        .map(|events| events.into_iter().map(MessageEvent::from_value).collect())
+        .map(|events| {
+            events
+                .into_iter()
+                .map(MessageEvent::from_decoded_event)
+                .collect()
+        })
     }
 
     pub fn decode_replay_tracker_events(
@@ -389,7 +399,12 @@ impl ProtocolDefinition {
             self.replay_userid_typeid,
             self.svaruint32_typeid,
         )
-        .map(|events| events.into_iter().map(TrackerEvent::from_value).collect())
+        .map(|events| {
+            events
+                .into_iter()
+                .map(TrackerEvent::from_decoded_event)
+                .collect()
+        })
     }
 
     pub fn decode_replay_header(&self, contents: &[u8]) -> Result<Value, DecodeError> {
@@ -1179,15 +1194,15 @@ impl TypeDecoder for VersionedDecoder {
     }
 }
 
-fn decode_event_stream<D: TypeDecoder>(
+fn decode_event_stream<'a, D: TypeDecoder>(
     decoder: &mut D,
-    event_typeinfos: &[Option<EventTypeInfo>],
+    event_typeinfos: &'a [Option<EventTypeInfo>],
     eventid_typeid: Option<usize>,
     decode_user_id: bool,
     replay_userid_typeid: Option<usize>,
     svaruint32_typeid: usize,
     tolerant: bool,
-) -> Result<Vec<Value>, DecodeError> {
+) -> Result<Vec<DecodedEvent<'a>>, DecodeError> {
     let Some(eventid_typeid) = eventid_typeid else {
         return Ok(Vec::new());
     };
@@ -1205,7 +1220,7 @@ fn decode_event_stream<D: TypeDecoder>(
     while !decoder.done() {
         let start_bits = decoder.used_bits();
 
-        let event_result = (|| -> Result<Value, DecodeError> {
+        let event_result = (|| -> Result<DecodedEvent<'a>, DecodeError> {
             let delta = decoder.integer_from_typeinfo(svaruint32_typeinfo)?;
             gameloop += delta;
 
@@ -1227,7 +1242,7 @@ fn decode_event_stream<D: TypeDecoder>(
                 .and_then(|value| value.as_ref())
                 .ok_or_else(|| DecodeError::Corrupted(format!("eventid({eventid}) unknown")))?;
 
-            let mut event_map = match decoder.struct_from_typeinfo(event_typeinfo.typeinfo()) {
+            let event_map = match decoder.struct_from_typeinfo(event_typeinfo.typeinfo()) {
                 Ok(map) => map,
                 Err(DecodeError::UnexpectedType(_)) => {
                     match decoder.instance_from_typeinfo(event_typeinfo.typeinfo())? {
@@ -1242,21 +1257,16 @@ fn decode_event_stream<D: TypeDecoder>(
                 Err(error) => return Err(error),
             };
 
-            event_map.insert(
-                "_event".to_string(),
-                Value::String(event_typeinfo.name().to_string()),
-            );
-            event_map.insert("_eventid".to_string(), Value::Int(eventid as i128));
-            event_map.insert("_gameloop".to_string(), Value::Int(gameloop));
-            if let Some(userid) = userid {
-                event_map.insert("_userid".to_string(), userid);
-            }
-            event_map.insert(
-                "_bits".to_string(),
-                Value::Int((decoder.used_bits() - start_bits) as i128),
-            );
-
-            Ok(Value::Object(event_map))
+            Ok(DecodedEvent {
+                metadata: DecodedEventMetadata {
+                    event: event_typeinfo.name(),
+                    event_id: eventid,
+                    game_loop: gameloop,
+                    user_id: userid,
+                    bits: (decoder.used_bits() - start_bits) as i128,
+                },
+                fields: event_map,
+            })
         })();
 
         let event = match event_result {
@@ -1277,14 +1287,14 @@ fn decode_event_stream<D: TypeDecoder>(
     Ok(events)
 }
 
-fn decode_event_stream_tolerant<D: TypeDecoder>(
+fn decode_event_stream_tolerant<'a, D: TypeDecoder>(
     decoder: &mut D,
-    event_typeinfos: &[Option<EventTypeInfo>],
+    event_typeinfos: &'a [Option<EventTypeInfo>],
     eventid_typeid: Option<usize>,
     decode_user_id: bool,
     replay_userid_typeid: Option<usize>,
     svaruint32_typeid: usize,
-) -> Result<Vec<Value>, DecodeError> {
+) -> Result<Vec<DecodedEvent<'a>>, DecodeError> {
     decode_event_stream(
         decoder,
         event_typeinfos,
