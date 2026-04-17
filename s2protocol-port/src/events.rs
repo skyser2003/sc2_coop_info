@@ -1,4 +1,4 @@
-use crate::decoder::{TypeDecoder, TypeInfo};
+use crate::decoder::{EventDecodePlan, TypeDecoder, TypeInfo};
 use crate::{DecodeError, Value};
 use std::collections::BTreeMap;
 
@@ -110,7 +110,7 @@ pub(crate) enum GameEventField {
 }
 
 impl GameEventField {
-    fn from_key(key: &str) -> Option<Self> {
+    pub(crate) fn from_key(key: &str) -> Option<Self> {
         match key {
             "m_controlId" => Some(Self::ControlId),
             "m_eventType" => Some(Self::EventType),
@@ -129,7 +129,7 @@ pub(crate) enum MessageEventField {
 }
 
 impl MessageEventField {
-    fn from_key(key: &str) -> Option<Self> {
+    pub(crate) fn from_key(key: &str) -> Option<Self> {
         match key {
             "m_string" => Some(Self::String),
             _ => None,
@@ -158,7 +158,7 @@ pub(crate) enum TrackerEventField {
 }
 
 impl TrackerEventField {
-    fn from_key(key: &str) -> Option<Self> {
+    pub(crate) fn from_key(key: &str) -> Option<Self> {
         match key {
             "m_playerId" => Some(Self::PlayerId),
             "m_upgradeTypeName" => Some(Self::UpgradeTypeName),
@@ -187,23 +187,21 @@ pub(crate) trait DirectEventDecode: Sized {
     fn new_decoded(event: &str, event_id: u32, game_loop: i128, user_id: Option<i64>) -> Self;
     fn set_decoded_bits(&mut self, bits: i128);
     fn field_from_key(key: &str) -> Option<Self::Field>;
-    fn decode_fields_from_typeinfo<D: TypeDecoder>(
-        &mut self,
-        decoder: &mut D,
-        typeinfo: &TypeInfo,
-    ) -> Result<(), DecodeError> {
-        decoder.visit_struct_fields_from_typeinfo(
-            typeinfo,
-            &mut |key| Self::field_from_key(key),
-            &mut |decoder, field, field_typeinfo| self.decode_field(decoder, field, field_typeinfo),
-        )
-    }
     fn decode_field<D: TypeDecoder>(
         &mut self,
         decoder: &mut D,
         field: Self::Field,
         field_typeinfo: &TypeInfo,
     ) -> Result<(), DecodeError>;
+    fn decode_fields_from_plan<D: TypeDecoder>(
+        &mut self,
+        decoder: &mut D,
+        plan: &EventDecodePlan<Self::Field>,
+    ) -> Result<(), DecodeError> {
+        decoder.decode_event_fields_from_plan(plan, &mut |decoder, field, field_typeinfo| {
+            self.decode_field(decoder, field, field_typeinfo)
+        })
+    }
     fn apply_fallback_field(&mut self, field: Self::Field, value: Value);
     fn apply_fallback_value(&mut self, key: &str, value: Value) {
         if let Some(field) = Self::field_from_key(key) {
@@ -231,8 +229,7 @@ impl<D: TypeDecoder> GameEventFieldSource for DecodedGameEventFieldSource<'_, D>
     }
 
     fn read_trigger_event_data(self) -> Result<TriggerEventData, DecodeError> {
-        let value = self.decoder.instance_from_typeinfo(self.field_typeinfo)?;
-        Ok(parse_trigger_event_data(&value))
+        decode_trigger_event_data(self.decoder, self.field_typeinfo)
     }
 
     fn read_ability_data(self) -> Result<Option<AbilityData>, DecodeError> {
@@ -240,13 +237,11 @@ impl<D: TypeDecoder> GameEventFieldSource for DecodedGameEventFieldSource<'_, D>
     }
 
     fn read_cmd_event_data(self) -> Result<Option<CmdEventData>, DecodeError> {
-        let value = self.decoder.instance_from_typeinfo(self.field_typeinfo)?;
-        Ok(parse_cmd_event_data(&value))
+        decode_cmd_event_data(self.decoder, self.field_typeinfo)
     }
 
     fn read_target_unit_data(self) -> Result<Option<TargetUnitData>, DecodeError> {
-        let value = self.decoder.instance_from_typeinfo(self.field_typeinfo)?;
-        Ok(parse_target_unit_data(&value))
+        decode_target_unit_data(self.decoder, self.field_typeinfo)
     }
 }
 
@@ -628,6 +623,14 @@ fn parse_trigger_event_data(value: &Value) -> TriggerEventData {
     }
 }
 
+fn decode_trigger_event_data<D: TypeDecoder>(
+    decoder: &mut D,
+    typeinfo: &TypeInfo,
+) -> Result<TriggerEventData, DecodeError> {
+    let value = decoder.instance_from_typeinfo(typeinfo)?;
+    Ok(parse_trigger_event_data(&value))
+}
+
 pub(crate) fn decode_user_id<D: TypeDecoder>(
     decoder: &mut D,
     typeinfo: &TypeInfo,
@@ -680,6 +683,36 @@ fn parse_ability_data(value: &Value) -> Option<AbilityData> {
     })
 }
 
+fn decode_cmd_event_data<D: TypeDecoder>(
+    decoder: &mut D,
+    typeinfo: &TypeInfo,
+) -> Result<Option<CmdEventData>, DecodeError> {
+    let mut data = CmdEventData::default();
+    let mut found = false;
+    match decoder.visit_struct_fields_from_typeinfo(
+        typeinfo,
+        &mut |key| {
+            if key == "TargetUnit" {
+                Some(())
+            } else {
+                None
+            }
+        },
+        &mut |decoder, (), field_typeinfo| {
+            data.TargetUnit = decode_target_unit_data(decoder, field_typeinfo)?;
+            found = true;
+            Ok(())
+        },
+    ) {
+        Ok(()) => Ok(found.then_some(data)),
+        Err(DecodeError::UnexpectedType(_)) => {
+            let value = decoder.instance_from_typeinfo(typeinfo)?;
+            Ok(parse_cmd_event_data(&value))
+        }
+        Err(error) => Err(error),
+    }
+}
+
 fn parse_cmd_event_data(value: &Value) -> Option<CmdEventData> {
     let map = object_map(value)?;
     Some(CmdEventData {
@@ -687,11 +720,74 @@ fn parse_cmd_event_data(value: &Value) -> Option<CmdEventData> {
     })
 }
 
+fn decode_target_unit_data<D: TypeDecoder>(
+    decoder: &mut D,
+    typeinfo: &TypeInfo,
+) -> Result<Option<TargetUnitData>, DecodeError> {
+    let mut data = TargetUnitData::default();
+    let mut found = false;
+    match decoder.visit_struct_fields_from_typeinfo(
+        typeinfo,
+        &mut |key| {
+            if key == "m_snapshotPoint" {
+                Some(())
+            } else {
+                None
+            }
+        },
+        &mut |decoder, (), field_typeinfo| {
+            data.m_snapshotPoint = decode_snapshot_point(decoder, field_typeinfo)?;
+            found = true;
+            Ok(())
+        },
+    ) {
+        Ok(()) => Ok(found.then_some(data)),
+        Err(DecodeError::UnexpectedType(_)) => {
+            let value = decoder.instance_from_typeinfo(typeinfo)?;
+            Ok(parse_target_unit_data(&value))
+        }
+        Err(error) => Err(error),
+    }
+}
+
 fn parse_target_unit_data(value: &Value) -> Option<TargetUnitData> {
     let map = object_map(value)?;
     Some(TargetUnitData {
         m_snapshotPoint: map.get("m_snapshotPoint").and_then(parse_snapshot_point),
     })
+}
+
+fn decode_snapshot_point<D: TypeDecoder>(
+    decoder: &mut D,
+    typeinfo: &TypeInfo,
+) -> Result<Option<SnapshotPoint>, DecodeError> {
+    let mut values = Vec::new();
+    match decoder.visit_struct_fields_from_typeinfo(
+        typeinfo,
+        &mut |_| Some(()),
+        &mut |decoder, (), field_typeinfo| {
+            let value = decoder.instance_from_typeinfo(field_typeinfo)?;
+            if let Some(value) = value_as_i64(&value) {
+                values.push(SnapshotPointValue::Int(value));
+            } else if let Some(value) = value_as_f64(&value) {
+                values.push(SnapshotPointValue::Float(value));
+            }
+            Ok(())
+        },
+    ) {
+        Ok(()) => {}
+        Err(DecodeError::UnexpectedType(_)) => {
+            let value = decoder.instance_from_typeinfo(typeinfo)?;
+            return Ok(parse_snapshot_point(&value));
+        }
+        Err(error) => return Err(error),
+    }
+
+    if values.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(SnapshotPoint { values }))
+    }
 }
 
 fn parse_snapshot_point(value: &Value) -> Option<SnapshotPoint> {

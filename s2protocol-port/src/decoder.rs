@@ -2,8 +2,8 @@ use crate::bitstream::BitPackedBuffer;
 use crate::{
     error::DecodeError,
     events::{
-        decode_user_id as decode_event_user_id, DirectEventDecode, GameEvent, MessageEvent,
-        TrackerEvent,
+        decode_user_id as decode_event_user_id, DirectEventDecode, GameEvent, GameEventField,
+        MessageEvent, MessageEventField, TrackerEvent, TrackerEventField,
     },
     value::Value,
 };
@@ -31,6 +31,71 @@ enum TypeOp {
 struct IntBounds {
     min: i64,
     bits: usize,
+}
+
+#[derive(Debug, Clone)]
+enum TagLookup<T> {
+    Dense {
+        min_tag: i128,
+        entries: Arc<[Option<T>]>,
+    },
+    Sparse(Arc<BTreeMap<i128, T>>),
+}
+
+impl<T> TagLookup<T> {
+    fn get(&self, tag: &i128) -> Option<&T> {
+        match self {
+            Self::Dense { min_tag, entries } => {
+                let offset = tag.checked_sub(*min_tag)?;
+                let index = usize::try_from(offset).ok()?;
+                entries.get(index).and_then(Option::as_ref)
+            }
+            Self::Sparse(map) => map.get(tag),
+        }
+    }
+}
+
+impl<T: Clone> TagLookup<T> {
+    fn new(entries: Vec<(i128, T)>, duplicate_context: &str) -> Result<Option<Self>, DecodeError> {
+        if entries.is_empty() {
+            return Ok(None);
+        }
+
+        let mut min_tag = i128::MAX;
+        let mut max_tag = i128::MIN;
+        let mut sparse = BTreeMap::new();
+        for (tag, value) in &entries {
+            if sparse.insert(*tag, value.clone()).is_some() {
+                return Err(DecodeError::Corrupted(format!("{duplicate_context} {tag}")));
+            }
+            min_tag = min_tag.min(*tag);
+            max_tag = max_tag.max(*tag);
+        }
+
+        let dense_len = max_tag
+            .checked_sub(min_tag)
+            .and_then(|width| width.checked_add(1))
+            .and_then(|width| usize::try_from(width).ok());
+        let dense_threshold = entries.len().saturating_mul(4).max(16);
+        if min_tag >= 0 {
+            if let Some(dense_len) = dense_len {
+                if dense_len <= dense_threshold {
+                    let mut dense_entries = vec![None; dense_len];
+                    for (tag, value) in entries {
+                        let index = usize::try_from(tag - min_tag)
+                            .map_err(|_| DecodeError::Corrupted("tag index out of range".into()))?;
+                        dense_entries[index] = Some(value);
+                    }
+                    return Ok(Some(Self::Dense {
+                        min_tag,
+                        entries: Arc::from(dense_entries),
+                    }));
+                }
+            }
+        }
+
+        Ok(Some(Self::Sparse(Arc::new(sparse))))
+    }
 }
 
 impl TypeOp {
@@ -80,9 +145,9 @@ pub(crate) struct TypeInfo {
     length_bounds: Option<IntBounds>,
     child_typeid: Option<usize>,
     choice_tag_bounds: Option<IntBounds>,
-    choice_fields: Option<Arc<BTreeMap<i128, ChoiceField>>>,
+    choice_fields: Option<TagLookup<ChoiceField>>,
     struct_fields: Option<Arc<[StructField]>>,
-    struct_fields_by_tag: Option<Arc<BTreeMap<i128, StructField>>>,
+    struct_fields_by_tag: Option<TagLookup<StructField>>,
 }
 
 impl TypeInfo {
@@ -114,7 +179,7 @@ impl TypeInfo {
             None
         };
         let choice_fields = if op == TypeOp::Choice {
-            Some(Arc::new(parse_choice_fields(&args)?))
+            parse_choice_fields(&args)?
         } else {
             None
         };
@@ -127,7 +192,7 @@ impl TypeInfo {
             .as_deref()
             .map(build_struct_field_tag_lookup)
             .transpose()?
-            .map(Arc::new);
+            .flatten();
 
         Ok(Self {
             typeid,
@@ -174,9 +239,9 @@ impl TypeInfo {
             .ok_or_else(|| DecodeError::Corrupted("_choice bounds".into()))
     }
 
-    fn choice_fields(&self) -> Result<&BTreeMap<i128, ChoiceField>, DecodeError> {
+    fn choice_fields(&self) -> Result<&TagLookup<ChoiceField>, DecodeError> {
         self.choice_fields
-            .as_deref()
+            .as_ref()
             .ok_or_else(|| DecodeError::Corrupted("_choice map".into()))
     }
 
@@ -186,9 +251,9 @@ impl TypeInfo {
             .ok_or_else(|| DecodeError::Corrupted("_struct fields".into()))
     }
 
-    fn struct_fields_by_tag(&self) -> Result<&BTreeMap<i128, StructField>, DecodeError> {
+    fn struct_fields_by_tag(&self) -> Result<&TagLookup<StructField>, DecodeError> {
         self.struct_fields_by_tag
-            .as_deref()
+            .as_ref()
             .ok_or_else(|| DecodeError::Corrupted("_struct fields".into()))
     }
 }
@@ -246,23 +311,30 @@ impl StructField {
     fn is_parent(&self) -> bool {
         self.is_parent
     }
+
+    fn tag(&self) -> Option<i128> {
+        self.tag
+    }
 }
 
-fn parse_choice_fields(args: &[JsonValue]) -> Result<BTreeMap<i128, ChoiceField>, DecodeError> {
+fn parse_choice_fields(args: &[JsonValue]) -> Result<Option<TagLookup<ChoiceField>>, DecodeError> {
     let map = args
         .get(1)
         .and_then(JsonValue::as_object)
         .ok_or_else(|| DecodeError::Corrupted("_choice map".into()))?;
 
-    map.iter()
-        .map(|(tag, field)| {
+    let entries = map
+        .iter()
+        .map(|(tag, field)| -> Result<(i128, ChoiceField), DecodeError> {
             let parsed_tag = tag
                 .parse::<i128>()
                 .map_err(|_| DecodeError::Corrupted("_choice key".into()))?;
             let choice_field = parse_choice_field(field)?;
             Ok((parsed_tag, choice_field))
         })
-        .collect::<Result<BTreeMap<_, _>, _>>()
+        .collect::<Result<Vec<_>, _>>()?;
+
+    TagLookup::new(entries, "duplicate _choice tag")
 }
 
 fn parse_choice_field(value: &JsonValue) -> Result<ChoiceField, DecodeError> {
@@ -297,22 +369,13 @@ fn parse_struct_fields(args: &[JsonValue]) -> Result<Vec<StructField>, DecodeErr
 
 fn build_struct_field_tag_lookup(
     fields: &[StructField],
-) -> Result<BTreeMap<i128, StructField>, DecodeError> {
-    let mut field_map = BTreeMap::new();
+) -> Result<Option<TagLookup<StructField>>, DecodeError> {
+    let entries = fields
+        .iter()
+        .filter_map(|field| field.tag().map(|tag| (tag, field.clone())))
+        .collect::<Vec<_>>();
 
-    for field in fields {
-        let Some(tag) = field.tag else {
-            continue;
-        };
-
-        if field_map.insert(tag, field.clone()).is_some() {
-            return Err(DecodeError::Corrupted(format!(
-                "duplicate _struct tag {tag}"
-            )));
-        }
-    }
-
-    Ok(field_map)
+    TagLookup::new(entries, "duplicate _struct tag")
 }
 
 fn parse_struct_field(value: &JsonValue) -> Result<StructField, DecodeError> {
@@ -374,16 +437,53 @@ fn parse_typeid_arg(value: Option<&JsonValue>, context: &str) -> Result<usize, D
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct EventTypeInfo {
-    typeinfo: TypeInfo,
-    name: Arc<str>,
+pub(crate) enum EventDecodePlan<F> {
+    Ordered(Arc<[OrderedEventFieldPlan<F>]>),
+    Tagged(Arc<TaggedEventDecodePlan<F>>),
 }
 
-impl EventTypeInfo {
-    pub(crate) fn new(typeinfo: TypeInfo, name: String) -> Self {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EventPlanKind {
+    Ordered,
+    Tagged,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum OrderedEventFieldPlan<F> {
+    Decode { field: F, typeinfo: TypeInfo },
+    Skip { typeinfo: TypeInfo },
+    Nested(Arc<[OrderedEventFieldPlan<F>]>),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct TaggedEventDecodePlan<F> {
+    fields_by_tag: TagLookup<TaggedEventFieldPlan<F>>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum TaggedEventFieldPlan<F> {
+    Decode { field: F, typeinfo: TypeInfo },
+    Skip,
+    Nested(Arc<TaggedEventDecodePlan<F>>),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct EventTypeInfo<F> {
+    typeinfo: TypeInfo,
+    name: Arc<str>,
+    decode_plan: Option<Arc<EventDecodePlan<F>>>,
+}
+
+impl<F> EventTypeInfo<F> {
+    pub(crate) fn new(
+        typeinfo: TypeInfo,
+        name: String,
+        decode_plan: Option<EventDecodePlan<F>>,
+    ) -> Self {
         Self {
             typeinfo,
             name: Arc::<str>::from(name),
+            decode_plan: decode_plan.map(Arc::new),
         }
     }
 
@@ -394,6 +494,10 @@ impl EventTypeInfo {
     fn name(&self) -> &str {
         self.name.as_ref()
     }
+
+    fn decode_plan(&self) -> Option<&EventDecodePlan<F>> {
+        self.decode_plan.as_deref()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -403,9 +507,9 @@ pub struct ProtocolDefinition {
     pub game_event_types: Vec<(u32, u32, String)>,
     pub message_event_types: Vec<(u32, u32, String)>,
     pub tracker_event_types: Vec<(u32, u32, String)>,
-    pub(crate) game_event_typeinfos: Arc<[Option<EventTypeInfo>]>,
-    pub(crate) message_event_typeinfos: Arc<[Option<EventTypeInfo>]>,
-    pub(crate) tracker_event_typeinfos: Arc<[Option<EventTypeInfo>]>,
+    pub(crate) game_event_typeinfos: Arc<[Option<EventTypeInfo<GameEventField>>]>,
+    pub(crate) message_event_typeinfos: Arc<[Option<EventTypeInfo<MessageEventField>>]>,
+    pub(crate) tracker_event_typeinfos: Arc<[Option<EventTypeInfo<TrackerEventField>>]>,
     pub game_eventid_typeid: usize,
     pub message_eventid_typeid: usize,
     pub tracker_eventid_typeid: Option<usize>,
@@ -579,6 +683,15 @@ pub trait TypeDecoder {
         K: Copy,
         S: FnMut(&str) -> Option<K>,
         F: FnMut(&mut Self, K, &TypeInfo) -> Result<(), DecodeError>;
+    fn decode_event_fields_from_plan<K, F>(
+        &mut self,
+        plan: &EventDecodePlan<K>,
+        on_field: &mut F,
+    ) -> Result<(), DecodeError>
+    where
+        Self: Sized,
+        K: Copy,
+        F: FnMut(&mut Self, K, &TypeInfo) -> Result<(), DecodeError>;
 }
 
 pub struct BitPackedDecoder {
@@ -590,6 +703,154 @@ fn lookup_typeinfo(typeinfos: &[TypeInfo], typeid: usize) -> Result<&TypeInfo, D
     typeinfos
         .get(typeid)
         .ok_or_else(|| DecodeError::Corrupted(format!("typeid {typeid} out of range")))
+}
+
+pub(crate) fn compile_event_decode_plan<F, S>(
+    typeinfo: &TypeInfo,
+    typeinfos: &[TypeInfo],
+    plan_kind: EventPlanKind,
+    select_field: &mut S,
+) -> Result<Option<EventDecodePlan<F>>, DecodeError>
+where
+    F: Copy,
+    S: FnMut(&str) -> Option<F>,
+{
+    if typeinfo.op() != TypeOp::Struct {
+        return Ok(None);
+    }
+
+    match plan_kind {
+        EventPlanKind::Ordered => {
+            compile_ordered_event_decode_plan(typeinfo, typeinfos, select_field)
+                .map(|plan| plan.map(EventDecodePlan::Ordered))
+        }
+        EventPlanKind::Tagged => {
+            compile_tagged_event_decode_plan(typeinfo, typeinfos, select_field)
+                .map(|plan| plan.map(EventDecodePlan::Tagged))
+        }
+    }
+}
+
+fn compile_ordered_event_decode_plan<F, S>(
+    typeinfo: &TypeInfo,
+    typeinfos: &[TypeInfo],
+    select_field: &mut S,
+) -> Result<Option<Arc<[OrderedEventFieldPlan<F>]>>, DecodeError>
+where
+    F: Copy,
+    S: FnMut(&str) -> Option<F>,
+{
+    if typeinfo.op() != TypeOp::Struct {
+        return Ok(None);
+    }
+
+    let fields = typeinfo.struct_fields()?;
+    let mut plans = Vec::with_capacity(fields.len());
+    for field in fields {
+        let child_typeinfo = lookup_typeinfo(typeinfos, field.typeid())?.clone();
+        if field.is_parent() {
+            if child_typeinfo.op() == TypeOp::Struct {
+                let Some(parent_plan) =
+                    compile_ordered_event_decode_plan(&child_typeinfo, typeinfos, select_field)?
+                else {
+                    if fields.len() == 1 {
+                        return Ok(None);
+                    }
+                    plans.push(OrderedEventFieldPlan::Skip {
+                        typeinfo: child_typeinfo,
+                    });
+                    continue;
+                };
+                plans.push(OrderedEventFieldPlan::Nested(parent_plan));
+                continue;
+            }
+
+            if fields.len() == 1 {
+                return Ok(None);
+            }
+
+            if let Some(selected_field) = select_field("__parent") {
+                plans.push(OrderedEventFieldPlan::Decode {
+                    field: selected_field,
+                    typeinfo: child_typeinfo,
+                });
+            } else {
+                plans.push(OrderedEventFieldPlan::Skip {
+                    typeinfo: child_typeinfo,
+                });
+            }
+            continue;
+        }
+
+        if let Some(selected_field) = select_field(field.name()) {
+            plans.push(OrderedEventFieldPlan::Decode {
+                field: selected_field,
+                typeinfo: child_typeinfo,
+            });
+        } else {
+            plans.push(OrderedEventFieldPlan::Skip {
+                typeinfo: child_typeinfo,
+            });
+        }
+    }
+
+    Ok(Some(Arc::from(plans)))
+}
+
+fn compile_tagged_event_decode_plan<F, S>(
+    typeinfo: &TypeInfo,
+    typeinfos: &[TypeInfo],
+    select_field: &mut S,
+) -> Result<Option<Arc<TaggedEventDecodePlan<F>>>, DecodeError>
+where
+    F: Copy,
+    S: FnMut(&str) -> Option<F>,
+{
+    if typeinfo.op() != TypeOp::Struct {
+        return Ok(None);
+    }
+
+    let fields = typeinfo.struct_fields()?;
+    let mut entries = Vec::new();
+    for field in fields {
+        let Some(tag) = field.tag() else {
+            continue;
+        };
+
+        let child_typeinfo = lookup_typeinfo(typeinfos, field.typeid())?.clone();
+        let plan = if field.is_parent() {
+            if child_typeinfo.op() == TypeOp::Struct {
+                match compile_tagged_event_decode_plan(&child_typeinfo, typeinfos, select_field)? {
+                    Some(parent_plan) => TaggedEventFieldPlan::Nested(parent_plan),
+                    None if fields.len() == 1 => return Ok(None),
+                    None => TaggedEventFieldPlan::Skip,
+                }
+            } else if fields.len() == 1 {
+                return Ok(None);
+            } else if let Some(selected_field) = select_field("__parent") {
+                TaggedEventFieldPlan::Decode {
+                    field: selected_field,
+                    typeinfo: child_typeinfo,
+                }
+            } else {
+                TaggedEventFieldPlan::Skip
+            }
+        } else if let Some(selected_field) = select_field(field.name()) {
+            TaggedEventFieldPlan::Decode {
+                field: selected_field,
+                typeinfo: child_typeinfo,
+            }
+        } else {
+            TaggedEventFieldPlan::Skip
+        };
+
+        entries.push((tag, plan));
+    }
+
+    let Some(fields_by_tag) = TagLookup::new(entries, "duplicate event plan tag")? else {
+        return Ok(None);
+    };
+    Ok(Some(Arc::new(TaggedEventDecodePlan { fields_by_tag })))
 }
 
 impl BitPackedDecoder {
@@ -701,6 +962,32 @@ impl BitPackedDecoder {
                     on_field(self, selected_field, child_typeinfo)?;
                 } else {
                     self.skip_from_typeinfo(child_typeinfo)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn decode_ordered_event_fields<K, F>(
+        &mut self,
+        plan: &[OrderedEventFieldPlan<K>],
+        on_field: &mut F,
+    ) -> Result<(), DecodeError>
+    where
+        K: Copy,
+        F: FnMut(&mut Self, K, &TypeInfo) -> Result<(), DecodeError>,
+    {
+        for step in plan {
+            match step {
+                OrderedEventFieldPlan::Decode { field, typeinfo } => {
+                    on_field(self, *field, typeinfo)?;
+                }
+                OrderedEventFieldPlan::Skip { typeinfo } => {
+                    self.skip_from_typeinfo(typeinfo)?;
+                }
+                OrderedEventFieldPlan::Nested(nested) => {
+                    self.decode_ordered_event_fields(nested.as_ref(), on_field)?;
                 }
             }
         }
@@ -1048,6 +1335,26 @@ impl TypeDecoder for BitPackedDecoder {
     {
         self.visit_struct_fields(typeinfo, select_field, on_field)
     }
+
+    fn decode_event_fields_from_plan<K, F>(
+        &mut self,
+        plan: &EventDecodePlan<K>,
+        on_field: &mut F,
+    ) -> Result<(), DecodeError>
+    where
+        Self: Sized,
+        K: Copy,
+        F: FnMut(&mut Self, K, &TypeInfo) -> Result<(), DecodeError>,
+    {
+        match plan {
+            EventDecodePlan::Ordered(steps) => {
+                self.decode_ordered_event_fields(steps.as_ref(), on_field)
+            }
+            EventDecodePlan::Tagged(_) => Err(DecodeError::UnexpectedType(
+                "bitpacked event plan expects ordered struct fields".into(),
+            )),
+        }
+    }
 }
 
 pub struct VersionedDecoder {
@@ -1312,6 +1619,41 @@ impl VersionedDecoder {
                     on_field(self, selected_field, child_typeinfo)?;
                 } else {
                     self.skip_instance()?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn decode_tagged_event_fields<K, F>(
+        &mut self,
+        plan: &TaggedEventDecodePlan<K>,
+        on_field: &mut F,
+    ) -> Result<(), DecodeError>
+    where
+        K: Copy,
+        F: FnMut(&mut Self, K, &TypeInfo) -> Result<(), DecodeError>,
+    {
+        self.expect_skip(5)?;
+        let field_count = self.vint()? as usize;
+
+        for _ in 0..field_count {
+            let tag = self.vint()?;
+            let Some(step) = plan.fields_by_tag.get(&tag) else {
+                self.skip_instance()?;
+                continue;
+            };
+
+            match step {
+                TaggedEventFieldPlan::Decode { field, typeinfo } => {
+                    on_field(self, *field, typeinfo)?;
+                }
+                TaggedEventFieldPlan::Skip => {
+                    self.skip_instance()?;
+                }
+                TaggedEventFieldPlan::Nested(nested) => {
+                    self.decode_tagged_event_fields(nested, on_field)?;
                 }
             }
         }
@@ -1605,11 +1947,29 @@ impl TypeDecoder for VersionedDecoder {
     {
         self.visit_struct_fields(typeinfo, select_field, on_field)
     }
+
+    fn decode_event_fields_from_plan<K, F>(
+        &mut self,
+        plan: &EventDecodePlan<K>,
+        on_field: &mut F,
+    ) -> Result<(), DecodeError>
+    where
+        Self: Sized,
+        K: Copy,
+        F: FnMut(&mut Self, K, &TypeInfo) -> Result<(), DecodeError>,
+    {
+        match plan {
+            EventDecodePlan::Ordered(_) => Err(DecodeError::UnexpectedType(
+                "versioned event plan expects tagged struct fields".into(),
+            )),
+            EventDecodePlan::Tagged(plan) => self.decode_tagged_event_fields(plan, on_field),
+        }
+    }
 }
 
 fn decode_event_stream<'a, D, T>(
     decoder: &mut D,
-    event_typeinfos: &'a [Option<EventTypeInfo>],
+    event_typeinfos: &'a [Option<EventTypeInfo<T::Field>>],
     eventid_typeid: Option<usize>,
     decode_user_id: bool,
     replay_userid_typeid: Option<usize>,
@@ -1661,21 +2021,33 @@ where
 
             let mut event = T::new_decoded(event_typeinfo.name(), eventid, gameloop, userid);
 
-            match event.decode_fields_from_typeinfo(decoder, event_typeinfo.typeinfo()) {
-                Ok(()) => {}
-                Err(DecodeError::UnexpectedType(_)) => {
-                    match decoder.instance_from_typeinfo(event_typeinfo.typeinfo())? {
-                        Value::Object(map) => {
-                            for (key, value) in map {
-                                event.apply_fallback_value(&key, value);
+            match event_typeinfo.decode_plan() {
+                Some(plan) => match event.decode_fields_from_plan(decoder, plan) {
+                    Ok(()) => {}
+                    Err(DecodeError::UnexpectedType(_)) => {
+                        match decoder.instance_from_typeinfo(event_typeinfo.typeinfo())? {
+                            Value::Object(map) => {
+                                for (key, value) in map {
+                                    event.apply_fallback_value(&key, value);
+                                }
+                            }
+                            value => {
+                                event.apply_fallback_value("event", value);
                             }
                         }
-                        value => {
-                            event.apply_fallback_value("event", value);
+                    }
+                    Err(error) => return Err(error),
+                },
+                None => match decoder.instance_from_typeinfo(event_typeinfo.typeinfo())? {
+                    Value::Object(map) => {
+                        for (key, value) in map {
+                            event.apply_fallback_value(&key, value);
                         }
                     }
-                }
-                Err(error) => return Err(error),
+                    value => {
+                        event.apply_fallback_value("event", value);
+                    }
+                },
             }
 
             event.set_decoded_bits((decoder.used_bits() - start_bits) as i128);
@@ -1702,7 +2074,7 @@ where
 
 fn decode_event_stream_tolerant<'a, D, T>(
     decoder: &mut D,
-    event_typeinfos: &'a [Option<EventTypeInfo>],
+    event_typeinfos: &'a [Option<EventTypeInfo<T::Field>>],
     eventid_typeid: Option<usize>,
     decode_user_id: bool,
     replay_userid_typeid: Option<usize>,

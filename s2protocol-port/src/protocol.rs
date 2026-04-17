@@ -1,5 +1,8 @@
-use crate::decoder::{EventTypeInfo, ProtocolDefinition, TypeInfo};
+use crate::decoder::{
+    compile_event_decode_plan, EventPlanKind, EventTypeInfo, ProtocolDefinition, TypeInfo,
+};
 use crate::error::DecodeError;
+use crate::events::{GameEventField, MessageEventField, TrackerEventField};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -63,12 +66,24 @@ impl ProtocolStore {
             let message_event_types = parse_event_map(proto.get("message_event_types"))?;
             let tracker_event_types = parse_event_map(proto.get("tracker_event_types"))?;
             let typeinfos: Arc<[TypeInfo]> = typeinfos.into();
-            let game_event_typeinfos =
-                build_event_typeinfos(&game_event_types, typeinfos.as_ref())?;
-            let message_event_typeinfos =
-                build_event_typeinfos(&message_event_types, typeinfos.as_ref())?;
-            let tracker_event_typeinfos =
-                build_event_typeinfos(&tracker_event_types, typeinfos.as_ref())?;
+            let game_event_typeinfos = build_event_typeinfos(
+                &game_event_types,
+                typeinfos.as_ref(),
+                EventPlanKind::Ordered,
+                &mut GameEventField::from_key,
+            )?;
+            let message_event_typeinfos = build_event_typeinfos(
+                &message_event_types,
+                typeinfos.as_ref(),
+                EventPlanKind::Ordered,
+                &mut MessageEventField::from_key,
+            )?;
+            let tracker_event_typeinfos = build_event_typeinfos(
+                &tracker_event_types,
+                typeinfos.as_ref(),
+                EventPlanKind::Tagged,
+                &mut TrackerEventField::from_key,
+            )?;
 
             let build_def = ProtocolDefinition {
                 build,
@@ -196,10 +211,16 @@ fn parse_event_map(value: Option<&JsonValue>) -> Result<Vec<(u32, u32, String)>,
     Ok(entries)
 }
 
-fn build_event_typeinfos(
+fn build_event_typeinfos<F, S>(
     event_types: &[(u32, u32, String)],
     typeinfos: &[TypeInfo],
-) -> Result<Arc<[Option<EventTypeInfo>]>, DecodeError> {
+    plan_kind: EventPlanKind,
+    select_field: &mut S,
+) -> Result<Arc<[Option<EventTypeInfo<F>>]>, DecodeError>
+where
+    F: Copy,
+    S: FnMut(&str) -> Option<F>,
+{
     let max_event_id = event_types
         .iter()
         .map(|(event_id, _, _)| usize::try_from(*event_id))
@@ -209,7 +230,7 @@ fn build_event_typeinfos(
         .max();
 
     let Some(max_event_id) = max_event_id else {
-        return Ok(Arc::from(Vec::<Option<EventTypeInfo>>::new()));
+        return Ok(Arc::from(Vec::<Option<EventTypeInfo<F>>>::new()));
     };
 
     let mut lookup = vec![None; max_event_id + 1];
@@ -222,6 +243,7 @@ fn build_event_typeinfos(
             .get(type_index)
             .cloned()
             .ok_or_else(|| DecodeError::Json(format!("event typeid {type_index} out of range")))?;
+        let decode_plan = compile_event_decode_plan(&typeinfo, typeinfos, plan_kind, select_field)?;
 
         if lookup[event_index].is_some() {
             return Err(DecodeError::Json(format!(
@@ -229,7 +251,7 @@ fn build_event_typeinfos(
             )));
         }
 
-        lookup[event_index] = Some(EventTypeInfo::new(typeinfo, name.clone()));
+        lookup[event_index] = Some(EventTypeInfo::new(typeinfo, name.clone(), decode_plan));
     }
 
     Ok(Arc::from(lookup))
