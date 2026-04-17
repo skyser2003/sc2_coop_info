@@ -2,8 +2,9 @@ use crate::bitstream::BitPackedBuffer;
 use crate::{
     error::DecodeError,
     events::{
-        decode_user_id as decode_event_user_id, DirectEventDecode, GameEvent, GameEventField,
-        MessageEvent, MessageEventField, TrackerEvent, TrackerEventField,
+        decode_user_id as decode_event_user_id, AbilityData, CmdEventData, DirectEventDecode,
+        GameEvent, GameEventField, MessageEvent, MessageEventField, PlayerStatsData, SnapshotPoint,
+        SnapshotPointValue, TargetUnitData, TrackerEvent, TrackerEventField, TriggerEventData,
     },
     value::Value,
 };
@@ -469,26 +470,16 @@ pub(crate) enum TaggedEventFieldPlan<F> {
 
 #[derive(Debug, Clone)]
 pub(crate) struct EventTypeInfo<F> {
-    typeinfo: TypeInfo,
     name: Arc<str>,
     decode_plan: Option<Arc<EventDecodePlan<F>>>,
 }
 
 impl<F> EventTypeInfo<F> {
-    pub(crate) fn new(
-        typeinfo: TypeInfo,
-        name: String,
-        decode_plan: Option<EventDecodePlan<F>>,
-    ) -> Self {
+    pub(crate) fn new(name: String, decode_plan: Option<EventDecodePlan<F>>) -> Self {
         Self {
-            typeinfo,
             name: Arc::<str>::from(name),
             decode_plan: decode_plan.map(Arc::new),
         }
-    }
-
-    fn typeinfo(&self) -> &TypeInfo {
-        &self.typeinfo
     }
 
     fn name(&self) -> &str {
@@ -683,6 +674,33 @@ pub trait TypeDecoder {
         K: Copy,
         S: FnMut(&str) -> Option<K>,
         F: FnMut(&mut Self, K, &TypeInfo) -> Result<(), DecodeError>;
+    fn visit_choice_field_from_typeinfo<K, S, F>(
+        &mut self,
+        typeinfo: &TypeInfo,
+        select_field: &mut S,
+        on_field: &mut F,
+    ) -> Result<(), DecodeError>
+    where
+        Self: Sized,
+        K: Copy,
+        S: FnMut(&str) -> Option<K>,
+        F: FnMut(&mut Self, K, &TypeInfo) -> Result<(), DecodeError>;
+    fn visit_array_elements_from_typeinfo<F>(
+        &mut self,
+        typeinfo: &TypeInfo,
+        on_element: &mut F,
+    ) -> Result<(), DecodeError>
+    where
+        Self: Sized,
+        F: FnMut(&mut Self, &TypeInfo) -> Result<(), DecodeError>;
+    fn visit_optional_child_from_typeinfo<F>(
+        &mut self,
+        typeinfo: &TypeInfo,
+        on_child: &mut F,
+    ) -> Result<bool, DecodeError>
+    where
+        Self: Sized,
+        F: FnMut(&mut Self, &TypeInfo) -> Result<(), DecodeError>;
     fn decode_event_fields_from_plan<K, F>(
         &mut self,
         plan: &EventDecodePlan<K>,
@@ -853,6 +871,427 @@ where
     Ok(Some(Arc::new(TaggedEventDecodePlan { fields_by_tag })))
 }
 
+fn mark_trigger_text(result: &mut TriggerEventData, text: &str) {
+    if text.contains("SelectionChanged") {
+        result.contains_selection_changed = true;
+    }
+    if text.contains("None") {
+        result.contains_none = true;
+    }
+}
+
+fn scan_trigger_event_data<D: TypeDecoder>(
+    decoder: &mut D,
+    typeinfo: &TypeInfo,
+    result: &mut TriggerEventData,
+) -> Result<(), DecodeError> {
+    #[derive(Clone, Copy)]
+    enum TriggerFieldMarker {
+        Other,
+        SelectionChanged,
+        None,
+    }
+
+    if result.contains_selection_changed && result.contains_none {
+        decoder.skip_from_typeinfo(typeinfo)?;
+        return Ok(());
+    }
+
+    match typeinfo.op() {
+        TypeOp::Null => {
+            decoder.skip_from_typeinfo(typeinfo)?;
+            Ok(())
+        }
+        TypeOp::Optional => {
+            decoder.visit_optional_child_from_typeinfo(
+                typeinfo,
+                &mut |decoder, child_typeinfo| {
+                    scan_trigger_event_data(decoder, child_typeinfo, result)
+                },
+            )?;
+            Ok(())
+        }
+        TypeOp::Struct => decoder.visit_struct_fields_from_typeinfo(
+            typeinfo,
+            &mut |field_name| {
+                Some(match field_name {
+                    "SelectionChanged" => TriggerFieldMarker::SelectionChanged,
+                    "None" => TriggerFieldMarker::None,
+                    _ => TriggerFieldMarker::Other,
+                })
+            },
+            &mut |decoder, marker, child_typeinfo| {
+                match marker {
+                    TriggerFieldMarker::SelectionChanged => {
+                        result.contains_selection_changed = true;
+                    }
+                    TriggerFieldMarker::None => {
+                        result.contains_none = true;
+                    }
+                    TriggerFieldMarker::Other => {}
+                }
+                scan_trigger_event_data(decoder, child_typeinfo, result)
+            },
+        ),
+        TypeOp::Choice => decoder.visit_choice_field_from_typeinfo(
+            typeinfo,
+            &mut |field_name| {
+                Some(match field_name {
+                    "SelectionChanged" => TriggerFieldMarker::SelectionChanged,
+                    "None" => TriggerFieldMarker::None,
+                    _ => TriggerFieldMarker::Other,
+                })
+            },
+            &mut |decoder, marker, child_typeinfo| {
+                match marker {
+                    TriggerFieldMarker::SelectionChanged => {
+                        result.contains_selection_changed = true;
+                    }
+                    TriggerFieldMarker::None => {
+                        result.contains_none = true;
+                    }
+                    TriggerFieldMarker::Other => {}
+                }
+                scan_trigger_event_data(decoder, child_typeinfo, result)
+            },
+        ),
+        TypeOp::Array => decoder
+            .visit_array_elements_from_typeinfo(typeinfo, &mut |decoder, child_typeinfo| {
+                scan_trigger_event_data(decoder, child_typeinfo, result)
+            }),
+        TypeOp::Blob | TypeOp::Fourcc => {
+            if let Some(text) = decoder.string_from_typeinfo(typeinfo)? {
+                mark_trigger_text(result, &text);
+            }
+            Ok(())
+        }
+        _ => decoder.skip_from_typeinfo(typeinfo),
+    }
+}
+
+pub(crate) fn decode_trigger_event_data_from_typeinfo<D: TypeDecoder>(
+    decoder: &mut D,
+    typeinfo: &TypeInfo,
+) -> Result<TriggerEventData, DecodeError> {
+    let mut result = TriggerEventData::default();
+    scan_trigger_event_data(decoder, typeinfo, &mut result)?;
+    Ok(result)
+}
+
+fn decode_ability_data_inner<D: TypeDecoder>(
+    decoder: &mut D,
+    typeinfo: &TypeInfo,
+    ability: &mut AbilityData,
+    found: &mut bool,
+) -> Result<(), DecodeError> {
+    match typeinfo.op() {
+        TypeOp::Null => {
+            decoder.skip_from_typeinfo(typeinfo)?;
+            Ok(())
+        }
+        TypeOp::Optional => {
+            decoder.visit_optional_child_from_typeinfo(
+                typeinfo,
+                &mut |decoder, child_typeinfo| {
+                    decode_ability_data_inner(decoder, child_typeinfo, ability, found)
+                },
+            )?;
+            Ok(())
+        }
+        TypeOp::Struct => decoder.visit_struct_fields_from_typeinfo(
+            typeinfo,
+            &mut |field_name| (field_name == "m_abilLink").then_some(()),
+            &mut |decoder, (), field_typeinfo| {
+                ability.m_abilLink = decoder
+                    .i64_from_typeinfo(field_typeinfo)?
+                    .unwrap_or_default();
+                *found = true;
+                Ok(())
+            },
+        ),
+        _ => {
+            if let Some(value) = decoder.i64_from_typeinfo(typeinfo)? {
+                ability.m_abilLink = value;
+                *found = true;
+            }
+            Ok(())
+        }
+    }
+}
+
+pub(crate) fn decode_ability_data_from_typeinfo<D: TypeDecoder>(
+    decoder: &mut D,
+    typeinfo: &TypeInfo,
+) -> Result<Option<AbilityData>, DecodeError> {
+    let mut ability = AbilityData::default();
+    let mut found = false;
+    decode_ability_data_inner(decoder, typeinfo, &mut ability, &mut found)?;
+    Ok(found.then_some(ability))
+}
+
+fn collect_snapshot_point_values<D: TypeDecoder>(
+    decoder: &mut D,
+    typeinfo: &TypeInfo,
+    values: &mut Vec<SnapshotPointValue>,
+) -> Result<(), DecodeError> {
+    match typeinfo.op() {
+        TypeOp::Null => {
+            decoder.skip_from_typeinfo(typeinfo)?;
+            Ok(())
+        }
+        TypeOp::Optional => {
+            decoder.visit_optional_child_from_typeinfo(
+                typeinfo,
+                &mut |decoder, child_typeinfo| {
+                    collect_snapshot_point_values(decoder, child_typeinfo, values)
+                },
+            )?;
+            Ok(())
+        }
+        TypeOp::Int => {
+            if let Some(value) = decoder.i64_from_typeinfo(typeinfo)? {
+                values.push(SnapshotPointValue::Int(value));
+            }
+            Ok(())
+        }
+        TypeOp::Real32 | TypeOp::Real64 => {
+            if let Some(value) = decoder.f64_from_typeinfo(typeinfo)? {
+                values.push(SnapshotPointValue::Float(value));
+            }
+            Ok(())
+        }
+        TypeOp::Struct => decoder.visit_struct_fields_from_typeinfo(
+            typeinfo,
+            &mut |_| Some(()),
+            &mut |decoder, (), field_typeinfo| {
+                collect_snapshot_point_values(decoder, field_typeinfo, values)
+            },
+        ),
+        TypeOp::Choice => decoder.visit_choice_field_from_typeinfo(
+            typeinfo,
+            &mut |_| Some(()),
+            &mut |decoder, (), field_typeinfo| {
+                collect_snapshot_point_values(decoder, field_typeinfo, values)
+            },
+        ),
+        TypeOp::Array => {
+            decoder.visit_array_elements_from_typeinfo(typeinfo, &mut |decoder, child_typeinfo| {
+                collect_snapshot_point_values(decoder, child_typeinfo, values)
+            })
+        }
+        _ => decoder.skip_from_typeinfo(typeinfo),
+    }
+}
+
+pub(crate) fn decode_snapshot_point_from_typeinfo<D: TypeDecoder>(
+    decoder: &mut D,
+    typeinfo: &TypeInfo,
+) -> Result<Option<SnapshotPoint>, DecodeError> {
+    let mut values = Vec::new();
+    collect_snapshot_point_values(decoder, typeinfo, &mut values)?;
+    if values.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(SnapshotPoint { values }))
+    }
+}
+
+fn decode_target_unit_data_inner<D: TypeDecoder>(
+    decoder: &mut D,
+    typeinfo: &TypeInfo,
+    data: &mut TargetUnitData,
+    found: &mut bool,
+) -> Result<(), DecodeError> {
+    match typeinfo.op() {
+        TypeOp::Null => {
+            decoder.skip_from_typeinfo(typeinfo)?;
+            Ok(())
+        }
+        TypeOp::Optional => {
+            decoder.visit_optional_child_from_typeinfo(
+                typeinfo,
+                &mut |decoder, child_typeinfo| {
+                    decode_target_unit_data_inner(decoder, child_typeinfo, data, found)
+                },
+            )?;
+            Ok(())
+        }
+        TypeOp::Struct => decoder.visit_struct_fields_from_typeinfo(
+            typeinfo,
+            &mut |field_name| (field_name == "m_snapshotPoint").then_some(()),
+            &mut |decoder, (), field_typeinfo| {
+                data.m_snapshotPoint =
+                    decode_snapshot_point_from_typeinfo(decoder, field_typeinfo)?;
+                *found = true;
+                Ok(())
+            },
+        ),
+        TypeOp::Choice => decoder.visit_choice_field_from_typeinfo(
+            typeinfo,
+            &mut |field_name| (field_name == "m_snapshotPoint").then_some(()),
+            &mut |decoder, (), field_typeinfo| {
+                data.m_snapshotPoint =
+                    decode_snapshot_point_from_typeinfo(decoder, field_typeinfo)?;
+                *found = true;
+                Ok(())
+            },
+        ),
+        _ => decoder.skip_from_typeinfo(typeinfo),
+    }
+}
+
+pub(crate) fn decode_target_unit_data_from_typeinfo<D: TypeDecoder>(
+    decoder: &mut D,
+    typeinfo: &TypeInfo,
+) -> Result<Option<TargetUnitData>, DecodeError> {
+    let mut data = TargetUnitData::default();
+    let mut found = false;
+    decode_target_unit_data_inner(decoder, typeinfo, &mut data, &mut found)?;
+    Ok(found.then_some(data))
+}
+
+fn decode_cmd_event_data_inner<D: TypeDecoder>(
+    decoder: &mut D,
+    typeinfo: &TypeInfo,
+    data: &mut CmdEventData,
+    found: &mut bool,
+) -> Result<(), DecodeError> {
+    match typeinfo.op() {
+        TypeOp::Null => {
+            decoder.skip_from_typeinfo(typeinfo)?;
+            Ok(())
+        }
+        TypeOp::Optional => {
+            decoder.visit_optional_child_from_typeinfo(
+                typeinfo,
+                &mut |decoder, child_typeinfo| {
+                    decode_cmd_event_data_inner(decoder, child_typeinfo, data, found)
+                },
+            )?;
+            Ok(())
+        }
+        TypeOp::Struct => decoder.visit_struct_fields_from_typeinfo(
+            typeinfo,
+            &mut |field_name| (field_name == "TargetUnit").then_some(()),
+            &mut |decoder, (), field_typeinfo| {
+                data.TargetUnit = decode_target_unit_data_from_typeinfo(decoder, field_typeinfo)?;
+                *found = true;
+                Ok(())
+            },
+        ),
+        TypeOp::Choice => decoder.visit_choice_field_from_typeinfo(
+            typeinfo,
+            &mut |field_name| (field_name == "TargetUnit").then_some(()),
+            &mut |decoder, (), field_typeinfo| {
+                data.TargetUnit = decode_target_unit_data_from_typeinfo(decoder, field_typeinfo)?;
+                *found = true;
+                Ok(())
+            },
+        ),
+        _ => decoder.skip_from_typeinfo(typeinfo),
+    }
+}
+
+pub(crate) fn decode_cmd_event_data_from_typeinfo<D: TypeDecoder>(
+    decoder: &mut D,
+    typeinfo: &TypeInfo,
+) -> Result<Option<CmdEventData>, DecodeError> {
+    let mut data = CmdEventData::default();
+    let mut found = false;
+    decode_cmd_event_data_inner(decoder, typeinfo, &mut data, &mut found)?;
+    Ok(found.then_some(data))
+}
+
+fn decode_player_stats_inner<D: TypeDecoder>(
+    decoder: &mut D,
+    typeinfo: &TypeInfo,
+    stats: &mut PlayerStatsData,
+    found: &mut bool,
+) -> Result<(), DecodeError> {
+    match typeinfo.op() {
+        TypeOp::Null => {
+            decoder.skip_from_typeinfo(typeinfo)?;
+            Ok(())
+        }
+        TypeOp::Optional => {
+            decoder.visit_optional_child_from_typeinfo(
+                typeinfo,
+                &mut |decoder, child_typeinfo| {
+                    decode_player_stats_inner(decoder, child_typeinfo, stats, found)
+                },
+            )?;
+            Ok(())
+        }
+        TypeOp::Struct => decoder.visit_struct_fields_from_typeinfo(
+            typeinfo,
+            &mut |field_name| match field_name {
+                "m_scoreValueFoodUsed" => Some(0u8),
+                "m_scoreValueMineralsCollectionRate" => Some(1u8),
+                "m_scoreValueVespeneCollectionRate" => Some(2u8),
+                _ => None,
+            },
+            &mut |decoder, field, field_typeinfo| {
+                match field {
+                    0 => {
+                        stats.m_score_value_food_used =
+                            decoder.f64_from_typeinfo(field_typeinfo)?;
+                    }
+                    1 => {
+                        stats.m_score_value_minerals_collection_rate =
+                            decoder.f64_from_typeinfo(field_typeinfo)?;
+                    }
+                    2 => {
+                        stats.m_score_value_vespene_collection_rate =
+                            decoder.f64_from_typeinfo(field_typeinfo)?;
+                    }
+                    _ => unreachable!("invalid selected player stats field"),
+                }
+                *found = true;
+                Ok(())
+            },
+        ),
+        TypeOp::Choice => decoder.visit_choice_field_from_typeinfo(
+            typeinfo,
+            &mut |field_name| match field_name {
+                "m_scoreValueFoodUsed" => Some(0u8),
+                "m_scoreValueMineralsCollectionRate" => Some(1u8),
+                "m_scoreValueVespeneCollectionRate" => Some(2u8),
+                _ => None,
+            },
+            &mut |decoder, field, field_typeinfo| {
+                match field {
+                    0 => {
+                        stats.m_score_value_food_used =
+                            decoder.f64_from_typeinfo(field_typeinfo)?;
+                    }
+                    1 => {
+                        stats.m_score_value_minerals_collection_rate =
+                            decoder.f64_from_typeinfo(field_typeinfo)?;
+                    }
+                    2 => {
+                        stats.m_score_value_vespene_collection_rate =
+                            decoder.f64_from_typeinfo(field_typeinfo)?;
+                    }
+                    _ => unreachable!("invalid selected player stats field"),
+                }
+                *found = true;
+                Ok(())
+            },
+        ),
+        _ => decoder.skip_from_typeinfo(typeinfo),
+    }
+}
+
+pub(crate) fn decode_player_stats_from_typeinfo<D: TypeDecoder>(
+    decoder: &mut D,
+    typeinfo: &TypeInfo,
+) -> Result<Option<PlayerStatsData>, DecodeError> {
+    let mut stats = PlayerStatsData::default();
+    let mut found = false;
+    decode_player_stats_inner(decoder, typeinfo, &mut stats, &mut found)?;
+    Ok(found.then_some(stats))
+}
+
 impl BitPackedDecoder {
     pub fn new(contents: &[u8], typeinfos: Arc<[TypeInfo]>) -> Self {
         Self {
@@ -967,6 +1406,92 @@ impl BitPackedDecoder {
         }
 
         Ok(())
+    }
+
+    fn visit_choice_field<K, S, F>(
+        &mut self,
+        typeinfo: &TypeInfo,
+        select_field: &mut S,
+        on_field: &mut F,
+    ) -> Result<(), DecodeError>
+    where
+        K: Copy,
+        S: FnMut(&str) -> Option<K>,
+        F: FnMut(&mut Self, K, &TypeInfo) -> Result<(), DecodeError>,
+    {
+        if typeinfo.op() != TypeOp::Choice {
+            return Err(DecodeError::UnexpectedType(format!(
+                "typeid={} op={} does not decode to choice",
+                typeinfo.typeid(),
+                typeinfo.op_name()
+            )));
+        }
+
+        let tag = self.int(typeinfo.choice_tag_bounds()?)?;
+        let field = typeinfo
+            .choice_fields()?
+            .get(&tag)
+            .ok_or_else(|| DecodeError::Corrupted(format!("invalid choice tag {tag}")))?;
+        let typeinfos = Arc::clone(&self.typeinfos);
+        let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+        if let Some(selected_field) = select_field(field.name()) {
+            on_field(self, selected_field, child_typeinfo)?;
+        } else {
+            self.skip_from_typeinfo(child_typeinfo)?;
+        }
+        Ok(())
+    }
+
+    fn visit_array_elements<F>(
+        &mut self,
+        typeinfo: &TypeInfo,
+        on_element: &mut F,
+    ) -> Result<(), DecodeError>
+    where
+        F: FnMut(&mut Self, &TypeInfo) -> Result<(), DecodeError>,
+    {
+        if typeinfo.op() != TypeOp::Array {
+            return Err(DecodeError::UnexpectedType(format!(
+                "typeid={} op={} does not decode to array",
+                typeinfo.typeid(),
+                typeinfo.op_name()
+            )));
+        }
+
+        let length = self.int(typeinfo.length_bounds()?)? as usize;
+        let typeinfos = Arc::clone(&self.typeinfos);
+        let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
+        for _ in 0..length {
+            on_element(self, child_typeinfo)?;
+        }
+        Ok(())
+    }
+
+    fn visit_optional_child<F>(
+        &mut self,
+        typeinfo: &TypeInfo,
+        on_child: &mut F,
+    ) -> Result<bool, DecodeError>
+    where
+        F: FnMut(&mut Self, &TypeInfo) -> Result<(), DecodeError>,
+    {
+        if typeinfo.op() != TypeOp::Optional {
+            return Err(DecodeError::UnexpectedType(format!(
+                "typeid={} op={} does not decode to optional",
+                typeinfo.typeid(),
+                typeinfo.op_name()
+            )));
+        }
+
+        let exists = self.optional_exists()?;
+        if !exists {
+            return Ok(false);
+        }
+
+        let typeinfos = Arc::clone(&self.typeinfos);
+        let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
+        on_child(self, child_typeinfo)?;
+        Ok(true)
     }
 
     fn decode_ordered_event_fields<K, F>(
@@ -1336,6 +1861,45 @@ impl TypeDecoder for BitPackedDecoder {
         self.visit_struct_fields(typeinfo, select_field, on_field)
     }
 
+    fn visit_choice_field_from_typeinfo<K, S, F>(
+        &mut self,
+        typeinfo: &TypeInfo,
+        select_field: &mut S,
+        on_field: &mut F,
+    ) -> Result<(), DecodeError>
+    where
+        Self: Sized,
+        K: Copy,
+        S: FnMut(&str) -> Option<K>,
+        F: FnMut(&mut Self, K, &TypeInfo) -> Result<(), DecodeError>,
+    {
+        self.visit_choice_field(typeinfo, select_field, on_field)
+    }
+
+    fn visit_array_elements_from_typeinfo<F>(
+        &mut self,
+        typeinfo: &TypeInfo,
+        on_element: &mut F,
+    ) -> Result<(), DecodeError>
+    where
+        Self: Sized,
+        F: FnMut(&mut Self, &TypeInfo) -> Result<(), DecodeError>,
+    {
+        self.visit_array_elements(typeinfo, on_element)
+    }
+
+    fn visit_optional_child_from_typeinfo<F>(
+        &mut self,
+        typeinfo: &TypeInfo,
+        on_child: &mut F,
+    ) -> Result<bool, DecodeError>
+    where
+        Self: Sized,
+        F: FnMut(&mut Self, &TypeInfo) -> Result<(), DecodeError>,
+    {
+        self.visit_optional_child(typeinfo, on_child)
+    }
+
     fn decode_event_fields_from_plan<K, F>(
         &mut self,
         plan: &EventDecodePlan<K>,
@@ -1624,6 +2188,95 @@ impl VersionedDecoder {
         }
 
         Ok(())
+    }
+
+    fn visit_choice_field<K, S, F>(
+        &mut self,
+        typeinfo: &TypeInfo,
+        select_field: &mut S,
+        on_field: &mut F,
+    ) -> Result<(), DecodeError>
+    where
+        K: Copy,
+        S: FnMut(&str) -> Option<K>,
+        F: FnMut(&mut Self, K, &TypeInfo) -> Result<(), DecodeError>,
+    {
+        if typeinfo.op() != TypeOp::Choice {
+            return Err(DecodeError::UnexpectedType(format!(
+                "typeid={} op={} does not decode to choice",
+                typeinfo.typeid(),
+                typeinfo.op_name()
+            )));
+        }
+
+        self.expect_skip(3)?;
+        let tag = self.vint()?;
+        let Some(field) = typeinfo.choice_fields()?.get(&tag) else {
+            self.skip_instance()?;
+            return Ok(());
+        };
+        let typeinfos = Arc::clone(&self.typeinfos);
+        let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+        if let Some(selected_field) = select_field(field.name()) {
+            on_field(self, selected_field, child_typeinfo)?;
+        } else {
+            self.skip_instance()?;
+        }
+        Ok(())
+    }
+
+    fn visit_array_elements<F>(
+        &mut self,
+        typeinfo: &TypeInfo,
+        on_element: &mut F,
+    ) -> Result<(), DecodeError>
+    where
+        F: FnMut(&mut Self, &TypeInfo) -> Result<(), DecodeError>,
+    {
+        if typeinfo.op() != TypeOp::Array {
+            return Err(DecodeError::UnexpectedType(format!(
+                "typeid={} op={} does not decode to array",
+                typeinfo.typeid(),
+                typeinfo.op_name()
+            )));
+        }
+
+        self.expect_skip(0)?;
+        let length = self.vint()? as usize;
+        let typeinfos = Arc::clone(&self.typeinfos);
+        let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
+        for _ in 0..length {
+            on_element(self, child_typeinfo)?;
+        }
+        Ok(())
+    }
+
+    fn visit_optional_child<F>(
+        &mut self,
+        typeinfo: &TypeInfo,
+        on_child: &mut F,
+    ) -> Result<bool, DecodeError>
+    where
+        F: FnMut(&mut Self, &TypeInfo) -> Result<(), DecodeError>,
+    {
+        if typeinfo.op() != TypeOp::Optional {
+            return Err(DecodeError::UnexpectedType(format!(
+                "typeid={} op={} does not decode to optional",
+                typeinfo.typeid(),
+                typeinfo.op_name()
+            )));
+        }
+
+        self.expect_skip(4)?;
+        let exists = self.buffer.read_bits(8)? != 0;
+        if !exists {
+            return Ok(false);
+        }
+
+        let typeinfos = Arc::clone(&self.typeinfos);
+        let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
+        on_child(self, child_typeinfo)?;
+        Ok(true)
     }
 
     fn decode_tagged_event_fields<K, F>(
@@ -1948,6 +2601,45 @@ impl TypeDecoder for VersionedDecoder {
         self.visit_struct_fields(typeinfo, select_field, on_field)
     }
 
+    fn visit_choice_field_from_typeinfo<K, S, F>(
+        &mut self,
+        typeinfo: &TypeInfo,
+        select_field: &mut S,
+        on_field: &mut F,
+    ) -> Result<(), DecodeError>
+    where
+        Self: Sized,
+        K: Copy,
+        S: FnMut(&str) -> Option<K>,
+        F: FnMut(&mut Self, K, &TypeInfo) -> Result<(), DecodeError>,
+    {
+        self.visit_choice_field(typeinfo, select_field, on_field)
+    }
+
+    fn visit_array_elements_from_typeinfo<F>(
+        &mut self,
+        typeinfo: &TypeInfo,
+        on_element: &mut F,
+    ) -> Result<(), DecodeError>
+    where
+        Self: Sized,
+        F: FnMut(&mut Self, &TypeInfo) -> Result<(), DecodeError>,
+    {
+        self.visit_array_elements(typeinfo, on_element)
+    }
+
+    fn visit_optional_child_from_typeinfo<F>(
+        &mut self,
+        typeinfo: &TypeInfo,
+        on_child: &mut F,
+    ) -> Result<bool, DecodeError>
+    where
+        Self: Sized,
+        F: FnMut(&mut Self, &TypeInfo) -> Result<(), DecodeError>,
+    {
+        self.visit_optional_child(typeinfo, on_child)
+    }
+
     fn decode_event_fields_from_plan<K, F>(
         &mut self,
         plan: &EventDecodePlan<K>,
@@ -2020,35 +2712,10 @@ where
                 .ok_or_else(|| DecodeError::Corrupted(format!("eventid({eventid}) unknown")))?;
 
             let mut event = T::new_decoded(event_typeinfo.name(), eventid, gameloop, userid);
-
-            match event_typeinfo.decode_plan() {
-                Some(plan) => match event.decode_fields_from_plan(decoder, plan) {
-                    Ok(()) => {}
-                    Err(DecodeError::UnexpectedType(_)) => {
-                        match decoder.instance_from_typeinfo(event_typeinfo.typeinfo())? {
-                            Value::Object(map) => {
-                                for (key, value) in map {
-                                    event.apply_fallback_value(&key, value);
-                                }
-                            }
-                            value => {
-                                event.apply_fallback_value("event", value);
-                            }
-                        }
-                    }
-                    Err(error) => return Err(error),
-                },
-                None => match decoder.instance_from_typeinfo(event_typeinfo.typeinfo())? {
-                    Value::Object(map) => {
-                        for (key, value) in map {
-                            event.apply_fallback_value(&key, value);
-                        }
-                    }
-                    value => {
-                        event.apply_fallback_value("event", value);
-                    }
-                },
-            }
+            let plan = event_typeinfo.decode_plan().ok_or_else(|| {
+                DecodeError::Corrupted(format!("eventid({eventid}) missing decode plan"))
+            })?;
+            event.decode_fields_from_plan(decoder, plan)?;
 
             event.set_decoded_bits((decoder.used_bits() - start_bits) as i128);
             Ok(event)

@@ -251,7 +251,7 @@ where
             )));
         }
 
-        lookup[event_index] = Some(EventTypeInfo::new(typeinfo, name.clone(), decode_plan));
+        lookup[event_index] = Some(EventTypeInfo::new(name.clone(), decode_plan));
     }
 
     Ok(Arc::from(lookup))
