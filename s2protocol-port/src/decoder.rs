@@ -27,6 +27,12 @@ enum TypeOp {
     Struct,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct IntBounds {
+    min: i64,
+    bits: usize,
+}
+
 impl TypeOp {
     fn parse(op_name: &str) -> Result<Self, DecodeError> {
         match op_name {
@@ -70,7 +76,10 @@ impl TypeOp {
 pub(crate) struct TypeInfo {
     typeid: usize,
     op: TypeOp,
-    args: Arc<[JsonValue]>,
+    int_bounds: Option<IntBounds>,
+    length_bounds: Option<IntBounds>,
+    child_typeid: Option<usize>,
+    choice_tag_bounds: Option<IntBounds>,
     choice_fields: Option<Arc<BTreeMap<i128, ChoiceField>>>,
     struct_fields: Option<Arc<[StructField]>>,
     struct_fields_by_tag: Option<Arc<BTreeMap<i128, StructField>>>,
@@ -83,6 +92,27 @@ impl TypeInfo {
         args: Vec<JsonValue>,
     ) -> Result<Self, DecodeError> {
         let op = TypeOp::parse(op_name)?;
+        let int_bounds = if op == TypeOp::Int {
+            Some(parse_int_bounds(args.first(), "_int bounds")?)
+        } else {
+            None
+        };
+        let length_bounds = match op {
+            TypeOp::Array | TypeOp::BitArray | TypeOp::Blob => {
+                Some(parse_int_bounds(args.first(), "length bounds")?)
+            }
+            _ => None,
+        };
+        let child_typeid = match op {
+            TypeOp::Array => Some(parse_typeid_arg(args.get(1), "_array typeid")?),
+            TypeOp::Optional => Some(parse_typeid_arg(args.first(), "_optional typeid")?),
+            _ => None,
+        };
+        let choice_tag_bounds = if op == TypeOp::Choice {
+            Some(parse_int_bounds(args.first(), "_choice bounds")?)
+        } else {
+            None
+        };
         let choice_fields = if op == TypeOp::Choice {
             Some(Arc::new(parse_choice_fields(&args)?))
         } else {
@@ -102,7 +132,10 @@ impl TypeInfo {
         Ok(Self {
             typeid,
             op,
-            args: Arc::from(args),
+            int_bounds,
+            length_bounds,
+            child_typeid,
+            choice_tag_bounds,
             choice_fields,
             struct_fields,
             struct_fields_by_tag,
@@ -121,8 +154,24 @@ impl TypeInfo {
         self.op.as_str()
     }
 
-    fn args(&self) -> &[JsonValue] {
-        &self.args
+    fn int_bounds(&self) -> Result<IntBounds, DecodeError> {
+        self.int_bounds
+            .ok_or_else(|| DecodeError::Corrupted("_int bounds".into()))
+    }
+
+    fn length_bounds(&self) -> Result<IntBounds, DecodeError> {
+        self.length_bounds
+            .ok_or_else(|| DecodeError::Corrupted("length bounds".into()))
+    }
+
+    fn child_typeid(&self) -> Result<usize, DecodeError> {
+        self.child_typeid
+            .ok_or_else(|| DecodeError::Corrupted("child typeid".into()))
+    }
+
+    fn choice_tag_bounds(&self) -> Result<IntBounds, DecodeError> {
+        self.choice_tag_bounds
+            .ok_or_else(|| DecodeError::Corrupted("_choice bounds".into()))
     }
 
     fn choice_fields(&self) -> Result<&BTreeMap<i128, ChoiceField>, DecodeError> {
@@ -295,6 +344,33 @@ fn json_to_i128(value: &JsonValue) -> Result<i128, DecodeError> {
         .map(i128::from)
         .or_else(|| value.as_u64().map(i128::from))
         .ok_or_else(|| DecodeError::Corrupted("expected integer json value".into()))
+}
+
+fn parse_int_bounds(value: Option<&JsonValue>, context: &str) -> Result<IntBounds, DecodeError> {
+    let bounds = value
+        .and_then(JsonValue::as_array)
+        .ok_or_else(|| DecodeError::Corrupted(context.into()))?;
+    if bounds.len() != 2 {
+        return Err(DecodeError::Corrupted(format!("{context} len")));
+    }
+
+    let min = bounds[0]
+        .as_i64()
+        .or_else(|| bounds[0].as_u64().map(|value| value as i64))
+        .ok_or_else(|| DecodeError::Corrupted(format!("{context} min")))?;
+    let bits = bounds[1]
+        .as_u64()
+        .and_then(|value| usize::try_from(value).ok())
+        .ok_or_else(|| DecodeError::Corrupted(format!("{context} bits")))?;
+
+    Ok(IntBounds { min, bits })
+}
+
+fn parse_typeid_arg(value: Option<&JsonValue>, context: &str) -> Result<usize, DecodeError> {
+    value
+        .and_then(JsonValue::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+        .ok_or_else(|| DecodeError::Corrupted(context.into()))
 }
 
 #[derive(Debug, Clone)]
@@ -492,52 +568,17 @@ pub trait TypeDecoder {
     fn f64_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<Option<f64>, DecodeError>;
     fn string_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<Option<String>, DecodeError>;
     fn skip_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<(), DecodeError>;
-    fn visit_struct_fields_from_typeinfo<F>(
+    fn visit_struct_fields_from_typeinfo<K, S, F>(
         &mut self,
         typeinfo: &TypeInfo,
+        select_field: &mut S,
         on_field: &mut F,
     ) -> Result<(), DecodeError>
     where
         Self: Sized,
-        F: FnMut(&mut Self, &str, usize) -> Result<(), DecodeError>;
-
-    fn i64_from_typeid(&mut self, typeid: usize) -> Result<Option<i64>, DecodeError> {
-        let typeinfos = self.typeinfos();
-        let typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
-        self.i64_from_typeinfo(typeinfo)
-    }
-
-    fn f64_from_typeid(&mut self, typeid: usize) -> Result<Option<f64>, DecodeError> {
-        let typeinfos = self.typeinfos();
-        let typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
-        self.f64_from_typeinfo(typeinfo)
-    }
-
-    fn string_from_typeid(&mut self, typeid: usize) -> Result<Option<String>, DecodeError> {
-        let typeinfos = self.typeinfos();
-        let typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
-        self.string_from_typeinfo(typeinfo)
-    }
-
-    fn skip_from_typeid(&mut self, typeid: usize) -> Result<(), DecodeError> {
-        let typeinfos = self.typeinfos();
-        let typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
-        self.skip_from_typeinfo(typeinfo)
-    }
-
-    fn visit_struct_fields_from_typeid<F>(
-        &mut self,
-        typeid: usize,
-        on_field: &mut F,
-    ) -> Result<(), DecodeError>
-    where
-        Self: Sized,
-        F: FnMut(&mut Self, &str, usize) -> Result<(), DecodeError>,
-    {
-        let typeinfos = self.typeinfos();
-        let typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
-        self.visit_struct_fields_from_typeinfo(typeinfo, on_field)
-    }
+        K: Copy,
+        S: FnMut(&str) -> Option<K>,
+        F: FnMut(&mut Self, K, &TypeInfo) -> Result<(), DecodeError>;
 }
 
 pub struct BitPackedDecoder {
@@ -559,28 +600,13 @@ impl BitPackedDecoder {
         }
     }
 
-    fn int(&mut self, bounds: &JsonValue) -> Result<i128, DecodeError> {
-        let bounds = bounds
-            .as_array()
-            .ok_or_else(|| DecodeError::Corrupted("_int bounds".into()))?;
-        if bounds.len() != 2 {
-            return Err(DecodeError::Corrupted("_int bounds len".into()));
-        }
-
-        let min = bounds[0]
-            .as_i64()
-            .or_else(|| bounds[0].as_u64().map(|v| v as i64))
-            .ok_or_else(|| DecodeError::Corrupted("_int bounds min".into()))?;
-        let bits = bounds[1]
-            .as_u64()
-            .ok_or_else(|| DecodeError::Corrupted("_int bounds bits".into()))?;
-
-        let raw = self.buffer.read_bits(bits as usize)? as i128;
-        Ok(min as i128 + raw)
+    fn int(&mut self, bounds: IntBounds) -> Result<i128, DecodeError> {
+        let raw = self.buffer.read_bits(bounds.bits)? as i128;
+        Ok(bounds.min as i128 + raw)
     }
 
-    fn bool_value(&mut self, bounds: &JsonValue) -> Result<bool, DecodeError> {
-        Ok(self.int(bounds)? != 0)
+    fn optional_exists(&mut self) -> Result<bool, DecodeError> {
+        Ok(self.buffer.read_bits(1)? != 0)
     }
 
     fn skip_bits(&mut self, bits: usize) -> Result<(), DecodeError> {
@@ -593,25 +619,20 @@ impl BitPackedDecoder {
         Ok(())
     }
 
-    fn array(&mut self, args: &[JsonValue]) -> Result<Value, DecodeError> {
-        if args.len() != 2 {
-            return Err(DecodeError::Corrupted("_array args".into()));
-        }
-        let length = self.int(&args[0])? as usize;
-        let typeid = args[1]
-            .as_u64()
-            .ok_or_else(|| DecodeError::Corrupted("_array typeid".into()))?
-            as usize;
+    fn array(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
+        let length = self.int(typeinfo.length_bounds()?)? as usize;
+        let typeinfos = Arc::clone(&self.typeinfos);
+        let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
 
         let mut values = Vec::with_capacity(length);
         for _ in 0..length {
-            values.push(self.instance(typeid)?);
+            values.push(self.instance_from_typeinfo(child_typeinfo)?);
         }
         Ok(Value::Array(values))
     }
 
-    fn bitarray(&mut self, args: &[JsonValue]) -> Result<Value, DecodeError> {
-        let length = self.int(&args[0])? as usize;
+    fn bitarray(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
+        let length = self.int(typeinfo.length_bounds()?)? as usize;
         if length <= 64 {
             let value = self.buffer.read_bits(length)?;
             return Ok(Value::Array(vec![
@@ -627,18 +648,21 @@ impl BitPackedDecoder {
         ]))
     }
 
-    fn blob(&mut self, args: &[JsonValue]) -> Result<Value, DecodeError> {
-        let length = self.int(&args[0])? as usize;
+    fn blob(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
+        let length = self.int(typeinfo.length_bounds()?)? as usize;
         Ok(Value::Bytes(self.buffer.read_aligned_bytes(length)?))
     }
 
-    fn visit_struct_fields<F>(
+    fn visit_struct_fields<K, S, F>(
         &mut self,
         typeinfo: &TypeInfo,
+        select_field: &mut S,
         on_field: &mut F,
     ) -> Result<(), DecodeError>
     where
-        F: FnMut(&mut Self, &str, usize) -> Result<(), DecodeError>,
+        K: Copy,
+        S: FnMut(&str) -> Option<K>,
+        F: FnMut(&mut Self, K, &TypeInfo) -> Result<(), DecodeError>,
     {
         if typeinfo.op() != TypeOp::Struct {
             return Err(DecodeError::UnexpectedType(format!(
@@ -649,12 +673,13 @@ impl BitPackedDecoder {
         }
 
         let fields = typeinfo.struct_fields()?;
+        let typeinfos = Arc::clone(&self.typeinfos);
         for field in fields {
+            let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
             if field.is_parent() {
-                let parent_typeinfo =
-                    lookup_typeinfo(self.typeinfos.as_ref(), field.typeid())?.clone();
+                let parent_typeinfo = child_typeinfo;
                 if parent_typeinfo.op() == TypeOp::Struct {
-                    self.visit_struct_fields(&parent_typeinfo, on_field)?;
+                    self.visit_struct_fields(parent_typeinfo, select_field, on_field)?;
                     continue;
                 }
 
@@ -666,9 +691,17 @@ impl BitPackedDecoder {
                     )));
                 }
 
-                on_field(self, "__parent", field.typeid())?;
+                if let Some(selected_field) = select_field("__parent") {
+                    on_field(self, selected_field, parent_typeinfo)?;
+                } else {
+                    self.skip_from_typeinfo(parent_typeinfo)?;
+                }
             } else {
-                on_field(self, field.name(), field.typeid())?;
+                if let Some(selected_field) = select_field(field.name()) {
+                    on_field(self, selected_field, child_typeinfo)?;
+                } else {
+                    self.skip_from_typeinfo(child_typeinfo)?;
+                }
             }
         }
 
@@ -676,17 +709,10 @@ impl BitPackedDecoder {
     }
 
     fn skip_value(&mut self, typeinfo: &TypeInfo) -> Result<(), DecodeError> {
-        let args = typeinfo.args();
         match typeinfo.op() {
             TypeOp::Array => {
-                if args.len() != 2 {
-                    return Err(DecodeError::Corrupted("_array args".into()));
-                }
-                let length = self.int(&args[0])? as usize;
-                let typeid = args[1]
-                    .as_u64()
-                    .ok_or_else(|| DecodeError::Corrupted("_array typeid".into()))?
-                    as usize;
+                let length = self.int(typeinfo.length_bounds()?)? as usize;
+                let typeid = typeinfo.child_typeid()?;
                 let typeinfos = Arc::clone(&self.typeinfos);
                 let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
                 for _ in 0..length {
@@ -695,11 +721,11 @@ impl BitPackedDecoder {
                 Ok(())
             }
             TypeOp::BitArray => {
-                let length = self.int(&args[0])? as usize;
+                let length = self.int(typeinfo.length_bounds()?)? as usize;
                 self.skip_bits(length)
             }
             TypeOp::Blob => {
-                let length = self.int(&args[0])? as usize;
+                let length = self.int(typeinfo.length_bounds()?)? as usize;
                 self.buffer.read_aligned_bytes(length)?;
                 Ok(())
             }
@@ -708,10 +734,7 @@ impl BitPackedDecoder {
                 Ok(())
             }
             TypeOp::Choice => {
-                let bounds = args
-                    .first()
-                    .ok_or_else(|| DecodeError::Corrupted("_choice bounds".into()))?;
-                let tag = self.int(bounds)?;
+                let tag = self.int(typeinfo.choice_tag_bounds()?)?;
                 let field = typeinfo
                     .choice_fields()?
                     .get(&tag)
@@ -725,27 +748,17 @@ impl BitPackedDecoder {
                 Ok(())
             }
             TypeOp::Int => {
-                let bounds = args
-                    .first()
-                    .ok_or_else(|| DecodeError::Corrupted("_int args".into()))?;
-                let _ = self.int(bounds)?;
+                let _ = self.int(typeinfo.int_bounds()?)?;
                 Ok(())
             }
             TypeOp::Null => Ok(()),
             TypeOp::Optional => {
-                let exists = self.bool_value(&JsonValue::Array(vec![
-                    JsonValue::from(0),
-                    JsonValue::from(1),
-                ]))?;
+                let exists = self.optional_exists()?;
                 if !exists {
                     return Ok(());
                 }
 
-                let typeid = args
-                    .first()
-                    .and_then(|value| value.as_u64())
-                    .ok_or_else(|| DecodeError::Corrupted("_optional typeid".into()))?
-                    as usize;
+                let typeid = typeinfo.child_typeid()?;
                 let typeinfos = Arc::clone(&self.typeinfos);
                 let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
                 self.skip_from_typeinfo(child_typeinfo)
@@ -771,17 +784,15 @@ impl BitPackedDecoder {
     }
 
     fn choice(&mut self, typeinfo: &TypeInfo) -> Result<BTreeMap<String, Value>, DecodeError> {
-        let args = typeinfo.args();
-        let bounds = args
-            .first()
-            .ok_or_else(|| DecodeError::Corrupted("_choice bounds".into()))?;
-        let tag = self.int(bounds)?;
+        let tag = self.int(typeinfo.choice_tag_bounds()?)?;
         let field = typeinfo
             .choice_fields()?
             .get(&tag)
             .ok_or_else(|| DecodeError::Corrupted(format!("invalid choice tag {tag}")))?;
 
-        let value = self.instance(field.typeid())?;
+        let typeinfos = Arc::clone(&self.typeinfos);
+        let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+        let value = self.instance_from_typeinfo(child_typeinfo)?;
         let mut object = BTreeMap::new();
         object.insert(field.name().to_string(), value);
         Ok(object)
@@ -792,18 +803,12 @@ impl BitPackedDecoder {
         Ok(Value::String(String::from_utf8_lossy(&bytes).to_string()))
     }
 
-    fn optional(&mut self, args: &[JsonValue]) -> Result<Value, DecodeError> {
-        let exists = self.bool_value(&JsonValue::Array(vec![
-            JsonValue::from(0),
-            JsonValue::from(1),
-        ]))?;
+    fn optional(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
+        let exists = self.optional_exists()?;
         if exists {
-            let typeid = args
-                .first()
-                .and_then(|v| v.as_u64())
-                .ok_or_else(|| DecodeError::Corrupted("_optional typeid".into()))?
-                as usize;
-            self.instance(typeid)
+            let typeinfos = Arc::clone(&self.typeinfos);
+            let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
+            self.instance_from_typeinfo(child_typeinfo)
         } else {
             Ok(Value::Null)
         }
@@ -833,13 +838,13 @@ impl BitPackedDecoder {
         }
 
         let fields = typeinfo.struct_fields()?;
+        let typeinfos = Arc::clone(&self.typeinfos);
         let mut map = BTreeMap::new();
         for field in fields {
             if field.is_parent() {
-                let parent_typeinfo =
-                    lookup_typeinfo(self.typeinfos.as_ref(), field.typeid())?.clone();
+                let parent_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
                 if parent_typeinfo.op() == TypeOp::Struct {
-                    let parent_map = self.object(&parent_typeinfo)?;
+                    let parent_map = self.object(parent_typeinfo)?;
                     if fields.len() == 1 {
                         return Ok(parent_map);
                     }
@@ -849,7 +854,7 @@ impl BitPackedDecoder {
                     continue;
                 }
 
-                let parent = self.instance_from_typeinfo(&parent_typeinfo)?;
+                let parent = self.instance_from_typeinfo(parent_typeinfo)?;
                 match parent {
                     Value::Object(parent_map) => {
                         if fields.len() == 1 {
@@ -871,7 +876,11 @@ impl BitPackedDecoder {
                     }
                 }
             } else {
-                map.insert(field.name().to_string(), self.instance(field.typeid())?);
+                let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+                map.insert(
+                    field.name().to_string(),
+                    self.instance_from_typeinfo(child_typeinfo)?,
+                );
             }
         }
 
@@ -879,17 +888,16 @@ impl BitPackedDecoder {
     }
 
     fn dispatch(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
-        let args = typeinfo.args();
         match typeinfo.op() {
-            TypeOp::Array => self.array(args),
-            TypeOp::BitArray => self.bitarray(args),
-            TypeOp::Blob => self.blob(args),
+            TypeOp::Array => self.array(typeinfo),
+            TypeOp::BitArray => self.bitarray(typeinfo),
+            TypeOp::Blob => self.blob(typeinfo),
             TypeOp::Bool => Ok(Value::Bool(self.buffer.read_bits(1)? != 0)),
             TypeOp::Choice => Ok(Value::Object(self.choice(typeinfo)?)),
             TypeOp::Fourcc => self.fourcc(),
-            TypeOp::Int => Ok(Value::Int(self.int(&args[0])?)),
+            TypeOp::Int => Ok(Value::Int(self.int(typeinfo.int_bounds()?)?)),
             TypeOp::Null => Ok(Value::Null),
-            TypeOp::Optional => self.optional(args),
+            TypeOp::Optional => self.optional(typeinfo),
             TypeOp::Real32 => self.real32(),
             TypeOp::Real64 => self.real64(),
             TypeOp::Struct => Ok(Value::Object(self.object(typeinfo)?)),
@@ -925,11 +933,7 @@ impl TypeDecoder for BitPackedDecoder {
         }
 
         if typeinfo.op() == TypeOp::Int {
-            let args = typeinfo.args();
-            if args.is_empty() {
-                return Err(DecodeError::Corrupted("_int args".into()));
-            }
-            return Ok(Value::Int(self.int(&args[0])?));
+            return Ok(Value::Int(self.int(typeinfo.int_bounds()?)?));
         }
 
         self.dispatch(typeinfo)
@@ -937,19 +941,9 @@ impl TypeDecoder for BitPackedDecoder {
 
     fn integer_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<i128, DecodeError> {
         match typeinfo.op() {
-            TypeOp::Int => {
-                let args = typeinfo.args();
-                let bounds = args
-                    .first()
-                    .ok_or_else(|| DecodeError::Corrupted("_int args".into()))?;
-                self.int(bounds)
-            }
+            TypeOp::Int => self.int(typeinfo.int_bounds()?),
             TypeOp::Choice => {
-                let args = typeinfo.args();
-                let bounds = args
-                    .first()
-                    .ok_or_else(|| DecodeError::Corrupted("_choice bounds".into()))?;
-                let tag = self.int(bounds)?;
+                let tag = self.int(typeinfo.choice_tag_bounds()?)?;
                 let field = typeinfo
                     .choice_fields()?
                     .get(&tag)
@@ -970,20 +964,12 @@ impl TypeDecoder for BitPackedDecoder {
         match typeinfo.op() {
             TypeOp::Null => Ok(None),
             TypeOp::Optional => {
-                let exists = self.bool_value(&JsonValue::Array(vec![
-                    JsonValue::from(0),
-                    JsonValue::from(1),
-                ]))?;
+                let exists = self.optional_exists()?;
                 if !exists {
                     return Ok(None);
                 }
 
-                let typeid = typeinfo
-                    .args()
-                    .first()
-                    .and_then(|value| value.as_u64())
-                    .ok_or_else(|| DecodeError::Corrupted("_optional typeid".into()))?
-                    as usize;
+                let typeid = typeinfo.child_typeid()?;
                 let typeinfos = Arc::clone(&self.typeinfos);
                 let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
                 self.i64_from_typeinfo(child_typeinfo)
@@ -998,20 +984,12 @@ impl TypeDecoder for BitPackedDecoder {
         match typeinfo.op() {
             TypeOp::Null => Ok(None),
             TypeOp::Optional => {
-                let exists = self.bool_value(&JsonValue::Array(vec![
-                    JsonValue::from(0),
-                    JsonValue::from(1),
-                ]))?;
+                let exists = self.optional_exists()?;
                 if !exists {
                     return Ok(None);
                 }
 
-                let typeid = typeinfo
-                    .args()
-                    .first()
-                    .and_then(|value| value.as_u64())
-                    .ok_or_else(|| DecodeError::Corrupted("_optional typeid".into()))?
-                    as usize;
+                let typeid = typeinfo.child_typeid()?;
                 let typeinfos = Arc::clone(&self.typeinfos);
                 let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
                 self.f64_from_typeinfo(child_typeinfo)
@@ -1026,26 +1004,18 @@ impl TypeDecoder for BitPackedDecoder {
         match typeinfo.op() {
             TypeOp::Null => Ok(None),
             TypeOp::Optional => {
-                let exists = self.bool_value(&JsonValue::Array(vec![
-                    JsonValue::from(0),
-                    JsonValue::from(1),
-                ]))?;
+                let exists = self.optional_exists()?;
                 if !exists {
                     return Ok(None);
                 }
 
-                let typeid = typeinfo
-                    .args()
-                    .first()
-                    .and_then(|value| value.as_u64())
-                    .ok_or_else(|| DecodeError::Corrupted("_optional typeid".into()))?
-                    as usize;
+                let typeid = typeinfo.child_typeid()?;
                 let typeinfos = Arc::clone(&self.typeinfos);
                 let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
                 self.string_from_typeinfo(child_typeinfo)
             }
             TypeOp::Blob => {
-                let length = self.int(&typeinfo.args()[0])? as usize;
+                let length = self.int(typeinfo.length_bounds()?)? as usize;
                 let bytes = self.buffer.read_aligned_bytes(length)?;
                 Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
             }
@@ -1064,16 +1034,19 @@ impl TypeDecoder for BitPackedDecoder {
         self.skip_value(typeinfo)
     }
 
-    fn visit_struct_fields_from_typeinfo<F>(
+    fn visit_struct_fields_from_typeinfo<K, S, F>(
         &mut self,
         typeinfo: &TypeInfo,
+        select_field: &mut S,
         on_field: &mut F,
     ) -> Result<(), DecodeError>
     where
         Self: Sized,
-        F: FnMut(&mut Self, &str, usize) -> Result<(), DecodeError>,
+        K: Copy,
+        S: FnMut(&str) -> Option<K>,
+        F: FnMut(&mut Self, K, &TypeInfo) -> Result<(), DecodeError>,
     {
-        self.visit_struct_fields(typeinfo, on_field)
+        self.visit_struct_fields(typeinfo, select_field, on_field)
     }
 }
 
@@ -1176,27 +1149,22 @@ impl VersionedDecoder {
         Ok(())
     }
 
-    fn array(&mut self, args: &[JsonValue]) -> Result<Value, DecodeError> {
+    fn array(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
         self.expect_skip(0)?;
-        if args.len() != 2 {
-            return Err(DecodeError::Corrupted("_array args".into()));
-        }
         let length = self.vint()? as usize;
-        let typeid = args[1]
-            .as_u64()
-            .ok_or_else(|| DecodeError::Corrupted("_array typeid".into()))?
-            as usize;
+        let typeinfos = Arc::clone(&self.typeinfos);
+        let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
 
         let mut values = Vec::with_capacity(length);
         for _ in 0..length {
-            values.push(self.instance(typeid)?);
+            values.push(self.instance_from_typeinfo(child_typeinfo)?);
         }
         Ok(Value::Array(values))
     }
 
-    fn bitarray(&mut self, args: &[JsonValue]) -> Result<Value, DecodeError> {
+    fn bitarray(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
         self.expect_skip(1)?;
-        let _ = args;
+        let _ = typeinfo;
         let length = self.vint()? as usize;
         let bytes = (length + 7) / 8;
         let raw = self.buffer.read_aligned_bytes(bytes)?;
@@ -1218,7 +1186,7 @@ impl VersionedDecoder {
         ]))
     }
 
-    fn blob(&mut self, _args: &[JsonValue]) -> Result<Value, DecodeError> {
+    fn blob(&mut self, _typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
         self.expect_skip(2)?;
         let length = self.vint()? as usize;
         Ok(Value::Bytes(self.buffer.read_aligned_bytes(length)?))
@@ -1233,7 +1201,9 @@ impl VersionedDecoder {
         self.expect_skip(3)?;
         let tag = self.vint()?;
         if let Some(field) = typeinfo.choice_fields()?.get(&tag) {
-            let value = self.instance(field.typeid())?;
+            let typeinfos = Arc::clone(&self.typeinfos);
+            let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+            let value = self.instance_from_typeinfo(child_typeinfo)?;
             let mut object = BTreeMap::new();
             object.insert(field.name().to_string(), value);
             return Ok(object);
@@ -1253,19 +1223,16 @@ impl VersionedDecoder {
         Ok(Value::Int(self.vint()?))
     }
 
-    fn optional(&mut self, args: &[JsonValue]) -> Result<Value, DecodeError> {
+    fn optional(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
         self.expect_skip(4)?;
         let exists = self.buffer.read_bits(8)? != 0;
         if !exists {
             return Ok(Value::Null);
         }
 
-        let typeid = args
-            .first()
-            .and_then(|v| v.as_u64())
-            .ok_or_else(|| DecodeError::Corrupted("_optional typeid".into()))?
-            as usize;
-        self.instance(typeid)
+        let typeinfos = Arc::clone(&self.typeinfos);
+        let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
+        self.instance_from_typeinfo(child_typeinfo)
     }
 
     fn real32(&mut self) -> Result<Value, DecodeError> {
@@ -1284,13 +1251,16 @@ impl VersionedDecoder {
         Ok(Value::Float(f64::from_bits(bits)))
     }
 
-    fn visit_struct_fields<F>(
+    fn visit_struct_fields<K, S, F>(
         &mut self,
         typeinfo: &TypeInfo,
+        select_field: &mut S,
         on_field: &mut F,
     ) -> Result<(), DecodeError>
     where
-        F: FnMut(&mut Self, &str, usize) -> Result<(), DecodeError>,
+        K: Copy,
+        S: FnMut(&str) -> Option<K>,
+        F: FnMut(&mut Self, K, &TypeInfo) -> Result<(), DecodeError>,
     {
         if typeinfo.op() != TypeOp::Struct {
             return Err(DecodeError::UnexpectedType(format!(
@@ -1304,6 +1274,7 @@ impl VersionedDecoder {
         let fields = typeinfo.struct_fields()?;
         let field_map = typeinfo.struct_fields_by_tag()?;
         let field_count = self.vint()? as usize;
+        let typeinfos = Arc::clone(&self.typeinfos);
 
         for _ in 0..field_count {
             let tag = self.vint()?;
@@ -1316,10 +1287,9 @@ impl VersionedDecoder {
             };
 
             if field.is_parent() {
-                let parent_typeinfo =
-                    lookup_typeinfo(self.typeinfos.as_ref(), field.typeid())?.clone();
+                let parent_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
                 if parent_typeinfo.op() == TypeOp::Struct {
-                    self.visit_struct_fields(&parent_typeinfo, on_field)?;
+                    self.visit_struct_fields(parent_typeinfo, select_field, on_field)?;
                     continue;
                 }
 
@@ -1331,9 +1301,18 @@ impl VersionedDecoder {
                     )));
                 }
 
-                on_field(self, "__parent", field.typeid())?;
+                if let Some(selected_field) = select_field("__parent") {
+                    on_field(self, selected_field, parent_typeinfo)?;
+                } else {
+                    self.skip_instance()?;
+                }
             } else {
-                on_field(self, field.name(), field.typeid())?;
+                let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+                if let Some(selected_field) = select_field(field.name()) {
+                    on_field(self, selected_field, child_typeinfo)?;
+                } else {
+                    self.skip_instance()?;
+                }
             }
         }
 
@@ -1353,6 +1332,7 @@ impl VersionedDecoder {
         let fields = typeinfo.struct_fields()?;
         let field_map = typeinfo.struct_fields_by_tag()?;
         let field_count = self.vint()? as usize;
+        let typeinfos = Arc::clone(&self.typeinfos);
         let mut result = BTreeMap::new();
 
         for _ in 0..field_count {
@@ -1366,10 +1346,9 @@ impl VersionedDecoder {
             };
 
             if field.is_parent() {
-                let parent_typeinfo =
-                    lookup_typeinfo(self.typeinfos.as_ref(), field.typeid())?.clone();
+                let parent_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
                 if parent_typeinfo.op() == TypeOp::Struct {
-                    let parent_map = self.object(&parent_typeinfo)?;
+                    let parent_map = self.object(parent_typeinfo)?;
                     if fields.len() == 1 {
                         return Ok(parent_map);
                     }
@@ -1379,7 +1358,7 @@ impl VersionedDecoder {
                     continue;
                 }
 
-                let parent = self.instance_from_typeinfo(&parent_typeinfo)?;
+                let parent = self.instance_from_typeinfo(parent_typeinfo)?;
                 match parent {
                     Value::Object(parent_map) => {
                         if fields.len() == 1 {
@@ -1401,7 +1380,11 @@ impl VersionedDecoder {
                     }
                 }
             } else {
-                result.insert(field.name().to_string(), self.instance(field.typeid())?);
+                let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+                result.insert(
+                    field.name().to_string(),
+                    self.instance_from_typeinfo(child_typeinfo)?,
+                );
             }
         }
 
@@ -1409,17 +1392,16 @@ impl VersionedDecoder {
     }
 
     fn dispatch(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
-        let args = typeinfo.args();
         match typeinfo.op() {
-            TypeOp::Array => self.array(args),
-            TypeOp::BitArray => self.bitarray(args),
-            TypeOp::Blob => self.blob(args),
+            TypeOp::Array => self.array(typeinfo),
+            TypeOp::BitArray => self.bitarray(typeinfo),
+            TypeOp::Blob => self.blob(typeinfo),
             TypeOp::Bool => self.bool(),
             TypeOp::Choice => Ok(Value::Object(self.choice(typeinfo)?)),
             TypeOp::Fourcc => self.fourcc(),
             TypeOp::Int => self.int(),
             TypeOp::Null => Ok(Value::Null),
-            TypeOp::Optional => self.optional(args),
+            TypeOp::Optional => self.optional(typeinfo),
             TypeOp::Real32 => self.real32(),
             TypeOp::Real64 => self.real64(),
             TypeOp::Struct => Ok(Value::Object(self.object(typeinfo)?)),
@@ -1534,12 +1516,7 @@ impl TypeDecoder for VersionedDecoder {
                     return Ok(None);
                 }
 
-                let typeid = typeinfo
-                    .args()
-                    .first()
-                    .and_then(|value| value.as_u64())
-                    .ok_or_else(|| DecodeError::Corrupted("_optional typeid".into()))?
-                    as usize;
+                let typeid = typeinfo.child_typeid()?;
                 let typeinfos = Arc::clone(&self.typeinfos);
                 let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
                 self.i64_from_typeinfo(child_typeinfo)
@@ -1560,12 +1537,7 @@ impl TypeDecoder for VersionedDecoder {
                     return Ok(None);
                 }
 
-                let typeid = typeinfo
-                    .args()
-                    .first()
-                    .and_then(|value| value.as_u64())
-                    .ok_or_else(|| DecodeError::Corrupted("_optional typeid".into()))?
-                    as usize;
+                let typeid = typeinfo.child_typeid()?;
                 let typeinfos = Arc::clone(&self.typeinfos);
                 let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
                 self.f64_from_typeinfo(child_typeinfo)
@@ -1586,12 +1558,7 @@ impl TypeDecoder for VersionedDecoder {
                     return Ok(None);
                 }
 
-                let typeid = typeinfo
-                    .args()
-                    .first()
-                    .and_then(|value| value.as_u64())
-                    .ok_or_else(|| DecodeError::Corrupted("_optional typeid".into()))?
-                    as usize;
+                let typeid = typeinfo.child_typeid()?;
                 let typeinfos = Arc::clone(&self.typeinfos);
                 let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
                 self.string_from_typeinfo(child_typeinfo)
@@ -1624,16 +1591,19 @@ impl TypeDecoder for VersionedDecoder {
         self.skip_instance()
     }
 
-    fn visit_struct_fields_from_typeinfo<F>(
+    fn visit_struct_fields_from_typeinfo<K, S, F>(
         &mut self,
         typeinfo: &TypeInfo,
+        select_field: &mut S,
         on_field: &mut F,
     ) -> Result<(), DecodeError>
     where
         Self: Sized,
-        F: FnMut(&mut Self, &str, usize) -> Result<(), DecodeError>,
+        K: Copy,
+        S: FnMut(&str) -> Option<K>,
+        F: FnMut(&mut Self, K, &TypeInfo) -> Result<(), DecodeError>,
     {
-        self.visit_struct_fields(typeinfo, on_field)
+        self.visit_struct_fields(typeinfo, select_field, on_field)
     }
 }
 
@@ -1657,6 +1627,9 @@ where
     let typeinfos = decoder.typeinfos();
     let svaruint32_typeinfo = lookup_typeinfo(typeinfos.as_ref(), svaruint32_typeid)?;
     let eventid_typeinfo = lookup_typeinfo(typeinfos.as_ref(), eventid_typeid)?;
+    let replay_userid_typeinfo = replay_userid_typeid
+        .map(|typeid| lookup_typeinfo(typeinfos.as_ref(), typeid))
+        .transpose()?;
 
     let mut events = Vec::new();
     let mut gameloop = 0i128;
@@ -1669,10 +1642,10 @@ where
             gameloop += delta;
 
             let userid = if decode_user_id {
-                match replay_userid_typeid {
-                    Some(typeid) => decode_event_user_id(decoder, typeid)?,
-                    None => None,
-                }
+                replay_userid_typeinfo
+                    .map(|typeinfo| decode_event_user_id(decoder, typeinfo))
+                    .transpose()?
+                    .flatten()
             } else {
                 None
             };
@@ -1688,10 +1661,7 @@ where
 
             let mut event = T::new_decoded(event_typeinfo.name(), eventid, gameloop, userid);
 
-            match decoder.visit_struct_fields_from_typeinfo(
-                event_typeinfo.typeinfo(),
-                &mut |decoder, key, typeid| event.decode_field(decoder, key, typeid),
-            ) {
+            match event.decode_fields_from_typeinfo(decoder, event_typeinfo.typeinfo()) {
                 Ok(()) => {}
                 Err(DecodeError::UnexpectedType(_)) => {
                     match decoder.instance_from_typeinfo(event_typeinfo.typeinfo())? {

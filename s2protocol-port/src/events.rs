@@ -1,4 +1,4 @@
-use crate::decoder::TypeDecoder;
+use crate::decoder::{TypeDecoder, TypeInfo};
 use crate::{DecodeError, Value};
 use std::collections::BTreeMap;
 
@@ -99,16 +99,117 @@ pub enum ReplayEvent {
     Tracker(TrackerEvent),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GameEventField {
+    ControlId,
+    EventType,
+    EventData,
+    Abil,
+    Data,
+    Target,
+}
+
+impl GameEventField {
+    fn from_key(key: &str) -> Option<Self> {
+        match key {
+            "m_controlId" => Some(Self::ControlId),
+            "m_eventType" => Some(Self::EventType),
+            "m_eventData" => Some(Self::EventData),
+            "m_abil" => Some(Self::Abil),
+            "m_data" => Some(Self::Data),
+            "m_target" => Some(Self::Target),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MessageEventField {
+    String,
+}
+
+impl MessageEventField {
+    fn from_key(key: &str) -> Option<Self> {
+        match key {
+            "m_string" => Some(Self::String),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TrackerEventField {
+    PlayerId,
+    UpgradeTypeName,
+    Count,
+    Stats,
+    UnitTypeName,
+    CreatorAbilityName,
+    ControlPlayerId,
+    UnitTagIndex,
+    UnitTagRecycle,
+    CreatorUnitTagIndex,
+    CreatorUnitTagRecycle,
+    KillerUnitTagIndex,
+    KillerUnitTagRecycle,
+    KillerPlayerId,
+    X,
+    Y,
+}
+
+impl TrackerEventField {
+    fn from_key(key: &str) -> Option<Self> {
+        match key {
+            "m_playerId" => Some(Self::PlayerId),
+            "m_upgradeTypeName" => Some(Self::UpgradeTypeName),
+            "m_count" => Some(Self::Count),
+            "m_stats" => Some(Self::Stats),
+            "m_unitTypeName" => Some(Self::UnitTypeName),
+            "m_creatorAbilityName" => Some(Self::CreatorAbilityName),
+            "m_controlPlayerId" => Some(Self::ControlPlayerId),
+            "m_unitTagIndex" => Some(Self::UnitTagIndex),
+            "m_unitTagRecycle" => Some(Self::UnitTagRecycle),
+            "m_creatorUnitTagIndex" => Some(Self::CreatorUnitTagIndex),
+            "m_creatorUnitTagRecycle" => Some(Self::CreatorUnitTagRecycle),
+            "m_killerUnitTagIndex" => Some(Self::KillerUnitTagIndex),
+            "m_killerUnitTagRecycle" => Some(Self::KillerUnitTagRecycle),
+            "m_killerPlayerId" => Some(Self::KillerPlayerId),
+            "m_x" => Some(Self::X),
+            "m_y" => Some(Self::Y),
+            _ => None,
+        }
+    }
+}
+
 pub(crate) trait DirectEventDecode: Sized {
+    type Field: Copy;
+
     fn new_decoded(event: &str, event_id: u32, game_loop: i128, user_id: Option<i64>) -> Self;
     fn set_decoded_bits(&mut self, bits: i128);
+    fn field_from_key(key: &str) -> Option<Self::Field>;
+    fn decode_fields_from_typeinfo<D: TypeDecoder>(
+        &mut self,
+        decoder: &mut D,
+        typeinfo: &TypeInfo,
+    ) -> Result<(), DecodeError> {
+        decoder.visit_struct_fields_from_typeinfo(
+            typeinfo,
+            &mut |key| Self::field_from_key(key),
+            &mut |decoder, field, field_typeinfo| self.decode_field(decoder, field, field_typeinfo),
+        )
+    }
     fn decode_field<D: TypeDecoder>(
         &mut self,
         decoder: &mut D,
-        key: &str,
-        typeid: usize,
+        field: Self::Field,
+        field_typeinfo: &TypeInfo,
     ) -> Result<(), DecodeError>;
-    fn apply_fallback_value(&mut self, key: &str, value: Value);
+    fn apply_fallback_field(&mut self, field: Self::Field, value: Value);
+    fn apply_fallback_value(&mut self, key: &str, value: Value) {
+        if let Some(field) = Self::field_from_key(key) {
+            self.apply_fallback_field(field, value);
+        }
+    }
 }
 
 trait GameEventFieldSource {
@@ -117,40 +218,35 @@ trait GameEventFieldSource {
     fn read_ability_data(self) -> Result<Option<AbilityData>, DecodeError>;
     fn read_cmd_event_data(self) -> Result<Option<CmdEventData>, DecodeError>;
     fn read_target_unit_data(self) -> Result<Option<TargetUnitData>, DecodeError>;
-    fn skip(self) -> Result<(), DecodeError>;
 }
 
 struct DecodedGameEventFieldSource<'a, D: TypeDecoder> {
     decoder: &'a mut D,
-    typeid: usize,
+    field_typeinfo: &'a TypeInfo,
 }
 
 impl<D: TypeDecoder> GameEventFieldSource for DecodedGameEventFieldSource<'_, D> {
     fn read_i64(self) -> Result<Option<i64>, DecodeError> {
-        self.decoder.i64_from_typeid(self.typeid)
+        self.decoder.i64_from_typeinfo(self.field_typeinfo)
     }
 
     fn read_trigger_event_data(self) -> Result<TriggerEventData, DecodeError> {
-        let value = self.decoder.instance(self.typeid)?;
+        let value = self.decoder.instance_from_typeinfo(self.field_typeinfo)?;
         Ok(parse_trigger_event_data(&value))
     }
 
     fn read_ability_data(self) -> Result<Option<AbilityData>, DecodeError> {
-        decode_ability_data(self.decoder, self.typeid)
+        decode_ability_data(self.decoder, self.field_typeinfo)
     }
 
     fn read_cmd_event_data(self) -> Result<Option<CmdEventData>, DecodeError> {
-        let value = self.decoder.instance(self.typeid)?;
+        let value = self.decoder.instance_from_typeinfo(self.field_typeinfo)?;
         Ok(parse_cmd_event_data(&value))
     }
 
     fn read_target_unit_data(self) -> Result<Option<TargetUnitData>, DecodeError> {
-        let value = self.decoder.instance(self.typeid)?;
+        let value = self.decoder.instance_from_typeinfo(self.field_typeinfo)?;
         Ok(parse_target_unit_data(&value))
-    }
-
-    fn skip(self) -> Result<(), DecodeError> {
-        self.decoder.skip_from_typeid(self.typeid)
     }
 }
 
@@ -178,29 +274,20 @@ impl GameEventFieldSource for FallbackGameEventFieldSource<'_> {
     fn read_target_unit_data(self) -> Result<Option<TargetUnitData>, DecodeError> {
         Ok(parse_target_unit_data(self.value))
     }
-
-    fn skip(self) -> Result<(), DecodeError> {
-        Ok(())
-    }
 }
 
 trait MessageEventFieldSource {
     fn read_string(self) -> Result<Option<String>, DecodeError>;
-    fn skip(self) -> Result<(), DecodeError>;
 }
 
 struct DecodedMessageEventFieldSource<'a, D: TypeDecoder> {
     decoder: &'a mut D,
-    typeid: usize,
+    field_typeinfo: &'a TypeInfo,
 }
 
 impl<D: TypeDecoder> MessageEventFieldSource for DecodedMessageEventFieldSource<'_, D> {
     fn read_string(self) -> Result<Option<String>, DecodeError> {
-        self.decoder.string_from_typeid(self.typeid)
-    }
-
-    fn skip(self) -> Result<(), DecodeError> {
-        self.decoder.skip_from_typeid(self.typeid)
+        self.decoder.string_from_typeinfo(self.field_typeinfo)
     }
 }
 
@@ -212,39 +299,30 @@ impl MessageEventFieldSource for FallbackMessageEventFieldSource<'_> {
     fn read_string(self) -> Result<Option<String>, DecodeError> {
         Ok(value_as_string(self.value))
     }
-
-    fn skip(self) -> Result<(), DecodeError> {
-        Ok(())
-    }
 }
 
 trait TrackerEventFieldSource {
     fn read_i64(self) -> Result<Option<i64>, DecodeError>;
     fn read_string(self) -> Result<Option<String>, DecodeError>;
     fn read_player_stats(self) -> Result<Option<PlayerStatsData>, DecodeError>;
-    fn skip(self) -> Result<(), DecodeError>;
 }
 
 struct DecodedTrackerEventFieldSource<'a, D: TypeDecoder> {
     decoder: &'a mut D,
-    typeid: usize,
+    field_typeinfo: &'a TypeInfo,
 }
 
 impl<D: TypeDecoder> TrackerEventFieldSource for DecodedTrackerEventFieldSource<'_, D> {
     fn read_i64(self) -> Result<Option<i64>, DecodeError> {
-        self.decoder.i64_from_typeid(self.typeid)
+        self.decoder.i64_from_typeinfo(self.field_typeinfo)
     }
 
     fn read_string(self) -> Result<Option<String>, DecodeError> {
-        self.decoder.string_from_typeid(self.typeid)
+        self.decoder.string_from_typeinfo(self.field_typeinfo)
     }
 
     fn read_player_stats(self) -> Result<Option<PlayerStatsData>, DecodeError> {
-        decode_player_stats(self.decoder, self.typeid)
-    }
-
-    fn skip(self) -> Result<(), DecodeError> {
-        self.decoder.skip_from_typeid(self.typeid)
+        decode_player_stats(self.decoder, self.field_typeinfo)
     }
 }
 
@@ -263,10 +341,6 @@ impl TrackerEventFieldSource for FallbackTrackerEventFieldSource<'_> {
 
     fn read_player_stats(self) -> Result<Option<PlayerStatsData>, DecodeError> {
         Ok(parse_player_stats(self.value))
-    }
-
-    fn skip(self) -> Result<(), DecodeError> {
-        Ok(())
     }
 }
 
@@ -287,6 +361,8 @@ impl ReplayEvent {
 }
 
 impl DirectEventDecode for GameEvent {
+    type Field = GameEventField;
+
     fn new_decoded(event: &str, event_id: u32, game_loop: i128, user_id: Option<i64>) -> Self {
         Self {
             event: event.to_owned(),
@@ -307,17 +383,28 @@ impl DirectEventDecode for GameEvent {
         self.bits = i64::try_from(bits).unwrap_or_default();
     }
 
+    fn field_from_key(key: &str) -> Option<Self::Field> {
+        GameEventField::from_key(key)
+    }
+
     fn decode_field<D: TypeDecoder>(
         &mut self,
         decoder: &mut D,
-        key: &str,
-        typeid: usize,
+        field: Self::Field,
+        field_typeinfo: &TypeInfo,
     ) -> Result<(), DecodeError> {
-        self.apply_field(key, DecodedGameEventFieldSource { decoder, typeid })
+        self.apply_field(
+            field,
+            DecodedGameEventFieldSource {
+                decoder,
+                field_typeinfo,
+            },
+        )
     }
 
-    fn apply_fallback_value(&mut self, key: &str, value: Value) {
-        if let Err(error) = self.apply_field(key, FallbackGameEventFieldSource { value: &value }) {
+    fn apply_fallback_field(&mut self, field: Self::Field, value: Value) {
+        if let Err(error) = self.apply_field(field, FallbackGameEventFieldSource { value: &value })
+        {
             unreachable!("fallback field handling cannot fail: {error}");
         }
     }
@@ -326,30 +413,27 @@ impl DirectEventDecode for GameEvent {
 impl GameEvent {
     fn apply_field<S: GameEventFieldSource>(
         &mut self,
-        key: &str,
+        field: GameEventField,
         source: S,
     ) -> Result<(), DecodeError> {
-        match key {
-            "m_controlId" => {
+        match field {
+            GameEventField::ControlId => {
                 self.m_control_id = source.read_i64()?;
             }
-            "m_eventType" => {
+            GameEventField::EventType => {
                 self.m_event_type = source.read_i64()?;
             }
-            "m_eventData" => {
+            GameEventField::EventData => {
                 self.m_event_data = Some(source.read_trigger_event_data()?);
             }
-            "m_abil" => {
+            GameEventField::Abil => {
                 self.m_abil = source.read_ability_data()?;
             }
-            "m_data" => {
+            GameEventField::Data => {
                 self.m_data = source.read_cmd_event_data()?;
             }
-            "m_target" => {
+            GameEventField::Target => {
                 self.m_target = source.read_target_unit_data()?;
-            }
-            _ => {
-                source.skip()?;
             }
         }
         Ok(())
@@ -357,6 +441,8 @@ impl GameEvent {
 }
 
 impl DirectEventDecode for MessageEvent {
+    type Field = MessageEventField;
+
     fn new_decoded(event: &str, event_id: u32, game_loop: i128, user_id: Option<i64>) -> Self {
         Self {
             event: event.to_owned(),
@@ -372,17 +458,28 @@ impl DirectEventDecode for MessageEvent {
         self.bits = i64::try_from(bits).unwrap_or_default();
     }
 
+    fn field_from_key(key: &str) -> Option<Self::Field> {
+        MessageEventField::from_key(key)
+    }
+
     fn decode_field<D: TypeDecoder>(
         &mut self,
         decoder: &mut D,
-        key: &str,
-        typeid: usize,
+        field: Self::Field,
+        field_typeinfo: &TypeInfo,
     ) -> Result<(), DecodeError> {
-        self.apply_field(key, DecodedMessageEventFieldSource { decoder, typeid })
+        self.apply_field(
+            field,
+            DecodedMessageEventFieldSource {
+                decoder,
+                field_typeinfo,
+            },
+        )
     }
 
-    fn apply_fallback_value(&mut self, key: &str, value: Value) {
-        if let Err(error) = self.apply_field(key, FallbackMessageEventFieldSource { value: &value })
+    fn apply_fallback_field(&mut self, field: Self::Field, value: Value) {
+        if let Err(error) =
+            self.apply_field(field, FallbackMessageEventFieldSource { value: &value })
         {
             unreachable!("fallback field handling cannot fail: {error}");
         }
@@ -392,15 +489,12 @@ impl DirectEventDecode for MessageEvent {
 impl MessageEvent {
     fn apply_field<S: MessageEventFieldSource>(
         &mut self,
-        key: &str,
+        field: MessageEventField,
         source: S,
     ) -> Result<(), DecodeError> {
-        match key {
-            "m_string" => {
+        match field {
+            MessageEventField::String => {
                 self.m_string = source.read_string()?;
-            }
-            _ => {
-                source.skip()?;
             }
         }
         Ok(())
@@ -408,6 +502,8 @@ impl MessageEvent {
 }
 
 impl DirectEventDecode for TrackerEvent {
+    type Field = TrackerEventField;
+
     fn new_decoded(event: &str, event_id: u32, game_loop: i128, _user_id: Option<i64>) -> Self {
         Self {
             event: event.to_owned(),
@@ -437,17 +533,28 @@ impl DirectEventDecode for TrackerEvent {
         self.bits = i64::try_from(bits).unwrap_or_default();
     }
 
+    fn field_from_key(key: &str) -> Option<Self::Field> {
+        TrackerEventField::from_key(key)
+    }
+
     fn decode_field<D: TypeDecoder>(
         &mut self,
         decoder: &mut D,
-        key: &str,
-        typeid: usize,
+        field: Self::Field,
+        field_typeinfo: &TypeInfo,
     ) -> Result<(), DecodeError> {
-        self.apply_field(key, DecodedTrackerEventFieldSource { decoder, typeid })
+        self.apply_field(
+            field,
+            DecodedTrackerEventFieldSource {
+                decoder,
+                field_typeinfo,
+            },
+        )
     }
 
-    fn apply_fallback_value(&mut self, key: &str, value: Value) {
-        if let Err(error) = self.apply_field(key, FallbackTrackerEventFieldSource { value: &value })
+    fn apply_fallback_field(&mut self, field: Self::Field, value: Value) {
+        if let Err(error) =
+            self.apply_field(field, FallbackTrackerEventFieldSource { value: &value })
         {
             unreachable!("fallback field handling cannot fail: {error}");
         }
@@ -457,60 +564,57 @@ impl DirectEventDecode for TrackerEvent {
 impl TrackerEvent {
     fn apply_field<S: TrackerEventFieldSource>(
         &mut self,
-        key: &str,
+        field: TrackerEventField,
         source: S,
     ) -> Result<(), DecodeError> {
-        match key {
-            "m_playerId" => {
+        match field {
+            TrackerEventField::PlayerId => {
                 self.m_player_id = source.read_i64()?;
             }
-            "m_upgradeTypeName" => {
+            TrackerEventField::UpgradeTypeName => {
                 self.m_upgrade_type_name = source.read_string()?;
             }
-            "m_count" => {
+            TrackerEventField::Count => {
                 self.m_count = source.read_i64()?;
             }
-            "m_stats" => {
+            TrackerEventField::Stats => {
                 self.m_stats = source.read_player_stats()?;
             }
-            "m_unitTypeName" => {
+            TrackerEventField::UnitTypeName => {
                 self.m_unit_type_name = source.read_string()?;
             }
-            "m_creatorAbilityName" => {
+            TrackerEventField::CreatorAbilityName => {
                 self.m_creator_ability_name = source.read_string()?;
             }
-            "m_controlPlayerId" => {
+            TrackerEventField::ControlPlayerId => {
                 self.m_control_player_id = source.read_i64()?;
             }
-            "m_unitTagIndex" => {
+            TrackerEventField::UnitTagIndex => {
                 self.m_unit_tag_index = source.read_i64()?;
             }
-            "m_unitTagRecycle" => {
+            TrackerEventField::UnitTagRecycle => {
                 self.m_unit_tag_recycle = source.read_i64()?;
             }
-            "m_creatorUnitTagIndex" => {
+            TrackerEventField::CreatorUnitTagIndex => {
                 self.m_creator_unit_tag_index = source.read_i64()?;
             }
-            "m_creatorUnitTagRecycle" => {
+            TrackerEventField::CreatorUnitTagRecycle => {
                 self.m_creator_unit_tag_recycle = source.read_i64()?;
             }
-            "m_killerUnitTagIndex" => {
+            TrackerEventField::KillerUnitTagIndex => {
                 self.m_killer_unit_tag_index = source.read_i64()?;
             }
-            "m_killerUnitTagRecycle" => {
+            TrackerEventField::KillerUnitTagRecycle => {
                 self.m_killer_unit_tag_recycle = source.read_i64()?;
             }
-            "m_killerPlayerId" => {
+            TrackerEventField::KillerPlayerId => {
                 self.m_killer_player_id = source.read_i64()?;
             }
-            "m_x" => {
+            TrackerEventField::X => {
                 self.m_x = source.read_i64()?;
             }
-            "m_y" => {
+            TrackerEventField::Y => {
                 self.m_y = source.read_i64()?;
-            }
-            _ => {
-                source.skip()?;
             }
         }
         Ok(())
@@ -526,41 +630,43 @@ fn parse_trigger_event_data(value: &Value) -> TriggerEventData {
 
 pub(crate) fn decode_user_id<D: TypeDecoder>(
     decoder: &mut D,
-    typeid: usize,
+    typeinfo: &TypeInfo,
 ) -> Result<Option<i64>, DecodeError> {
     let mut user_id = None;
-    match decoder.visit_struct_fields_from_typeid(typeid, &mut |decoder, key, field_typeid| {
-        if key == "m_userId" {
-            user_id = decoder.i64_from_typeid(field_typeid)?;
-        } else {
-            decoder.skip_from_typeid(field_typeid)?;
-        }
-        Ok(())
-    }) {
+    match decoder.visit_struct_fields_from_typeinfo(
+        typeinfo,
+        &mut |key| if key == "m_userId" { Some(()) } else { None },
+        &mut |decoder, (), field_typeinfo| {
+            user_id = decoder.i64_from_typeinfo(field_typeinfo)?;
+            Ok(())
+        },
+    ) {
         Ok(()) => Ok(user_id),
-        Err(DecodeError::UnexpectedType(_)) => decoder.i64_from_typeid(typeid),
+        Err(DecodeError::UnexpectedType(_)) => decoder.i64_from_typeinfo(typeinfo),
         Err(error) => Err(error),
     }
 }
 
 fn decode_ability_data<D: TypeDecoder>(
     decoder: &mut D,
-    typeid: usize,
+    typeinfo: &TypeInfo,
 ) -> Result<Option<AbilityData>, DecodeError> {
     let mut ability = AbilityData::default();
     let mut found = false;
-    match decoder.visit_struct_fields_from_typeid(typeid, &mut |decoder, key, field_typeid| {
-        if key == "m_abilLink" {
-            ability.m_abilLink = decoder.i64_from_typeid(field_typeid)?.unwrap_or_default();
+    match decoder.visit_struct_fields_from_typeinfo(
+        typeinfo,
+        &mut |key| if key == "m_abilLink" { Some(()) } else { None },
+        &mut |decoder, (), field_typeinfo| {
+            ability.m_abilLink = decoder
+                .i64_from_typeinfo(field_typeinfo)?
+                .unwrap_or_default();
             found = true;
-        } else {
-            decoder.skip_from_typeid(field_typeid)?;
-        }
-        Ok(())
-    }) {
+            Ok(())
+        },
+    ) {
         Ok(()) => Ok(found.then_some(ability)),
         Err(DecodeError::UnexpectedType(_)) => {
-            let value = decoder.instance(typeid)?;
+            let value = decoder.instance_from_typeinfo(typeinfo)?;
             Ok(parse_ability_data(&value))
         }
         Err(error) => Err(error),
@@ -622,35 +728,40 @@ fn parse_player_stats(value: &Value) -> Option<PlayerStatsData> {
 
 fn decode_player_stats<D: TypeDecoder>(
     decoder: &mut D,
-    typeid: usize,
+    typeinfo: &TypeInfo,
 ) -> Result<Option<PlayerStatsData>, DecodeError> {
     let mut stats = PlayerStatsData::default();
     let mut found = false;
-    match decoder.visit_struct_fields_from_typeid(typeid, &mut |decoder, key, field_typeid| {
-        match key {
-            "m_scoreValueFoodUsed" => {
-                stats.m_score_value_food_used = decoder.f64_from_typeid(field_typeid)?;
-                found = true;
+    match decoder.visit_struct_fields_from_typeinfo(
+        typeinfo,
+        &mut |key| match key {
+            "m_scoreValueFoodUsed" => Some(0u8),
+            "m_scoreValueMineralsCollectionRate" => Some(1u8),
+            "m_scoreValueVespeneCollectionRate" => Some(2u8),
+            _ => None,
+        },
+        &mut |decoder, field, field_typeinfo| {
+            match field {
+                0 => {
+                    stats.m_score_value_food_used = decoder.f64_from_typeinfo(field_typeinfo)?;
+                }
+                1 => {
+                    stats.m_score_value_minerals_collection_rate =
+                        decoder.f64_from_typeinfo(field_typeinfo)?;
+                }
+                2 => {
+                    stats.m_score_value_vespene_collection_rate =
+                        decoder.f64_from_typeinfo(field_typeinfo)?;
+                }
+                _ => unreachable!("invalid selected player stats field"),
             }
-            "m_scoreValueMineralsCollectionRate" => {
-                stats.m_score_value_minerals_collection_rate =
-                    decoder.f64_from_typeid(field_typeid)?;
-                found = true;
-            }
-            "m_scoreValueVespeneCollectionRate" => {
-                stats.m_score_value_vespene_collection_rate =
-                    decoder.f64_from_typeid(field_typeid)?;
-                found = true;
-            }
-            _ => {
-                decoder.skip_from_typeid(field_typeid)?;
-            }
-        }
-        Ok(())
-    }) {
+            found = true;
+            Ok(())
+        },
+    ) {
         Ok(()) => Ok(found.then_some(stats)),
         Err(DecodeError::UnexpectedType(_)) => {
-            let value = decoder.instance(typeid)?;
+            let value = decoder.instance_from_typeinfo(typeinfo)?;
             Ok(parse_player_stats(&value))
         }
         Err(error) => Err(error),
