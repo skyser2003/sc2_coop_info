@@ -51,7 +51,7 @@ jobs:
               with:
                   tagName: v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
                   releaseName: "SC2_Coop_Info v__VERSION__"
-                  releaseBody: "Bug fix: 'Moment of Silence' icon not showing fixed"
+                  releaseBody: "Performance improvement: Replay parsing speed increased by around 5x"
                   releaseDraft: false
                   prerelease: false
                   projectPath: "./tauri-overlay"
