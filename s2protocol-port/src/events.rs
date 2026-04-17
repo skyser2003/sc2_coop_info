@@ -111,6 +111,165 @@ pub(crate) trait DirectEventDecode: Sized {
     fn apply_fallback_value(&mut self, key: &str, value: Value);
 }
 
+trait GameEventFieldSource {
+    fn read_i64(self) -> Result<Option<i64>, DecodeError>;
+    fn read_trigger_event_data(self) -> Result<TriggerEventData, DecodeError>;
+    fn read_ability_data(self) -> Result<Option<AbilityData>, DecodeError>;
+    fn read_cmd_event_data(self) -> Result<Option<CmdEventData>, DecodeError>;
+    fn read_target_unit_data(self) -> Result<Option<TargetUnitData>, DecodeError>;
+    fn skip(self) -> Result<(), DecodeError>;
+}
+
+struct DecodedGameEventFieldSource<'a, D: TypeDecoder> {
+    decoder: &'a mut D,
+    typeid: usize,
+}
+
+impl<D: TypeDecoder> GameEventFieldSource for DecodedGameEventFieldSource<'_, D> {
+    fn read_i64(self) -> Result<Option<i64>, DecodeError> {
+        self.decoder.i64_from_typeid(self.typeid)
+    }
+
+    fn read_trigger_event_data(self) -> Result<TriggerEventData, DecodeError> {
+        let value = self.decoder.instance(self.typeid)?;
+        Ok(parse_trigger_event_data(&value))
+    }
+
+    fn read_ability_data(self) -> Result<Option<AbilityData>, DecodeError> {
+        decode_ability_data(self.decoder, self.typeid)
+    }
+
+    fn read_cmd_event_data(self) -> Result<Option<CmdEventData>, DecodeError> {
+        let value = self.decoder.instance(self.typeid)?;
+        Ok(parse_cmd_event_data(&value))
+    }
+
+    fn read_target_unit_data(self) -> Result<Option<TargetUnitData>, DecodeError> {
+        let value = self.decoder.instance(self.typeid)?;
+        Ok(parse_target_unit_data(&value))
+    }
+
+    fn skip(self) -> Result<(), DecodeError> {
+        self.decoder.skip_from_typeid(self.typeid)
+    }
+}
+
+struct FallbackGameEventFieldSource<'a> {
+    value: &'a Value,
+}
+
+impl GameEventFieldSource for FallbackGameEventFieldSource<'_> {
+    fn read_i64(self) -> Result<Option<i64>, DecodeError> {
+        Ok(value_as_i64(self.value))
+    }
+
+    fn read_trigger_event_data(self) -> Result<TriggerEventData, DecodeError> {
+        Ok(parse_trigger_event_data(self.value))
+    }
+
+    fn read_ability_data(self) -> Result<Option<AbilityData>, DecodeError> {
+        Ok(parse_ability_data(self.value))
+    }
+
+    fn read_cmd_event_data(self) -> Result<Option<CmdEventData>, DecodeError> {
+        Ok(parse_cmd_event_data(self.value))
+    }
+
+    fn read_target_unit_data(self) -> Result<Option<TargetUnitData>, DecodeError> {
+        Ok(parse_target_unit_data(self.value))
+    }
+
+    fn skip(self) -> Result<(), DecodeError> {
+        Ok(())
+    }
+}
+
+trait MessageEventFieldSource {
+    fn read_string(self) -> Result<Option<String>, DecodeError>;
+    fn skip(self) -> Result<(), DecodeError>;
+}
+
+struct DecodedMessageEventFieldSource<'a, D: TypeDecoder> {
+    decoder: &'a mut D,
+    typeid: usize,
+}
+
+impl<D: TypeDecoder> MessageEventFieldSource for DecodedMessageEventFieldSource<'_, D> {
+    fn read_string(self) -> Result<Option<String>, DecodeError> {
+        self.decoder.string_from_typeid(self.typeid)
+    }
+
+    fn skip(self) -> Result<(), DecodeError> {
+        self.decoder.skip_from_typeid(self.typeid)
+    }
+}
+
+struct FallbackMessageEventFieldSource<'a> {
+    value: &'a Value,
+}
+
+impl MessageEventFieldSource for FallbackMessageEventFieldSource<'_> {
+    fn read_string(self) -> Result<Option<String>, DecodeError> {
+        Ok(value_as_string(self.value))
+    }
+
+    fn skip(self) -> Result<(), DecodeError> {
+        Ok(())
+    }
+}
+
+trait TrackerEventFieldSource {
+    fn read_i64(self) -> Result<Option<i64>, DecodeError>;
+    fn read_string(self) -> Result<Option<String>, DecodeError>;
+    fn read_player_stats(self) -> Result<Option<PlayerStatsData>, DecodeError>;
+    fn skip(self) -> Result<(), DecodeError>;
+}
+
+struct DecodedTrackerEventFieldSource<'a, D: TypeDecoder> {
+    decoder: &'a mut D,
+    typeid: usize,
+}
+
+impl<D: TypeDecoder> TrackerEventFieldSource for DecodedTrackerEventFieldSource<'_, D> {
+    fn read_i64(self) -> Result<Option<i64>, DecodeError> {
+        self.decoder.i64_from_typeid(self.typeid)
+    }
+
+    fn read_string(self) -> Result<Option<String>, DecodeError> {
+        self.decoder.string_from_typeid(self.typeid)
+    }
+
+    fn read_player_stats(self) -> Result<Option<PlayerStatsData>, DecodeError> {
+        decode_player_stats(self.decoder, self.typeid)
+    }
+
+    fn skip(self) -> Result<(), DecodeError> {
+        self.decoder.skip_from_typeid(self.typeid)
+    }
+}
+
+struct FallbackTrackerEventFieldSource<'a> {
+    value: &'a Value,
+}
+
+impl TrackerEventFieldSource for FallbackTrackerEventFieldSource<'_> {
+    fn read_i64(self) -> Result<Option<i64>, DecodeError> {
+        Ok(value_as_i64(self.value))
+    }
+
+    fn read_string(self) -> Result<Option<String>, DecodeError> {
+        Ok(value_as_string(self.value))
+    }
+
+    fn read_player_stats(self) -> Result<Option<PlayerStatsData>, DecodeError> {
+        Ok(parse_player_stats(self.value))
+    }
+
+    fn skip(self) -> Result<(), DecodeError> {
+        Ok(())
+    }
+}
+
 impl ReplayEvent {
     pub fn _event(&self) -> &str {
         match self {
@@ -154,57 +313,46 @@ impl DirectEventDecode for GameEvent {
         key: &str,
         typeid: usize,
     ) -> Result<(), DecodeError> {
-        match key {
-            "m_controlId" => {
-                self.m_control_id = decoder.i64_from_typeid(typeid)?;
-            }
-            "m_eventType" => {
-                self.m_event_type = decoder.i64_from_typeid(typeid)?;
-            }
-            "m_eventData" => {
-                let value = decoder.instance(typeid)?;
-                self.m_event_data = Some(parse_trigger_event_data(&value));
-            }
-            "m_abil" => {
-                self.m_abil = decode_ability_data(decoder, typeid)?;
-            }
-            "m_data" => {
-                let value = decoder.instance(typeid)?;
-                self.m_data = parse_cmd_event_data(&value);
-            }
-            "m_target" => {
-                let value = decoder.instance(typeid)?;
-                self.m_target = parse_target_unit_data(&value);
-            }
-            _ => {
-                decoder.skip_from_typeid(typeid)?;
-            }
-        }
-        Ok(())
+        self.apply_field(key, DecodedGameEventFieldSource { decoder, typeid })
     }
 
     fn apply_fallback_value(&mut self, key: &str, value: Value) {
+        if let Err(error) = self.apply_field(key, FallbackGameEventFieldSource { value: &value }) {
+            unreachable!("fallback field handling cannot fail: {error}");
+        }
+    }
+}
+
+impl GameEvent {
+    fn apply_field<S: GameEventFieldSource>(
+        &mut self,
+        key: &str,
+        source: S,
+    ) -> Result<(), DecodeError> {
         match key {
             "m_controlId" => {
-                self.m_control_id = value_as_i64(&value);
+                self.m_control_id = source.read_i64()?;
             }
             "m_eventType" => {
-                self.m_event_type = value_as_i64(&value);
+                self.m_event_type = source.read_i64()?;
             }
             "m_eventData" => {
-                self.m_event_data = Some(parse_trigger_event_data(&value));
+                self.m_event_data = Some(source.read_trigger_event_data()?);
             }
             "m_abil" => {
-                self.m_abil = parse_ability_data(&value);
+                self.m_abil = source.read_ability_data()?;
             }
             "m_data" => {
-                self.m_data = parse_cmd_event_data(&value);
+                self.m_data = source.read_cmd_event_data()?;
             }
             "m_target" => {
-                self.m_target = parse_target_unit_data(&value);
+                self.m_target = source.read_target_unit_data()?;
             }
-            _ => {}
+            _ => {
+                source.skip()?;
+            }
         }
+        Ok(())
     }
 }
 
@@ -230,18 +378,32 @@ impl DirectEventDecode for MessageEvent {
         key: &str,
         typeid: usize,
     ) -> Result<(), DecodeError> {
-        if key == "m_string" {
-            self.m_string = decoder.string_from_typeid(typeid)?;
-        } else {
-            decoder.skip_from_typeid(typeid)?;
-        }
-        Ok(())
+        self.apply_field(key, DecodedMessageEventFieldSource { decoder, typeid })
     }
 
     fn apply_fallback_value(&mut self, key: &str, value: Value) {
-        if key == "m_string" {
-            self.m_string = value_as_string(&value);
+        if let Err(error) = self.apply_field(key, FallbackMessageEventFieldSource { value: &value })
+        {
+            unreachable!("fallback field handling cannot fail: {error}");
         }
+    }
+}
+
+impl MessageEvent {
+    fn apply_field<S: MessageEventFieldSource>(
+        &mut self,
+        key: &str,
+        source: S,
+    ) -> Result<(), DecodeError> {
+        match key {
+            "m_string" => {
+                self.m_string = source.read_string()?;
+            }
+            _ => {
+                source.skip()?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -281,114 +443,77 @@ impl DirectEventDecode for TrackerEvent {
         key: &str,
         typeid: usize,
     ) -> Result<(), DecodeError> {
-        match key {
-            "m_playerId" => {
-                self.m_player_id = decoder.i64_from_typeid(typeid)?;
-            }
-            "m_upgradeTypeName" => {
-                self.m_upgrade_type_name = decoder.string_from_typeid(typeid)?;
-            }
-            "m_count" => {
-                self.m_count = decoder.i64_from_typeid(typeid)?;
-            }
-            "m_stats" => {
-                self.m_stats = decode_player_stats(decoder, typeid)?;
-            }
-            "m_unitTypeName" => {
-                self.m_unit_type_name = decoder.string_from_typeid(typeid)?;
-            }
-            "m_creatorAbilityName" => {
-                self.m_creator_ability_name = decoder.string_from_typeid(typeid)?;
-            }
-            "m_controlPlayerId" => {
-                self.m_control_player_id = decoder.i64_from_typeid(typeid)?;
-            }
-            "m_unitTagIndex" => {
-                self.m_unit_tag_index = decoder.i64_from_typeid(typeid)?;
-            }
-            "m_unitTagRecycle" => {
-                self.m_unit_tag_recycle = decoder.i64_from_typeid(typeid)?;
-            }
-            "m_creatorUnitTagIndex" => {
-                self.m_creator_unit_tag_index = decoder.i64_from_typeid(typeid)?;
-            }
-            "m_creatorUnitTagRecycle" => {
-                self.m_creator_unit_tag_recycle = decoder.i64_from_typeid(typeid)?;
-            }
-            "m_killerUnitTagIndex" => {
-                self.m_killer_unit_tag_index = decoder.i64_from_typeid(typeid)?;
-            }
-            "m_killerUnitTagRecycle" => {
-                self.m_killer_unit_tag_recycle = decoder.i64_from_typeid(typeid)?;
-            }
-            "m_killerPlayerId" => {
-                self.m_killer_player_id = decoder.i64_from_typeid(typeid)?;
-            }
-            "m_x" => {
-                self.m_x = decoder.i64_from_typeid(typeid)?;
-            }
-            "m_y" => {
-                self.m_y = decoder.i64_from_typeid(typeid)?;
-            }
-            _ => {
-                decoder.skip_from_typeid(typeid)?;
-            }
-        }
-        Ok(())
+        self.apply_field(key, DecodedTrackerEventFieldSource { decoder, typeid })
     }
 
     fn apply_fallback_value(&mut self, key: &str, value: Value) {
+        if let Err(error) = self.apply_field(key, FallbackTrackerEventFieldSource { value: &value })
+        {
+            unreachable!("fallback field handling cannot fail: {error}");
+        }
+    }
+}
+
+impl TrackerEvent {
+    fn apply_field<S: TrackerEventFieldSource>(
+        &mut self,
+        key: &str,
+        source: S,
+    ) -> Result<(), DecodeError> {
         match key {
             "m_playerId" => {
-                self.m_player_id = value_as_i64(&value);
+                self.m_player_id = source.read_i64()?;
             }
             "m_upgradeTypeName" => {
-                self.m_upgrade_type_name = value_as_string(&value);
+                self.m_upgrade_type_name = source.read_string()?;
             }
             "m_count" => {
-                self.m_count = value_as_i64(&value);
+                self.m_count = source.read_i64()?;
             }
             "m_stats" => {
-                self.m_stats = parse_player_stats(&value);
+                self.m_stats = source.read_player_stats()?;
             }
             "m_unitTypeName" => {
-                self.m_unit_type_name = value_as_string(&value);
+                self.m_unit_type_name = source.read_string()?;
             }
             "m_creatorAbilityName" => {
-                self.m_creator_ability_name = value_as_string(&value);
+                self.m_creator_ability_name = source.read_string()?;
             }
             "m_controlPlayerId" => {
-                self.m_control_player_id = value_as_i64(&value);
+                self.m_control_player_id = source.read_i64()?;
             }
             "m_unitTagIndex" => {
-                self.m_unit_tag_index = value_as_i64(&value);
+                self.m_unit_tag_index = source.read_i64()?;
             }
             "m_unitTagRecycle" => {
-                self.m_unit_tag_recycle = value_as_i64(&value);
+                self.m_unit_tag_recycle = source.read_i64()?;
             }
             "m_creatorUnitTagIndex" => {
-                self.m_creator_unit_tag_index = value_as_i64(&value);
+                self.m_creator_unit_tag_index = source.read_i64()?;
             }
             "m_creatorUnitTagRecycle" => {
-                self.m_creator_unit_tag_recycle = value_as_i64(&value);
+                self.m_creator_unit_tag_recycle = source.read_i64()?;
             }
             "m_killerUnitTagIndex" => {
-                self.m_killer_unit_tag_index = value_as_i64(&value);
+                self.m_killer_unit_tag_index = source.read_i64()?;
             }
             "m_killerUnitTagRecycle" => {
-                self.m_killer_unit_tag_recycle = value_as_i64(&value);
+                self.m_killer_unit_tag_recycle = source.read_i64()?;
             }
             "m_killerPlayerId" => {
-                self.m_killer_player_id = value_as_i64(&value);
+                self.m_killer_player_id = source.read_i64()?;
             }
             "m_x" => {
-                self.m_x = value_as_i64(&value);
+                self.m_x = source.read_i64()?;
             }
             "m_y" => {
-                self.m_y = value_as_i64(&value);
+                self.m_y = source.read_i64()?;
             }
-            _ => {}
+            _ => {
+                source.skip()?;
+            }
         }
+        Ok(())
     }
 }
 
