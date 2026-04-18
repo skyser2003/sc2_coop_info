@@ -1,13 +1,13 @@
 import { Fragment, ReactNode } from "react";
 import { LanguageManager } from "../../i18n/languageManager";
 import type {
-    OverlayPlayerInfoPayload,
-    OverlayPlayerInfoRow,
+    OverlayPlayerStatsPayload,
+    OverlayPlayerStatsRow,
 } from "../../../bindings/overlay";
 
 function renderPlayerStatRow(
     playerName: string,
-    row: OverlayPlayerInfoRow,
+    row: OverlayPlayerStatsRow,
     overlayLanguageManager: LanguageManager,
 ): ReactNode {
     if (row.kind === "no_games") {
@@ -56,7 +56,7 @@ export default function PlayerStatMode({
     immediate,
     overlayLanguageManager,
 }: {
-    payload: OverlayPlayerInfoPayload | null;
+    payload: OverlayPlayerStatsPayload | null;
     visible: boolean;
     immediate: boolean;
     language: string;

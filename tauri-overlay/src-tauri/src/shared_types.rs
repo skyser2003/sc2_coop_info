@@ -272,7 +272,7 @@ pub struct OverlayReplayPayload {
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
 #[ts(tag = "kind", rename_all = "snake_case")]
-pub enum OverlayPlayerInfoRow {
+pub enum OverlayPlayerStatsRow {
     NoGames {
         #[ts(optional)]
         note: Option<String>,
@@ -292,8 +292,8 @@ pub enum OverlayPlayerInfoRow {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
-pub struct OverlayPlayerInfoPayload {
-    pub data: BTreeMap<String, OverlayPlayerInfoRow>,
+pub struct OverlayPlayerStatsPayload {
+    pub data: BTreeMap<String, OverlayPlayerStatsRow>,
 }
 
 pub fn unit_stats_map_from_value(value: &Value) -> UnitStatsMap {

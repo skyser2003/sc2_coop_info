@@ -23,7 +23,7 @@ use crate::replay_analysis::ReplayAnalysis;
 use crate::shared_types::{
     overlay_icon_payload_from_value, replay_data_record_from_value, swap_replay_data_record_sides,
     unit_stats_map_from_value, EmptyPayload, MonitorOption, OverlayInitColorsDurationPayload,
-    OverlayPlayerInfoPayload, OverlayPlayerInfoRow, OverlayReplayPayload,
+    OverlayPlayerStatsPayload, OverlayPlayerStatsRow, OverlayReplayPayload,
     OverlayScreenshotRequestPayload,
 };
 use crate::{
@@ -36,9 +36,9 @@ pub(crate) const MENU_ITEM_SHOW_OVERLAY: &str = "show_overlay";
 pub(crate) const MENU_ITEM_QUIT: &str = "quit";
 
 pub(crate) const OVERLAY_REPLAY_PAYLOAD_EVENT: &str = "sco://overlay-replay-payload";
-pub(crate) const OVERLAY_SHOW_HIDE_PLAYER_WINRATE_EVENT: &str =
-    "sco://overlay-show-hide-player-winrate";
-pub(crate) const OVERLAY_PLAYER_WINRATE_EVENT: &str = "sco://overlay-player-winrate";
+pub(crate) const OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT: &str =
+    "sco://overlay-show-hide-player-stats";
+pub(crate) const OVERLAY_PLAYER_STATS_EVENT: &str = "sco://overlay-player-stats";
 pub(crate) const OVERLAY_INIT_COLORS_DURATION_EVENT: &str = "sco://overlay-init-colors-duration";
 pub(crate) const OVERLAY_SHOWSTATS_EVENT: &str = "sco://overlay-showstats";
 pub(crate) const OVERLAY_HIDESTATS_EVENT: &str = "sco://overlay-hidestats";
@@ -62,7 +62,7 @@ const OVERLAY_HOTKEY_BINDINGS: [(&str, &str); 7] = [
     ("hotkey_hide", "overlay_hide"),
     ("hotkey_newer", "overlay_newer"),
     ("hotkey_older", "overlay_older"),
-    ("hotkey_winrates", "overlay_player_info"),
+    ("hotkey_winrates", "overlay_player_stats"),
     ("performance_hotkey", "performance_show_hide"),
 ];
 
@@ -714,7 +714,7 @@ fn register_shortcut_action(
     crate::sco_log!("[SCO/hotkey] Triggered shortcut '{pressed}' => '{action}'");
 
     match action {
-        "overlay_newer" | "overlay_older" | "overlay_player_info" => {
+        "overlay_newer" | "overlay_older" | "overlay_player_stats" => {
             if HOTKEY_ACTION_INFLIGHT
                 .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
                 .is_err()
@@ -1101,13 +1101,13 @@ pub(crate) fn perform_overlay_action(
         }
         "overlay_newer" => Some(replay_move_window(app, state, 1)),
         "overlay_older" => Some(replay_move_window(app, state, -1)),
-        "overlay_player_info" => {
-            let payload = build_overlay_player_info_payload(state);
-            let _ = app.emit(OVERLAY_SHOW_HIDE_PLAYER_WINRATE_EVENT, payload);
+        "overlay_player_stats" => {
+            let payload = build_overlay_player_stats_payload(state);
+            let _ = app.emit(OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT, payload);
             show_overlay_window(app);
 
             Some(crate::OverlayActionResponse::success(
-                "Overlay player info toggled",
+                "Overlay player stats toggled",
             ))
         }
         "performance_show_hide" => {
@@ -1205,7 +1205,7 @@ pub(crate) fn perform_overlay_action(
     }
 }
 
-fn build_overlay_player_info_payload(state: &BackendState) -> OverlayPlayerInfoPayload {
+fn build_overlay_player_stats_payload(state: &BackendState) -> OverlayPlayerStatsPayload {
     let replays = state.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT);
     let selected_file = state.get_current_replay_file();
 
@@ -1214,12 +1214,12 @@ fn build_overlay_player_info_payload(state: &BackendState) -> OverlayPlayerInfoP
         .or_else(|| replays.first().cloned());
 
     let Some(selected) = selected else {
-        return OverlayPlayerInfoPayload::default();
+        return OverlayPlayerStatsPayload::default();
     };
 
     let main_names = configured_main_names();
     let main_handles = configured_main_handles();
-    let player_info = select_other_player_from_replay(&selected, &main_names, &main_handles)
+    let player_stats_target = select_other_player_for_stats(&selected, &main_names, &main_handles)
         .or_else(|| {
             let ally = selected.ally().name.trim();
             if !ally.is_empty() {
@@ -1237,14 +1237,14 @@ fn build_overlay_player_info_payload(state: &BackendState) -> OverlayPlayerInfoP
             }
         });
 
-    let Some((player_handle, player_name)) = player_info else {
-        return OverlayPlayerInfoPayload::default();
+    let Some((player_handle, player_name)) = player_stats_target else {
+        return OverlayPlayerStatsPayload::default();
     };
 
-    build_overlay_player_info_payload_for_player(state, &player_handle, &player_name)
+    build_overlay_player_stats_payload_for_player(state, &player_handle, &player_name)
 }
 
-fn select_other_player_from_replay(
+fn select_other_player_for_stats(
     replay: &crate::ReplayInfo,
     main_names: &HashSet<String>,
     main_handles: &HashSet<String>,
@@ -1359,11 +1359,11 @@ fn relative_last_seen_text(last_seen: u64) -> String {
     format!("{} ago", parts.join(" "))
 }
 
-fn build_overlay_player_info_payload_for_player(
+fn build_overlay_player_stats_payload_for_player(
     state: &BackendState,
     player_handle: &str,
     player_name: &str,
-) -> OverlayPlayerInfoPayload {
+) -> OverlayPlayerStatsPayload {
     let player_data = state
         .stats
         .lock()
@@ -1408,7 +1408,7 @@ fn build_overlay_player_info_payload_for_player(
         let note = player_note_from_settings(player_handle);
         (
             sanitize_replay_text(&resolved_name),
-            OverlayPlayerInfoRow::Stats {
+            OverlayPlayerStatsRow::Stats {
                 wins: as_u32(wins),
                 losses: as_u32(losses),
                 apm: as_u32(apm as u64),
@@ -1421,15 +1421,15 @@ fn build_overlay_player_info_payload_for_player(
         )
     } else {
         let note = player_note_from_settings(&fallback_name);
-        (fallback_name, OverlayPlayerInfoRow::NoGames { note })
+        (fallback_name, OverlayPlayerStatsRow::NoGames { note })
     };
 
     data.insert(display_name, value);
 
-    OverlayPlayerInfoPayload { data }
+    OverlayPlayerStatsPayload { data }
 }
 
-pub(crate) fn show_player_winrate_for_name(
+pub(crate) fn show_player_stats_for_name(
     app: &tauri::AppHandle<Wry>,
     state: &BackendState,
     player_handle: &str,
@@ -1439,9 +1439,9 @@ pub(crate) fn show_player_winrate_for_name(
         return false;
     }
 
-    let payload = build_overlay_player_info_payload_for_player(state, player_handle, player_name);
+    let payload = build_overlay_player_stats_payload_for_player(state, player_handle, player_name);
     let _ = app.emit(OVERLAY_HIDESTATS_EVENT, EmptyPayload::default());
-    let _ = app.emit(OVERLAY_PLAYER_WINRATE_EVENT, payload);
+    let _ = app.emit(OVERLAY_PLAYER_STATS_EVENT, payload);
     show_overlay_window(app);
     true
 }

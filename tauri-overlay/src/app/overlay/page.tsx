@@ -19,7 +19,7 @@ import type {
     OverlayColorPreviewPayload,
     OverlayInitColorsDurationPayload,
     OverlayLanguagePreviewPayload,
-    OverlayPlayerInfoPayload,
+    OverlayPlayerStatsPayload,
     OverlayReplayPayload,
     OverlayScreenshotRequestPayload,
     OverlayScreenshotResultPayload,
@@ -40,8 +40,8 @@ type OverlayEventName =
     | typeof OVERLAY_COLOR_PREVIEW_EVENT
     | typeof OVERLAY_LANGUAGE_PREVIEW_EVENT
     | typeof OVERLAY_REPLAY_PAYLOAD_EVENT
-    | typeof OVERLAY_SHOW_HIDE_PLAYER_WINRATE_EVENT
-    | typeof OVERLAY_PLAYER_WINRATE_EVENT
+    | typeof OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT
+    | typeof OVERLAY_PLAYER_STATS_EVENT
     | typeof OVERLAY_INIT_COLORS_DURATION_EVENT
     | typeof OVERLAY_SHOWSTATS_EVENT
     | typeof OVERLAY_HIDESTATS_EVENT
@@ -130,9 +130,9 @@ function reportOverlayReplayDataState(active: boolean): void {
 const OVERLAY_COLOR_PREVIEW_EVENT = "sco://overlay-color-preview";
 const OVERLAY_LANGUAGE_PREVIEW_EVENT = "sco://overlay-language-preview";
 const OVERLAY_REPLAY_PAYLOAD_EVENT = "sco://overlay-replay-payload";
-const OVERLAY_SHOW_HIDE_PLAYER_WINRATE_EVENT =
-    "sco://overlay-show-hide-player-winrate";
-const OVERLAY_PLAYER_WINRATE_EVENT = "sco://overlay-player-winrate";
+const OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT =
+    "sco://overlay-show-hide-player-stats";
+const OVERLAY_PLAYER_STATS_EVENT = "sco://overlay-player-stats";
 const OVERLAY_INIT_COLORS_DURATION_EVENT = "sco://overlay-init-colors-duration";
 const OVERLAY_SHOWSTATS_EVENT = "sco://overlay-showstats";
 const OVERLAY_HIDESTATS_EVENT = "sco://overlay-hidestats";
@@ -146,8 +146,8 @@ const tauriUnlistens: Record<OverlayEventName, (() => void) | null> = {
     [OVERLAY_COLOR_PREVIEW_EVENT]: null,
     [OVERLAY_LANGUAGE_PREVIEW_EVENT]: null,
     [OVERLAY_REPLAY_PAYLOAD_EVENT]: null,
-    [OVERLAY_SHOW_HIDE_PLAYER_WINRATE_EVENT]: null,
-    [OVERLAY_PLAYER_WINRATE_EVENT]: null,
+    [OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT]: null,
+    [OVERLAY_PLAYER_STATS_EVENT]: null,
     [OVERLAY_INIT_COLORS_DURATION_EVENT]: null,
     [OVERLAY_SHOWSTATS_EVENT]: null,
     [OVERLAY_HIDESTATS_EVENT]: null,
@@ -163,7 +163,7 @@ interface DisplayStatus {
 
 interface DisplayTransitionOptions {
     immediate?: boolean;
-    playerPayload?: OverlayPlayerInfoPayload | null;
+    playerPayload?: OverlayPlayerStatsPayload | null;
 }
 
 export default function OverlayPage() {
@@ -203,7 +203,7 @@ export default function OverlayPage() {
     const [sessionVictoryCount, setSessionVictoryCount] = useState<number>(0);
     const [sessionDefeatCount, setSessionDefeatCount] = useState<number>(0);
     const [playerStatPayload, setPlayerStatPayload] =
-        useState<OverlayPlayerInfoPayload | null>(null);
+        useState<OverlayPlayerStatsPayload | null>(null);
 
     function overlayText(id: string): string {
         return overlayLanguageManager.translate(id);
@@ -313,7 +313,7 @@ export default function OverlayPage() {
     }
 
     function togglePlayerStatsDisplay(
-        payload: OverlayPlayerInfoPayload,
+        payload: OverlayPlayerStatsPayload,
         immediate = true,
     ): void {
         setDisplayMode((previousDisplayMode) => {
@@ -477,7 +477,7 @@ export default function OverlayPage() {
     function togglePlayerStatsEventHandler({
         payload,
     }: {
-        payload: OverlayPlayerInfoPayload;
+        payload: OverlayPlayerStatsPayload;
     }): void {
         togglePlayerStatsDisplay(payload, true);
     }
@@ -485,7 +485,7 @@ export default function OverlayPage() {
     function playerStatsOnGameStartEventHandler({
         payload,
     }: {
-        payload: OverlayPlayerInfoPayload;
+        payload: OverlayPlayerStatsPayload;
     }): void {
         setGameStatPayload(null);
         requestDisplayTransition(DisplayMode.PlayerStats, {
@@ -632,20 +632,19 @@ export default function OverlayPage() {
                 tauriUnlistens[OVERLAY_REPLAY_PAYLOAD_EVENT]?.();
                 tauriUnlistens[OVERLAY_REPLAY_PAYLOAD_EVENT] = unlisten;
             }),
-            listen<OverlayPlayerInfoPayload>(
-                OVERLAY_SHOW_HIDE_PLAYER_WINRATE_EVENT,
+            listen<OverlayPlayerStatsPayload>(
+                OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT,
                 togglePlayerStatsEventHandler,
             ).then((unlisten) => {
-                tauriUnlistens[OVERLAY_SHOW_HIDE_PLAYER_WINRATE_EVENT]?.();
-                tauriUnlistens[OVERLAY_SHOW_HIDE_PLAYER_WINRATE_EVENT] =
-                    unlisten;
+                tauriUnlistens[OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT]?.();
+                tauriUnlistens[OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT] = unlisten;
             }),
-            listen<OverlayPlayerInfoPayload>(
-                OVERLAY_PLAYER_WINRATE_EVENT,
+            listen<OverlayPlayerStatsPayload>(
+                OVERLAY_PLAYER_STATS_EVENT,
                 playerStatsOnGameStartEventHandler,
             ).then((unlisten) => {
-                tauriUnlistens[OVERLAY_PLAYER_WINRATE_EVENT]?.();
-                tauriUnlistens[OVERLAY_PLAYER_WINRATE_EVENT] = unlisten;
+                tauriUnlistens[OVERLAY_PLAYER_STATS_EVENT]?.();
+                tauriUnlistens[OVERLAY_PLAYER_STATS_EVENT] = unlisten;
             }),
             listen<OverlayInitColorsDurationPayload>(
                 OVERLAY_INIT_COLORS_DURATION_EVENT,

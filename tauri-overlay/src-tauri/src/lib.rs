@@ -1231,7 +1231,7 @@ impl ReplayInfo {
 static REPLAY_SCAN_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 static APP_EXIT_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 static REPLAY_SCAN_PROGRESS: OnceLock<ReplayScanProgress> = OnceLock::new();
-static DELAYED_REPLAY_WINRATE_GENERATION: AtomicU64 = AtomicU64::new(0);
+static DELAYED_PLAYER_STATS_POPUP_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug)]
 struct ReplayScanProgress {
@@ -3525,11 +3525,11 @@ fn process_new_replay_path(
 
     spawn_detailed_cache_persist(cache_entry, "watch");
 
-    let invalidation_generation = DELAYED_REPLAY_WINRATE_GENERATION
+    let invalidation_generation = DELAYED_PLAYER_STATS_POPUP_GENERATION
         .fetch_add(1, Ordering::AcqRel)
         .saturating_add(1);
     crate::sco_log!(
-        "[SCO/watch] invalidated delayed replay winrate popups generation={} replay='{}'",
+        "[SCO/watch] invalidated delayed player stats popups generation={} replay='{}'",
         invalidation_generation,
         replay.file
     );
@@ -3814,7 +3814,7 @@ fn extract_live_game_players(payload: &Value) -> Vec<LiveGamePlayer> {
         .collect()
 }
 
-fn choose_other_coop_player_info(
+fn choose_other_coop_player_stats(
     players: &[LiveGamePlayer],
     main_names: &HashSet<String>,
     main_handles: &HashSet<String>,
@@ -3858,7 +3858,7 @@ fn choose_other_coop_player_info(
     None
 }
 
-fn spawn_game_launch_winrate_task(app: tauri::AppHandle<Wry>) {
+fn spawn_game_launch_player_stats_task(app: tauri::AppHandle<Wry>) {
     thread::spawn(move || {
         thread::sleep(Duration::from_secs(4));
 
@@ -3873,8 +3873,8 @@ fn spawn_game_launch_winrate_task(app: tauri::AppHandle<Wry>) {
             thread::sleep(Duration::from_millis(500));
 
             let settings = read_settings_memory();
-            let show_player_winrates = settings.show_player_winrates;
-            if !show_player_winrates {
+            let show_player_stats_popups = settings.show_player_winrates;
+            if !show_player_stats_popups {
                 continue;
             }
 
@@ -3927,20 +3927,20 @@ fn spawn_game_launch_winrate_task(app: tauri::AppHandle<Wry>) {
 
             let (main_names, main_handles) = state.build_launch_main_identity();
             let Some((other_player_handle, other_player_name)) =
-                choose_other_coop_player_info(&players, &main_names, &main_handles)
+                choose_other_coop_player_stats(&players, &main_names, &main_handles)
             else {
                 continue;
             };
 
-            let invalidation_generation = DELAYED_REPLAY_WINRATE_GENERATION
+            let invalidation_generation = DELAYED_PLAYER_STATS_POPUP_GENERATION
                 .fetch_add(1, Ordering::AcqRel)
                 .saturating_add(1);
             crate::sco_log!(
-                "[SCO/launch] invalidated delayed replay winrate popups generation={}",
+                "[SCO/launch] invalidated delayed player stats popups generation={}",
                 invalidation_generation
             );
 
-            if overlay_info::show_player_winrate_for_name(
+            if overlay_info::show_player_stats_for_name(
                 &app,
                 &state,
                 &other_player_handle,
@@ -5103,7 +5103,7 @@ pub fn run() {
             }
 
             spawn_replay_creation_watcher(app.app_handle().clone());
-            spawn_game_launch_winrate_task(app.app_handle().clone());
+            spawn_game_launch_player_stats_task(app.app_handle().clone());
             performance_overlay::spawn_monitor(app.app_handle().clone());
             let (stats, replays, stats_current_replay_files, detailed_stop_controller_slot) = {
                 let state = app.state::<BackendState>();

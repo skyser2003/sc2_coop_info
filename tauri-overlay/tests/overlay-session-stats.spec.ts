@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type {
     OverlayInitColorsDurationPayload,
-    OverlayPlayerInfoPayload,
+    OverlayPlayerStatsPayload,
     OverlayReplayPayload,
 } from "../src/bindings/overlay";
 
@@ -14,7 +14,7 @@ async function installOverlaySessionStatsMock(
         const listeners = new Map<string, number[]>();
         type OverlayEventPayload =
             | OverlayInitColorsDurationPayload
-            | OverlayPlayerInfoPayload
+            | OverlayPlayerStatsPayload
             | OverlayReplayPayload
             | Record<string, never>;
         type MockEvent = {
@@ -125,7 +125,7 @@ test("session stats stay replay-only and update immediately from runtime setting
                 eventName: string,
                 payload:
                     | OverlayInitColorsDurationPayload
-                    | OverlayPlayerInfoPayload
+                    | OverlayPlayerStatsPayload
                     | OverlayReplayPayload
                     | Record<string, never>,
             ) => void;
@@ -152,13 +152,13 @@ test("session stats stay replay-only and update immediately from runtime setting
                 eventName: string,
                 payload:
                     | OverlayInitColorsDurationPayload
-                    | OverlayPlayerInfoPayload
+                    | OverlayPlayerStatsPayload
                     | OverlayReplayPayload
                     | Record<string, never>,
             ) => void;
         };
 
-        runtime.__emitMockEvent?.("sco://overlay-player-winrate", { data: {} });
+        runtime.__emitMockEvent?.("sco://overlay-player-stats", { data: {} });
     });
 
     await expect(page.locator("#session")).toBeHidden();
@@ -169,7 +169,7 @@ test("session stats stay replay-only and update immediately from runtime setting
                 eventName: string,
                 payload:
                     | OverlayInitColorsDurationPayload
-                    | OverlayPlayerInfoPayload
+                    | OverlayPlayerStatsPayload
                     | OverlayReplayPayload
                     | Record<string, never>,
             ) => void;
@@ -195,7 +195,7 @@ test("session stats stay replay-only and update immediately from runtime setting
                 eventName: string,
                 payload:
                     | OverlayInitColorsDurationPayload
-                    | OverlayPlayerInfoPayload
+                    | OverlayPlayerStatsPayload
                     | OverlayReplayPayload
                     | Record<string, never>,
             ) => void;

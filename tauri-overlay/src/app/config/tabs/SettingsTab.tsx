@@ -1016,7 +1016,7 @@ export default function SettingsTab({
                                     </Grid>
                                     {boolField(
                                         t(
-                                            "ui_settings_show_player_winrates_and_notes",
+                                            "ui_settings_show_player_stats_and_notes",
                                         ),
                                         ["show_player_winrates"],
                                     )}
@@ -1462,10 +1462,10 @@ export default function SettingsTab({
                                     {hotkeyEntry(
                                         "winrates",
                                         t(
-                                            "ui_settings_hotkey_show_player_info",
+                                            "ui_settings_hotkey_show_player_stats",
                                         ),
                                         ["hotkey_winrates"],
-                                        "overlay_player_info",
+                                        "overlay_player_stats",
                                     )}
                                 </Grid>
                             </div>

@@ -36,9 +36,9 @@ export type OverlayInitColorsDurationPayload = { colors: [string | null, string 
 
 export type OverlayLanguagePreviewPayload = { language: string, };
 
-export type OverlayPlayerInfoPayload = { data: { [key in string]: OverlayPlayerInfoRow }, };
+export type OverlayPlayerStatsPayload = { data: { [key in string]: OverlayPlayerStatsRow }, };
 
-export type OverlayPlayerInfoRow = { "kind": "no_games", note?: string, } | { "kind": "stats", wins: number, losses: number, apm: number, commander: string, frequency: number, kills: number, last_seen_relative: string, note?: string, };
+export type OverlayPlayerStatsRow = { "kind": "no_games", note?: string, } | { "kind": "stats", wins: number, losses: number, apm: number, commander: string, frequency: number, kills: number, last_seen_relative: string, note?: string, };
 
 export type OverlayRandomizerBrutalPlus = { brutal_plus: number, mutator_points: OverlayRandomizerRange, mutator_count: OverlayRandomizerRange, };
 
