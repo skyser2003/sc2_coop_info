@@ -29,6 +29,7 @@ use winreg::RegKey;
 
 mod app_settings;
 mod backend_state;
+mod game_launch_detector;
 pub mod logging;
 pub mod overlay_info;
 pub mod path_manager;
@@ -38,6 +39,7 @@ pub mod replay_analysis;
 pub mod shared_types;
 pub use app_settings::AppSettings;
 pub use backend_state::BackendState;
+pub use game_launch_detector::GameLaunchDetector;
 
 #[macro_export]
 macro_rules! sco_log {
@@ -3862,12 +3864,7 @@ fn spawn_game_launch_player_stats_task(app: tauri::AppHandle<Wry>) {
     thread::spawn(move || {
         thread::sleep(Duration::from_secs(4));
 
-        let mut last_game_time: Option<u64> = None;
-        let mut last_replay_amount = 0usize;
-        let mut last_replay_amount_flowing = 0usize;
-        let mut last_replay_time = Instant::now()
-            .checked_sub(Duration::from_secs(60))
-            .unwrap_or_else(Instant::now);
+        let mut launch_detector = GameLaunchDetector::new(Instant::now());
 
         loop {
             thread::sleep(Duration::from_millis(500));
@@ -3880,12 +3877,10 @@ fn spawn_game_launch_player_stats_task(app: tauri::AppHandle<Wry>) {
 
             let state = app.state::<BackendState>();
             let replay_count = state.replay_count_for_launch_detector();
-            if replay_count > last_replay_amount_flowing {
-                last_replay_amount_flowing = replay_count;
-                last_replay_time = Instant::now();
-            }
+            let now = Instant::now();
+            launch_detector.observe_replay_count(replay_count, now);
 
-            if !state.stats_have_player_rows() || replay_count == last_replay_amount {
+            if !launch_detector.should_attempt_popup(state.stats_have_player_rows(), replay_count) {
                 continue;
             }
 
@@ -3912,16 +3907,11 @@ fn spawn_game_launch_player_stats_task(app: tauri::AppHandle<Wry>) {
             }
 
             let display_time = value_as_u64_lossy(payload.get("displayTime")).unwrap_or(0);
-            if last_game_time.is_none() || display_time == 0 {
-                last_game_time = Some(display_time);
+            if !launch_detector.observe_display_time(display_time) {
                 continue;
             }
-            if last_game_time == Some(display_time) {
-                continue;
-            }
-            last_game_time = Some(display_time);
 
-            if last_replay_time.elapsed() < Duration::from_secs(15) {
+            if !launch_detector.replay_change_settled(now) {
                 continue;
             }
 
@@ -3946,7 +3936,7 @@ fn spawn_game_launch_player_stats_task(app: tauri::AppHandle<Wry>) {
                 &other_player_handle,
                 &other_player_name,
             ) {
-                last_replay_amount = replay_count;
+                launch_detector.record_popup_shown(replay_count);
             }
         }
     });
