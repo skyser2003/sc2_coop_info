@@ -72,6 +72,11 @@ type KillBarState = {
     allyWidth: string;
 };
 
+const DEFAULT_KILL_BAR_STATE: KillBarState = {
+    mainWidth: "50%",
+    allyWidth: "50%",
+};
+
 function overlayAssetPath(path: string): string {
     return `${assetBase}${path}`;
 }
@@ -411,10 +416,7 @@ export default function GameStatText({
 
     const targetKillBarState = useMemo<KillBarState>(() => {
         if (statsPayload == null || totalKills <= 0) {
-            return {
-                mainWidth: "50%",
-                allyWidth: "50%",
-            };
+            return DEFAULT_KILL_BAR_STATE;
         }
 
         return {
@@ -423,21 +425,17 @@ export default function GameStatText({
         };
     }, [statsPayload, totalKills]);
 
-    const [killBarState, setKillBarState] = useState<KillBarState>({
-        mainWidth: "50%",
-        allyWidth: "50%",
-    });
+    const [killBarState, setKillBarState] = useState<KillBarState>(
+        DEFAULT_KILL_BAR_STATE,
+    );
 
     useEffect(() => {
-        setKillBarState({
-            mainWidth: "50%",
-            allyWidth: "50%",
-        });
+        if (statsPayload == null) {
+            return;
+        }
 
-        if (
-            targetKillBarState.mainWidth === "50%" &&
-            targetKillBarState.allyWidth === "50%"
-        ) {
+        if (statsPayload.newReplay !== true) {
+            setKillBarState(targetKillBarState);
             return;
         }
 
@@ -448,7 +446,7 @@ export default function GameStatText({
         return () => {
             clearTimeout(timer);
         };
-    }, [targetKillBarState]);
+    }, [statsPayload, targetKillBarState]);
 
     const masteryLabelsFor = (commander: LocalizableValue): string[] => {
         const commanderKey = overlayEnglish(commander);
