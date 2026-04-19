@@ -274,27 +274,6 @@ fn get_system_language() -> String {
     language.to_string()
 }
 
-fn write_settings_file(state: &BackendState, value: &AppSettings) -> Result<(), String> {
-    let previous_start_with_windows = state.read_settings_memory().start_with_windows;
-    let sanitized = value.write_saved_settings_file()?;
-
-    state.replace_active_settings(&sanitized);
-
-    let new_start_with_windows = sanitized.start_with_windows;
-
-    if previous_start_with_windows != new_start_with_windows {
-        if let Err(error) = sync_start_with_windows_setting(&sanitized) {
-            crate::sco_log!("[SCO/settings] Failed to sync start_with_windows: {error}");
-        }
-    }
-
-    Ok(())
-}
-
-pub fn start_with_windows_enabled(settings: &AppSettings) -> bool {
-    settings.start_with_windows
-}
-
 pub fn windows_startup_command_value(executable_path: &Path) -> String {
     format!("\"{}\"", executable_path.display())
 }
@@ -359,7 +338,7 @@ fn sync_windows_startup_registration(_enabled: bool) -> Result<(), String> {
 }
 
 fn sync_start_with_windows_setting(settings: &AppSettings) -> Result<(), String> {
-    sync_windows_startup_registration(start_with_windows_enabled(settings))
+    sync_windows_startup_registration(settings.start_with_windows)
 }
 
 pub const OVERLAY_RUNTIME_SETTING_KEYS: [&str; 9] = [
@@ -392,22 +371,6 @@ const PERFORMANCE_RUNTIME_SETTING_KEYS: [&str; 4] = [
     "performance_processes",
     "monitor",
 ];
-
-pub(crate) fn persist_single_setting_value(
-    state: &BackendState,
-    key: &str,
-    value: Value,
-) -> Result<(), String> {
-    state.persist_single_setting_value(key, value)
-}
-
-pub(crate) fn persist_serialized_setting_value<T: Serialize>(
-    state: &BackendState,
-    key: &str,
-    value: &T,
-) -> Result<(), String> {
-    state.persist_serialized_setting_value(key, value)
-}
 
 fn apply_runtime_settings(
     app: &tauri::AppHandle<Wry>,
@@ -520,20 +483,12 @@ pub fn folder_dialog_start_directory(directory: Option<String>) -> Option<PathBu
     })
 }
 
-pub fn logging_enabled_from_settings(settings: &AppSettings) -> bool {
-    settings.enable_logging
-}
-
 pub fn session_counter_delta(result: &str) -> (u64, u64) {
     match result.trim().to_ascii_lowercase().as_str() {
         "victory" => (1, 0),
         "defeat" => (0, 1),
         _ => (0, 0),
     }
-}
-
-pub fn show_replay_info_after_game_from_settings(settings: &AppSettings) -> bool {
-    settings.show_replay_info_after_game
 }
 
 fn units_to_stats() -> &'static HashSet<String> {
@@ -3303,7 +3258,7 @@ fn process_new_replay_path(
     state.upsert_replay_in_memory_cache(&replay_hash, &replay);
     state.record_session_result(&replay.result);
     let settings = state.read_settings_memory();
-    let show_replay_info_after_game = show_replay_info_after_game_from_settings(&settings);
+    let show_replay_info_after_game = settings.show_replay_info_after_game;
 
     if show_replay_info_after_game {
         crate::sco_log!(
@@ -3762,15 +3717,6 @@ fn spawn_protocol_store_warmup() {
     });
 }
 
-fn persist_setting_bool(state: &BackendState, key: &str, value: bool) {
-    match persist_single_setting_value(state, key, Value::Bool(value)) {
-        Ok(()) => {}
-        Err(error) => {
-            crate::sco_log!("[SCO/settings] Failed to save {key}: {error}");
-        }
-    }
-}
-
 fn ratio(numerator: u64, denominator: u64) -> f64 {
     if denominator == 0 {
         0.0
@@ -4152,7 +4098,7 @@ async fn config_update(
     next_settings.performance_geometry = previous_settings.performance_geometry.clone();
 
     if persist {
-        write_settings_file(&state, &next_settings)?;
+        state.write_settings_file(&next_settings)?;
     }
     apply_runtime_settings(&app, &previous_settings, &next_settings);
 
@@ -4667,7 +4613,13 @@ async fn config_stats_action(
             if let Some(payload) = body.as_ref() {
                 if let Some(enabled) = payload.get("enabled").and_then(Value::as_bool) {
                     stats.detailed_analysis_atstart = enabled;
-                    persist_setting_bool(&state, "detailed_analysis_atstart", enabled);
+                    if let Err(error) =
+                        state.persist_bool_setting("detailed_analysis_atstart", enabled)
+                    {
+                        crate::sco_log!(
+                            "[SCO/settings] Failed to save detailed_analysis_atstart: {error}"
+                        );
+                    }
                     stats.message = analysis_at_start_message(enabled);
                     crate::sco_log!(
                         "[SCO/stats] set_detailed_analysis_atstart requested: {enabled}"

@@ -243,7 +243,7 @@ impl BackendState {
     }
 
     pub fn new_with_settings(settings: AppSettings) -> Self {
-        let file_logging_enabled = crate::logging_enabled_from_settings(&settings);
+        let file_logging_enabled = settings.enable_logging;
         Self {
             tray_icon: Arc::new(Mutex::new(None)),
             stats: Arc::new(Mutex::new(StatsState::from_settings(&settings))),
@@ -287,12 +287,25 @@ impl BackendState {
             *cached_settings = sanitized.clone();
         }
 
-        self.file_logging_enabled.store(
-            crate::logging_enabled_from_settings(&sanitized),
-            Ordering::Release,
-        );
+        self.file_logging_enabled
+            .store(sanitized.enable_logging, Ordering::Release);
         self.clear_main_identity_cache();
         sanitized
+    }
+
+    pub fn write_settings_file(&self, value: &AppSettings) -> Result<(), String> {
+        let previous_start_with_windows = self.read_settings_memory().start_with_windows;
+        let sanitized = value.write_saved_settings_file()?;
+
+        self.replace_active_settings(&sanitized);
+
+        if previous_start_with_windows != sanitized.start_with_windows {
+            if let Err(error) = crate::sync_start_with_windows_setting(&sanitized) {
+                crate::sco_log!("[SCO/settings] Failed to sync start_with_windows: {error}");
+            }
+        }
+
+        Ok(())
     }
 
     pub fn persist_single_setting_value(&self, key: &str, value: Value) -> Result<(), String> {
@@ -326,6 +339,10 @@ impl BackendState {
         let json_value = serde_json::to_value(value)
             .map_err(|error| format!("Failed to serialize setting: {error}"))?;
         self.persist_single_setting_value(key, json_value)
+    }
+
+    pub fn persist_bool_setting(&self, key: &str, value: bool) -> Result<(), String> {
+        self.persist_single_setting_value(key, Value::Bool(value))
     }
 
     pub fn detailed_cache_persist_lock(&self) -> Arc<Mutex<()>> {

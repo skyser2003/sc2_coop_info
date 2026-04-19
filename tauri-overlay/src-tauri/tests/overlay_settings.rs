@@ -1,4 +1,4 @@
-use sco_tauri_overlay::{overlay_info, show_replay_info_after_game_from_settings, AppSettings};
+use sco_tauri_overlay::{overlay_info, AppSettings};
 use serde_json::json;
 use serde_json::Value;
 
@@ -85,22 +85,22 @@ fn overlay_runtime_settings_preserve_saved_chart_visibility_and_colors() {
 }
 
 #[test]
-fn replay_overlay_after_game_defaults_to_enabled() {
-    assert!(show_replay_info_after_game_from_settings(
-        &AppSettings::merge_settings_with_defaults(json!({}))
-    ));
+fn replay_overlay_after_game_setting_defaults_to_enabled() {
+    assert!(AppSettings::merge_settings_with_defaults(json!({})).show_replay_info_after_game);
 }
 
 #[test]
-fn replay_overlay_after_game_uses_saved_setting() {
-    assert!(!show_replay_info_after_game_from_settings(
-        &AppSettings::merge_settings_with_defaults(json!({
+fn replay_overlay_after_game_setting_uses_saved_value() {
+    assert!(
+        !AppSettings::merge_settings_with_defaults(json!({
             "show_replay_info_after_game": false,
         }))
-    ));
-    assert!(show_replay_info_after_game_from_settings(
-        &AppSettings::merge_settings_with_defaults(json!({
+        .show_replay_info_after_game
+    );
+    assert!(
+        AppSettings::merge_settings_with_defaults(json!({
             "show_replay_info_after_game": true,
         }))
-    ));
+        .show_replay_info_after_game
+    );
 }

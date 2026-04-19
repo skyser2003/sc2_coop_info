@@ -325,9 +325,7 @@ pub(crate) fn persist_geometry(window: &tauri::WebviewWindow<Wry>) {
     let width = i32::try_from(geometry.width).unwrap_or(i32::MAX);
     let height = i32::try_from(geometry.height).unwrap_or(i32::MAX);
     let value = [geometry.x, geometry.y, width, height];
-    if let Err(error) =
-        crate::persist_serialized_setting_value(&state, "performance_geometry", &value)
-    {
+    if let Err(error) = state.persist_serialized_setting_value("performance_geometry", &value) {
         crate::sco_log!("[SCO/performance] Failed to save geometry: {error}");
     }
 }
@@ -401,7 +399,7 @@ pub(crate) fn set_visibility<R: Runtime>(
 ) -> Result<(), String> {
     let state = app.state::<BackendState>();
     if persist_setting {
-        crate::persist_serialized_setting_value(&state, "performance_show", &visible)?;
+        state.persist_serialized_setting_value("performance_show", &visible)?;
     }
 
     if visible {

@@ -1,7 +1,7 @@
 mod common;
 
 use common::test_config_path;
-use sco_tauri_overlay::{logging_enabled_from_settings, session_counter_delta, AppSettings};
+use sco_tauri_overlay::{session_counter_delta, AppSettings};
 use serde_json::json;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -32,20 +32,20 @@ fn logs_file_path_from_settings_path(settings_path: &Path) -> PathBuf {
 }
 
 #[test]
-fn logging_enabled_from_settings_respects_boolean_flag() {
-    assert!(logging_enabled_from_settings(
-        &AppSettings::merge_settings_with_defaults(json!({
+fn logging_setting_respects_boolean_flag() {
+    assert!(
+        AppSettings::merge_settings_with_defaults(json!({
             "enable_logging": true,
         }))
-    ));
-    assert!(!logging_enabled_from_settings(
-        &AppSettings::merge_settings_with_defaults(json!({
+        .enable_logging
+    );
+    assert!(
+        !AppSettings::merge_settings_with_defaults(json!({
             "enable_logging": false,
         }))
-    ));
-    assert!(logging_enabled_from_settings(
-        &AppSettings::merge_settings_with_defaults(json!({}))
-    ));
+        .enable_logging
+    );
+    assert!(AppSettings::merge_settings_with_defaults(json!({})).enable_logging);
 }
 
 #[test]
