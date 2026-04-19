@@ -5,10 +5,7 @@ use serde::Serialize;
 use sysinfo::{Networks, ProcessesToUpdate, System};
 use tauri::{Emitter, Manager, Runtime, Wry};
 
-use crate::shared_types::PerformanceVisibilityPayload;
-
-static PERFORMANCE_EDIT_MODE: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+use crate::{shared_types::PerformanceVisibilityPayload, AppSettings, BackendState};
 
 pub(crate) const PERFORMANCE_VISIBILITY_EVENT: &str = "sco://performance-visibility";
 
@@ -84,14 +81,14 @@ fn normalized_geometry(mut geometry: PerformanceGeometry) -> PerformanceGeometry
     geometry
 }
 
-fn performance_show_enabled() -> bool {
-    crate::read_settings_memory().performance_show
+fn performance_show_enabled(settings: &AppSettings) -> bool {
+    settings.performance_show
 }
 
-fn performance_process_names() -> Vec<String> {
-    let names = crate::read_settings_memory()
+fn performance_process_names(settings: &AppSettings) -> Vec<String> {
+    let names = settings
         .performance_processes
-        .into_iter()
+        .iter()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .collect::<Vec<String>>();
@@ -105,12 +102,8 @@ fn performance_process_names() -> Vec<String> {
     }
 }
 
-fn persist_setting_value<T: Serialize>(key: &str, value: &T) -> Result<(), String> {
-    crate::persist_serialized_setting_value(key, value)
-}
-
-fn parse_saved_geometry() -> Option<PerformanceGeometry> {
-    let geometry = crate::read_settings_memory().performance_geometry?;
+fn parse_saved_geometry(settings: &AppSettings) -> Option<PerformanceGeometry> {
+    let geometry = settings.performance_geometry?;
     let x = geometry[0];
     let y = geometry[1];
     let width = u32::try_from(geometry[2]).ok()?;
@@ -125,8 +118,11 @@ fn parse_saved_geometry() -> Option<PerformanceGeometry> {
     .map(normalized_geometry)
 }
 
-fn default_geometry(window: &tauri::WebviewWindow<Wry>) -> Result<PerformanceGeometry, String> {
-    let monitor_setting = crate::read_settings_memory().monitor.max(1);
+fn default_geometry(
+    window: &tauri::WebviewWindow<Wry>,
+    settings: &AppSettings,
+) -> Result<PerformanceGeometry, String> {
+    let monitor_setting = settings.monitor.max(1);
     let monitor_index = monitor_setting.saturating_sub(1);
     let monitors = window.available_monitors().unwrap_or_default();
     if monitors.is_empty() {
@@ -263,9 +259,13 @@ fn default_payload(system: &System, networks: &Networks) -> PerformancePayload {
     }
 }
 
-fn build_payload(system: &System, networks: &Networks) -> PerformancePayload {
+fn build_payload(
+    system: &System,
+    networks: &Networks,
+    settings: &AppSettings,
+) -> PerformancePayload {
     let mut payload = default_payload(system, networks);
-    let process_names = performance_process_names();
+    let process_names = performance_process_names(settings);
     let process = system.processes().values().find(|candidate| {
         let process_name = candidate.name().to_string_lossy();
         process_names
@@ -309,13 +309,15 @@ pub(crate) fn emit_performance_script<R: Runtime>(app: &tauri::AppHandle<R>, scr
 }
 
 pub(crate) fn apply_saved_geometry(window: &tauri::WebviewWindow<Wry>) -> Result<(), String> {
-    let geometry = parse_saved_geometry()
+    let settings = window.state::<BackendState>().read_settings_memory();
+    let geometry = parse_saved_geometry(&settings)
         .map(Ok)
-        .unwrap_or_else(|| default_geometry(window))?;
+        .unwrap_or_else(|| default_geometry(window, &settings))?;
     apply_geometry(window, geometry)
 }
 
 pub(crate) fn persist_geometry(window: &tauri::WebviewWindow<Wry>) {
+    let state = window.state::<BackendState>();
     let Some(geometry) = current_geometry(window) else {
         return;
     };
@@ -323,7 +325,9 @@ pub(crate) fn persist_geometry(window: &tauri::WebviewWindow<Wry>) {
     let width = i32::try_from(geometry.width).unwrap_or(i32::MAX);
     let height = i32::try_from(geometry.height).unwrap_or(i32::MAX);
     let value = [geometry.x, geometry.y, width, height];
-    if let Err(error) = persist_setting_value("performance_geometry", &value) {
+    if let Err(error) =
+        crate::persist_serialized_setting_value(&state, "performance_geometry", &value)
+    {
         crate::sco_log!("[SCO/performance] Failed to save geometry: {error}");
     }
 }
@@ -346,7 +350,7 @@ pub(crate) fn show_window<R: Runtime>(app: &tauri::AppHandle<R>) {
 }
 
 pub(crate) fn hide_window<R: Runtime>(app: &tauri::AppHandle<R>) {
-    PERFORMANCE_EDIT_MODE.store(false, std::sync::atomic::Ordering::Release);
+    app.state::<BackendState>().set_performance_edit_mode(false);
     if let Some(window) = app.get_webview_window("performance") {
         let _ =
             window.eval("window.setPerformanceEditMode && window.setPerformanceEditMode(false);");
@@ -357,9 +361,11 @@ pub(crate) fn hide_window<R: Runtime>(app: &tauri::AppHandle<R>) {
 }
 
 pub(crate) fn set_edit_mode<R: Runtime>(app: &tauri::AppHandle<R>, enabled: bool) {
-    PERFORMANCE_EDIT_MODE.store(enabled, std::sync::atomic::Ordering::Release);
+    app.state::<BackendState>()
+        .set_performance_edit_mode(enabled);
 
-    let performance_visible = performance_show_enabled();
+    let performance_visible =
+        performance_show_enabled(&app.state::<BackendState>().read_settings_memory());
     if let Some(window) = app.get_webview_window("performance") {
         if enabled {
             let _ = window.show();
@@ -383,7 +389,7 @@ pub(crate) fn set_edit_mode<R: Runtime>(app: &tauri::AppHandle<R>, enabled: bool
 }
 
 pub(crate) fn toggle_edit_mode<R: Runtime>(app: &tauri::AppHandle<R>) -> bool {
-    let next = !PERFORMANCE_EDIT_MODE.load(std::sync::atomic::Ordering::Acquire);
+    let next = !app.state::<BackendState>().performance_edit_mode();
     set_edit_mode(app, next);
     next
 }
@@ -393,8 +399,9 @@ pub(crate) fn set_visibility<R: Runtime>(
     visible: bool,
     persist_setting: bool,
 ) -> Result<(), String> {
+    let state = app.state::<BackendState>();
     if persist_setting {
-        persist_setting_value("performance_show", &visible)?;
+        crate::persist_serialized_setting_value(&state, "performance_show", &visible)?;
     }
 
     if visible {
@@ -419,13 +426,14 @@ fn emit_visibility_event<R: Runtime>(app: &tauri::AppHandle<R>, visible: bool) {
 }
 
 pub(crate) fn apply_settings(app: &tauri::AppHandle<Wry>) {
+    let settings = app.state::<BackendState>().read_settings_memory();
     if let Some(window) = app.get_webview_window("performance") {
         if let Err(error) = apply_saved_geometry(&window) {
             crate::sco_log!("[SCO/performance] Failed to apply geometry: {error}");
         }
     }
 
-    if performance_show_enabled() {
+    if performance_show_enabled(&settings) {
         show_window(app);
     } else {
         hide_window(app);
@@ -443,10 +451,11 @@ pub(crate) fn spawn_monitor(app: tauri::AppHandle<Wry>) {
             let _ = system.refresh_processes(ProcessesToUpdate::All, true);
             networks.refresh(true);
 
-            let should_emit = performance_show_enabled()
-                || PERFORMANCE_EDIT_MODE.load(std::sync::atomic::Ordering::Acquire);
+            let settings = app.state::<BackendState>().read_settings_memory();
+            let should_emit = performance_show_enabled(&settings)
+                || app.state::<BackendState>().performance_edit_mode();
             if should_emit {
-                let payload = build_payload(&system, &networks);
+                let payload = build_payload(&system, &networks, &settings);
                 let encoded = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
                 emit_performance_script(
                     &app,

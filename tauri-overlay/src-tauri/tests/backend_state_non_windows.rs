@@ -24,12 +24,15 @@ fn sync_replay_cache_slots_uses_cached_entries_and_sets_selected_file() {
             .replays
             .lock()
             .expect("replays mutex should not be poisoned");
-        replays.push(ReplayInfo {
-            file: replay_path.clone(),
-            date: 123,
-            result: "Victory".to_string(),
-            ..ReplayInfo::default()
-        });
+        replays.insert(
+            "example-hash".to_string(),
+            ReplayInfo {
+                file: replay_path.clone(),
+                date: 123,
+                result: "Victory".to_string(),
+                ..ReplayInfo::default()
+            },
+        );
     }
 
     let replays = state.sync_replay_cache_slots(1);

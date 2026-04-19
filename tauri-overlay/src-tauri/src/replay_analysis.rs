@@ -17,29 +17,48 @@ use serde_json::{Map, Value};
 use std::borrow::{Borrow, Cow};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering;
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, TryLockError};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use ts_rs::TS;
 
+use crate::backend_state::ReplayScanProgress;
 use crate::path_manager::get_cache_path;
-use crate::shared_types::{LocalizedLabels, LocalizedText, UiMutatorRow};
+use crate::shared_types::{
+    LocalizedLabels, LocalizedText, ReplayScanProgressPayload, UiMutatorRow,
+};
 use crate::{
     build_amon_unit_data, build_commander_unit_data, canonicalize_coop_map_id,
-    commander_mind_control_unit, configured_main_handles, configured_main_names,
-    coop_map_id_to_english, empty_stats_payload, format_date_from_system_time,
-    infer_region_from_handle, is_official_coop_replay, kill_fraction, map_display_name, median_f64,
-    median_u64, normalize_mastery_values, normalized_commander_name, orient_replay_for_main_names,
-    parse_query_bool, parse_query_csv, parse_query_i64, parse_query_value, ratio,
-    replay_scan_progress, resolve_replay_root, result_is_victory, sanitize_replay_text,
-    ymd_from_unix_seconds, Aggregate, CommanderAggregate, CommanderUnitRollup, MapAggregate,
-    PlayerAggregate, RegionAggregate, ReplayChatMessage, ReplayInfo, ReplayPlayerInfo,
-    ScanInFlightGuard, StatsSnapshot, StatsState, UnitStatsRollup, REPLAY_SCAN_IN_FLIGHT,
-    UNLIMITED_REPLAY_LIMIT,
+    commander_mind_control_unit, configured_main_handles_from_settings,
+    configured_main_names_from_settings, coop_map_id_to_english, empty_stats_payload,
+    format_date_from_system_time, infer_region_from_handle, is_official_coop_replay, kill_fraction,
+    map_display_name, median_f64, median_u64, normalize_mastery_values, normalized_commander_name,
+    orient_replay_for_main_names, parse_query_bool, parse_query_csv, parse_query_i64,
+    parse_query_value, ratio, resolve_replay_root, result_is_victory, sanitize_replay_text,
+    ymd_from_unix_seconds, Aggregate, AppSettings, CommanderAggregate, CommanderUnitRollup,
+    MapAggregate, PlayerAggregate, RegionAggregate, ReplayChatMessage, ReplayInfo,
+    ReplayPlayerInfo, StatsSnapshot, StatsState, UnitStatsRollup, UNLIMITED_REPLAY_LIMIT,
 };
 
 const PRESTIGE_TRACKING_START_YMD: u32 = 20200726;
+
+struct ScanInFlightGuard<'a> {
+    flag: &'a AtomicBool,
+}
+
+impl Drop for ScanInFlightGuard<'_> {
+    fn drop(&mut self) {
+        self.flag.store(false, Ordering::Release);
+    }
+}
+
+fn default_main_identity() -> (HashSet<String>, HashSet<String>) {
+    let settings = AppSettings::from_saved_file();
+    (
+        configured_main_names_from_settings(&settings),
+        configured_main_handles_from_settings(&settings),
+    )
+}
 
 fn decode_html_entities(value: &str) -> String {
     value
@@ -288,9 +307,8 @@ pub struct WeeklyRowPayload {
     pub winrate: f64,
 }
 
-fn hidden_unit_stats_names() -> &'static HashSet<String> {
-    static HIDDEN_UNITS: OnceLock<HashSet<String>> = OnceLock::new();
-    HIDDEN_UNITS.get_or_init(|| cache_hidden_created_lost_units().unwrap_or_default())
+fn hidden_unit_stats_names() -> HashSet<String> {
+    cache_hidden_created_lost_units().unwrap_or_default()
 }
 
 pub fn sanitize_hidden_unit_stats(mut units: Value) -> Value {
@@ -1364,6 +1382,24 @@ impl ReplayAnalysis {
     where
         R: Borrow<ReplayInfo>,
     {
+        let (main_names, main_handles) = default_main_identity();
+        Self::rebuild_analysis_payload_with_identity(
+            replays,
+            include_detailed,
+            &main_names,
+            &main_handles,
+        )
+    }
+
+    pub fn rebuild_analysis_payload_with_identity<R>(
+        replays: &[R],
+        include_detailed: bool,
+        main_names: &HashSet<String>,
+        main_handles: &HashSet<String>,
+    ) -> Value
+    where
+        R: Borrow<ReplayInfo>,
+    {
         #[derive(Serialize)]
         struct FastestMapDetails {
             length: f64,
@@ -1523,8 +1559,6 @@ impl ReplayAnalysis {
         let mut sum_ally_prestige_counts = [0u64; 4];
 
         let total_scanned = replays.len() as u64;
-        let main_names = configured_main_names();
-        let main_handles = configured_main_handles();
         let has_known_main_handles = !main_handles.is_empty();
         let mut considered_games = 0u64;
         for replay in replays.iter().map(Borrow::borrow) {
@@ -2674,6 +2708,21 @@ impl ReplayAnalysis {
     }
 
     pub fn build_rebuild_snapshot(replays: &[ReplayInfo], include_detailed: bool) -> StatsSnapshot {
+        let (main_names, main_handles) = default_main_identity();
+        Self::build_rebuild_snapshot_with_identity(
+            replays,
+            include_detailed,
+            &main_names,
+            &main_handles,
+        )
+    }
+
+    pub fn build_rebuild_snapshot_with_identity(
+        replays: &[ReplayInfo],
+        include_detailed: bool,
+        main_names: &HashSet<String>,
+        main_handles: &HashSet<String>,
+    ) -> StatsSnapshot {
         let started_at = Instant::now();
         crate::sco_log!(
             "[SCO/stats] rebuild_state_from_replays start mode={} replays={}",
@@ -2690,13 +2739,16 @@ impl ReplayAnalysis {
                 replay.result != "Unparsed" && canonicalize_coop_map_id(&replay.map).is_some()
             })
             .count();
-        let payload = Self::rebuild_analysis_payload(replays, include_detailed);
+        let payload = Self::rebuild_analysis_payload_with_identity(
+            replays,
+            include_detailed,
+            main_names,
+            main_handles,
+        );
         let analysis = payload
             .get("analysis")
             .cloned()
             .unwrap_or_else(empty_stats_payload);
-        let main_names = configured_main_names();
-        let main_handles = configured_main_handles();
         let (main_players, main_handles) =
             collect_main_identity_lists(replays, &main_names, &main_handles);
         crate::sco_log!(
@@ -2966,16 +3018,38 @@ impl ReplayAnalysis {
     }
 
     pub fn analyze_replays(limit: usize) -> Vec<ReplayInfo> {
-        let scan_progress = replay_scan_progress();
-        let main_names = configured_main_names();
-        let main_handles = configured_main_handles();
-        let _scan_guard = match REPLAY_SCAN_IN_FLIGHT.compare_exchange(
+        let settings = AppSettings::from_saved_file();
+        let main_names = configured_main_names_from_settings(&settings);
+        let main_handles = configured_main_handles_from_settings(&settings);
+        let scan_progress = ReplayScanProgress::default();
+        let replay_scan_in_flight = AtomicBool::new(false);
+        Self::analyze_replays_with_identity(
+            limit,
+            &settings,
+            &main_names,
+            &main_handles,
+            &scan_progress,
+            &replay_scan_in_flight,
+        )
+    }
+
+    pub fn analyze_replays_with_identity(
+        limit: usize,
+        settings: &AppSettings,
+        main_names: &HashSet<String>,
+        main_handles: &HashSet<String>,
+        scan_progress: &ReplayScanProgress,
+        replay_scan_in_flight: &AtomicBool,
+    ) -> Vec<ReplayInfo> {
+        let _scan_guard = match replay_scan_in_flight.compare_exchange(
             false,
             true,
             Ordering::Acquire,
             Ordering::Relaxed,
         ) {
-            Ok(_) => ScanInFlightGuard,
+            Ok(_) => ScanInFlightGuard {
+                flag: replay_scan_in_flight,
+            },
             Err(_) => {
                 scan_progress.set_stage("busy");
                 // When busy, return all cached replays from unified cache
@@ -2992,7 +3066,7 @@ impl ReplayAnalysis {
         crate::sco_log!("[SCO/replay] analyze_replays start limit={limit}");
         scan_progress.set_stage("resolving_replay_root");
 
-        let Some(root) = resolve_replay_root() else {
+        let Some(root) = resolve_replay_root(settings) else {
             crate::sco_log!("[SCO/replay] Replay root not configured");
             scan_progress.set_status("Completed");
             scan_progress.set_stage("no_replay_root");
@@ -3074,7 +3148,7 @@ impl ReplayAnalysis {
         let parse_started_at = Instant::now();
         scan_progress.set_stage("parsing_replays");
         let worker_threads = crate::AppSettings::simple_analysis_worker_threads();
-        let progress = replay_scan_progress();
+        let progress = scan_progress;
         let parsed_results: Vec<Result<ParseResult, String>> = rayon::ThreadPoolBuilder::new()
             .num_threads(worker_threads)
             .build()
@@ -3247,7 +3321,11 @@ impl ReplayAnalysis {
         Self::modified_seconds(Path::new(&replay.file))
     }
 
-    fn replay_matches_stats_filters(path: &str, replay: &ReplayInfo) -> bool {
+    fn replay_matches_stats_filters(
+        path: &str,
+        replay: &ReplayInfo,
+        main_handles: &HashSet<String>,
+    ) -> bool {
         let include_mutations = parse_query_bool(path, "include_mutations", true);
         let include_normal_games = parse_query_bool(path, "include_normal_games", true);
         let include_wins = parse_query_value(path, "include_wins")
@@ -3286,7 +3364,6 @@ impl ReplayAnalysis {
             .map(|value| value.to_ascii_uppercase())
             .collect();
 
-        let main_handles = configured_main_handles();
         let has_main_handles = !main_handles.is_empty();
 
         if replay.result == "Unparsed" {
@@ -3414,18 +3491,20 @@ impl ReplayAnalysis {
     fn filter_replays_for_stats_refs<'a>(
         path: &str,
         replays: &[&'a ReplayInfo],
+        main_handles: &HashSet<String>,
     ) -> Vec<&'a ReplayInfo> {
         replays
             .iter()
             .copied()
-            .filter(|replay| Self::replay_matches_stats_filters(path, replay))
+            .filter(|replay| Self::replay_matches_stats_filters(path, replay, main_handles))
             .collect()
     }
 
     pub fn filter_replays_for_stats(path: &str, replays: &[ReplayInfo]) -> Vec<ReplayInfo> {
+        let (_, main_handles) = default_main_identity();
         replays
             .iter()
-            .filter(|replay| Self::replay_matches_stats_filters(path, replay))
+            .filter(|replay| Self::replay_matches_stats_filters(path, replay, &main_handles))
             .cloned()
             .collect()
     }
@@ -3473,12 +3552,33 @@ impl ReplayAnalysis {
         replays: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
         stats_current_replay_files: &Arc<Mutex<HashSet<String>>>,
     ) -> Result<Value, String> {
+        let (main_names, main_handles) = default_main_identity();
+        Self::build_stats_response_with_identity(
+            path,
+            stats,
+            replays,
+            stats_current_replay_files,
+            ReplayScanProgress::default().as_payload(),
+            &main_names,
+            &main_handles,
+        )
+    }
+
+    pub fn build_stats_response_with_identity(
+        path: &str,
+        stats: &Arc<Mutex<StatsState>>,
+        replays: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
+        stats_current_replay_files: &Arc<Mutex<HashSet<String>>>,
+        scan_progress: ReplayScanProgressPayload,
+        main_names: &HashSet<String>,
+        main_handles: &HashSet<String>,
+    ) -> Result<Value, String> {
         let mut response = match stats.try_lock() {
-            Ok(state) => state.as_payload(),
+            Ok(state) => state.as_payload(scan_progress.clone()),
             Err(error) => match error {
                 TryLockError::WouldBlock => {
                     let fallback = StatsState::default();
-                    let mut payload = fallback.as_payload();
+                    let mut payload = fallback.as_payload(scan_progress);
                     payload["message"] = Value::from("Statistics are updating. Try again.");
                     payload
                 }
@@ -3507,17 +3607,28 @@ impl ReplayAnalysis {
                             &response,
                             &cached_replays,
                         );
-                        let stats_replays =
-                            Self::stats_replays_for_response(include_detailed, &cached_replays);
+                        let stats_replays = Self::stats_replays_for_response_with_identity(
+                            include_detailed,
+                            &cached_replays,
+                            main_names,
+                            main_handles,
+                        );
                         let selected_replays = Self::stats_source_replays_for_response(
                             path,
                             stats_replays.as_ref(),
                             &current_replay_files,
                         );
-                        let filtered_replays =
-                            Self::filter_replays_for_stats_refs(path, &selected_replays);
-                        let filtered_payload =
-                            Self::rebuild_analysis_payload(&filtered_replays, include_detailed);
+                        let filtered_replays = Self::filter_replays_for_stats_refs(
+                            path,
+                            &selected_replays,
+                            main_handles,
+                        );
+                        let filtered_payload = Self::rebuild_analysis_payload_with_identity(
+                            &filtered_replays,
+                            include_detailed,
+                            main_names,
+                            main_handles,
+                        );
                         if let Some(analysis) = filtered_payload.get("analysis") {
                             response["analysis"] = analysis.clone();
                         }
@@ -3530,12 +3641,10 @@ impl ReplayAnalysis {
                         response["detailed_parsed_count"] = Value::from(detailed_parsed_count);
                         response["total_valid_files"] = Value::from(total_valid_files);
 
-                        let main_names = configured_main_names();
-                        let main_handles = configured_main_handles();
                         let (main_players, main_handles) = collect_main_identity_lists(
                             &filtered_replays,
-                            &main_names,
-                            &main_handles,
+                            main_names,
+                            main_handles,
                         );
                         response["main_players"] = report_value(&main_players);
                         response["main_handles"] = report_value(&main_handles);
@@ -3565,12 +3674,25 @@ impl ReplayAnalysis {
         include_detailed: bool,
         cached_replays: &'a [ReplayInfo],
     ) -> Cow<'a, [ReplayInfo]> {
+        let (main_names, main_handles) = default_main_identity();
+        Self::stats_replays_for_response_with_identity(
+            include_detailed,
+            cached_replays,
+            &main_names,
+            &main_handles,
+        )
+    }
+
+    pub fn stats_replays_for_response_with_identity<'a>(
+        include_detailed: bool,
+        cached_replays: &'a [ReplayInfo],
+        main_names: &HashSet<String>,
+        main_handles: &HashSet<String>,
+    ) -> Cow<'a, [ReplayInfo]> {
         if !cached_replays.is_empty() {
             return Cow::Borrowed(cached_replays);
         }
 
-        let main_names = configured_main_names();
-        let main_handles = configured_main_handles();
         Self::stats_replays_for_response_from_path(
             include_detailed,
             cached_replays,

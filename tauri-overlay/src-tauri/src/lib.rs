@@ -12,8 +12,7 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::OnceLock;
+use std::sync::atomic::Ordering;
 use std::sync::{mpsc, Arc, Mutex, TryLockError};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -59,8 +58,6 @@ const SCO_REPLAY_SCAN_PROGRESS_EVENT: &str = "sco://replay-scan-progress";
 const SCO_ANALYSIS_COMPLETED_EVENT: &str = "sco://analysis-completed";
 const WINDOWS_STARTUP_RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 const WINDOWS_STARTUP_VALUE_NAME: &str = "SCO Overlay";
-static ACTIVE_SETTINGS: OnceLock<Mutex<AppSettings>> = OnceLock::new();
-static DETAILED_CACHE_PERSIST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
@@ -277,36 +274,11 @@ fn get_system_language() -> String {
     language.to_string()
 }
 
-fn active_settings_store() -> &'static Mutex<AppSettings> {
-    ACTIVE_SETTINGS.get_or_init(|| Mutex::new(AppSettings::from_saved_file()))
-}
-
-fn detailed_cache_persist_lock() -> &'static Mutex<()> {
-    DETAILED_CACHE_PERSIST_LOCK.get_or_init(|| Mutex::new(()))
-}
-
-pub fn read_settings_memory() -> AppSettings {
-    active_settings_store()
-        .lock()
-        .map(|settings| settings.clone())
-        .unwrap_or_else(|_| AppSettings::from_saved_file())
-}
-
-pub fn replace_active_settings(value: &AppSettings) -> AppSettings {
-    let sanitized = AppSettings::merge_settings_with_defaults(value.to_value());
-
-    if let Ok(mut cached_settings) = active_settings_store().lock() {
-        *cached_settings = sanitized.clone();
-    }
-
-    sanitized
-}
-
-fn write_settings_file(value: &AppSettings) -> Result<(), String> {
-    let previous_start_with_windows = read_settings_memory().start_with_windows;
+fn write_settings_file(state: &BackendState, value: &AppSettings) -> Result<(), String> {
+    let previous_start_with_windows = state.read_settings_memory().start_with_windows;
     let sanitized = value.write_saved_settings_file()?;
 
-    replace_active_settings(&sanitized);
+    state.replace_active_settings(&sanitized);
 
     let new_start_with_windows = sanitized.start_with_windows;
 
@@ -421,37 +393,20 @@ const PERFORMANCE_RUNTIME_SETTING_KEYS: [&str; 4] = [
     "monitor",
 ];
 
-pub(crate) fn persist_single_setting_value(key: &str, value: Value) -> Result<(), String> {
-    let previous_settings = AppSettings::from_saved_file();
-    let mut saved_map = match previous_settings.to_value() {
-        Value::Object(map) => map,
-        _ => Map::new(),
-    };
-    saved_map.insert(key.to_string(), value.clone());
-
-    let saved_settings = AppSettings::merge_settings_with_defaults(Value::Object(saved_map));
-    saved_settings.write_saved_settings_file()?;
-
-    let current_settings = read_settings_memory();
-
-    let mut active_map = match current_settings.to_value() {
-        Value::Object(map) => map,
-        _ => Map::new(),
-    };
-    active_map.insert(key.to_string(), value);
-
-    let active_settings = AppSettings::merge_settings_with_defaults(Value::Object(active_map));
-    replace_active_settings(&active_settings);
-    Ok(())
+pub(crate) fn persist_single_setting_value(
+    state: &BackendState,
+    key: &str,
+    value: Value,
+) -> Result<(), String> {
+    state.persist_single_setting_value(key, value)
 }
 
 pub(crate) fn persist_serialized_setting_value<T: Serialize>(
+    state: &BackendState,
     key: &str,
     value: &T,
 ) -> Result<(), String> {
-    let json_value = serde_json::to_value(value)
-        .map_err(|error| format!("Failed to serialize setting: {error}"))?;
-    persist_single_setting_value(key, json_value)
+    state.persist_serialized_setting_value(key, value)
 }
 
 fn apply_runtime_settings(
@@ -459,8 +414,8 @@ fn apply_runtime_settings(
     previous_settings: &AppSettings,
     next_settings: &AppSettings,
 ) {
-    let next_settings = replace_active_settings(next_settings);
-    logging::refresh_from_settings(&next_settings);
+    let state = app.state::<BackendState>();
+    let next_settings = state.replace_active_settings(next_settings);
     let overlay_runtime_changed = AppSettings::any_setting_changed(
         previous_settings,
         &next_settings,
@@ -681,16 +636,6 @@ pub fn configured_main_names_from_settings(settings: &AppSettings) -> HashSet<St
         return names;
     }
 
-    static DISCOVERED_MAIN_NAMES: OnceLock<Mutex<HashMap<String, HashSet<String>>>> =
-        OnceLock::new();
-    let discovered_cache =
-        DISCOVERED_MAIN_NAMES.get_or_init(|| Mutex::new(HashMap::<String, HashSet<String>>::new()));
-    if let Ok(cache) = discovered_cache.lock() {
-        if let Some(cached) = cache.get(account_root) {
-            return cached.clone();
-        }
-    }
-
     let root = PathBuf::from(account_root);
     if !root.exists() || !root.is_dir() {
         return names;
@@ -734,15 +679,7 @@ pub fn configured_main_names_from_settings(settings: &AppSettings) -> HashSet<St
         }
     }
 
-    if let Ok(mut cache) = discovered_cache.lock() {
-        cache.insert(account_root.to_string(), names.clone());
-    }
-
     names
-}
-
-fn configured_main_names() -> HashSet<String> {
-    configured_main_names_from_settings(&read_settings_memory())
 }
 
 pub fn configured_main_handles_from_settings(settings: &AppSettings) -> HashSet<String> {
@@ -750,27 +687,7 @@ pub fn configured_main_handles_from_settings(settings: &AppSettings) -> HashSet<
     if account_root.is_empty() {
         return HashSet::new();
     }
-
-    static DISCOVERED_MAIN_HANDLES: OnceLock<Mutex<HashMap<String, HashSet<String>>>> =
-        OnceLock::new();
-    let discovered_cache = DISCOVERED_MAIN_HANDLES
-        .get_or_init(|| Mutex::new(HashMap::<String, HashSet<String>>::new()));
-
-    if let Ok(cache) = discovered_cache.lock() {
-        if let Some(cached) = cache.get(account_root) {
-            return cached.clone();
-        }
-    }
-
-    let handles = extract_account_handles_from_folder(account_root);
-    if let Ok(mut cache) = discovered_cache.lock() {
-        cache.insert(account_root.to_string(), handles.clone());
-    }
-    handles
-}
-
-fn configured_main_handles() -> HashSet<String> {
-    configured_main_handles_from_settings(&read_settings_memory())
+    extract_account_handles_from_folder(account_root)
 }
 
 fn replay_should_swap_main_and_ally(
@@ -1230,159 +1147,11 @@ impl ReplayInfo {
     }
 }
 
-static REPLAY_SCAN_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
-static APP_EXIT_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
-static REPLAY_SCAN_PROGRESS: OnceLock<ReplayScanProgress> = OnceLock::new();
-static DELAYED_PLAYER_STATS_POPUP_GENERATION: AtomicU64 = AtomicU64::new(0);
-
-#[derive(Debug)]
-struct ReplayScanProgress {
-    stage: Mutex<String>,
-    status: Mutex<String>,
-    total: AtomicU64,
-    cache_hits: AtomicU64,
-    to_parse: AtomicU64,
-    newly_parsed: AtomicU64,
-    completed: AtomicU64,
-    failed: AtomicU64,
-    parse_skipped: AtomicU64,
-    started_at_ms: AtomicU64,
-    elapsed_ms: AtomicU64,
-}
-
-fn now_millis() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
-        .unwrap_or(0)
-}
-
-impl Default for ReplayScanProgress {
-    fn default() -> Self {
-        Self {
-            stage: Mutex::new("idle".to_string()),
-            status: Mutex::new("Idle".to_string()),
-            total: AtomicU64::new(0),
-            cache_hits: AtomicU64::new(0),
-            to_parse: AtomicU64::new(0),
-            newly_parsed: AtomicU64::new(0),
-            completed: AtomicU64::new(0),
-            failed: AtomicU64::new(0),
-            parse_skipped: AtomicU64::new(0),
-            started_at_ms: AtomicU64::new(0),
-            elapsed_ms: AtomicU64::new(0),
-        }
-    }
-}
-
-impl ReplayScanProgress {
-    fn reset(&self, stage: &str) {
-        self.total.store(0, Ordering::Release);
-        self.cache_hits.store(0, Ordering::Release);
-        self.to_parse.store(0, Ordering::Release);
-        self.newly_parsed.store(0, Ordering::Release);
-        self.completed.store(0, Ordering::Release);
-        self.failed.store(0, Ordering::Release);
-        self.parse_skipped.store(0, Ordering::Release);
-        self.started_at_ms.store(now_millis(), Ordering::Release);
-        self.elapsed_ms.store(0, Ordering::Release);
-        if let Ok(mut value) = self.stage.lock() {
-            *value = stage.to_string();
-        }
-        if let Ok(mut value) = self.status.lock() {
-            *value = "Parsing".to_string();
-        }
-    }
-
-    fn set_stage(&self, stage: &str) {
-        if let Ok(mut value) = self.stage.lock() {
-            *value = stage.to_string();
-        }
-    }
-
-    fn set_status(&self, status: &str) {
-        if let Ok(mut value) = self.status.lock() {
-            *value = status.to_string();
-        }
-        if status == "Completed" {
-            let started_at = self.started_at_ms.load(Ordering::Acquire);
-            if started_at > 0 {
-                let elapsed = now_millis().saturating_sub(started_at);
-                self.elapsed_ms.store(elapsed, Ordering::Release);
-            }
-        }
-    }
-
-    fn set_counts(&self, total: u64, completed: u64) {
-        let bounded_completed = completed.min(total);
-        self.total.store(total, Ordering::Release);
-        self.completed.store(bounded_completed, Ordering::Release);
-        self.to_parse
-            .store(total.saturating_sub(bounded_completed), Ordering::Release);
-        self.cache_hits.store(0, Ordering::Release);
-        self.newly_parsed.store(0, Ordering::Release);
-        self.failed.store(0, Ordering::Release);
-        self.parse_skipped.store(0, Ordering::Release);
-    }
-
-    fn as_payload(&self) -> ReplayScanProgressPayload {
-        let stage = self
-            .stage
-            .lock()
-            .map(|value| value.clone())
-            .unwrap_or_else(|_| "unknown".to_string());
-        let status = self
-            .status
-            .lock()
-            .map(|value| value.clone())
-            .unwrap_or_else(|_| "Parsing".to_string());
-        let total = self.total.load(Ordering::Acquire);
-        let cache_hits = self.cache_hits.load(Ordering::Acquire);
-        let to_parse = self.to_parse.load(Ordering::Acquire);
-        let newly_parsed = self.newly_parsed.load(Ordering::Acquire);
-        let completed = self.completed.load(Ordering::Acquire);
-        let failed = self.failed.load(Ordering::Acquire);
-        let parse_skipped = self.parse_skipped.load(Ordering::Acquire);
-        let started_at = self.started_at_ms.load(Ordering::Acquire);
-        let stored_elapsed = self.elapsed_ms.load(Ordering::Acquire);
-        let elapsed_ms = if status == "Parsing" && started_at > 0 {
-            now_millis().saturating_sub(started_at)
-        } else {
-            stored_elapsed
-        };
-        let effective_total = if total > 0 {
-            total
-        } else {
-            cache_hits.saturating_add(to_parse)
-        };
-        ReplayScanProgressPayload {
-            stage,
-            status: status.clone(),
-            parsing_status: status,
-            total: effective_total,
-            total_replay_files: effective_total,
-            cache_hits,
-            files_already_cached: cache_hits,
-            to_parse,
-            completed,
-            newly_parsed,
-            newly_parsed_files: newly_parsed,
-            failed,
-            parse_failed_files: failed,
-            parse_skipped,
-            parse_skipped_files: parse_skipped,
-            elapsed_ms,
-            total_time_taken_ms: elapsed_ms,
-        }
-    }
-}
-
-fn replay_scan_progress() -> &'static ReplayScanProgress {
-    REPLAY_SCAN_PROGRESS.get_or_init(ReplayScanProgress::default)
-}
-
 fn emit_replay_scan_progress(app: &AppHandle<Wry>, log_event: bool) {
-    let payload = replay_scan_progress().as_payload();
+    let payload = app
+        .state::<BackendState>()
+        .replay_scan_progress()
+        .as_payload();
     if log_event {
         crate::sco_log!(
             "[SCO/stats/event] emit {} stage={} status={} completed={} total={} elapsed_ms={}",
@@ -1416,14 +1185,6 @@ fn emit_analysis_completed(app: &AppHandle<Wry>, mode: AnalysisMode, message: &s
     );
     if let Err(error) = app.emit(SCO_ANALYSIS_COMPLETED_EVENT, payload) {
         crate::sco_log!("[SCO/stats] failed to emit analysis completed event: {error}");
-    }
-}
-
-struct ScanInFlightGuard;
-
-impl Drop for ScanInFlightGuard {
-    fn drop(&mut self) {
-        REPLAY_SCAN_IN_FLIGHT.store(false, Ordering::Release);
     }
 }
 
@@ -2101,8 +1862,7 @@ fn build_replay_root_candidates(raw: &str) -> Vec<PathBuf> {
     candidates
 }
 
-fn resolve_replay_root() -> Option<PathBuf> {
-    let settings = read_settings_memory();
+fn resolve_replay_root(settings: &AppSettings) -> Option<PathBuf> {
     let account_folder = settings.account_folder.trim();
     if !account_folder.is_empty() {
         let candidates = build_replay_root_candidates(account_folder);
@@ -2114,8 +1874,7 @@ fn resolve_replay_root() -> Option<PathBuf> {
     None
 }
 
-fn replay_watch_root_from_settings() -> Option<PathBuf> {
-    let settings = read_settings_memory();
+fn replay_watch_root_from_settings(settings: &AppSettings) -> Option<PathBuf> {
     let account_folder = settings.account_folder.trim();
     if account_folder.is_empty() {
         return None;
@@ -2148,21 +1907,25 @@ fn generate_detailed_analysis_cache(
     worker_count: usize,
     stop_controller: Arc<GenerateCacheStopController>,
 ) -> Result<(usize, bool), String> {
-    let Some(account_dir) = resolve_replay_root() else {
+    let state = app.state::<BackendState>();
+    let settings = state.read_settings_memory();
+    let replay_scan_progress = state.replay_scan_progress();
+    let Some(account_dir) = resolve_replay_root(&settings) else {
         return Err("Replay root is not configured for detailed analysis.".to_string());
     };
     let output_file = get_cache_path();
     let logger = {
         let app = app.clone();
         let stats = Arc::clone(stats);
+        let replay_scan_progress = replay_scan_progress.clone();
         move |message: String| {
             if let Some((completed, total)) = parse_detailed_analysis_progress_counts(&message) {
-                replay_scan_progress().set_counts(total, completed);
+                replay_scan_progress.set_counts(total, completed);
             }
             let normalized = normalize_detailed_analysis_logger_message(&message);
             crate::sco_log!("[SCO/stats] {normalized}");
-            replay_scan_progress().set_stage("detailed_analysis_running");
-            replay_scan_progress().set_status("Parsing");
+            replay_scan_progress.set_stage("detailed_analysis_running");
+            replay_scan_progress.set_status("Parsing");
             if let Ok(mut guard) = stats.lock() {
                 guard.detailed_analysis_status = normalized.clone();
                 guard.message = normalized.clone();
@@ -2586,9 +2349,12 @@ fn run_analysis(
     limit: usize,
     include_detailed: bool,
 ) -> Result<AnalysisOutcome, String> {
+    let state = app.state::<BackendState>();
     if include_detailed {
         let existing_cache_by_hash = load_existing_cache_by_hash();
-        let worker_count = read_settings_memory().normalized_analysis_worker_threads();
+        let worker_count = state
+            .read_settings_memory()
+            .normalized_analysis_worker_threads();
         let stop_controller = Arc::new(GenerateCacheStopController::new());
         if let Ok(mut slot) = detailed_stop_controller_slot.lock() {
             *slot = Some(stop_controller.clone());
@@ -2622,8 +2388,8 @@ fn run_analysis(
                 Vec::new()
             });
 
-        let main_names = configured_main_names();
-        let main_handles = configured_main_handles();
+        let main_names = state.configured_main_names();
+        let main_handles = state.configured_main_handles();
         let replays = ReplayAnalysis::load_detailed_analysis_replays_snapshot(
             limit,
             &main_names,
@@ -2638,7 +2404,18 @@ fn run_analysis(
             analysis_completed: completed,
         })
     } else {
-        let replays = ReplayAnalysis::analyze_replays(limit);
+        let main_names = state.configured_main_names();
+        let main_handles = state.configured_main_handles();
+        let replay_scan_progress = state.replay_scan_progress();
+        let replay_scan_in_flight = state.replay_scan_in_flight();
+        let replays = ReplayAnalysis::analyze_replays_with_identity(
+            limit,
+            &state.read_settings_memory(),
+            &main_names,
+            &main_handles,
+            replay_scan_progress.as_ref(),
+            replay_scan_in_flight.as_ref(),
+        );
         let final_cache_entries = load_existing_cache_by_hash().into_values().collect();
 
         Ok(AnalysisOutcome {
@@ -2660,6 +2437,11 @@ fn spawn_analysis_task(
     limit: usize,
 ) {
     let mode = analysis_mode(include_detailed);
+    let state = app.state::<BackendState>();
+    let replay_scan_progress = state.replay_scan_progress();
+    let settings = state.read_settings_memory();
+    let main_names = state.configured_main_names();
+    let main_handles = state.configured_main_handles();
     {
         let mut guard = match stats.lock() {
             Ok(guard) => guard,
@@ -2709,7 +2491,7 @@ fn spawn_analysis_task(
             guard.message = analysis_started_message(mode);
         }
     }
-    replay_scan_progress().reset("queued");
+    replay_scan_progress.reset("queued");
 
     let analysis_state = stats;
     let shared_replay_cache_slot = replays_slot;
@@ -2718,15 +2500,19 @@ fn spawn_analysis_task(
     let app_for_analysis = app.clone();
     let app_for_progress = app.clone();
     let app_for_progress_updates = app.clone();
+    let replay_scan_progress_for_thread = replay_scan_progress.clone();
+    let settings_for_thread = settings.clone();
+    let main_names_for_thread = main_names.clone();
+    let main_handles_for_thread = main_handles.clone();
     thread::spawn(move || {
         let started_at = Instant::now();
         crate::sco_log!("[SCO/stats] {} thread started", mode.display());
-        replay_scan_progress().set_stage(if include_detailed {
+        replay_scan_progress_for_thread.set_stage(if include_detailed {
             "detailed_analysis_running"
         } else {
             "scan_running"
         });
-        replay_scan_progress().set_status("Parsing");
+        replay_scan_progress_for_thread.set_status("Parsing");
         emit_replay_scan_progress(&app_for_progress, true);
 
         let (progress_tx, progress_rx) = mpsc::channel::<ProgressEmitterCommand>();
@@ -2761,8 +2547,8 @@ fn spawn_analysis_task(
                     guard.detailed_analysis_status = analysis_error_status_text(mode, &message);
                     guard.message = analysis_failed_message(mode, &message, elapsed);
                 }
-                replay_scan_progress().set_stage("analysis_failed");
-                replay_scan_progress().set_status("Completed");
+                replay_scan_progress_for_thread.set_stage("analysis_failed");
+                replay_scan_progress_for_thread.set_status("Completed");
                 let _ = progress_tx.send(ProgressEmitterCommand::Stop);
                 let completion_message = analysis_state
                     .lock()
@@ -2823,9 +2609,10 @@ fn spawn_analysis_task(
             })
             .collect::<Vec<_>>();
 
-        let current_replay_files = current_replay_files_snapshot(UNLIMITED_REPLAY_LIMIT);
+        let current_replay_files =
+            current_replay_files_snapshot(UNLIMITED_REPLAY_LIMIT, &settings_for_thread);
         if include_detailed && !detailed_completed {
-            replay_scan_progress()
+            replay_scan_progress_for_thread
                 .total
                 .store(current_replay_files.len() as u64, Ordering::Release);
         }
@@ -2845,8 +2632,13 @@ fn spawn_analysis_task(
             }
         }
 
-        replay_scan_progress().set_stage("building_statistics");
-        let snapshot = ReplayAnalysis::build_rebuild_snapshot(&all_replays, include_detailed);
+        replay_scan_progress_for_thread.set_stage("building_statistics");
+        let snapshot = ReplayAnalysis::build_rebuild_snapshot_with_identity(
+            &all_replays,
+            include_detailed,
+            &main_names_for_thread,
+            &main_handles_for_thread,
+        );
 
         let mut guard = match analysis_state.lock() {
             Ok(guard) => guard,
@@ -2855,8 +2647,8 @@ fn spawn_analysis_task(
                     "[SCO/stats] {} aborted before rebuild: {error}",
                     mode.display()
                 );
-                replay_scan_progress().set_stage("analysis_ready");
-                replay_scan_progress().set_status("Completed");
+                replay_scan_progress_for_thread.set_stage("analysis_ready");
+                replay_scan_progress_for_thread.set_status("Completed");
                 let _ = progress_tx.send(ProgressEmitterCommand::Stop);
                 emit_analysis_completed(
                     &app_for_analysis,
@@ -2891,8 +2683,8 @@ fn spawn_analysis_task(
         if !include_detailed {
             sync_detailed_analysis_status_from_replays(&mut guard, &all_replays);
         }
-        replay_scan_progress().set_stage("analysis_ready");
-        replay_scan_progress().set_status("Completed");
+        replay_scan_progress_for_thread.set_stage("analysis_ready");
+        replay_scan_progress_for_thread.set_status("Completed");
         let _ = progress_tx.send(ProgressEmitterCommand::Stop);
 
         crate::sco_log!(
@@ -3069,17 +2861,6 @@ fn ymd_from_unix_seconds(seconds: u64) -> Option<u32> {
         .and_then(|value| value.checked_add(day_u32))
 }
 
-fn build_stats_response(
-    path: &str,
-    stats: &Arc<Mutex<StatsState>>,
-    replays: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
-    stats_current_replay_files: &Arc<Mutex<HashSet<String>>>,
-) -> Result<StatsStatePayload, String> {
-    let payload =
-        ReplayAnalysis::build_stats_response(path, stats, replays, stats_current_replay_files)?;
-    serde_json::from_value(payload).map_err(|error| format!("Invalid stats payload: {error}"))
-}
-
 fn replay_index_by_file(replays: &[ReplayInfo], file: &Option<String>) -> Option<usize> {
     let needle = file.as_deref()?;
     replays.iter().position(|entry| entry.file == needle)
@@ -3087,6 +2868,8 @@ fn replay_index_by_file(replays: &[ReplayInfo], file: &Option<String>) -> Option
 
 fn replay_chat_payload_from_slots(
     replay_state: Arc<Mutex<ReplayState>>,
+    main_names: HashSet<String>,
+    main_handles: HashSet<String>,
     file: &str,
 ) -> Result<ReplayChatPayload, String> {
     let requested_file = file.trim();
@@ -3096,7 +2879,9 @@ fn replay_chat_payload_from_slots(
 
     let replays = replay_state
         .lock()
-        .map(|state| state.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT))
+        .map(|state| {
+            state.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT, &main_names, &main_handles)
+        })
         .unwrap_or_default();
 
     if let Some(replay) = replays.iter().find(|replay| replay.file == requested_file) {
@@ -3111,8 +2896,8 @@ fn replay_chat_payload_from_slots(
     Ok(ReplayAnalysis::summarize_replay(replay_path).chat_payload())
 }
 
-fn current_replay_files_snapshot(limit: usize) -> HashSet<String> {
-    let Some(root) = resolve_replay_root() else {
+fn current_replay_files_snapshot(limit: usize, settings: &AppSettings) -> HashSet<String> {
+    let Some(root) = resolve_replay_root(settings) else {
         return HashSet::new();
     };
 
@@ -3306,7 +3091,16 @@ pub fn persist_detailed_cache_entry_to_path(
     cache_path: &Path,
     entry: &CacheReplayEntry,
 ) -> Result<(), String> {
-    let _persist_guard = detailed_cache_persist_lock()
+    let local_lock = Mutex::new(());
+    persist_detailed_cache_entry_to_path_with_lock(cache_path, entry, &local_lock)
+}
+
+fn persist_detailed_cache_entry_to_path_with_lock(
+    cache_path: &Path,
+    entry: &CacheReplayEntry,
+    persist_lock: &Mutex<()>,
+) -> Result<(), String> {
+    let _persist_guard = persist_lock
         .lock()
         .map_err(|_| "Failed to acquire detailed cache persistence lock".to_string())?;
 
@@ -3368,14 +3162,19 @@ pub fn persist_detailed_cache_entry_to_path(
     CacheReplayEntry::write_entries(&entries, cache_path).map_err(|err| err.to_string())
 }
 
-fn persist_detailed_cache_entry(entry: &CacheReplayEntry) -> Result<(), String> {
-    persist_detailed_cache_entry_to_path(&get_cache_path(), entry)
-}
-
-fn spawn_detailed_cache_persist(entry: CacheReplayEntry, log_prefix: &'static str) {
+fn spawn_detailed_cache_persist(
+    state: &BackendState,
+    entry: CacheReplayEntry,
+    log_prefix: &'static str,
+) {
+    let persist_lock = state.detailed_cache_persist_lock();
     thread::spawn(move || {
         let replay_file = entry.file.clone();
-        if let Err(error) = persist_detailed_cache_entry(&entry) {
+        if let Err(error) = persist_detailed_cache_entry_to_path_with_lock(
+            &get_cache_path(),
+            &entry,
+            persist_lock.as_ref(),
+        ) {
             crate::sco_log!(
                 "[SCO/{log_prefix}] failed to persist detailed cache entry for '{}': {error}",
                 replay_file
@@ -3476,8 +3275,9 @@ fn process_new_replay_path(
         return ReplayProcessOutcome::RetryLater;
     };
 
-    let main_names = configured_main_names();
-    let main_handles = configured_main_handles();
+    let state = app.state::<BackendState>();
+    let main_names = state.configured_main_names();
+    let main_handles = state.configured_main_handles();
     let replay = orient_replay_for_main_names(parsed, &main_names, &main_handles);
     let replay_hash = cache_entry.hash.clone();
     if replay.main_commander().trim().is_empty() && replay.ally_commander().trim().is_empty() {
@@ -3500,10 +3300,9 @@ fn process_new_replay_path(
         replay.main_commander(),
         replay.ally_commander()
     );
-    let state = app.state::<BackendState>();
     state.upsert_replay_in_memory_cache(&replay_hash, &replay);
     state.record_session_result(&replay.result);
-    let settings = read_settings_memory();
+    let settings = state.read_settings_memory();
     let show_replay_info_after_game = show_replay_info_after_game_from_settings(&settings);
 
     if show_replay_info_after_game {
@@ -3525,11 +3324,9 @@ fn process_new_replay_path(
             .store(false, Ordering::Release);
     }
 
-    spawn_detailed_cache_persist(cache_entry, "watch");
+    spawn_detailed_cache_persist(&state, cache_entry, "watch");
 
-    let invalidation_generation = DELAYED_PLAYER_STATS_POPUP_GENERATION
-        .fetch_add(1, Ordering::AcqRel)
-        .saturating_add(1);
+    let invalidation_generation = state.invalidate_delayed_player_stats_popup_generation();
     crate::sco_log!(
         "[SCO/watch] invalidated delayed player stats popups generation={} replay='{}'",
         invalidation_generation,
@@ -3575,8 +3372,8 @@ fn process_replay_detailed(
         return (ReplayProcessOutcome::RetryLater, None);
     };
 
-    let main_names = configured_main_names();
-    let main_handles = configured_main_handles();
+    let main_names = state.configured_main_names();
+    let main_handles = state.configured_main_handles();
     let replay = orient_replay_for_main_names(parsed, &main_names, &main_handles);
 
     crate::sco_log!(
@@ -3591,7 +3388,7 @@ fn process_replay_detailed(
     );
 
     state.upsert_replay_in_memory_cache(&cache_entry.hash, &replay);
-    spawn_detailed_cache_persist(cache_entry, "show");
+    spawn_detailed_cache_persist(state, cache_entry, "show");
 
     (ReplayProcessOutcome::Processed, Some(replay))
 }
@@ -3638,7 +3435,8 @@ fn update_pending_fallback_file(
 fn spawn_replay_creation_watcher(app: tauri::AppHandle<Wry>) {
     thread::spawn(move || {
         let replay_root = loop {
-            if let Some(root) = replay_watch_root_from_settings() {
+            let settings = app.state::<BackendState>().read_settings_memory();
+            if let Some(root) = replay_watch_root_from_settings(&settings) {
                 break root;
             }
             crate::sco_log!("[SCO/watch] account_folder replay root unavailable, retrying in 5s");
@@ -3869,13 +3667,13 @@ fn spawn_game_launch_player_stats_task(app: tauri::AppHandle<Wry>) {
         loop {
             thread::sleep(Duration::from_millis(500));
 
-            let settings = read_settings_memory();
+            let state = app.state::<BackendState>();
+            let settings = state.read_settings_memory();
             let show_player_stats_popups = settings.show_player_winrates;
             if !show_player_stats_popups {
                 continue;
             }
 
-            let state = app.state::<BackendState>();
             let replay_count = state.replay_count_for_launch_detector();
             let now = Instant::now();
             launch_detector.observe_replay_count(replay_count, now);
@@ -3929,9 +3727,7 @@ fn spawn_game_launch_player_stats_task(app: tauri::AppHandle<Wry>) {
                 continue;
             };
 
-            let invalidation_generation = DELAYED_PLAYER_STATS_POPUP_GENERATION
-                .fetch_add(1, Ordering::AcqRel)
-                .saturating_add(1);
+            let invalidation_generation = state.invalidate_delayed_player_stats_popup_generation();
             crate::sco_log!(
                 "[SCO/launch] invalidated delayed player stats popups generation={}",
                 invalidation_generation
@@ -3966,9 +3762,9 @@ fn spawn_protocol_store_warmup() {
     });
 }
 
-fn persist_setting_bool(key: &str, value: bool) {
-    match persist_single_setting_value(key, Value::Bool(value)) {
-        Ok(()) => logging::refresh_from_settings(&read_settings_memory()),
+fn persist_setting_bool(state: &BackendState, key: &str, value: bool) {
+    match persist_single_setting_value(state, key, Value::Bool(value)) {
+        Ok(()) => {}
         Err(error) => {
             crate::sco_log!("[SCO/settings] Failed to save {key}: {error}");
         }
@@ -4125,11 +3921,12 @@ pub fn window_close_action(
 }
 
 fn request_clean_exit(app: &AppHandle<Wry>, exit_code: i32) {
-    if APP_EXIT_IN_PROGRESS.swap(true, Ordering::AcqRel) {
+    let state = app.state::<BackendState>();
+    if !state.try_begin_exit() {
         return;
     }
 
-    if let Ok(mut tray_icon) = app.state::<BackendState>().tray_icon.lock() {
+    if let Ok(mut tray_icon) = state.tray_icon.lock() {
         tray_icon.take();
     }
 
@@ -4195,15 +3992,13 @@ impl Default for StatsState {
 }
 
 impl StatsState {
-    fn from_settings() -> Self {
+    fn from_settings(settings: &AppSettings) -> Self {
         let mut state = Self::default();
-        let settings = read_settings_memory();
         state.detailed_analysis_atstart = settings.detailed_analysis_atstart;
         state
     }
 
-    fn as_payload(&self) -> Value {
-        let scan_progress = replay_scan_progress().as_payload();
+    fn as_payload(&self, scan_progress: ReplayScanProgressPayload) -> Value {
         let (analysis, main_players, main_handles, prestige_names, games, message) = if self.ready {
             (
                 self.analysis.clone(),
@@ -4249,23 +4044,29 @@ impl StatsState {
         })
     }
 
-    fn as_payload_typed(&self) -> StatsStatePayload {
-        serde_json::from_value(self.as_payload())
+    fn as_payload_typed(&self, scan_progress: ReplayScanProgressPayload) -> StatsStatePayload {
+        serde_json::from_value(self.as_payload(scan_progress))
             .unwrap_or_else(|error| panic!("Failed to convert stats payload: {error}"))
     }
 }
 
-fn log_request(method: &str, path: &str, body: &Option<Value>) {
+fn log_request(state: &BackendState, method: &str, path: &str, body: &Option<Value>) {
     let serialized_body = body
         .as_ref()
         .map(|payload| serde_json::to_string(payload).unwrap_or_else(|_| "<invalid-json>".into()));
     if let Some(serialized_body) = serialized_body {
-        logging::append_line_if_enabled(&format!(
-            "[SCO/request] method={} path={} body={}",
-            method, path, serialized_body
-        ));
+        logging::append_line_if_enabled_from_state(
+            state,
+            &format!(
+                "[SCO/request] method={} path={} body={}",
+                method, path, serialized_body
+            ),
+        );
     } else {
-        logging::append_line_if_enabled(&format!("[SCO/request] method={} path={}", method, path));
+        logging::append_line_if_enabled_from_state(
+            state,
+            &format!("[SCO/request] method={} path={}", method, path),
+        );
     }
 }
 
@@ -4309,13 +4110,13 @@ fn open_folder_path(path: String) -> Result<(), String> {
 #[tauri::command]
 async fn config_get(
     app: tauri::AppHandle<Wry>,
-    _state: State<'_, BackendState>,
+    state: State<'_, BackendState>,
 ) -> Result<ConfigPayload, String> {
-    log_request("get", "/config", &None);
+    log_request(&state, "get", "/config", &None);
     Ok(ConfigPayload {
         status: "ok",
         settings: AppSettings::from_saved_file(),
-        active_settings: read_settings_memory(),
+        active_settings: state.read_settings_memory(),
         randomizer_catalog: randomizer::catalog_payload(),
         monitor_catalog: overlay_info::available_monitor_catalog(&app),
     })
@@ -4326,13 +4127,13 @@ async fn config_update(
     app: tauri::AppHandle<Wry>,
     settings: Value,
     persist: Option<bool>,
-    _state: State<'_, BackendState>,
+    state: State<'_, BackendState>,
 ) -> Result<ConfigPayload, String> {
     let body = Some(to_json_value(serde_json::json!({
         "settings": settings,
         "persist": persist.unwrap_or(true),
     })));
-    log_request("post", "/config", &body);
+    log_request(&state, "post", "/config", &body);
 
     let settings_value = body
         .as_ref()
@@ -4341,7 +4142,7 @@ async fn config_update(
         .ok_or_else(|| "Missing payload".to_string())?;
 
     let mut next_settings = AppSettings::merge_settings_with_defaults(settings_value);
-    let previous_settings = read_settings_memory();
+    let previous_settings = state.read_settings_memory();
     let persist = body
         .as_ref()
         .and_then(|payload| payload.get("persist"))
@@ -4351,14 +4152,14 @@ async fn config_update(
     next_settings.performance_geometry = previous_settings.performance_geometry.clone();
 
     if persist {
-        write_settings_file(&next_settings)?;
+        write_settings_file(&state, &next_settings)?;
     }
     apply_runtime_settings(&app, &previous_settings, &next_settings);
 
     Ok(ConfigPayload {
         status: "ok",
         settings: AppSettings::from_saved_file(),
-        active_settings: read_settings_memory(),
+        active_settings: state.read_settings_memory(),
         randomizer_catalog: randomizer::catalog_payload(),
         monitor_catalog: overlay_info::available_monitor_catalog(&app),
     })
@@ -4371,16 +4172,18 @@ async fn config_replays_get(
     state: State<'_, BackendState>,
 ) -> Result<ConfigReplaysPayload, String> {
     let path = format!("/config/replays?limit={}", limit.unwrap_or(300));
-    log_request("get", &path, &None);
+    log_request(&state, "get", &path, &None);
     let limit = parse_query_usize(&path, "limit", 300);
     let replay_state = state.get_replay_state();
+    let main_names = state.configured_main_names();
+    let main_handles = state.configured_main_handles();
 
     let (replays, total_replays, selected_replay_file) =
         tauri::async_runtime::spawn_blocking(move || {
             let replay_state = replay_state.lock().ok();
             let all_replays = replay_state
                 .as_ref()
-                .map(|state| state.sync_full_replay_cache_slots())
+                .map(|state| state.sync_full_replay_cache_slots(&main_names, &main_handles))
                 .unwrap_or_default();
             let total_replays = all_replays.len();
             let mut replays = all_replays;
@@ -4414,7 +4217,7 @@ async fn config_players_get(
     state: State<'_, BackendState>,
 ) -> Result<ConfigPlayersPayload, String> {
     let path = format!("/config/players?limit={}", limit.unwrap_or(500));
-    log_request("get", &path, &None);
+    log_request(&state, "get", &path, &None);
     let limit = parse_query_usize(&path, "limit", 500);
     let replay_state = state.get_replay_state();
     let replays = match replay_state.try_lock() {
@@ -4469,13 +4272,17 @@ async fn config_weeklies_get(
     _app: tauri::AppHandle<Wry>,
     state: State<'_, BackendState>,
 ) -> Result<ConfigWeekliesPayload, String> {
-    log_request("get", "/config/weeklies", &None);
+    log_request(&state, "get", "/config/weeklies", &None);
     let replay_state = state.get_replay_state();
+    let main_names = state.configured_main_names();
+    let main_handles = state.configured_main_handles();
 
     let replays = tauri::async_runtime::spawn_blocking(move || {
         replay_state
             .lock()
-            .map(|state| state.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT))
+            .map(|state| {
+                state.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT, &main_names, &main_handles)
+            })
             .unwrap_or_default()
     })
     .await
@@ -4497,7 +4304,7 @@ async fn config_stats_get(
     } else {
         "/config/stats".to_string()
     };
-    log_request("get", &path, &None);
+    log_request(&state, "get", &path, &None);
     let stats = state.stats.clone();
     let replays = state
         .get_replay_state()
@@ -4505,14 +4312,24 @@ async fn config_stats_get(
         .map(|replay_state| replay_state.replays.clone())
         .unwrap_or_else(|_| Arc::new(Mutex::new(HashMap::new())));
     let stats_current_replay_files = state.stats_current_replay_files.clone();
+    let state_snapshot = (
+        state.configured_main_names(),
+        state.configured_main_handles(),
+        state.replay_scan_progress().as_payload(),
+    );
     let path_for_worker = path.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        build_stats_response(
+        let (main_names, main_handles, scan_progress) = state_snapshot;
+        let payload = ReplayAnalysis::build_stats_response_with_identity(
             &path_for_worker,
             &stats,
             &replays,
             &stats_current_replay_files,
-        )
+            scan_progress,
+            &main_names,
+            &main_handles,
+        )?;
+        serde_json::from_value(payload).map_err(|error| format!("Invalid stats payload: {error}"))
     })
     .await
     .map_err(|error| format!("Failed to read /config/stats: {error}"))?
@@ -4526,7 +4343,7 @@ async fn config_replay_show(
     state: State<'_, BackendState>,
 ) -> Result<OverlayActionResponse, String> {
     let body = Some(to_json_value(serde_json::json!({ "file": file })));
-    log_request("post", "/config/replays/show", &body);
+    log_request(&state, "post", "/config/replays/show", &body);
     let requested = body
         .as_ref()
         .and_then(|payload| payload.get("file"))
@@ -4543,7 +4360,7 @@ async fn config_replay_chat(
     state: State<'_, BackendState>,
 ) -> Result<ConfigChatPayload, String> {
     let body = Some(to_json_value(serde_json::json!({ "file": file })));
-    log_request("post", "/config/replays/chat", &body);
+    log_request(&state, "post", "/config/replays/chat", &body);
     let requested_file = body
         .as_ref()
         .and_then(|payload| payload.get("file"))
@@ -4551,8 +4368,10 @@ async fn config_replay_chat(
         .unwrap_or("")
         .to_string();
     let replay_state = state.get_replay_state();
+    let main_names = state.configured_main_names();
+    let main_handles = state.configured_main_handles();
     let chat = tauri::async_runtime::spawn_blocking(move || {
-        replay_chat_payload_from_slots(replay_state, &requested_file)
+        replay_chat_payload_from_slots(replay_state, main_names, main_handles, &requested_file)
     })
     .await
     .map_err(|error| format!("Failed to load /config/replays/chat: {error}"))?
@@ -4567,7 +4386,7 @@ async fn config_replay_move(
     state: State<'_, BackendState>,
 ) -> Result<OverlayActionResponse, String> {
     let body = Some(to_json_value(serde_json::json!({ "delta": delta })));
-    log_request("post", "/config/replays/move", &body);
+    log_request(&state, "post", "/config/replays/move", &body);
     let delta = body
         .as_ref()
         .and_then(|payload| payload.get("delta"))
@@ -4589,7 +4408,7 @@ async fn config_action(
     } else {
         Some(to_json_value(serde_json::json!({ "action": action })))
     };
-    log_request("post", "/config/action", &body);
+    log_request(&state, "post", "/config/action", &body);
     let action = body
         .as_ref()
         .and_then(|payload| payload.get("action"))
@@ -4613,9 +4432,9 @@ async fn config_action(
             update_settings_player_note(&mut saved_settings, player_name, note_value)?;
             saved_settings.write_saved_settings_file()?;
 
-            let mut active_settings = read_settings_memory();
+            let mut active_settings = state.read_settings_memory();
             update_settings_player_note(&mut active_settings, player_name, note_value)?;
-            replace_active_settings(&active_settings);
+            state.replace_active_settings(&active_settings);
 
             Ok(OverlayActionResponse::success(
                 if note_value.trim().is_empty() {
@@ -4652,7 +4471,7 @@ async fn config_stats_action(
     } else {
         Some(to_json_value(serde_json::json!({ "action": action })))
     };
-    log_request("post", "/config/stats/action", &body);
+    log_request(&state, "post", "/config/stats/action", &body);
     let action = body
         .as_ref()
         .and_then(|payload| payload.get("action"))
@@ -4701,7 +4520,7 @@ async fn config_stats_action(
                     path: None,
                 },
                 message: stats.message.clone(),
-                stats: Some(stats.as_payload_typed()),
+                stats: Some(stats.as_payload_typed(state.replay_scan_progress().as_payload())),
             });
         }
         "start_simple_analysis" | "run_detailed_analysis" => {
@@ -4744,7 +4563,7 @@ async fn config_stats_action(
                 .stats
                 .lock()
                 .ok()
-                .map(|stats| stats.as_payload_typed());
+                .map(|stats| stats.as_payload_typed(state.replay_scan_progress().as_payload()));
             return Ok(StatsActionPayload {
                 status: "ok",
                 result: OverlayActionResult {
@@ -4795,7 +4614,7 @@ async fn config_stats_action(
 
             let payload = to_json_value(DumpPayload {
                 timestamp: format_date_from_system_time(SystemTime::now()),
-                stats: stats.as_payload(),
+                stats: stats.as_payload(state.replay_scan_progress().as_payload()),
             });
             match serde_json::to_string_pretty(&payload) {
                 Ok(contents) => match std::fs::write(&dump_path, contents) {
@@ -4848,7 +4667,7 @@ async fn config_stats_action(
             if let Some(payload) = body.as_ref() {
                 if let Some(enabled) = payload.get("enabled").and_then(Value::as_bool) {
                     stats.detailed_analysis_atstart = enabled;
-                    persist_setting_bool("detailed_analysis_atstart", enabled);
+                    persist_setting_bool(&state, "detailed_analysis_atstart", enabled);
                     stats.message = analysis_at_start_message(enabled);
                     crate::sco_log!(
                         "[SCO/stats] set_detailed_analysis_atstart requested: {enabled}"
@@ -4895,7 +4714,7 @@ async fn config_stats_action(
                     path: None,
                 },
                 message: format!("Unsupported action: {action}"),
-                stats: Some(stats.as_payload_typed()),
+                stats: Some(stats.as_payload_typed(state.replay_scan_progress().as_payload())),
             });
         }
     }
@@ -4912,7 +4731,7 @@ async fn config_stats_action(
             path: None,
         },
         message: "Action processed".to_string(),
-        stats: Some(stats.as_payload_typed()),
+        stats: Some(stats.as_payload_typed(state.replay_scan_progress().as_payload())),
     })
 }
 
@@ -4944,13 +4763,12 @@ async fn auto_update(handle: tauri::AppHandle) -> tauri_plugin_updater::Result<(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let settings = read_settings_memory();
-    logging::refresh_from_settings(&settings);
+    let settings = AppSettings::from_saved_file();
 
     let data_dir = get_json_data_dir();
     let _ = s2coop_analyzer::dictionary_data::shared_dictionary_data(Some(data_dir));
 
-    let state = BackendState::new();
+    let state = BackendState::new_with_settings(settings.clone());
 
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -4973,11 +4791,12 @@ pub fn run() {
         })
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
-                let flags = overlay_info::parse_runtime_flags();
+                let state = window.app_handle().state::<BackendState>();
+                let flags = overlay_info::parse_runtime_flags_from_state(&state);
                 match window_close_action(
                     window.label(),
                     flags.minimize_to_tray,
-                    APP_EXIT_IN_PROGRESS.load(Ordering::Acquire),
+                    state.exit_in_progress(),
                 ) {
                     WindowCloseAction::AllowClose => {}
                     WindowCloseAction::HidePerformance => {
@@ -5008,7 +4827,8 @@ pub fn run() {
         .setup(|app| {
             spawn_protocol_store_warmup();
 
-            let flags = overlay_info::parse_runtime_flags();
+            let state = app.state::<BackendState>();
+            let flags = overlay_info::parse_runtime_flags_from_state(&state);
 
             if flags.auto_update {
                 let handle = app.handle().clone();
@@ -5087,7 +4907,7 @@ pub fn run() {
                 }
             }
 
-            let startup_settings = read_settings_memory();
+            let startup_settings = state.read_settings_memory();
             if let Err(error) = sync_start_with_windows_setting(&startup_settings) {
                 crate::sco_log!("[SCO/settings] Failed to initialize start_with_windows: {error}");
             }

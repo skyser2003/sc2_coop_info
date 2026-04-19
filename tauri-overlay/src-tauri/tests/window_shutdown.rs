@@ -1,6 +1,5 @@
 use sco_tauri_overlay::{
-    overlay_info, read_settings_memory, replace_active_settings, window_close_action, AppSettings,
-    WindowCloseAction,
+    overlay_info, window_close_action, AppSettings, BackendState, WindowCloseAction,
 };
 use serde_json::json;
 
@@ -48,23 +47,24 @@ fn shutdown_path_allows_windows_to_close() {
 
 #[test]
 fn runtime_flags_follow_active_settings_before_save() {
-    let previous_settings = read_settings_memory();
+    let state = BackendState::new();
+    let previous_settings = state.read_settings_memory();
 
-    replace_active_settings(&AppSettings::merge_settings_with_defaults(json!({
+    state.replace_active_settings(&AppSettings::merge_settings_with_defaults(json!({
         "start_minimized": true,
         "minimize_to_tray": false,
     })));
-    let disabled_flags = overlay_info::parse_runtime_flags();
+    let disabled_flags = overlay_info::parse_runtime_flags_from_state(&state);
     assert!(!disabled_flags.start_minimized);
     assert!(!disabled_flags.minimize_to_tray);
 
-    replace_active_settings(&AppSettings::merge_settings_with_defaults(json!({
+    state.replace_active_settings(&AppSettings::merge_settings_with_defaults(json!({
         "start_minimized": false,
         "minimize_to_tray": true,
     })));
-    let enabled_flags = overlay_info::parse_runtime_flags();
+    let enabled_flags = overlay_info::parse_runtime_flags_from_state(&state);
     assert!(!enabled_flags.start_minimized);
     assert!(enabled_flags.minimize_to_tray);
 
-    replace_active_settings(&previous_settings);
+    state.replace_active_settings(&previous_settings);
 }

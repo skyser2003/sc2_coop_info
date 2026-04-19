@@ -1,6 +1,6 @@
 use sco_tauri_overlay::{
-    parse_detailed_analysis_progress_counts, prepare_startup_analysis_request,
-    StartupAnalysisRequestOutcome, StartupAnalysisTrigger, StatsState,
+    parse_detailed_analysis_progress_counts, prepare_startup_analysis_request, AppSettings,
+    BackendState, StartupAnalysisRequestOutcome, StartupAnalysisTrigger, StatsState,
 };
 
 #[test]
@@ -60,4 +60,38 @@ fn prepare_startup_analysis_request_marks_once_and_preserves_existing_status() {
         }
     );
     assert_eq!(stats.message, "Detailed analysis: generating cache.");
+}
+
+#[test]
+fn backend_state_flags_are_instance_local() {
+    let mut disabled_logging = AppSettings::default();
+    disabled_logging.enable_logging = false;
+
+    let first = BackendState::new_with_settings(disabled_logging);
+    let second = BackendState::new();
+
+    assert!(!first.file_logging_enabled());
+    assert!(second.file_logging_enabled());
+    assert!(!first.performance_edit_mode());
+    assert!(!second.performance_edit_mode());
+
+    first.set_performance_edit_mode(true);
+
+    assert!(first.performance_edit_mode());
+    assert!(!second.performance_edit_mode());
+}
+
+#[test]
+fn replace_active_settings_updates_file_logging_flag() {
+    let mut settings = AppSettings::default();
+    settings.enable_logging = false;
+
+    let state = BackendState::new_with_settings(settings);
+    assert!(!state.file_logging_enabled());
+
+    let mut next = state.read_settings_memory();
+    next.enable_logging = true;
+    state.replace_active_settings(&next);
+
+    assert!(state.file_logging_enabled());
 }

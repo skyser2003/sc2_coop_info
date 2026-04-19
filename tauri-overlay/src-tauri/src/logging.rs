@@ -1,20 +1,10 @@
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::path_manager;
 
-use crate::app_settings::AppSettings;
-
-static FILE_LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
-
-pub(crate) fn refresh_from_settings(settings: &AppSettings) {
-    FILE_LOGGING_ENABLED.store(
-        crate::logging_enabled_from_settings(settings),
-        Ordering::Release,
-    );
-}
+use crate::{app_settings::AppSettings, BackendState};
 
 fn logs_file_path() -> Option<PathBuf> {
     let path = path_manager::get_log_path();
@@ -36,8 +26,23 @@ fn append_line(message: &str) -> Result<(), String> {
         .map_err(|error| format!("failed to append {}: {error}", path.display()))
 }
 
+fn file_logging_enabled() -> bool {
+    let settings = AppSettings::from_saved_file();
+    crate::logging_enabled_from_settings(&settings)
+}
+
 pub(crate) fn append_line_if_enabled(message: &str) {
-    if !FILE_LOGGING_ENABLED.load(Ordering::Acquire) {
+    if !file_logging_enabled() {
+        return;
+    }
+
+    if let Err(error) = append_line(message) {
+        eprintln!("[SCO/log] {error}");
+    }
+}
+
+pub(crate) fn append_line_if_enabled_from_state(state: &BackendState, message: &str) {
+    if !state.file_logging_enabled() {
         return;
     }
 
