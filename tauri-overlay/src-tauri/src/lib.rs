@@ -39,7 +39,7 @@ pub mod replay_analysis;
 pub mod shared_types;
 pub use app_settings::AppSettings;
 pub use backend_state::BackendState;
-pub use game_launch_detector::GameLaunchDetector;
+pub use game_launch_detector::{GameLaunchDetector, GameLaunchStatus};
 
 #[macro_export]
 macro_rules! sco_log {
@@ -3880,11 +3880,8 @@ fn spawn_game_launch_player_stats_task(app: tauri::AppHandle<Wry>) {
             let now = Instant::now();
             launch_detector.observe_replay_count(replay_count, now);
 
-            if !launch_detector.should_attempt_popup(state.stats_have_player_rows(), replay_count) {
-                continue;
-            }
-
             let Some(payload) = fetch_sc2_live_game_payload() else {
+                launch_detector.observe_non_live_state();
                 continue;
             };
             if payload
@@ -3892,25 +3889,35 @@ fn spawn_game_launch_player_stats_task(app: tauri::AppHandle<Wry>) {
                 .and_then(Value::as_bool)
                 .unwrap_or(true)
             {
+                launch_detector.observe_non_live_state();
                 continue;
             }
 
             let players = extract_live_game_players(&payload);
             if players.len() <= 2 {
+                launch_detector.observe_non_live_state();
                 continue;
             }
             let all_users = players
                 .iter()
                 .all(|player| player.kind.eq_ignore_ascii_case("user"));
             if all_users {
+                launch_detector.observe_non_live_state();
                 continue;
             }
 
             let display_time = value_as_u64_lossy(payload.get("displayTime")).unwrap_or(0);
-            if !launch_detector.observe_display_time(display_time) {
-                continue;
+            match launch_detector.update_display_time_status(display_time) {
+                GameLaunchStatus::Started => {}
+                GameLaunchStatus::Unknown
+                | GameLaunchStatus::Idle
+                | GameLaunchStatus::Running
+                | GameLaunchStatus::Ended => continue,
             }
 
+            if !launch_detector.should_attempt_popup(state.stats_have_player_rows(), replay_count) {
+                continue;
+            }
             if !launch_detector.replay_change_settled(now) {
                 continue;
             }
