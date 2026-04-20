@@ -1,7 +1,7 @@
 use s2coop_analyzer::cache_overall_stats_generator::{ProtocolBuildValue, ReplayBuildInfo};
 use s2coop_analyzer::tauri_replay_analysis_impl::{
     ParsedReplayInput, ParsedReplayMessage, ParsedReplayPlayer, PlayerPositions, ReplayReport,
-    ReplayReportDetailedInput,
+    ReplayReportDetailData, ReplayReportDetailedInput,
 };
 use std::collections::{BTreeMap, HashSet};
 
@@ -62,20 +62,21 @@ fn sample_replay() -> ParsedReplayInput {
 fn detailed_builder_applies_positions_hash_length_and_payload_fields() {
     let mut detailed = ReplayReportDetailedInput::from_parser(sample_replay());
     detailed.positions = Some(PlayerPositions { main: 2, ally: 1 });
-    detailed.length = Some(100.0);
-    detailed.bonus = Some(vec!["Bonus A".to_string()]);
-    detailed.comp = Some("Zerg".to_string());
-    detailed.replay_hash = Some("hash-abc".to_string());
-    detailed.main_kills = Some(77);
-    detailed.ally_kills = Some(12);
-    detailed.main_icons = Some(BTreeMap::from([("icon_main".to_string(), 5)]));
-    detailed.ally_icons = Some(BTreeMap::from([("icon_ally".to_string(), 9)]));
-    detailed.main_units = Some(BTreeMap::from([("Marine".to_string(), (1, 2, 3, 4.0))]));
-    detailed.ally_units = Some(BTreeMap::from([("Dragoon".to_string(), (5, 6, 7, 8.0))]));
-    detailed.amon_units = Some(BTreeMap::from([(
-        "Zergling".to_string(),
-        (9, 10, 11, 12.0),
-    )]));
+    detailed.detail = Some(ReplayReportDetailData {
+        length: 100.0,
+        bonus: vec!["Bonus A".to_string()],
+        comp: "Zerg".to_string(),
+        replay_hash: Some("hash-abc".to_string()),
+        main_kills: 77,
+        ally_kills: 12,
+        main_icons: BTreeMap::from([("icon_main".to_string(), 5)]),
+        ally_icons: BTreeMap::from([("icon_ally".to_string(), 9)]),
+        main_units: BTreeMap::from([("Marine".to_string(), (1, 2, 3, 4.0))]),
+        ally_units: BTreeMap::from([("Dragoon".to_string(), (5, 6, 7, 8.0))]),
+        amon_units: BTreeMap::from([("Zergling".to_string(), (9, 10, 11, 12.0))]),
+        player_stats: BTreeMap::new(),
+        outlaw_order: Vec::new(),
+    });
 
     let report =
         ReplayReport::from_detailed_input(&detailed.parser.file, &detailed, &HashSet::new());

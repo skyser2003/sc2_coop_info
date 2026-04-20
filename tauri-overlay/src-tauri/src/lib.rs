@@ -1,9 +1,10 @@
 use notify::{Config as NotifyConfig, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use rfd::FileDialog;
-use s2coop_analyzer::cache_overall_stats_generator::{
-    CacheReplayEntry, GenerateCacheConfig, GenerateCacheRuntimeOptions, GenerateCacheStopController,
-};
+use s2coop_analyzer::cache_overall_stats_generator::CacheReplayEntry;
 use s2coop_analyzer::detailed_replay_analysis::calculate_replay_hash;
+use s2coop_analyzer::detailed_replay_analysis::{
+    GenerateCacheConfig, GenerateCacheRuntimeOptions, GenerateCacheStopController,
+};
 use s2coop_analyzer::dictionary_data;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Map, Value};
@@ -2874,7 +2875,7 @@ fn is_replay_creation_event(kind: &EventKind) -> bool {
         || matches!(kind, EventKind::Modify(_))
 }
 
-fn parse_new_replay_with_retries(path: &Path) -> Option<(ReplayInfo, CacheReplayEntry)> {
+fn parse_new_replay_with_retries(path: &Path) -> Option<(ReplayInfo, Option<CacheReplayEntry>)> {
     const MAX_ATTEMPTS: usize = 40;
     const RETRY_DELAY: Duration = Duration::from_millis(250);
     const MIN_REPLAY_SIZE_BYTES: u64 = 8 * 1024;
@@ -3234,7 +3235,11 @@ fn process_new_replay_path(
     let main_names = state.configured_main_names();
     let main_handles = state.configured_main_handles();
     let replay = orient_replay_for_main_names(parsed, &main_names, &main_handles);
-    let replay_hash = cache_entry.hash.clone();
+    let replay_hash = cache_entry
+        .as_ref()
+        .map(|entry| entry.hash.clone())
+        .filter(|hash| !hash.is_empty())
+        .unwrap_or_else(|| calculate_replay_hash(path));
     if replay.main_commander().trim().is_empty() && replay.ally_commander().trim().is_empty() {
         crate::sco_log!(
             "[SCO/watch] parsed replay ignored file='{}' reason=missing_commanders main='{}' ally='{}'",
@@ -3279,7 +3284,9 @@ fn process_new_replay_path(
             .store(false, Ordering::Release);
     }
 
-    spawn_detailed_cache_persist(&state, cache_entry, "watch");
+    if let Some(cache_entry) = cache_entry {
+        spawn_detailed_cache_persist(&state, cache_entry, "watch");
+    }
 
     let invalidation_generation = state.invalidate_delayed_player_stats_popup_generation();
     crate::sco_log!(
@@ -3342,8 +3349,15 @@ fn process_replay_detailed(
         replay.ally_commander()
     );
 
-    state.upsert_replay_in_memory_cache(&cache_entry.hash, &replay);
-    spawn_detailed_cache_persist(state, cache_entry, "show");
+    let replay_hash = cache_entry
+        .as_ref()
+        .map(|entry| entry.hash.clone())
+        .filter(|hash| !hash.is_empty())
+        .unwrap_or_else(|| calculate_replay_hash(path));
+    state.upsert_replay_in_memory_cache(&replay_hash, &replay);
+    if let Some(cache_entry) = cache_entry {
+        spawn_detailed_cache_persist(state, cache_entry, "show");
+    }
 
     (ReplayProcessOutcome::Processed, Some(replay))
 }

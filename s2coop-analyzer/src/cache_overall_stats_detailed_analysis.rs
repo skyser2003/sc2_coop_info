@@ -1,6 +1,5 @@
-use crate::cache_overall_stats_generator::{
-    pretty_output_path, write_pretty_cache_file, GenerateCacheConfig, GenerateCacheError,
-};
+use crate::cache_overall_stats_generator::{pretty_output_path, write_pretty_cache_file};
+use crate::detailed_replay_analysis::{GenerateCacheConfig, GenerateCacheError};
 use serde_json::Value;
 use std::collections::BTreeSet;
 use std::fs;

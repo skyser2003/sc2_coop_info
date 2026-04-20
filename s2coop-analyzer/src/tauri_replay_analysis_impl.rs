@@ -319,20 +319,25 @@ pub struct ReplayReportDetailedInput {
     pub parser: ParsedReplayInput,
     pub positions: Option<PlayerPositions>,
     pub main_position: Option<u8>,
-    pub length: Option<f64>,
-    pub bonus: Option<Vec<String>>,
-    pub comp: Option<String>,
+    pub detail: Option<ReplayReportDetailData>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ReplayReportDetailData {
+    pub length: f64,
+    pub bonus: Vec<String>,
+    pub comp: String,
     pub replay_hash: Option<String>,
-    pub main_kills: Option<u64>,
-    pub ally_kills: Option<u64>,
-    pub main_icons: Option<BTreeMap<String, u64>>,
-    pub ally_icons: Option<BTreeMap<String, u64>>,
-    pub main_units: Option<BTreeMap<String, UnitStats>>,
-    pub ally_units: Option<BTreeMap<String, UnitStats>>,
-    pub amon_units: Option<BTreeMap<String, UnitStats>>,
-    pub player_stats: Option<BTreeMap<u8, PlayerStatsSeries>>,
+    pub main_kills: u64,
+    pub ally_kills: u64,
+    pub main_icons: BTreeMap<String, u64>,
+    pub ally_icons: BTreeMap<String, u64>,
+    pub main_units: BTreeMap<String, UnitStats>,
+    pub ally_units: BTreeMap<String, UnitStats>,
+    pub amon_units: BTreeMap<String, UnitStats>,
+    pub player_stats: BTreeMap<u8, PlayerStatsSeries>,
     #[serde(skip)]
-    pub outlaw_order: Option<Vec<String>>,
+    pub outlaw_order: Vec<String>,
 }
 
 impl ReplayReportDetailedInput {
@@ -341,19 +346,7 @@ impl ReplayReportDetailedInput {
             parser,
             positions: None,
             main_position: None,
-            length: None,
-            bonus: None,
-            comp: None,
-            replay_hash: None,
-            main_kills: None,
-            ally_kills: None,
-            main_icons: None,
-            ally_icons: None,
-            main_units: None,
-            ally_units: None,
-            amon_units: None,
-            player_stats: None,
-            outlaw_order: None,
+            detail: None,
         }
     }
 
@@ -406,17 +399,20 @@ impl ReplayReport {
         main_player_handles: &HashSet<String>,
     ) -> Self {
         let replay = &detailed_input.parser;
+        let detail = detailed_input.detail.as_ref();
         let main_pid = detailed_input.selected_main_player_pid(main_player_handles);
         let ally_pid = if main_pid == 1 { 2 } else { 1 };
         let main_player = replay.player_or_unknown(main_pid);
         let ally_player = replay.player_or_unknown(ally_pid);
         let player_stats = Self::player_stats_with_names(
-            detailed_input.player_stats.clone(),
+            detail.map(|value| value.player_stats.clone()),
             &main_player.name,
             &ally_player.name,
         );
 
-        let report_length = detailed_input.length.unwrap_or(replay.accurate_length);
+        let report_length = detail
+            .map(|value| value.length)
+            .unwrap_or(replay.accurate_length);
         let parser_accurate_length =
             if replay.accurate_length.is_finite() && replay.accurate_length > 0.0 {
                 replay.accurate_length
@@ -426,7 +422,7 @@ impl ReplayReport {
         let parser_hash = replay
             .hash
             .clone()
-            .or_else(|| detailed_input.replay_hash.clone());
+            .or_else(|| detail.and_then(|value| value.replay_hash.clone()));
         let mut parser = replay.clone();
         parser.accurate_length = parser_accurate_length;
         parser.hash = parser_hash;
@@ -447,11 +443,15 @@ impl ReplayReport {
                 ally: ally_pid,
             },
             difficulty: replay.difficulty.1.clone(),
-            main_icons: detailed_input.main_icons.clone().unwrap_or_default(),
-            ally_icons: detailed_input.ally_icons.clone().unwrap_or_default(),
+            main_icons: detail
+                .map(|value| value.main_icons.clone())
+                .unwrap_or_default(),
+            ally_icons: detail
+                .map(|value| value.ally_icons.clone())
+                .unwrap_or_default(),
             player_stats,
-            bonus: detailed_input.bonus.clone().unwrap_or_default(),
-            comp: detailed_input.comp.clone().unwrap_or_default(),
+            bonus: detail.map(|value| value.bonus.clone()).unwrap_or_default(),
+            comp: detail.map(|value| value.comp.clone()).unwrap_or_default(),
             length: report_length,
             parser,
             mutators: replay.mutators.clone(),
@@ -459,17 +459,25 @@ impl ReplayReport {
             main_commander: Self::normalized_commander_name(main_player.commander.as_str()),
             main_commander_level: main_player.commander_level,
             main_masteries: main_player.masteries,
-            main_kills: detailed_input.main_kills.unwrap_or(0),
+            main_kills: detail.map(|value| value.main_kills).unwrap_or(0),
             main_prestige: main_player.prestige_name,
             ally_commander: Self::normalized_commander_name(ally_player.commander.as_str()),
             ally_commander_level: ally_player.commander_level,
             ally_masteries: ally_player.masteries,
-            ally_kills: detailed_input.ally_kills.unwrap_or(0),
+            ally_kills: detail.map(|value| value.ally_kills).unwrap_or(0),
             ally_prestige: ally_player.prestige_name,
-            main_units: detailed_input.main_units.clone().unwrap_or_default(),
-            ally_units: detailed_input.ally_units.clone().unwrap_or_default(),
-            amon_units: detailed_input.amon_units.clone().unwrap_or_default(),
-            outlaw_order: detailed_input.outlaw_order.clone(),
+            main_units: detail
+                .map(|value| value.main_units.clone())
+                .unwrap_or_default(),
+            ally_units: detail
+                .map(|value| value.ally_units.clone())
+                .unwrap_or_default(),
+            amon_units: detail
+                .map(|value| value.amon_units.clone())
+                .unwrap_or_default(),
+            outlaw_order: detail
+                .map(|value| value.outlaw_order.clone())
+                .filter(|value| !value.is_empty()),
         }
     }
 

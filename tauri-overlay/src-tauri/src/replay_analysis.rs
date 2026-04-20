@@ -5,7 +5,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     CacheReplayEntry, CacheUnitStats, ReplayMessage,
 };
 use s2coop_analyzer::detailed_replay_analysis::{
-    analyze_replay_file, cache_hidden_created_lost_units,
+    analyze_replay_file, analyze_replay_file_with_cache_entry, cache_hidden_created_lost_units,
 };
 use s2coop_analyzer::dictionary_data;
 use s2coop_analyzer::tauri_replay_analysis_impl::{
@@ -2977,7 +2977,7 @@ impl ReplayAnalysis {
 
     pub fn summarize_replay_with_cache_entry(
         path: &Path,
-    ) -> Option<(ReplayInfo, CacheReplayEntry)> {
+    ) -> Option<(ReplayInfo, Option<CacheReplayEntry>)> {
         let parse_started_at = Instant::now();
         let file_label = path
             .file_name()
@@ -2986,16 +2986,18 @@ impl ReplayAnalysis {
         let empty_handles = std::collections::HashSet::new();
         let hidden_created_lost = cache_hidden_created_lost_units().ok()?;
 
-        match analyze_replay_file(path, &empty_handles) {
-            Ok(report) => {
-                let replay = replay_info_from_report(path, &report).sanitized();
-                let entry = CacheReplayEntry::from_report(&report, &hidden_created_lost);
+        match analyze_replay_file_with_cache_entry(path, &empty_handles, &hidden_created_lost, None)
+        {
+            Ok(result) => {
+                let replay = replay_info_from_report(path, &result.report).sanitized();
+                let cache_entry = result.cache_persistable.then_some(result.cache_entry);
                 crate::sco_log!(
-                    "[SCO/replay] parsed file='{}' for cache persistence in {}ms",
+                    "[SCO/replay] parsed file='{}' for cache projection in {}ms persistable={}",
                     file_label,
-                    parse_started_at.elapsed().as_millis()
+                    parse_started_at.elapsed().as_millis(),
+                    cache_entry.is_some()
                 );
-                Some((replay, entry))
+                Some((replay, cache_entry))
             }
             Err(error) => {
                 crate::sco_log!(

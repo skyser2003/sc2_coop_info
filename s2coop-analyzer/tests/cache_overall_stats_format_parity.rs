@@ -4,7 +4,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
 };
 use s2coop_analyzer::tauri_replay_analysis_impl::{
     ParsedReplayInput, ParsedReplayMessage, ParsedReplayPlayer, PlayerPositions, ReplayReport,
-    ReplayReportDetailedInput,
+    ReplayReportDetailData, ReplayReportDetailedInput,
 };
 use std::collections::{BTreeMap, HashSet};
 
@@ -85,46 +85,47 @@ fn cache_entry_matches_python_style_detailed_report_formatting() {
 
     let mut detailed = ReplayReportDetailedInput::from_parser(parser);
     detailed.positions = Some(PlayerPositions { main: 2, ally: 1 });
-    detailed.length = Some(400.0);
-    detailed.bonus = Some(vec!["10:54".to_string()]);
-    detailed.comp = Some("Masters and Machines".to_string());
-    detailed.main_kills = Some(99);
-    detailed.ally_kills = Some(12);
-    detailed.main_icons = Some(BTreeMap::from([("shuttles".to_string(), 5)]));
-    detailed.ally_icons = Some(BTreeMap::from([("shuttles".to_string(), 0)]));
-    detailed.main_units = Some(BTreeMap::from([
-        ("Abathur's Top Bar".to_string(), (10, 4, 0, 0.0)),
-        ("Mutalisk".to_string(), (21, 2, 45, 0.38)),
-    ]));
-    detailed.ally_units = Some(BTreeMap::from([("Marine".to_string(), (5, 1, 12, 0.25))]));
-    detailed.amon_units = Some(BTreeMap::from([(
-        "Hybrid Nemesis".to_string(),
-        (2, 2, 0, 0.0),
-    )]));
-    detailed.player_stats = Some(BTreeMap::from([
-        (
-            1,
-            PlayerStatsSeries {
-                name: "SlotTwo".to_string(),
-                supply: vec![12.0, 20.5],
-                mining: vec![0.0, 75.0],
-                army: vec![300.0, 500.0],
-                killed: vec![1.0, 4.0],
-                army_force_float_indices: Default::default(),
-            },
-        ),
-        (
-            2,
-            PlayerStatsSeries {
-                name: "SlotOne".to_string(),
-                supply: vec![10.0, 16.0],
-                mining: vec![0.0, 50.0],
-                army: vec![200.0, 300.0],
-                killed: vec![0.0, 2.0],
-                army_force_float_indices: Default::default(),
-            },
-        ),
-    ]));
+    detailed.detail = Some(ReplayReportDetailData {
+        length: 400.0,
+        bonus: vec!["10:54".to_string()],
+        comp: "Masters and Machines".to_string(),
+        replay_hash: None,
+        main_kills: 99,
+        ally_kills: 12,
+        main_icons: BTreeMap::from([("shuttles".to_string(), 5)]),
+        ally_icons: BTreeMap::from([("shuttles".to_string(), 0)]),
+        main_units: BTreeMap::from([
+            ("Abathur's Top Bar".to_string(), (10, 4, 0, 0.0)),
+            ("Mutalisk".to_string(), (21, 2, 45, 0.38)),
+        ]),
+        ally_units: BTreeMap::from([("Marine".to_string(), (5, 1, 12, 0.25))]),
+        amon_units: BTreeMap::from([("Hybrid Nemesis".to_string(), (2, 2, 0, 0.0))]),
+        player_stats: BTreeMap::from([
+            (
+                1,
+                PlayerStatsSeries {
+                    name: "SlotTwo".to_string(),
+                    supply: vec![12.0, 20.5],
+                    mining: vec![0.0, 75.0],
+                    army: vec![300.0, 500.0],
+                    killed: vec![1.0, 4.0],
+                    army_force_float_indices: Default::default(),
+                },
+            ),
+            (
+                2,
+                PlayerStatsSeries {
+                    name: "SlotOne".to_string(),
+                    supply: vec![10.0, 16.0],
+                    mining: vec![0.0, 50.0],
+                    army: vec![200.0, 300.0],
+                    killed: vec![0.0, 2.0],
+                    army_force_float_indices: Default::default(),
+                },
+            ),
+        ]),
+        outlaw_order: Vec::new(),
+    });
 
     let report =
         ReplayReport::from_detailed_input(&detailed.parser.file, &detailed, &HashSet::new());

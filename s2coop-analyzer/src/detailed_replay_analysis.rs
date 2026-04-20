@@ -1,13 +1,14 @@
 use crate::cache_overall_stats_generator::{
-    CacheCountValue, CacheIconValue, CacheNumericValue, CachePlayer, CachePlayerStatsSeries,
-    CacheReplayEntry, CacheStatValue, CacheUnitStats, GenerateCacheError, PlayerStatsSeries,
+    write_pretty_cache_file, CacheCountValue, CacheIconValue, CacheNumericValue, CachePlayer,
+    CachePlayerStatsSeries, CacheReplayEntry, CacheStatValue, CacheUnitStats, PlayerStatsSeries,
+    PrettyCacheError,
 };
 use crate::dictionary_data::{
     self, CacheGenerationData, DictionaryDataError, UnitAddKillsToJson, UnitNamesJson,
 };
 use crate::tauri_replay_analysis_impl::{
     ParsedReplayInput, ParsedReplayMessage, ParsedReplayPlayer, PlayerPositions, ReplayReport,
-    ReplayReportDetailedInput,
+    ReplayReportDetailData, ReplayReportDetailedInput,
 };
 use chrono::{DateTime, Local};
 use indexmap::IndexMap;
@@ -20,14 +21,23 @@ use serde_json::{Map, Number, Value as JsonValue};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
+use std::io;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{
+    atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering},
+    Arc, OnceLock,
+};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
+use walkdir::WalkDir;
 mod replay_event_handlers;
 
 use crate::stats_counter_core::{
     ReplayDroneIdentifierCore, ReplayStatsCounterCore, StatsCounterDictionaries,
 };
+use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use rayon::ThreadPoolBuilder;
 use replay_event_handlers::{
     replay_handle_archon_init_event_control_pid, replay_handle_game_user_leave_event_fields,
     replay_handle_player_stats_event_fields, replay_handle_unit_born_or_init_event_fields,
@@ -139,7 +149,15 @@ pub(crate) struct ReplayParsedInputBundle {
     pub realtime_length: f64,
     pub commander_found: bool,
     pub enemy_race_present: bool,
+    pub cache_context: ReplayCacheContext,
     pub detailed: Option<ReplayDetailedParseContext>,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct ReplayCacheContext {
+    pub is_mm_replay: bool,
+    pub is_blizzard_map: bool,
+    pub recover_disabled: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -152,6 +170,15 @@ pub(crate) struct ReplayBaseParseFilters {
 pub(crate) struct ReplayBaseParseOptions {
     pub include_events: bool,
     pub filters: ReplayBaseParseFilters,
+}
+
+impl ReplayBaseParseFilters {
+    pub(crate) fn saved_cache() -> Self {
+        Self {
+            only_blizzard: true,
+            require_recover_disabled: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -866,47 +893,11 @@ pub enum DetailedReplayAnalysisError {
     InvalidReplayData(String),
 }
 
-#[derive(Clone, Debug)]
-struct ParsedReplayAnalysisInput {
-    parser: ParsedReplayInput,
-    realtime_length: f64,
-    events: Vec<ReplayEvent>,
-    start_time: f64,
-    end_time: f64,
-}
-
-impl ParsedReplayAnalysisInput {
-    fn parse(replay_path: &Path) -> Result<Self, DetailedReplayAnalysisError> {
-        let dictionaries = load_sc2_dictionary_data()?;
-        let parsed = ReplayParsedInputBundle::parse(
-            replay_path,
-            &dictionaries,
-            ReplayBaseParseOptions {
-                include_events: true,
-                ..ReplayBaseParseOptions::default()
-            },
-        )
-        .map_err(map_base_parse_error)?
-        .ok_or_else(|| {
-            DetailedReplayAnalysisError::InvalidReplayData(
-                "detailed replay parsing unexpectedly skipped the replay".to_string(),
-            )
-        })?;
-
-        let detailed = parsed.detailed.clone().ok_or_else(|| {
-            DetailedReplayAnalysisError::InvalidReplayData(
-                "detailed replay parsing did not include event context".to_string(),
-            )
-        })?;
-
-        Ok(Self {
-            parser: parsed.parser,
-            realtime_length: parsed.realtime_length,
-            events: detailed.events,
-            start_time: detailed.start_time,
-            end_time: detailed.end_time,
-        })
-    }
+#[derive(Debug, Clone)]
+pub struct DetailedReplayAnalysisResult {
+    pub report: ReplayReport,
+    pub cache_entry: CacheReplayEntry,
+    pub cache_persistable: bool,
 }
 
 fn load_sc2_dictionary_data() -> Result<CacheGenerationData<'static>, DetailedReplayAnalysisError> {
@@ -956,6 +947,699 @@ fn map_base_parse_error(error: ReplayBaseParseError) -> DetailedReplayAnalysisEr
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GenerateCacheConfig {
+    pub account_dir: PathBuf,
+    pub output_file: PathBuf,
+    pub recent_replay_count: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GenerateCacheSummary {
+    pub scanned_replays: usize,
+    pub output_file: PathBuf,
+    pub completed: bool,
+}
+
+#[derive(Debug, Default)]
+pub struct GenerateCacheStopController {
+    stop_requested: AtomicBool,
+}
+
+impl GenerateCacheStopController {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn request_stop(&self) {
+        self.stop_requested.store(true, AtomicOrdering::Release);
+    }
+
+    pub fn stop_requested(&self) -> bool {
+        self.stop_requested.load(AtomicOrdering::Acquire)
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct GenerateCacheRuntimeOptions {
+    pub worker_count: Option<usize>,
+    pub stop_controller: Option<Arc<GenerateCacheStopController>>,
+}
+
+impl GenerateCacheRuntimeOptions {
+    pub(crate) fn resolved_worker_count(&self, total_files: usize) -> usize {
+        self.worker_count
+            .map(|value| std::cmp::max(1, std::cmp::min(value, total_files)))
+            .unwrap_or_else(|| Self::default_worker_count(total_files))
+    }
+
+    fn default_worker_count(total_files: usize) -> usize {
+        std::cmp::max(1, std::cmp::min(Self::half_cpu_worker_cap(), total_files))
+    }
+
+    fn half_cpu_worker_cap() -> usize {
+        let cpu_count = std::thread::available_parallelism()
+            .map(|value| value.get())
+            .unwrap_or(1);
+        std::cmp::max(1, cpu_count / 2)
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum GenerateCacheError {
+    #[error("account directory does not exist or is not a directory: {0}")]
+    InvalidAccountDirectory(PathBuf),
+    #[error("failed to create output directory '{0}': {1}")]
+    OutputDirectoryCreateFailed(PathBuf, #[source] io::Error),
+    #[error("failed to load detailed-analysis cache formatting rules: {0}")]
+    DetailedAnalysisConfig(String),
+    #[error("failed to build rayon thread pool: {0}")]
+    ThreadPoolBuildFailed(String),
+    #[error("failed to serialize cache payload: {0}")]
+    SerializeFailed(#[source] serde_json::Error),
+    #[error("failed to write cache temp file '{0}': {1}")]
+    TempWriteFailed(PathBuf, #[source] io::Error),
+    #[error("failed to replace cache file '{1}' from temp '{0}': {2}")]
+    TempMoveFailed(PathBuf, PathBuf, #[source] io::Error),
+    #[error(transparent)]
+    PrettyCache(#[from] PrettyCacheError),
+    #[error("failed to read existing cache file '{0}': {1}")]
+    ReadExistingCache(PathBuf, #[source] io::Error),
+    #[error("failed to parse existing cache file '{0}': {1}")]
+    ParseExistingCache(PathBuf, #[source] serde_json::Error),
+}
+
+impl GenerateCacheConfig {
+    pub fn generate(&self) -> Result<GenerateCacheSummary, GenerateCacheError> {
+        self.generate_with_logger_and_runtime(None, &GenerateCacheRuntimeOptions::default())
+    }
+
+    pub fn generate_with_logger(
+        &self,
+        logger: &(dyn Fn(String) + Send + Sync),
+    ) -> Result<GenerateCacheSummary, GenerateCacheError> {
+        self.generate_with_logger_and_runtime(Some(logger), &GenerateCacheRuntimeOptions::default())
+    }
+
+    pub fn generate_with_runtime_and_logger(
+        &self,
+        logger: &(dyn Fn(String) + Send + Sync),
+        runtime: &GenerateCacheRuntimeOptions,
+    ) -> Result<GenerateCacheSummary, GenerateCacheError> {
+        self.generate_with_logger_and_runtime(Some(logger), runtime)
+    }
+
+    fn generate_with_logger_and_runtime(
+        &self,
+        logger: Option<&(dyn Fn(String) + Send + Sync + '_)>,
+        runtime: &GenerateCacheRuntimeOptions,
+    ) -> Result<GenerateCacheSummary, GenerateCacheError> {
+        if !self.account_dir.is_dir() {
+            return Err(GenerateCacheError::InvalidAccountDirectory(
+                self.account_dir.clone(),
+            ));
+        }
+
+        self.ensure_output_directory()?;
+        let analysis = generate_cache_analysis_output(self, logger, runtime)?;
+        CacheReplayEntry::write_entries(&analysis.entries, &self.output_file)?;
+        write_pretty_cache_file(&self.output_file, None)?;
+
+        Ok(GenerateCacheSummary {
+            scanned_replays: analysis.entries.len(),
+            output_file: self.output_file.clone(),
+            completed: analysis.completed,
+        })
+    }
+
+    fn ensure_output_directory(&self) -> Result<(), GenerateCacheError> {
+        if let Some(parent) = self.output_file.parent() {
+            fs::create_dir_all(parent).map_err(|error| {
+                GenerateCacheError::OutputDirectoryCreateFailed(parent.to_path_buf(), error)
+            })?;
+        }
+        Ok(())
+    }
+
+    pub fn collect_replay_files(&self) -> Vec<PathBuf> {
+        collect_cache_replay_files(&self.account_dir, self.recent_replay_count)
+    }
+}
+
+pub(crate) struct GenerateCacheAnalysisOutput {
+    pub entries: Vec<CacheReplayEntry>,
+    pub completed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ReplayFileCandidate {
+    path: PathBuf,
+    modified: SystemTime,
+}
+
+impl ReplayFileCandidate {
+    fn from_path(path: &Path) -> Self {
+        let modified = fs::metadata(path)
+            .and_then(|metadata| metadata.modified())
+            .unwrap_or(UNIX_EPOCH);
+        Self {
+            path: path.to_path_buf(),
+            modified,
+        }
+    }
+
+    fn compare_recent_first(left: &Self, right: &Self) -> std::cmp::Ordering {
+        right
+            .modified
+            .cmp(&left.modified)
+            .then_with(|| left.normalized_path().cmp(&right.normalized_path()))
+    }
+
+    fn normalized_path(&self) -> String {
+        self.path.to_string_lossy().to_ascii_lowercase()
+    }
+}
+
+struct GenerateCacheProgressReporter<'a> {
+    logger: Option<&'a (dyn Fn(String) + Send + Sync + 'a)>,
+    total_files: usize,
+    report_interval: usize,
+    temp_save_interval: usize,
+    start_time: Instant,
+    processed_files: AtomicUsize,
+    next_report_target: AtomicUsize,
+    next_temp_save_target: AtomicUsize,
+    temp_file_path: PathBuf,
+    temp_entries: std::sync::Mutex<Vec<CacheReplayEntry>>,
+}
+
+impl<'a> GenerateCacheProgressReporter<'a> {
+    fn new(
+        total_files: usize,
+        initial_processed_files: usize,
+        logger: Option<&'a (dyn Fn(String) + Send + Sync + 'a)>,
+        temp_file_path: PathBuf,
+    ) -> Self {
+        let report_interval = if total_files <= 10 { 1 } else { 10 };
+        let temp_save_interval = 100;
+        let initial_processed_files = initial_processed_files.min(total_files);
+        Self {
+            logger,
+            total_files,
+            report_interval,
+            temp_save_interval,
+            start_time: Instant::now(),
+            processed_files: AtomicUsize::new(initial_processed_files),
+            next_report_target: AtomicUsize::new(Self::next_progress_target(
+                total_files,
+                report_interval,
+                initial_processed_files,
+            )),
+            next_temp_save_target: AtomicUsize::new(Self::next_progress_target(
+                total_files,
+                temp_save_interval,
+                initial_processed_files,
+            )),
+            temp_file_path,
+            temp_entries: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    fn log_start(&self) {
+        if self.total_files == 0 {
+            self.log_completion();
+            return;
+        }
+
+        self.emit("Starting detailed analysis!".to_string());
+        self.emit(self.progress_message(self.processed_files.load(AtomicOrdering::Relaxed)));
+    }
+
+    fn record_processed_file(&self) {
+        if self.logger.is_none() || self.total_files == 0 {
+            return;
+        }
+
+        let processed = self.processed_files.fetch_add(1, AtomicOrdering::Relaxed) + 1;
+
+        if processed == self.total_files {
+            self.emit(self.progress_message(processed));
+            let _ = self.save_temp_entries();
+            return;
+        }
+
+        let mut target = self.next_report_target.load(AtomicOrdering::Relaxed);
+        while processed >= target {
+            let next_target = target.saturating_add(self.report_interval);
+            match self.next_report_target.compare_exchange(
+                target,
+                next_target,
+                AtomicOrdering::SeqCst,
+                AtomicOrdering::SeqCst,
+            ) {
+                Ok(_) => {
+                    self.emit(self.progress_message(processed));
+                    break;
+                }
+                Err(current) => {
+                    target = current;
+                }
+            }
+        }
+
+        let mut temp_target = self.next_temp_save_target.load(AtomicOrdering::Relaxed);
+        while processed >= temp_target {
+            let next_temp_target = temp_target.saturating_add(self.temp_save_interval);
+            match self.next_temp_save_target.compare_exchange(
+                temp_target,
+                next_temp_target,
+                AtomicOrdering::SeqCst,
+                AtomicOrdering::SeqCst,
+            ) {
+                Ok(_) => {
+                    if let Err(error) = self.save_temp_entries() {
+                        self.emit(format!("Warning: failed to save temp entries: {error}"));
+                    }
+                    break;
+                }
+                Err(current) => {
+                    temp_target = current;
+                }
+            }
+        }
+    }
+
+    fn log_completion(&self) {
+        self.emit(format!(
+            "Detailed analysis completed! {}/{} | 100%",
+            self.total_files, self.total_files
+        ));
+        self.emit(format!(
+            "Detailed analysis completed in {:.0} seconds!",
+            self.start_time.elapsed().as_secs_f64()
+        ));
+    }
+
+    fn add_temp_entry(&self, entry: CacheReplayEntry) {
+        if let Ok(mut temp_entries) = self.temp_entries.lock() {
+            temp_entries.push(entry);
+        }
+    }
+
+    fn save_temp_entries(&self) -> Result<(), std::io::Error> {
+        let entries = match self.temp_entries.lock() {
+            Ok(mut temp_entries) => temp_entries.drain(..).collect::<Vec<_>>(),
+            Err(_) => return Ok(()),
+        };
+
+        if entries.is_empty() {
+            return Ok(());
+        }
+
+        let mut content = String::new();
+        for entry in entries {
+            if let Ok(json) = serde_json::to_string(&entry) {
+                content.push_str(&json);
+                content.push('\n');
+            }
+        }
+
+        if !content.is_empty() {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&self.temp_file_path)?
+                .write_all(content.as_bytes())?;
+        }
+
+        Ok(())
+    }
+
+    fn emit(&self, message: String) {
+        if let Some(logger) = self.logger {
+            logger(message);
+        }
+    }
+
+    fn progress_message(&self, processed: usize) -> String {
+        let percent = Self::progress_percent(processed, self.total_files);
+        if processed >= self.report_interval && processed < self.total_files {
+            format!(
+                "Estimated remaining time: {}\nRunning... {processed}/{} ({percent}%)",
+                Self::format_eta_duration(self.estimate_remaining(processed)),
+                self.total_files,
+            )
+        } else {
+            format!("Running... {processed}/{} ({percent}%)", self.total_files)
+        }
+    }
+
+    fn estimate_remaining(&self, processed: usize) -> Duration {
+        if processed == 0 || processed >= self.total_files {
+            return Duration::ZERO;
+        }
+
+        let elapsed = self.start_time.elapsed().as_secs_f64();
+        if elapsed <= 0.0 {
+            return Duration::ZERO;
+        }
+
+        let average_seconds_per_replay = elapsed / processed as f64;
+        Duration::from_secs_f64(
+            average_seconds_per_replay * self.total_files.saturating_sub(processed) as f64,
+        )
+    }
+
+    fn next_progress_target(
+        total_files: usize,
+        report_interval: usize,
+        processed_files: usize,
+    ) -> usize {
+        if total_files == 0 || processed_files >= total_files {
+            return total_files;
+        }
+        if processed_files == 0 {
+            return report_interval.min(total_files);
+        }
+
+        let remainder = processed_files % report_interval;
+        if remainder == 0 {
+            processed_files
+                .saturating_add(report_interval)
+                .min(total_files)
+        } else {
+            processed_files
+                .saturating_add(report_interval - remainder)
+                .min(total_files)
+        }
+    }
+
+    fn progress_percent(processed: usize, total: usize) -> usize {
+        if total == 0 {
+            return 100;
+        }
+
+        (((processed as f64 / total as f64) * 100.0).round() as usize).min(100)
+    }
+
+    fn format_eta_duration(duration: Duration) -> String {
+        let total_seconds = duration.as_secs();
+        let hours = total_seconds / 3600;
+        let minutes = (total_seconds % 3600) / 60;
+        let seconds = total_seconds % 60;
+        format!("{hours:02}:{minutes:02}:{seconds:02}")
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CandidateReplay {
+    path: PathBuf,
+    parsed: ReplayParsedInputBundle,
+}
+
+impl CandidateReplay {
+    fn collect(replay_path: &Path, cache_data: &CacheGenerationData<'_>) -> Option<Self> {
+        let (_, parsed) = CacheReplayEntry::parse_with_options(
+            replay_path,
+            cache_data,
+            ReplayBaseParseOptions {
+                include_events: false,
+                filters: ReplayBaseParseFilters::saved_cache(),
+            },
+        )?;
+
+        Some(Self {
+            path: replay_path.to_path_buf(),
+            parsed,
+        })
+    }
+
+    fn analyze(
+        self,
+        main_handles: &HashSet<String>,
+        hidden_created_lost: &HashSet<String>,
+    ) -> CacheReplayEntry {
+        let Self { path, parsed } = self;
+        let basic = parsed.cache_entry();
+
+        if let Ok(result) = analyze_replay_file_with_cache_entry(
+            &path,
+            main_handles,
+            hidden_created_lost,
+            Some(&basic),
+        ) {
+            if result.report.has_non_empty_player_stats() {
+                return result.cache_entry;
+            }
+        }
+
+        basic
+    }
+
+    fn partition_cached(
+        candidates: Vec<Self>,
+        existing_entries: &HashMap<String, CacheReplayEntry>,
+    ) -> (HashMap<String, CacheReplayEntry>, Vec<(String, Self)>) {
+        let mut reused_entries = HashMap::new();
+        let mut pending_candidates = Vec::new();
+
+        for candidate in candidates {
+            let hash = candidate.parsed.parser.hash.clone().unwrap_or_default();
+            if hash.is_empty() {
+                pending_candidates.push((hash, candidate));
+                continue;
+            }
+
+            if let Some(existing_entry) = existing_entries.get(&hash) {
+                reused_entries.insert(hash, existing_entry.refreshed_for_parsed(&candidate.parsed));
+            } else {
+                pending_candidates.push((hash, candidate));
+            }
+        }
+
+        (reused_entries, pending_candidates)
+    }
+}
+
+pub(crate) fn collect_cache_replay_files(
+    account_dir: &Path,
+    recent_replay_count: Option<usize>,
+) -> Vec<PathBuf> {
+    let mut replay_files = WalkDir::new(account_dir)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_file())
+        .map(|entry| entry.path().to_path_buf())
+        .filter(|path| {
+            path.extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension == "SC2Replay")
+        })
+        .collect::<Vec<PathBuf>>();
+
+    if let Some(recent_replay_count) = recent_replay_count {
+        let mut candidates = replay_files
+            .into_iter()
+            .map(|path| ReplayFileCandidate::from_path(path.as_path()))
+            .collect::<Vec<ReplayFileCandidate>>();
+        candidates.sort_unstable_by(ReplayFileCandidate::compare_recent_first);
+        candidates.truncate(recent_replay_count);
+        return candidates
+            .into_iter()
+            .map(|candidate| candidate.path)
+            .collect::<Vec<PathBuf>>();
+    }
+
+    replay_files.sort_by(|left, right| {
+        let left_norm = left.to_string_lossy().to_ascii_lowercase();
+        let right_norm = right.to_string_lossy().to_ascii_lowercase();
+        left_norm.cmp(&right_norm)
+    });
+    replay_files
+}
+
+fn resolve_main_handles(account_dir: &Path) -> HashSet<String> {
+    let scan_root = main_handle_scan_root(account_dir);
+    let mut handles = HashSet::new();
+
+    for entry in WalkDir::new(&scan_root)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_dir())
+    {
+        if path_contains_component(entry.path(), "Banks") {
+            continue;
+        }
+
+        let directory_name = entry.file_name().to_string_lossy();
+        if directory_name.matches('-').count() < 3 {
+            continue;
+        }
+        if directory_name.contains("Crash")
+            || directory_name.contains("Desync")
+            || directory_name.contains("Error")
+        {
+            continue;
+        }
+
+        handles.insert(directory_name.to_string());
+    }
+
+    handles
+}
+
+fn main_handle_scan_root(account_dir: &Path) -> PathBuf {
+    let mut folder = account_dir.to_path_buf();
+    loop {
+        let Some(parent) = folder.parent() else {
+            break;
+        };
+        if parent.to_string_lossy().contains("StarCraft") {
+            folder = parent.to_path_buf();
+        } else {
+            break;
+        }
+    }
+    folder
+}
+
+fn path_contains_component(path: &Path, target: &str) -> bool {
+    path.components().any(|component| {
+        component
+            .as_os_str()
+            .to_str()
+            .is_some_and(|value| value == target)
+    })
+}
+
+fn cache_analysis_temp_file_path(output_file: &Path) -> PathBuf {
+    output_file.with_extension("temp.jsonl")
+}
+
+pub(crate) fn generate_cache_analysis_output(
+    config: &GenerateCacheConfig,
+    logger: Option<&(dyn Fn(String) + Send + Sync + '_)>,
+    runtime: &GenerateCacheRuntimeOptions,
+) -> Result<GenerateCacheAnalysisOutput, GenerateCacheError> {
+    let replay_files = collect_cache_replay_files(&config.account_dir, config.recent_replay_count);
+    let main_handles = resolve_main_handles(&config.account_dir);
+    let hidden_created_lost = cache_hidden_created_lost_units()
+        .map_err(|error| GenerateCacheError::DetailedAnalysisConfig(error.to_string()))?;
+    let cache_data = dictionary_data::cache_generation_data()
+        .map_err(|error| GenerateCacheError::DetailedAnalysisConfig(error.to_string()))?;
+    let existing_detailed_analysis_entries =
+        CacheReplayEntry::load_existing_detailed_analysis(config.output_file.as_path(), logger);
+    let temp_file_path = cache_analysis_temp_file_path(config.output_file.as_path());
+
+    let stop_controller = runtime.stop_controller.clone();
+    let stop_requested = Arc::new(AtomicBool::new(false));
+    let entries = if replay_files.is_empty() {
+        let progress = GenerateCacheProgressReporter::new(0, 0, logger, temp_file_path.clone());
+        progress.log_completion();
+        HashMap::new()
+    } else {
+        let worker_count = runtime.resolved_worker_count(replay_files.len());
+        let thread_pool = ThreadPoolBuilder::new()
+            .num_threads(worker_count)
+            .build()
+            .map_err(|error| GenerateCacheError::ThreadPoolBuildFailed(error.to_string()))?;
+        let stop_requested_for_candidates = stop_requested.clone();
+        let stop_controller_for_candidates = stop_controller.clone();
+        let candidate_replays = thread_pool.install(|| {
+            replay_files
+                .par_iter()
+                .filter_map(|path| {
+                    if stop_controller_for_candidates
+                        .as_ref()
+                        .is_some_and(|controller| controller.stop_requested())
+                    {
+                        stop_requested_for_candidates.store(true, AtomicOrdering::Release);
+                        return None;
+                    }
+                    CandidateReplay::collect(path, &cache_data)
+                })
+                .collect::<Vec<CandidateReplay>>()
+        });
+        let total_candidates = candidate_replays.len();
+        let (mut reused_entries, pending_candidates) = CandidateReplay::partition_cached(
+            candidate_replays,
+            &existing_detailed_analysis_entries,
+        );
+        let progress = Arc::new(GenerateCacheProgressReporter::new(
+            total_candidates,
+            reused_entries.len(),
+            logger,
+            temp_file_path.clone(),
+        ));
+
+        if total_candidates == 0 {
+            progress.log_completion();
+            HashMap::new()
+        } else {
+            progress.log_start();
+            let analyzed_entries = if pending_candidates.is_empty() {
+                HashMap::new()
+            } else {
+                let progress_for_workers = Arc::clone(&progress);
+                let stop_requested_for_workers = stop_requested.clone();
+                let stop_controller_for_workers = stop_controller.clone();
+
+                thread_pool.install(|| {
+                    pending_candidates
+                        .into_par_iter()
+                        .filter_map(|(_, candidate)| {
+                            if stop_controller_for_workers
+                                .as_ref()
+                                .is_some_and(|controller| controller.stop_requested())
+                            {
+                                stop_requested_for_workers.store(true, AtomicOrdering::Release);
+                                return None;
+                            }
+                            let entry = candidate.analyze(&main_handles, &hidden_created_lost);
+                            if entry.detailed_analysis {
+                                progress_for_workers.add_temp_entry(entry.clone());
+                            }
+                            progress_for_workers.record_processed_file();
+                            Some((entry.hash.clone(), entry))
+                        })
+                        .collect::<HashMap<_, _>>()
+                })
+            };
+
+            reused_entries.extend(analyzed_entries);
+            if stop_requested.load(AtomicOrdering::Acquire) {
+                if let Some(logger) = logger {
+                    logger(
+                        "Detailed analysis stopped after the current work finished.".to_string(),
+                    );
+                }
+            } else {
+                progress.log_completion();
+            }
+            reused_entries
+        }
+    };
+
+    let mut all_entries = if config.recent_replay_count.is_some() {
+        HashMap::new()
+    } else {
+        existing_detailed_analysis_entries
+    };
+    all_entries.extend(entries);
+
+    let mut all_entries = all_entries.into_values().collect::<Vec<_>>();
+    all_entries.sort_by(|left, right| left.cmp_cache_order(right));
+
+    if temp_file_path.exists() {
+        let _ = fs::remove_file(&temp_file_path);
+    }
+
+    Ok(GenerateCacheAnalysisOutput {
+        entries: all_entries,
+        completed: !stop_requested.load(AtomicOrdering::Acquire),
+    })
+}
+
 impl ReplayParsedInputBundle {
     fn parser_players_from_all_players(players: &[ParsedReplayPlayer]) -> Vec<ParsedReplayPlayer> {
         ParsedReplayPlayer::normalize_slots(players, true, Some(2))
@@ -972,6 +1656,34 @@ impl ReplayParsedInputBundle {
             .map(|context| collect_user_leave_times(&context.events))
             .unwrap_or_default();
         ParsedReplayMessage::sorted_with_leave_events(&self.parser.messages, &user_leave_times)
+    }
+
+    pub(crate) fn cache_entry(&self) -> CacheReplayEntry {
+        CacheReplayEntry::from_parsed_bundle(self)
+    }
+
+    pub(crate) fn supports_cache_filters(&self, filters: ReplayBaseParseFilters) -> bool {
+        if filters.only_blizzard
+            && (self.cache_context.is_mm_replay || !self.cache_context.is_blizzard_map)
+        {
+            return false;
+        }
+
+        if filters.require_recover_disabled && !self.cache_context.recover_disabled {
+            return false;
+        }
+
+        true
+    }
+
+    pub(crate) fn is_cache_candidate(&self, filters: ReplayBaseParseFilters) -> bool {
+        self.supports_cache_filters(filters)
+            && self.parser.accurate_length != 0.0
+            && (!filters.only_blizzard || self.commander_found)
+    }
+
+    pub(crate) fn is_saved_cache_candidate(&self) -> bool {
+        self.is_cache_candidate(ReplayBaseParseFilters::saved_cache())
     }
 
     pub(crate) fn from_base_parse(
@@ -991,6 +1703,11 @@ impl ReplayParsedInputBundle {
 
         let length = metadata.Duration;
         let accurate_length = base.accurate_length;
+        let cache_context = ReplayCacheContext {
+            is_mm_replay: base.file.contains("[MM]"),
+            is_blizzard_map: details.m_isBlizzardMap,
+            recover_disabled: details.m_disableRecoverGame.unwrap_or(false),
+        };
 
         let mut all_players = metadata
             .Players
@@ -1125,6 +1842,7 @@ impl ReplayParsedInputBundle {
             realtime_length: base.realtime_length,
             commander_found,
             enemy_race_present,
+            cache_context,
             detailed: base.detailed,
         })
     }
@@ -1139,6 +1857,26 @@ impl ReplayParsedInputBundle {
         };
 
         Self::from_base_parse(base, dictionaries).map(Some)
+    }
+
+    fn parse_detailed_required(
+        replay_path: &Path,
+        dictionaries: &CacheGenerationData<'_>,
+    ) -> Result<Self, DetailedReplayAnalysisError> {
+        Self::parse(
+            replay_path,
+            dictionaries,
+            ReplayBaseParseOptions {
+                include_events: true,
+                ..ReplayBaseParseOptions::default()
+            },
+        )
+        .map_err(map_base_parse_error)?
+        .ok_or_else(|| {
+            DetailedReplayAnalysisError::InvalidReplayData(
+                "detailed replay parsing unexpectedly skipped the replay".to_string(),
+            )
+        })
     }
 }
 
@@ -1324,10 +2062,7 @@ impl CacheReplayEntry {
             &cache_data,
             ReplayBaseParseOptions {
                 include_events: false,
-                filters: ReplayBaseParseFilters {
-                    only_blizzard: true,
-                    require_recover_disabled: true,
-                },
+                filters: ReplayBaseParseFilters::saved_cache(),
             },
         )
         .map(|(entry, _)| entry)
@@ -1433,15 +2168,11 @@ impl CacheReplayEntry {
             .ok()
             .flatten()?;
 
-        if parsed.parser.accurate_length == 0.0 {
+        if !parsed.is_cache_candidate(options.filters) {
             return None;
         }
 
-        if options.filters.only_blizzard && !parsed.commander_found {
-            return None;
-        }
-
-        let entry = Self::from_parsed_bundle(&parsed);
+        let entry = parsed.cache_entry();
         Some((entry, parsed))
     }
 
@@ -2198,23 +2929,57 @@ pub fn analyze_replay_file(
     replay_path: &Path,
     main_player_handles: &HashSet<String>,
 ) -> Result<ReplayReport, DetailedReplayAnalysisError> {
-    let parsed_input = ParsedReplayAnalysisInput::parse(replay_path)?;
-    analyze_replay_file_impl(replay_path, main_player_handles, parsed_input)
+    let dictionaries = load_sc2_dictionary_data()?;
+    let parsed = ReplayParsedInputBundle::parse_detailed_required(replay_path, &dictionaries)?;
+    analyze_replay_file_impl(main_player_handles, parsed, &dictionaries)
+}
+
+pub fn analyze_replay_file_with_cache_entry(
+    replay_path: &Path,
+    main_player_handles: &HashSet<String>,
+    hidden_created_lost: &HashSet<String>,
+    basic_cache_entry: Option<&CacheReplayEntry>,
+) -> Result<DetailedReplayAnalysisResult, DetailedReplayAnalysisError> {
+    let dictionaries = load_sc2_dictionary_data()?;
+    let parsed = ReplayParsedInputBundle::parse_detailed_required(replay_path, &dictionaries)?;
+    let fallback_basic = basic_cache_entry
+        .cloned()
+        .unwrap_or_else(|| parsed.cache_entry());
+    let cache_persistable = parsed.is_saved_cache_candidate();
+    let report = analyze_replay_file_impl(main_player_handles, parsed, &dictionaries)?;
+    let cache_entry = CacheReplayEntry::from_report_with_basic(
+        &report,
+        Some(&fallback_basic),
+        hidden_created_lost,
+    );
+
+    Ok(DetailedReplayAnalysisResult {
+        report,
+        cache_entry,
+        cache_persistable,
+    })
 }
 
 fn analyze_replay_file_impl(
-    _replay_path: &Path,
     main_player_handles: &HashSet<String>,
-    parsed_input: ParsedReplayAnalysisInput,
+    parsed: ReplayParsedInputBundle,
+    dictionaries: &CacheGenerationData<'_>,
 ) -> Result<ReplayReport, DetailedReplayAnalysisError> {
-    let dictionaries = load_sc2_dictionary_data()?;
-    let ParsedReplayAnalysisInput {
+    let ReplayParsedInputBundle {
         mut parser,
         realtime_length,
+        detailed,
+        ..
+    } = parsed;
+    let ReplayDetailedParseContext {
         events,
         start_time,
         end_time,
-    } = parsed_input;
+    } = detailed.ok_or_else(|| {
+        DetailedReplayAnalysisError::InvalidReplayData(
+            "detailed replay parsing did not include event context".to_string(),
+        )
+    })?;
 
     let main_player = i64::from(parser.selected_main_player_pid(main_player_handles));
     let ally_player = if main_player == 2 { 1 } else { 2 };
@@ -2888,26 +3653,21 @@ fn analyze_replay_file_impl(
         main: main_player as u8,
         ally: ally_player as u8,
     });
-    detailed_input.length = Some(realtime_length);
-    detailed_input.bonus = Some(bonus);
-    detailed_input.comp = Some(comp);
-    detailed_input.main_kills = Some(clamp_nonnegative_to_u64(count_for_pid(
-        &killcounts,
-        main_player,
-    )));
-    detailed_input.ally_kills = Some(clamp_nonnegative_to_u64(count_for_pid(
-        &killcounts,
-        ally_player,
-    )));
-    detailed_input.main_icons = Some(main_icons);
-    detailed_input.ally_icons = Some(ally_icons);
-    detailed_input.main_units = Some(main_units);
-    detailed_input.ally_units = Some(ally_units);
-    detailed_input.amon_units = Some(amon_units);
-    detailed_input.player_stats = Some(player_stats);
-    if !outlaw_order.is_empty() {
-        detailed_input.outlaw_order = Some(outlaw_order);
-    }
+    detailed_input.detail = Some(ReplayReportDetailData {
+        length: realtime_length,
+        bonus,
+        comp,
+        replay_hash: None,
+        main_kills: clamp_nonnegative_to_u64(count_for_pid(&killcounts, main_player)),
+        ally_kills: clamp_nonnegative_to_u64(count_for_pid(&killcounts, ally_player)),
+        main_icons,
+        ally_icons,
+        main_units,
+        ally_units,
+        amon_units,
+        player_stats,
+        outlaw_order,
+    });
 
     Ok(ReplayReport::from_detailed_input(
         &detailed_input.parser.file,

@@ -1,4 +1,5 @@
-use s2coop_analyzer::cache_overall_stats_generator::{CacheReplayEntry, GenerateCacheConfig};
+use s2coop_analyzer::cache_overall_stats_generator::CacheReplayEntry;
+use s2coop_analyzer::detailed_replay_analysis::GenerateCacheConfig;
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;

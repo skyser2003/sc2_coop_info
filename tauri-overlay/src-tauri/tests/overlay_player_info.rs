@@ -5,7 +5,7 @@ use sco_tauri_overlay::overlay_info::{
     overlay_payload_from_replay, player_note_from_settings_value,
 };
 use sco_tauri_overlay::shared_types::OverlayReplayPayload;
-use sco_tauri_overlay::{AppSettings, ReplayInfo, ReplayPlayerInfo};
+use sco_tauri_overlay::{AppSettings, BackendState, ReplayInfo, ReplayPlayerInfo};
 use serde_json::json;
 
 fn sample_replay() -> ReplayInfo {
@@ -31,7 +31,8 @@ fn sample_replay() -> ReplayInfo {
 
 #[test]
 fn overlay_payload_omits_session_counts_when_disabled() {
-    let payload = overlay_payload_from_replay(&sample_replay(), true, false, 4, 1);
+    let state = BackendState::new();
+    let payload = overlay_payload_from_replay(&state, &sample_replay(), true, false, 4, 1);
 
     assert_eq!(payload.victory, None);
     assert_eq!(payload.defeat, None);
@@ -40,7 +41,8 @@ fn overlay_payload_omits_session_counts_when_disabled() {
 
 #[test]
 fn overlay_payload_includes_session_counts_when_enabled() {
-    let payload = overlay_payload_from_replay(&sample_replay(), false, true, 4, 1);
+    let state = BackendState::new();
+    let payload = overlay_payload_from_replay(&state, &sample_replay(), false, true, 4, 1);
 
     assert_eq!(payload.victory, Some(4));
     assert_eq!(payload.defeat, Some(1));

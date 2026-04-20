@@ -1,4 +1,4 @@
-use s2coop_analyzer::cache_overall_stats_generator::GenerateCacheConfig;
+use s2coop_analyzer::detailed_replay_analysis::GenerateCacheConfig;
 use std::fs;
 use std::path::Path;
 use std::thread;

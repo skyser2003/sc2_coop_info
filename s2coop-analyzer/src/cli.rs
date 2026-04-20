@@ -2,7 +2,7 @@ use crate::cache_overall_stats_detailed_analysis::{
     run_test_cache_overall_stats_detailed_analysis, TestCacheOverallStatsDetailedAnalysisArgs,
     TestCacheOverallStatsDetailedAnalysisError,
 };
-use crate::cache_overall_stats_generator::{GenerateCacheConfig, GenerateCacheError};
+use crate::detailed_replay_analysis::{GenerateCacheConfig, GenerateCacheError};
 use std::path::PathBuf;
 use thiserror::Error;
 

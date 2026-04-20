@@ -8,7 +8,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use s2coop_analyzer::cache_overall_stats_generator::GenerateCacheStopController;
+use s2coop_analyzer::detailed_replay_analysis::GenerateCacheStopController;
 use serde::Serialize;
 use serde_json::Value;
 use tauri::{tray::TrayIcon, Wry};
