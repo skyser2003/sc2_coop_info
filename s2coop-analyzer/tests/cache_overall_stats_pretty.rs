@@ -1,3 +1,5 @@
+mod common;
+
 use s2coop_analyzer::cache_overall_stats_generator::pretty_output_path;
 use s2coop_analyzer::detailed_replay_analysis::GenerateCacheConfig;
 use std::fs;
@@ -20,6 +22,7 @@ fn read_json(path: &Path) -> serde_json::Value {
 
 #[test]
 fn generate_cache_writes_pretty_sibling_file() {
+    let resources = common::load_replay_resources();
     let temp_dir = TempDir::new().expect("failed to create tempdir");
     let account_dir = temp_dir.path().join("Accounts");
     write_replay_file(&account_dir.join("1-S2-1-42").join("single.SC2Replay"));
@@ -30,7 +33,7 @@ fn generate_cache_writes_pretty_sibling_file() {
         output_file: output_file.clone(),
         recent_replay_count: None,
     }
-    .generate()
+    .generate(&resources)
     .expect("cache generation should succeed");
 
     let pretty_file = pretty_output_path(&summary.output_file);

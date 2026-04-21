@@ -1,13 +1,16 @@
 use chrono::{Duration, NaiveDate};
-use s2coop_analyzer::dictionary_data;
 use s2coop_analyzer::weekly_mutation_manager::WeeklyMutationManager;
+
+mod common;
 
 #[test]
 fn weekly_mutation_manager_cycles_from_initial_date() {
-    let manager = WeeklyMutationManager::from_dictionary_data()
+    let dictionary = common::load_dictionary();
+    let manager = WeeklyMutationManager::from_dictionary_data(&dictionary)
         .expect("weekly mutation manager should load from dictionary data");
-    let initial = dictionary_data::weekly_mutation_date();
-    let weekly_names = dictionary_data::weekly_mutations()
+    let initial = &dictionary.weekly_mutation_date_json;
+    let weekly_names = dictionary
+        .weekly_mutations_json
         .keys()
         .cloned()
         .collect::<Vec<String>>();
@@ -15,8 +18,7 @@ fn weekly_mutation_manager_cycles_from_initial_date() {
     let start_date =
         NaiveDate::parse_from_str(&initial.date, "%Y-%m-%d").expect("initial date should parse");
     let next_week = start_date + Duration::days(7);
-    let full_cycle =
-        start_date + Duration::days(dictionary_data::weekly_mutations().len() as i64 * 7);
+    let full_cycle = start_date + Duration::days(dictionary.weekly_mutations_json.len() as i64 * 7);
     let initial_index = weekly_names
         .iter()
         .position(|name| name == &initial.name)

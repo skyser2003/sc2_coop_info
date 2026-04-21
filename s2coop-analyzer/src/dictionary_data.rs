@@ -6,7 +6,6 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 use thiserror::Error;
 
 #[derive(Clone, Debug, Error)]
@@ -222,6 +221,7 @@ pub struct Sc2DictionaryData {
     pub unit_base_costs: UnitBaseCostsJson,
     pub unit_base_costs_as_tuples: HashMap<String, HashMap<String, Vec<u64>>>,
     pub mutator_ids: MutatorIdsJson,
+    pub mutator_name_to_id_lookup: HashMap<String, String>,
     pub mutator_points: MutatorPointsJson,
     pub cached_mutators: CachedMutatorsJson,
     pub mutator_brutal_plus: MutatorBrutalPlusJson,
@@ -251,7 +251,7 @@ pub struct Sc2DictionaryData {
 }
 
 impl Sc2DictionaryData {
-    fn cache_generation_data(&self) -> CacheGenerationData<'_> {
+    pub fn cache_generation_data(&self) -> CacheGenerationData<'_> {
         CacheGenerationData {
             map_names: &self.map_names,
             prestige_names: &self.prestige_names,
@@ -279,7 +279,7 @@ impl Sc2DictionaryData {
         }
     }
 
-    fn tauri_ui_data(&self) -> TauriUiData<'_> {
+    pub fn tauri_ui_data(&self) -> TauriUiData<'_> {
         TauriUiData {
             prestige_names_json: &self.prestige_names_json,
             prestige_names: &self.prestige_names,
@@ -294,6 +294,58 @@ impl Sc2DictionaryData {
             map_key_to_id_lookup: &self.map_key_to_id_lookup,
             map_id_to_english_lookup: &self.map_id_to_english_lookup,
         }
+    }
+
+    pub fn load(data_dir: Option<PathBuf>) -> Result<Self, DictionaryDataError> {
+        let resolved_data_dir = data_dir.unwrap_or_else(resolve_default_dictionary_data_dir);
+        load_shared_dictionary_data_impl(&resolved_data_dir)
+    }
+
+    pub fn prestige_name(&self, commander: &str, prestige: u64) -> Option<&str> {
+        let prestige = i64::try_from(prestige).ok()?;
+        self.prestige_names
+            .get(commander)
+            .and_then(|levels| levels.get(&prestige))
+            .map(String::as_str)
+    }
+
+    pub fn canonicalize_coop_map_id(&self, raw: &str) -> Option<String> {
+        let key = normalize_map_key(raw);
+        self.map_key_to_id_lookup.get(&key).cloned()
+    }
+
+    pub fn coop_map_id_to_english(&self, raw_map_id: &str) -> Option<String> {
+        let key = normalize_map_key(raw_map_id);
+        self.map_id_to_english_lookup.get(&key).cloned()
+    }
+
+    pub fn coop_map_english_name(&self, raw: &str) -> Option<String> {
+        self.canonicalize_coop_map_id(raw)
+            .and_then(|map_id| self.coop_map_id_to_english(&map_id))
+    }
+
+    pub fn canonicalize_coop_map_name(&self, raw: &str) -> Option<String> {
+        self.coop_map_english_name(raw)
+    }
+
+    pub fn commander_mind_control_unit(&self, commander: &str) -> Option<&str> {
+        self.commander_mind_control_units
+            .get(commander)
+            .map(String::as_str)
+    }
+
+    pub fn mutator_data(&self, mutator_id: &str) -> Option<&LocalizedMutatorDescription> {
+        self.mutators_json.get(mutator_id)
+    }
+
+    pub fn mutator_id_from_name(&self, mutator_name: &str) -> Option<&str> {
+        self.mutator_name_to_id_lookup
+            .get(mutator_name)
+            .map(String::as_str)
+    }
+
+    pub fn mutator_list(&self) -> &Vec<String> {
+        &self.mutators_ui
     }
 }
 
@@ -616,6 +668,10 @@ fn load_shared_dictionary_data_impl(
         load_dictionary_json::<UnitBaseCostsJson>(&data_dir, "unit_base_costs.json")?;
     let unit_base_costs_as_tuples = parse_unit_base_costs_as_tuples(&unit_base_costs);
     let mutator_ids = load_dictionary_json::<MutatorIdsJson>(&data_dir, "mutator_ids.json")?;
+    let mutator_name_to_id_lookup = mutator_ids
+        .iter()
+        .map(|(id, name)| (name.clone(), id.clone()))
+        .collect::<HashMap<String, String>>();
     let mutator_points =
         load_dictionary_json::<MutatorPointsJson>(&data_dir, "mutator_points.json")?;
     let cached_mutators =
@@ -699,6 +755,7 @@ fn load_shared_dictionary_data_impl(
         unit_base_costs,
         unit_base_costs_as_tuples,
         mutator_ids,
+        mutator_name_to_id_lookup,
         mutator_points,
         cached_mutators,
         mutator_brutal_plus,
@@ -783,239 +840,4 @@ fn resolve_default_dictionary_data_dir() -> PathBuf {
         .into_iter()
         .find(|candidate| required_dictionary_files_present(candidate))
         .unwrap_or_else(|| PathBuf::from("./data"))
-}
-
-pub fn shared_dictionary_data(
-    data_dir: Option<PathBuf>,
-) -> Result<&'static Sc2DictionaryData, DictionaryDataError> {
-    static DATA: OnceLock<Result<Sc2DictionaryData, DictionaryDataError>> = OnceLock::new();
-
-    if DATA.get().is_none() {
-        let resolved_data_dir = data_dir.unwrap_or_else(resolve_default_dictionary_data_dir);
-        let data = load_shared_dictionary_data_impl(&resolved_data_dir);
-        let _ = DATA.set(data);
-    }
-
-    DATA.get().unwrap().as_ref().map_err(Clone::clone)
-}
-
-pub fn cache_generation_data() -> Result<CacheGenerationData<'static>, DictionaryDataError> {
-    Ok(shared_dictionary_data(None)?.cache_generation_data())
-}
-
-pub fn tauri_ui_data() -> Result<TauriUiData<'static>, DictionaryDataError> {
-    Ok(shared_dictionary_data(None)?.tauri_ui_data())
-}
-
-fn shared_dictionary_data_or_default() -> &'static Sc2DictionaryData {
-    static FALLBACK: OnceLock<Sc2DictionaryData> = OnceLock::new();
-    shared_dictionary_data(None)
-        .unwrap_or_else(|_| FALLBACK.get_or_init(Sc2DictionaryData::default))
-}
-
-fn cache_generation_data_or_default() -> CacheGenerationData<'static> {
-    shared_dictionary_data_or_default().cache_generation_data()
-}
-
-fn tauri_ui_data_or_default() -> TauriUiData<'static> {
-    shared_dictionary_data_or_default().tauri_ui_data()
-}
-
-pub fn unit_names() -> &'static UnitNamesJson {
-    cache_generation_data_or_default().unit_name_dict
-}
-
-pub fn unit_add_kills_to() -> &'static UnitAddKillsToJson {
-    cache_generation_data_or_default().unit_add_kills_to
-}
-
-pub fn prestige_names() -> &'static PrestigeNamesJson {
-    tauri_ui_data_or_default().prestige_names_json
-}
-
-pub fn prestige_names_with_u64_levels() -> &'static HashMap<String, HashMap<u64, String>> {
-    tauri_ui_data_or_default().prestige_names_with_u64_levels
-}
-
-pub fn prestige_name(commander: &str, prestige: u64) -> Option<&'static str> {
-    let prestige = i64::try_from(prestige).ok()?;
-    tauri_ui_data_or_default()
-        .prestige_names
-        .get(commander)
-        .and_then(|levels| levels.get(&prestige))
-        .map(String::as_str)
-}
-
-pub fn prestige_upgrades() -> &'static PrestigeUpgradesJson {
-    cache_generation_data_or_default().prestige_upgrades
-}
-
-pub fn map_names() -> &'static MapNamesJson {
-    tauri_ui_data_or_default().map_names
-}
-
-pub fn bonus_objectives() -> &'static BonusObjectivesJson {
-    tauri_ui_data_or_default().bonus_objectives
-}
-
-pub fn units_to_stats() -> &'static HashSet<String> {
-    tauri_ui_data_or_default().units_to_stats
-}
-
-pub fn canonicalize_coop_map_id(raw: &str) -> Option<String> {
-    let key = normalize_map_key(raw);
-    tauri_ui_data_or_default()
-        .map_key_to_id_lookup
-        .get(&key)
-        .cloned()
-}
-
-pub fn coop_map_id_to_english(raw_map_id: &str) -> Option<String> {
-    let key = normalize_map_key(raw_map_id);
-    tauri_ui_data_or_default()
-        .map_id_to_english_lookup
-        .get(&key)
-        .cloned()
-}
-
-pub fn coop_map_english_name(raw: &str) -> Option<String> {
-    canonicalize_coop_map_id(raw).and_then(|map_id| coop_map_id_to_english(&map_id))
-}
-
-pub fn canonicalize_coop_map_name(raw: &str) -> Option<String> {
-    coop_map_english_name(raw)
-}
-
-pub fn commander_mind_control_unit(commander: &str) -> Option<&'static str> {
-    tauri_ui_data_or_default()
-        .commander_mind_control_units
-        .get(commander)
-        .map(String::as_str)
-}
-
-pub fn comastery_upgrades() -> &'static CoMasteryUpgradesJson {
-    cache_generation_data_or_default().co_mastery_upgrades
-}
-
-pub fn units_in_waves() -> &'static HashSet<String> {
-    cache_generation_data_or_default().units_in_waves
-}
-
-pub fn hfts_units() -> &'static HashSet<String> {
-    cache_generation_data_or_default().hfts_units
-}
-
-pub fn tus_units() -> &'static HashSet<String> {
-    cache_generation_data_or_default().tus_units
-}
-
-pub fn mutators() -> &'static MutatorsJson {
-    &shared_dictionary_data_or_default().mutators_json
-}
-
-pub fn mutator_data(mutator_id: &str) -> Option<&'static LocalizedMutatorDescription> {
-    shared_dictionary_data_or_default()
-        .mutators_json
-        .get(mutator_id)
-}
-
-pub fn mutator_id_from_name(mutator_name: &str) -> Option<&'static str> {
-    static CACHE: OnceLock<HashMap<String, String>> = OnceLock::new();
-    CACHE
-        .get_or_init(|| {
-            shared_dictionary_data_or_default()
-                .mutator_ids
-                .iter()
-                .map(|(id, name)| (name.clone(), id.clone()))
-                .collect()
-        })
-        .get(mutator_name)
-        .map(String::as_str)
-}
-
-pub fn mutator_list_all() -> &'static Vec<String> {
-    &shared_dictionary_data_or_default().mutators_all
-}
-
-pub fn mutator_list() -> &'static Vec<String> {
-    static CACHE: OnceLock<Vec<String>> = OnceLock::new();
-    CACHE.get_or_init(|| {
-        let mutators_exclude_set =
-            parse_string_set(&shared_dictionary_data_or_default().mutators_exclude_ids_json);
-        let mut mutators = mutator_list_all().clone();
-        mutators.retain(|mutator| !mutators_exclude_set.contains(mutator.as_str()));
-        mutators
-    })
-}
-
-pub fn unit_comp_dict() -> &'static UnitCompDictJson {
-    &shared_dictionary_data_or_default().unit_comp_dict_json
-}
-
-pub fn unit_comp_dict_as_sets() -> &'static HashMap<String, Vec<HashSet<String>>> {
-    &shared_dictionary_data_or_default().unit_comp_dict
-}
-
-pub fn amon_player_ids() -> &'static AmonPlayerIdsJson {
-    tauri_ui_data_or_default().amon_player_ids
-}
-
-pub fn amon_player_ids_as_sets() -> &'static HashMap<String, HashSet<String>> {
-    &shared_dictionary_data_or_default().amon_player_ids_as_sets
-}
-
-pub fn unit_base_costs() -> &'static UnitBaseCostsJson {
-    &shared_dictionary_data_or_default().unit_base_costs
-}
-
-pub fn unit_base_costs_as_tuples() -> &'static HashMap<String, HashMap<String, Vec<u64>>> {
-    &shared_dictionary_data_or_default().unit_base_costs_as_tuples
-}
-
-pub fn mutator_ids() -> &'static MutatorIdsJson {
-    &shared_dictionary_data_or_default().mutator_ids
-}
-
-pub fn mutator_points() -> &'static MutatorPointsJson {
-    &shared_dictionary_data_or_default().mutator_points
-}
-
-pub fn cached_mutators() -> &'static CachedMutatorsJson {
-    &shared_dictionary_data_or_default().cached_mutators
-}
-
-pub fn mutator_brutal_plus() -> &'static MutatorBrutalPlusJson {
-    &shared_dictionary_data_or_default().mutator_brutal_plus
-}
-
-pub fn weekly_mutations() -> &'static WeeklyMutationsJson {
-    tauri_ui_data_or_default().weekly_mutations_json
-}
-
-pub fn weekly_mutation_date() -> &'static WeeklyMutationDateJson {
-    &shared_dictionary_data_or_default().weekly_mutation_date_json
-}
-
-pub fn weekly_mutations_as_sets() -> &'static HashMap<String, WeeklyMutation> {
-    tauri_ui_data_or_default().weekly_mutations_as_sets
-}
-
-pub fn royal_guards() -> &'static HashSet<String> {
-    cache_generation_data_or_default().royal_guards
-}
-
-pub fn horners_units() -> &'static HashSet<String> {
-    cache_generation_data_or_default().horners_units
-}
-
-pub fn tychus_base_upgrades() -> &'static HashSet<String> {
-    cache_generation_data_or_default().tychus_base_upgrades
-}
-
-pub fn tychus_ultimate_upgrades() -> &'static HashSet<String> {
-    cache_generation_data_or_default().tychus_ultimate_upgrades
-}
-
-pub fn outlaws() -> &'static HashSet<String> {
-    cache_generation_data_or_default().outlaws
 }

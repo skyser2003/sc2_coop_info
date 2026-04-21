@@ -1,5 +1,6 @@
+mod common;
+
 use chrono::NaiveDate;
-use s2coop_analyzer::dictionary_data;
 use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
 use sco_tauri_overlay::ReplayInfo;
 
@@ -15,17 +16,22 @@ fn weekly_replay(weekly_name: &str, result: &str) -> ReplayInfo {
 
 #[test]
 fn rebuild_weeklies_rows_uses_dictionary_order_for_mutation_sort() {
+    let dictionary = common::load_dictionary();
     let replays = vec![
         weekly_replay("Time Lock", "Victory"),
         weekly_replay("Train of the Dead", "Defeat"),
         weekly_replay("First Strike", "Victory"),
     ];
-    let seeded_current_name = dictionary_data::weekly_mutation_date().name.clone();
+    let seeded_current_name = dictionary.weekly_mutation_date_json.name.clone();
     let seeded_current_date =
-        NaiveDate::parse_from_str(&dictionary_data::weekly_mutation_date().date, "%Y-%m-%d")
+        NaiveDate::parse_from_str(&dictionary.weekly_mutation_date_json.date, "%Y-%m-%d")
             .expect("seeded weekly mutation date should parse");
 
-    let rows = ReplayAnalysis::rebuild_weeklies_rows_for_date(&replays, seeded_current_date);
+    let rows = ReplayAnalysis::rebuild_weeklies_rows_with_dictionary(
+        &replays,
+        seeded_current_date,
+        &dictionary,
+    );
     let train_of_the_dead = rows
         .iter()
         .find(|row| row.mutation == "Train of the Dead")
@@ -71,11 +77,16 @@ fn rebuild_weeklies_rows_uses_dictionary_order_for_mutation_sort() {
 
 #[test]
 fn rebuild_weeklies_rows_without_record_uses_na_for_best_difficulty() {
+    let dictionary = common::load_dictionary();
     let seeded_current_date =
-        NaiveDate::parse_from_str(&dictionary_data::weekly_mutation_date().date, "%Y-%m-%d")
+        NaiveDate::parse_from_str(&dictionary.weekly_mutation_date_json.date, "%Y-%m-%d")
             .expect("seeded weekly mutation date should parse");
 
-    let rows = ReplayAnalysis::rebuild_weeklies_rows_for_date(&[], seeded_current_date);
+    let rows = ReplayAnalysis::rebuild_weeklies_rows_with_dictionary(
+        &[],
+        seeded_current_date,
+        &dictionary,
+    );
     let row = rows
         .iter()
         .find(|entry| entry.mutation == "Train of the Dead")

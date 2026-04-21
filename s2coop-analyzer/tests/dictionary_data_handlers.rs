@@ -1,11 +1,11 @@
-use s2coop_analyzer::dictionary_data;
+use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 
 #[test]
 fn shared_dictionary_handlers_load_expected_dictionary_entries() {
-    let shared = dictionary_data::shared_dictionary_data(None)
-        .expect("shared dictionary data should load from analyzer data");
+    let dictionary =
+        Sc2DictionaryData::load(None).expect("dictionary data should load from analyzer data");
     assert_eq!(
-        shared
+        dictionary
             .map_names
             .get("Void Launch")
             .and_then(|value| value.get("ID"))
@@ -14,26 +14,33 @@ fn shared_dictionary_handlers_load_expected_dictionary_entries() {
     );
 
     assert_eq!(
-        dictionary_data::canonicalize_coop_map_id("Void Launch").as_deref(),
+        dictionary
+            .canonicalize_coop_map_id("Void Launch")
+            .as_deref(),
         Some("AC_KaldirShuttle")
     );
     assert_eq!(
-        dictionary_data::coop_map_id_to_english("AC_KaldirShuttle").as_deref(),
+        dictionary
+            .coop_map_id_to_english("AC_KaldirShuttle")
+            .as_deref(),
         Some("Void Launch")
     );
 
-    let prestige_name = dictionary_data::prestige_name("Raynor", 0);
+    let prestige_name = dictionary
+        .prestige_name("Raynor", 0)
+        .map(ToString::to_string);
     assert_eq!(
-        prestige_name,
-        dictionary_data::prestige_names()
+        prestige_name.as_deref(),
+        dictionary
+            .prestige_names_json
             .get("Raynor")
             .and_then(|value| value.en.first())
             .map(String::as_str)
     );
     assert!(prestige_name.is_some(), "Raynor prestige 0 should exist");
 
-    let weekly_mutations = dictionary_data::weekly_mutations();
-    let weekly_mutations_sets = dictionary_data::weekly_mutations_as_sets();
+    let weekly_mutations = &dictionary.weekly_mutations_json;
+    let weekly_mutations_sets = &dictionary.weekly_mutations_as_sets;
 
     assert_eq!(weekly_mutations_sets.len(), weekly_mutations.len());
 

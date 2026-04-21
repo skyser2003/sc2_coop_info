@@ -1,3 +1,5 @@
+mod common;
+
 use s2coop_analyzer::cache_overall_stats_generator::pretty_output_path;
 use s2coop_analyzer::detailed_replay_analysis::GenerateCacheConfig;
 use std::fs;
@@ -5,6 +7,7 @@ use tempfile::TempDir;
 
 #[test]
 fn generate_cache_skips_invalid_replay_candidates() {
+    let resources = common::load_replay_resources();
     let temp_dir = TempDir::new().expect("failed to create tempdir");
     let account_dir = temp_dir.path().join("Accounts");
     fs::create_dir_all(&account_dir).expect("failed to create account directory");
@@ -17,7 +20,7 @@ fn generate_cache_skips_invalid_replay_candidates() {
         output_file: output_file.clone(),
         recent_replay_count: None,
     }
-    .generate()
+    .generate(&resources)
     .expect("cache generation should succeed for invalid replay placeholders");
 
     assert_eq!(summary.scanned_replays, 0);

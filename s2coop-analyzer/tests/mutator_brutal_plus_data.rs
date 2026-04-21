@@ -1,8 +1,9 @@
-use s2coop_analyzer::dictionary_data;
+mod common;
 
 #[test]
 fn brutal_plus_mutator_ranges_match_expected_budgets() {
-    let entries = dictionary_data::mutator_brutal_plus();
+    let dictionary = common::load_dictionary();
+    let entries = &dictionary.mutator_brutal_plus;
 
     assert_eq!(entries.len(), 6, "expected Brutal+ levels 1 through 6");
 

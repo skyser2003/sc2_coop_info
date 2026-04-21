@@ -1,10 +1,14 @@
 use crate::cache_overall_stats_generator::{pretty_output_path, write_pretty_cache_file};
-use crate::detailed_replay_analysis::{GenerateCacheConfig, GenerateCacheError};
+use crate::detailed_replay_analysis::{
+    GenerateCacheConfig, GenerateCacheError, ReplayAnalysisResources,
+};
+use crate::dictionary_data::Sc2DictionaryData;
 use serde_json::Value;
 use std::collections::BTreeSet;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 use thiserror::Error;
 use walkdir::WalkDir;
@@ -124,10 +128,16 @@ pub fn run_test_cache_overall_stats_detailed_analysis(
         output_file: generated_output.clone(),
         recent_replay_count: None,
     };
+    let dictionary_data = Arc::new(
+        Sc2DictionaryData::load(None)
+            .map_err(|error| GenerateCacheError::DetailedAnalysisConfig(error.to_string()))?,
+    );
+    let resources = ReplayAnalysisResources::from_dictionary_data(dictionary_data)
+        .map_err(|error| GenerateCacheError::DetailedAnalysisConfig(error.to_string()))?;
     let summary = if let Some(logger) = logger {
-        config.generate_with_logger(logger)?
+        config.generate_with_logger(&resources, logger)?
     } else {
-        config.generate()?
+        config.generate(&resources)?
     };
 
     if !generated_output.is_file() {

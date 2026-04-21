@@ -4,8 +4,9 @@ use s2coop_analyzer::cache_overall_stats_generator::CacheReplayEntry;
 use s2coop_analyzer::detailed_replay_analysis::calculate_replay_hash;
 use s2coop_analyzer::detailed_replay_analysis::{
     GenerateCacheConfig, GenerateCacheRuntimeOptions, GenerateCacheStopController,
+    ReplayAnalysisResources,
 };
-use s2coop_analyzer::dictionary_data;
+use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Map, Value};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -50,7 +51,7 @@ macro_rules! sco_log {
 
 use crate::app_settings::PlayerNotes;
 use crate::backend_state::ReplayState;
-use crate::path_manager::{get_cache_path, get_json_data_dir, is_dev_env};
+use crate::path_manager::{get_cache_path, is_dev_env};
 use crate::replay_analysis::ReplayAnalysis;
 use crate::shared_types::{LocalizedLabels, ReplayScanProgressPayload};
 
@@ -227,27 +228,44 @@ fn decode_html_entities(value: &str) -> String {
         .replace("&apos;", "'")
 }
 
-fn canonical_mutator_id(mutator: &str) -> String {
-    if dictionary_data::mutator_data(mutator).is_some() {
+fn canonical_mutator_id_with_dictionary(mutator: &str, dictionary: &Sc2DictionaryData) -> String {
+    if dictionary.mutator_data(mutator).is_some() {
         mutator.to_string()
-    } else if let Some(mutator_id) = dictionary_data::mutator_id_from_name(mutator) {
+    } else if let Some(mutator_id) = dictionary.mutator_id_from_name(mutator) {
         mutator_id.to_string()
     } else {
         mutator.to_string()
     }
 }
 
-fn mutator_display_name_en(mutator: &str) -> String {
-    let mutator_id = canonical_mutator_id(mutator);
-    dictionary_data::mutator_data(&mutator_id)
+fn canonical_mutator_id(mutator: &str) -> String {
+    match mutator {
+        "HeroesfromtheStormOld" => "HeroesFromTheStorm".to_string(),
+        "AfraidOfTheDark" => "UberDarkness".to_string(),
+        _ => mutator.to_string(),
+    }
+}
+
+fn mutator_display_name_en_with_dictionary(
+    mutator: &str,
+    dictionary: &Sc2DictionaryData,
+) -> String {
+    let mutator_id = canonical_mutator_id_with_dictionary(mutator, dictionary);
+    dictionary
+        .mutator_data(&mutator_id)
         .map(|value| decode_html_entities(&value.name.en))
         .filter(|value| !value.is_empty())
         .or_else(|| {
-            dictionary_data::mutator_ids()
+            dictionary
+                .mutator_ids
                 .get(&mutator_id)
                 .map(|value| value.to_string())
         })
         .unwrap_or_default()
+}
+
+fn mutator_display_name_en(mutator: &str) -> String {
+    decode_html_entities(&canonical_mutator_id(mutator))
 }
 
 fn get_system_language() -> String {
@@ -492,8 +510,12 @@ pub fn session_counter_delta(result: &str) -> (u64, u64) {
     }
 }
 
-fn units_to_stats() -> &'static HashSet<String> {
-    dictionary_data::units_to_stats()
+fn units_to_stats() -> HashSet<String> {
+    HashSet::new()
+}
+
+fn units_to_stats_with_dictionary(dictionary: &Sc2DictionaryData) -> HashSet<String> {
+    dictionary.units_to_stats.clone()
 }
 
 fn extract_account_handles_from_folder(account_root: &str) -> HashSet<String> {
@@ -961,25 +983,29 @@ impl ReplayInfo {
         &self.ally().icons
     }
 
-    pub fn as_games_row_payload(&self) -> GamesRowPayload {
-        let sanitized = self.sanitized_for_client();
+    pub fn as_games_row_payload_with_dictionary(
+        &self,
+        dictionary: &Sc2DictionaryData,
+    ) -> GamesRowPayload {
+        let sanitized = self.sanitized_for_client_with_dictionary(dictionary);
         let mutators = sanitized
             .mutators
             .iter()
             .map(|mutator| {
-                let mutator_id = canonical_mutator_id(mutator);
-                let (name_en, name_ko, description_en, description_ko) =
-                    dictionary_data::mutator_data(&mutator_id)
-                        .map(|value| {
-                            (
-                                decode_html_entities(&value.name.en),
-                                decode_html_entities(&value.name.ko),
-                                decode_html_entities(&value.description.en),
-                                decode_html_entities(&value.description.ko),
-                            )
-                        })
-                        .unwrap_or_default();
-                let fallback_name_en = mutator_display_name_en(&mutator_id);
+                let mutator_id = canonical_mutator_id_with_dictionary(mutator, dictionary);
+                let (name_en, name_ko, description_en, description_ko) = dictionary
+                    .mutator_data(&mutator_id)
+                    .map(|value| {
+                        (
+                            decode_html_entities(&value.name.en),
+                            decode_html_entities(&value.name.ko),
+                            decode_html_entities(&value.description.en),
+                            decode_html_entities(&value.description.ko),
+                        )
+                    })
+                    .unwrap_or_default();
+                let fallback_name_en =
+                    mutator_display_name_en_with_dictionary(&mutator_id, dictionary);
                 let icon_name = if name_en.is_empty() {
                     fallback_name_en.to_string()
                 } else {
@@ -1031,8 +1057,74 @@ impl ReplayInfo {
         }
     }
 
+    pub fn as_games_row_payload(&self) -> GamesRowPayload {
+        let sanitized = self.sanitized_for_client();
+        let mutators = sanitized
+            .mutators
+            .iter()
+            .map(|mutator| {
+                let display_name = decode_html_entities(mutator);
+                shared_types::UiMutatorRow {
+                    id: mutator.clone(),
+                    name: shared_types::LocalizedText {
+                        en: display_name.clone(),
+                        ko: String::new(),
+                    },
+                    icon_name: display_name,
+                    description: shared_types::LocalizedText::default(),
+                }
+            })
+            .collect::<Vec<_>>();
+        GamesRowPayload {
+            file: sanitized.file.clone(),
+            date: sanitized.date,
+            map: sanitized.map.clone(),
+            result: sanitized.result.clone(),
+            difficulty: sanitized.difficulty.clone(),
+            p1: sanitized.slot1().name.clone(),
+            p2: sanitized.slot2().name.clone(),
+            slot1_commander: sanitized.slot1().commander.clone(),
+            slot2_commander: sanitized.slot2().commander.clone(),
+            enemy: sanitized.enemy.clone(),
+            main_commander: sanitized.main().commander.clone(),
+            ally_commander: sanitized.ally().commander.clone(),
+            length: sanitized.length,
+            main_apm: sanitized.main().apm,
+            ally_apm: sanitized.ally().apm,
+            main_kills: sanitized.main().kills,
+            ally_kills: sanitized.ally().kills,
+            extension: sanitized.extension,
+            brutal_plus: sanitized.brutal_plus,
+            weekly: sanitized.weekly,
+            weekly_name: sanitized.weekly_name,
+            mutators,
+            is_mutation: sanitized.weekly || !sanitized.mutators.is_empty(),
+        }
+    }
+
+    pub fn as_games_row_with_dictionary(&self, dictionary: &Sc2DictionaryData) -> Value {
+        to_json_value(self.as_games_row_payload_with_dictionary(dictionary))
+    }
+
     pub fn as_games_row(&self) -> Value {
         to_json_value(self.as_games_row_payload())
+    }
+
+    pub fn chat_payload_with_dictionary(
+        &self,
+        dictionary: &Sc2DictionaryData,
+    ) -> ReplayChatPayload {
+        let sanitized = self.sanitized_for_client_with_dictionary(dictionary);
+
+        ReplayChatPayload {
+            file: sanitized.file.clone(),
+            date: sanitized.date,
+            map: sanitized.map.clone(),
+            result: sanitized.result.clone(),
+            slot1_name: sanitized.slot1().name.clone(),
+            slot2_name: sanitized.slot2().name.clone(),
+            messages: sanitized.messages.clone(),
+        }
     }
 
     pub fn chat_payload(&self) -> ReplayChatPayload {
@@ -1049,6 +1141,58 @@ impl ReplayInfo {
         }
     }
 
+    pub(crate) fn sanitized_for_client_with_dictionary(
+        &self,
+        dictionary: &Sc2DictionaryData,
+    ) -> Self {
+        let client_result = if self.result.eq_ignore_ascii_case("Unparsed") {
+            "Failed".to_string()
+        } else {
+            sanitize_replay_text(&self.result)
+        };
+        Self {
+            file: self.file.clone(),
+            date: self.date,
+            map: sanitize_replay_text(&map_display_name_with_dictionary(&self.map, dictionary)),
+            result: client_result,
+            difficulty: sanitize_replay_text(&self.difficulty),
+            enemy: sanitize_replay_text(&self.enemy),
+            length: self.length,
+            accurate_length: self.accurate_length,
+            slot1: self.slot1.sanitized_for_client(),
+            slot2: self.slot2.sanitized_for_client(),
+            main_slot: self.main_index(),
+            amon_units: sanitize_unit_map(&self.amon_units),
+            player_stats: sanitize_player_stats_payload(&self.player_stats),
+            extension: self.extension,
+            brutal_plus: self.brutal_plus,
+            weekly: self.weekly,
+            weekly_name: self
+                .weekly_name
+                .as_ref()
+                .map(|value| sanitize_replay_text(value))
+                .filter(|value| !value.is_empty()),
+            mutators: self.mutators.clone(),
+            comp: self.comp.clone(),
+            bonus: self.bonus.clone(),
+            bonus_total: self.bonus_total,
+            messages: self
+                .messages
+                .iter()
+                .map(|message| ReplayChatMessage {
+                    player: message.player,
+                    text: sanitize_replay_text(&message.text),
+                    time: if message.time.is_finite() {
+                        message.time.max(0.0)
+                    } else {
+                        0.0
+                    },
+                })
+                .collect(),
+            is_detailed: self.is_detailed,
+        }
+    }
+
     pub(crate) fn sanitized_for_client(&self) -> Self {
         let client_result = if self.result.eq_ignore_ascii_case("Unparsed") {
             "Failed".to_string()
@@ -1058,7 +1202,7 @@ impl ReplayInfo {
         Self {
             file: self.file.clone(),
             date: self.date,
-            map: sanitize_replay_text(&map_display_name(&self.map)),
+            map: sanitize_replay_text(&self.map),
             result: client_result,
             difficulty: sanitize_replay_text(&self.difficulty),
             enemy: sanitize_replay_text(&self.enemy),
@@ -1215,23 +1359,72 @@ struct MapAggregate {
 }
 
 pub fn canonicalize_coop_map_id(raw: &str) -> Option<String> {
-    dictionary_data::canonicalize_coop_map_id(raw)
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        None
+    } else if trimmed.starts_with("AC_") {
+        Some(trimmed.to_string())
+    } else {
+        None
+    }
+}
+
+pub fn canonicalize_coop_map_id_with_dictionary(
+    raw: &str,
+    dictionary: &Sc2DictionaryData,
+) -> Option<String> {
+    dictionary.canonicalize_coop_map_id(raw)
 }
 
 fn coop_map_id_to_english(map_id: &str) -> Option<String> {
-    dictionary_data::coop_map_id_to_english(map_id)
+    let trimmed = map_id.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn coop_map_id_to_english_with_dictionary(
+    map_id: &str,
+    dictionary: &Sc2DictionaryData,
+) -> Option<String> {
+    dictionary.coop_map_id_to_english(map_id)
 }
 
 fn canonicalize_coop_map_name(raw: &str) -> Option<String> {
-    dictionary_data::coop_map_english_name(raw)
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn canonicalize_coop_map_name_with_dictionary(
+    raw: &str,
+    dictionary: &Sc2DictionaryData,
+) -> Option<String> {
+    dictionary.coop_map_english_name(raw)
 }
 
 fn map_display_name(raw: &str) -> String {
     canonicalize_coop_map_name(raw).unwrap_or_else(|| raw.to_string())
 }
 
+fn map_display_name_with_dictionary(raw: &str, dictionary: &Sc2DictionaryData) -> String {
+    canonicalize_coop_map_name_with_dictionary(raw, dictionary).unwrap_or_else(|| raw.to_string())
+}
+
 fn is_official_coop_replay(replay: &ReplayInfo) -> bool {
-    canonicalize_coop_map_id(&replay.map).is_some()
+    replay.map.trim().starts_with("AC_")
+}
+
+fn is_official_coop_replay_with_dictionary(
+    replay: &ReplayInfo,
+    dictionary: &Sc2DictionaryData,
+) -> bool {
+    canonicalize_coop_map_id_with_dictionary(&replay.map, dictionary).is_some()
 }
 
 #[derive(Default, Clone)]
@@ -1278,8 +1471,18 @@ fn unit_excluded_from_sum_for_commander(commander: &str, unit: &str) -> bool {
     ) || (commander != "Tychus" && unit == "Auto-Turret")
 }
 
-fn commander_mind_control_unit(commander: &str) -> Option<&'static str> {
-    dictionary_data::commander_mind_control_unit(commander)
+fn commander_mind_control_unit(commander: &str) -> Option<String> {
+    let _ = commander;
+    None
+}
+
+fn commander_mind_control_unit_with_dictionary(
+    commander: &str,
+    dictionary: &Sc2DictionaryData,
+) -> Option<String> {
+    dictionary
+        .commander_mind_control_unit(commander)
+        .map(ToString::to_string)
 }
 
 fn unit_rollup_count_value(value: i64, hidden: bool) -> Value {
@@ -1387,8 +1590,9 @@ fn build_amon_unit_data(amon_rollup: std::collections::BTreeMap<String, UnitStat
     Value::Object(out)
 }
 
-pub fn build_commander_unit_data(
+pub fn build_commander_unit_data_with_dictionary(
     side_rollup: std::collections::BTreeMap<String, CommanderUnitRollup>,
+    dictionary: &Sc2DictionaryData,
 ) -> Value {
     #[derive(Serialize)]
     struct CommanderUnitRow {
@@ -1409,7 +1613,7 @@ pub fn build_commander_unit_data(
         let mut totals = UnitStatsRollup::default();
         let mut units_to_delete = HashSet::new();
         let mut units = entry.units.into_iter().collect::<Vec<_>>();
-        let stats_units = units_to_stats();
+        let stats_units = units_to_stats_with_dictionary(dictionary);
 
         units.sort_by(|(left_name, left), (right_name, right)| {
             right
@@ -1507,6 +1711,13 @@ pub fn build_commander_unit_data(
     }
 
     Value::Object(out)
+}
+
+pub fn build_commander_unit_data(
+    side_rollup: std::collections::BTreeMap<String, CommanderUnitRollup>,
+) -> Value {
+    let dictionary = Sc2DictionaryData::default();
+    build_commander_unit_data_with_dictionary(side_rollup, &dictionary)
 }
 
 fn sanitize_replay_text(value: &str) -> String {
@@ -1890,12 +2101,17 @@ fn generate_detailed_analysis_cache(
         }
     };
 
+    let resources = state
+        .replay_analysis_resources()
+        .map_err(|error| format!("Failed to access replay analysis resources: {error}"))?;
+
     GenerateCacheConfig {
         account_dir,
         output_file: output_file.clone(),
         recent_replay_count: None,
     }
-    .generate_with_runtime_and_logger(
+    .generate_with_resources_and_runtime_and_logger(
+        resources.as_ref(),
         &logger,
         &GenerateCacheRuntimeOptions {
             worker_count: Some(worker_count),
@@ -2364,13 +2580,15 @@ fn run_analysis(
         let main_handles = state.configured_main_handles();
         let replay_scan_progress = state.replay_scan_progress();
         let replay_scan_in_flight = state.replay_scan_in_flight();
-        let replays = ReplayAnalysis::analyze_replays_with_identity(
+        let resources = state.replay_analysis_resources()?;
+        let replays = ReplayAnalysis::analyze_replays_with_resources(
             limit,
             &state.read_settings_memory(),
             &main_names,
             &main_handles,
             replay_scan_progress.as_ref(),
             replay_scan_in_flight.as_ref(),
+            &resources,
         );
         let final_cache_entries = load_existing_cache_by_hash().into_values().collect();
 
@@ -2589,12 +2807,27 @@ fn spawn_analysis_task(
         }
 
         replay_scan_progress_for_thread.set_stage("building_statistics");
-        let snapshot = ReplayAnalysis::build_rebuild_snapshot_with_identity(
-            &all_replays,
-            include_detailed,
-            &main_names_for_thread,
-            &main_handles_for_thread,
-        );
+        let dictionary = app_for_analysis
+            .state::<BackendState>()
+            .dictionary_data()
+            .ok();
+        let snapshot = dictionary
+            .as_deref()
+            .map(|dictionary| {
+                ReplayAnalysis::build_rebuild_snapshot_with_dictionary(
+                    &all_replays,
+                    include_detailed,
+                    &main_names_for_thread,
+                    &main_handles_for_thread,
+                    dictionary,
+                )
+            })
+            .unwrap_or_else(|| StatsSnapshot {
+                ready: true,
+                games: all_replays.len() as u64,
+                message: "Dictionary data is unavailable.".to_string(),
+                ..StatsSnapshot::default()
+            });
 
         let mut guard = match analysis_state.lock() {
             Ok(guard) => guard,
@@ -2637,7 +2870,15 @@ fn spawn_analysis_task(
             guard.message = analysis_completed_message(mode, guard.games, started_at.elapsed());
         }
         if !include_detailed {
-            sync_detailed_analysis_status_from_replays(&mut guard, &all_replays);
+            if let Some(dictionary) = dictionary.as_deref() {
+                sync_detailed_analysis_status_from_replays_with_dictionary(
+                    &mut guard,
+                    &all_replays,
+                    dictionary,
+                );
+            } else {
+                sync_detailed_analysis_status_from_replays(&mut guard, &all_replays);
+            }
         }
         replay_scan_progress_for_thread.set_stage("analysis_ready");
         replay_scan_progress_for_thread.set_status("Completed");
@@ -2824,9 +3065,12 @@ fn replay_index_by_file(replays: &[ReplayInfo], file: &Option<String>) -> Option
 
 fn replay_chat_payload_from_slots(
     replay_state: Arc<Mutex<ReplayState>>,
+    settings: AppSettings,
     main_names: HashSet<String>,
     main_handles: HashSet<String>,
     file: &str,
+    dictionary: Option<Arc<Sc2DictionaryData>>,
+    resources: Option<Arc<ReplayAnalysisResources>>,
 ) -> Result<ReplayChatPayload, String> {
     let requested_file = file.trim();
     if requested_file.is_empty() {
@@ -2836,12 +3080,21 @@ fn replay_chat_payload_from_slots(
     let replays = replay_state
         .lock()
         .map(|state| {
-            state.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT, &main_names, &main_handles)
+            state.sync_replay_cache_slots_with_resources(
+                UNLIMITED_REPLAY_LIMIT,
+                &settings,
+                &main_names,
+                &main_handles,
+                resources.as_deref(),
+            )
         })
         .unwrap_or_default();
 
     if let Some(replay) = replays.iter().find(|replay| replay.file == requested_file) {
-        return Ok(replay.chat_payload());
+        return Ok(dictionary
+            .as_deref()
+            .map(|dictionary| replay.chat_payload_with_dictionary(dictionary))
+            .unwrap_or_else(|| replay.chat_payload()));
     }
 
     let replay_path = Path::new(requested_file);
@@ -2849,7 +3102,16 @@ fn replay_chat_payload_from_slots(
         return Err(format!("Replay file not found: {requested_file}"));
     }
 
-    Ok(ReplayAnalysis::summarize_replay(replay_path).chat_payload())
+    let resources = resources
+        .as_deref()
+        .ok_or_else(|| "Replay analysis resources are unavailable.".to_string())?;
+    let (replay, _) =
+        ReplayAnalysis::summarize_replay_with_cache_entry_with_resources(replay_path, resources)
+            .ok_or_else(|| format!("Failed to parse replay file: {requested_file}"))?;
+    Ok(dictionary
+        .as_deref()
+        .map(|dictionary| replay.chat_payload_with_dictionary(dictionary))
+        .unwrap_or_else(|| replay.chat_payload_with_dictionary(resources.dictionary_data())))
 }
 
 fn current_replay_files_snapshot(limit: usize, settings: &AppSettings) -> HashSet<String> {
@@ -2875,10 +3137,23 @@ fn is_replay_creation_event(kind: &EventKind) -> bool {
         || matches!(kind, EventKind::Modify(_))
 }
 
-fn parse_new_replay_with_retries(path: &Path) -> Option<(ReplayInfo, Option<CacheReplayEntry>)> {
+fn parse_new_replay_with_retries(
+    path: &Path,
+    resources: Option<&ReplayAnalysisResources>,
+) -> Option<(ReplayInfo, Option<CacheReplayEntry>)> {
     const MAX_ATTEMPTS: usize = 40;
     const RETRY_DELAY: Duration = Duration::from_millis(250);
     const MIN_REPLAY_SIZE_BYTES: u64 = 8 * 1024;
+    let resources = match resources {
+        Some(resources) => resources,
+        None => {
+            crate::sco_log!(
+                "[SCO/watch] parse abort file='{}' reason=replay_analysis_resources_unavailable",
+                path.to_string_lossy()
+            );
+            return None;
+        }
+    };
     let file = path.to_string_lossy().to_string();
     crate::sco_log!(
         "[SCO/watch] parse start file='{}' max_attempts={} retry_ms={}",
@@ -2960,7 +3235,7 @@ fn parse_new_replay_with_retries(path: &Path) -> Option<(ReplayInfo, Option<Cach
         }
 
         let parsed = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            ReplayAnalysis::summarize_replay_with_cache_entry(path)
+            ReplayAnalysis::summarize_replay_with_cache_entry_with_resources(path, resources)
         })) {
             Ok(parsed) => parsed,
             Err(panic_payload) => {
@@ -3176,15 +3451,45 @@ fn collect_sc2_replay_files(root: &Path) -> Vec<PathBuf> {
 pub fn sync_detailed_analysis_status_from_replays(stats: &mut StatsState, replays: &[ReplayInfo]) {
     let total_valid_files = replays
         .iter()
+        .filter(|replay| replay.result != "Unparsed" && replay.map.trim().starts_with("AC_"))
+        .count();
+    let detailed_parsed_count = replays
+        .iter()
         .filter(|replay| {
-            replay.result != "Unparsed" && canonicalize_coop_map_id(&replay.map).is_some()
+            replay.result != "Unparsed"
+                && replay.map.trim().starts_with("AC_")
+                && ReplayAnalysis::replay_has_detailed_unit_stats(replay)
+        })
+        .count();
+
+    stats.analysis_running = false;
+    stats.analysis_running_mode = None;
+    stats.detailed_analysis_status = if detailed_parsed_count == 0 {
+        analysis_status_text(AnalysisMode::Detailed, "not started")
+    } else {
+        format!(
+            "Detailed analysis: loaded from cache ({detailed_parsed_count}/{total_valid_files})."
+        )
+    };
+}
+
+pub fn sync_detailed_analysis_status_from_replays_with_dictionary(
+    stats: &mut StatsState,
+    replays: &[ReplayInfo],
+    dictionary: &Sc2DictionaryData,
+) {
+    let total_valid_files = replays
+        .iter()
+        .filter(|replay| {
+            replay.result != "Unparsed"
+                && canonicalize_coop_map_id_with_dictionary(&replay.map, dictionary).is_some()
         })
         .count();
     let detailed_parsed_count = replays
         .iter()
         .filter(|replay| {
             replay.result != "Unparsed"
-                && canonicalize_coop_map_id(&replay.map).is_some()
+                && canonicalize_coop_map_id_with_dictionary(&replay.map, dictionary).is_some()
                 && ReplayAnalysis::replay_has_detailed_unit_stats(replay)
         })
         .count();
@@ -3226,12 +3531,14 @@ fn process_new_replay_path(
     }
     crate::sco_log!("[SCO/watch] processing new replay file='{}'", file);
 
-    let Some((parsed, cache_entry)) = parse_new_replay_with_retries(path) else {
+    let state = app.state::<BackendState>();
+    let resources = state.replay_analysis_resources().ok();
+    let Some((parsed, cache_entry)) = parse_new_replay_with_retries(path, resources.as_deref())
+    else {
         crate::sco_log!("[SCO/watch] failed to parse new replay '{}'", file);
         return ReplayProcessOutcome::RetryLater;
     };
 
-    let state = app.state::<BackendState>();
     let main_names = state.configured_main_names();
     let main_handles = state.configured_main_handles();
     let replay = orient_replay_for_main_names(parsed, &main_names, &main_handles);
@@ -3329,7 +3636,9 @@ fn process_replay_detailed(
         }
     }
 
-    let Some((parsed, cache_entry)) = parse_new_replay_with_retries(path) else {
+    let resources = state.replay_analysis_resources().ok();
+    let Some((parsed, cache_entry)) = parse_new_replay_with_retries(path, resources.as_deref())
+    else {
         crate::sco_log!("[SCO/show] failed to parse existing replay '{}'", file);
         return (ReplayProcessOutcome::RetryLater, None);
     };
@@ -3731,6 +4040,24 @@ fn spawn_protocol_store_warmup() {
     });
 }
 
+fn spawn_replay_analysis_resource_warmup(app: AppHandle<Wry>) {
+    thread::spawn(move || {
+        let started_at = Instant::now();
+        let state = app.state::<BackendState>();
+        match state.replay_analysis_resources() {
+            Ok(_) => {
+                crate::sco_log!(
+                    "[SCO/analyzer] warmup completed in {}ms",
+                    started_at.elapsed().as_millis()
+                );
+            }
+            Err(error) => {
+                crate::sco_log!("[SCO/analyzer] warmup failed: {error}");
+            }
+        }
+    });
+}
+
 fn ratio(numerator: u64, denominator: u64) -> f64 {
     if denominator == 0 {
         0.0
@@ -4077,7 +4404,10 @@ async fn config_get(
         status: "ok",
         settings: AppSettings::from_saved_file(),
         active_settings: state.read_settings_memory(),
-        randomizer_catalog: randomizer::catalog_payload(),
+        randomizer_catalog: state
+            .dictionary_data()
+            .map(|dictionary| randomizer::catalog_payload_with_dictionary(&dictionary))
+            .unwrap_or_default(),
         monitor_catalog: overlay_info::available_monitor_catalog(&app),
     })
 }
@@ -4120,7 +4450,10 @@ async fn config_update(
         status: "ok",
         settings: AppSettings::from_saved_file(),
         active_settings: state.read_settings_memory(),
-        randomizer_catalog: randomizer::catalog_payload(),
+        randomizer_catalog: state
+            .dictionary_data()
+            .map(|dictionary| randomizer::catalog_payload_with_dictionary(&dictionary))
+            .unwrap_or_default(),
         monitor_catalog: overlay_info::available_monitor_catalog(&app),
     })
 }
@@ -4137,13 +4470,23 @@ async fn config_replays_get(
     let replay_state = state.get_replay_state();
     let main_names = state.configured_main_names();
     let main_handles = state.configured_main_handles();
+    let settings = state.read_settings_memory();
+    let resources = state.replay_analysis_resources().ok();
+    let dictionary = state.dictionary_data().ok();
 
     let (replays, total_replays, selected_replay_file) =
         tauri::async_runtime::spawn_blocking(move || {
             let replay_state = replay_state.lock().ok();
             let all_replays = replay_state
                 .as_ref()
-                .map(|state| state.sync_full_replay_cache_slots(&main_names, &main_handles))
+                .map(|state| {
+                    state.sync_full_replay_cache_slots_with_resources(
+                        &settings,
+                        &main_names,
+                        &main_handles,
+                        resources.as_deref(),
+                    )
+                })
                 .unwrap_or_default();
             let total_replays = all_replays.len();
             let mut replays = all_replays;
@@ -4163,7 +4506,12 @@ async fn config_replays_get(
         status: "ok",
         replays: replays
             .into_iter()
-            .map(|replay| replay.as_games_row_payload())
+            .map(|replay| {
+                dictionary
+                    .as_deref()
+                    .map(|dictionary| replay.as_games_row_payload_with_dictionary(dictionary))
+                    .unwrap_or_else(|| replay.as_games_row_payload())
+            })
             .collect(),
         total_replays,
         selected_replay_file,
@@ -4236,20 +4584,38 @@ async fn config_weeklies_get(
     let replay_state = state.get_replay_state();
     let main_names = state.configured_main_names();
     let main_handles = state.configured_main_handles();
+    let settings = state.read_settings_memory();
+    let resources = state.replay_analysis_resources().ok();
 
     let replays = tauri::async_runtime::spawn_blocking(move || {
         replay_state
             .lock()
             .map(|state| {
-                state.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT, &main_names, &main_handles)
+                state.sync_replay_cache_slots_with_resources(
+                    UNLIMITED_REPLAY_LIMIT,
+                    &settings,
+                    &main_names,
+                    &main_handles,
+                    resources.as_deref(),
+                )
             })
             .unwrap_or_default()
     })
     .await
     .map_err(|error| format!("Failed to load /config/weeklies: {error}"))?;
+    let dictionary = state.dictionary_data().ok();
     Ok(ConfigWeekliesPayload {
         status: "ok",
-        weeklies: ReplayAnalysis::rebuild_weeklies_rows(&replays),
+        weeklies: dictionary
+            .as_deref()
+            .map(|dictionary| {
+                ReplayAnalysis::rebuild_weeklies_rows_with_dictionary(
+                    &replays,
+                    chrono::Local::now().date_naive(),
+                    dictionary,
+                )
+            })
+            .unwrap_or_default(),
     })
 }
 
@@ -4276,19 +4642,35 @@ async fn config_stats_get(
         state.configured_main_names(),
         state.configured_main_handles(),
         state.replay_scan_progress().as_payload(),
+        state.dictionary_data().ok(),
     );
     let path_for_worker = path.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let (main_names, main_handles, scan_progress) = state_snapshot;
-        let payload = ReplayAnalysis::build_stats_response_with_identity(
-            &path_for_worker,
-            &stats,
-            &replays,
-            &stats_current_replay_files,
-            scan_progress,
-            &main_names,
-            &main_handles,
-        )?;
+        let (main_names, main_handles, scan_progress, dictionary) = state_snapshot;
+        let payload = match dictionary.as_deref() {
+            Some(dictionary) => ReplayAnalysis::build_stats_response_with_dictionary(
+                &path_for_worker,
+                &stats,
+                &replays,
+                &stats_current_replay_files,
+                scan_progress.clone(),
+                &main_names,
+                &main_handles,
+                dictionary,
+            )?,
+            None => match stats.try_lock() {
+                Ok(state) => state.as_payload(scan_progress),
+                Err(TryLockError::WouldBlock) => {
+                    let fallback = StatsState::default();
+                    let mut payload = fallback.as_payload(scan_progress);
+                    payload["message"] = Value::from("Dictionary data is unavailable.");
+                    payload
+                }
+                Err(TryLockError::Poisoned(_)) => {
+                    return Err("Failed to access stats state: mutex is poisoned".to_string());
+                }
+            },
+        };
         serde_json::from_value(payload).map_err(|error| format!("Invalid stats payload: {error}"))
     })
     .await
@@ -4328,10 +4710,21 @@ async fn config_replay_chat(
         .unwrap_or("")
         .to_string();
     let replay_state = state.get_replay_state();
+    let settings = state.read_settings_memory();
     let main_names = state.configured_main_names();
     let main_handles = state.configured_main_handles();
+    let dictionary = state.dictionary_data().ok();
+    let resources = state.replay_analysis_resources().ok();
     let chat = tauri::async_runtime::spawn_blocking(move || {
-        replay_chat_payload_from_slots(replay_state, main_names, main_handles, &requested_file)
+        replay_chat_payload_from_slots(
+            replay_state,
+            settings,
+            main_names,
+            main_handles,
+            &requested_file,
+            dictionary,
+            resources,
+        )
     })
     .await
     .map_err(|error| format!("Failed to load /config/replays/chat: {error}"))?
@@ -4731,9 +5124,6 @@ async fn auto_update(handle: tauri::AppHandle) -> tauri_plugin_updater::Result<(
 pub fn run() {
     let settings = AppSettings::from_saved_file();
 
-    let data_dir = get_json_data_dir();
-    let _ = s2coop_analyzer::dictionary_data::shared_dictionary_data(Some(data_dir));
-
     let state = BackendState::new_with_settings(settings.clone());
 
     tauri::Builder::default()
@@ -4792,6 +5182,7 @@ pub fn run() {
         })
         .setup(|app| {
             spawn_protocol_store_warmup();
+            spawn_replay_analysis_resource_warmup(app.handle().clone());
 
             let state = app.state::<BackendState>();
             let flags = overlay_info::parse_runtime_flags_from_state(&state);

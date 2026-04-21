@@ -1,7 +1,7 @@
 use crate::error::DecodeError;
 use crate::replay::cache_handle_uri;
 use crate::value::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 const DEFAULT_GAME_SPEED_CODE: i64 = 4;
 
@@ -425,6 +425,7 @@ impl ReplayAttributeValue {
 }
 
 pub fn process_scope_attributes(attributes: &ReplayAttributes) -> Vec<ReplayAttributeScope> {
+    let attribute_name_map = parse_attribute_name_map();
     let mut out = Vec::new();
     for (scope, attrs) in &attributes.scopes {
         let mut values = BTreeMap::new();
@@ -433,7 +434,7 @@ pub fn process_scope_attributes(attributes: &ReplayAttributes) -> Vec<ReplayAttr
                 .first()
                 .map(|entry| entry.value.clone())
                 .unwrap_or_default();
-            let symbolic = attribute_id_to_name(attribute_id);
+            let symbolic = attribute_id_to_name(&attribute_name_map, attribute_id);
             values.insert(symbolic, value);
         }
         out.push(ReplayAttributeScope {
@@ -444,37 +445,32 @@ pub fn process_scope_attributes(attributes: &ReplayAttributes) -> Vec<ReplayAttr
     out
 }
 
-fn attribute_id_to_name(attribute_id: &str) -> String {
-    use std::collections::HashMap;
-    use std::sync::OnceLock;
-
-    static ATTR_NAME_MAP: OnceLock<HashMap<u32, String>> = OnceLock::new();
-
-    let names = ATTR_NAME_MAP.get_or_init(|| {
-        let mut attrs = HashMap::new();
-        for line in include_str!("../protocols/attributes.py").lines() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("###") || trimmed.starts_with('#') || trimmed.is_empty() {
-                continue;
-            }
-            let Some((name, value)) = trimmed.split_once('=') else {
-                continue;
-            };
-            let name = name.trim();
-            if name.is_empty()
-                || name.chars().next().is_none_or(|c| c.is_ascii_digit())
-                || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-            {
-                continue;
-            }
-
-            if let Ok(id) = value.trim().parse::<u32>() {
-                attrs.insert(id, name.to_ascii_lowercase());
-            }
+fn parse_attribute_name_map() -> HashMap<u32, String> {
+    let mut attrs = HashMap::new();
+    for line in include_str!("../protocols/attributes.py").lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("###") || trimmed.starts_with('#') || trimmed.is_empty() {
+            continue;
         }
-        attrs
-    });
+        let Some((name, value)) = trimmed.split_once('=') else {
+            continue;
+        };
+        let name = name.trim();
+        if name.is_empty()
+            || name.chars().next().is_none_or(|c| c.is_ascii_digit())
+            || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            continue;
+        }
 
+        if let Ok(id) = value.trim().parse::<u32>() {
+            attrs.insert(id, name.to_ascii_lowercase());
+        }
+    }
+    attrs
+}
+
+fn attribute_id_to_name(names: &HashMap<u32, String>, attribute_id: &str) -> String {
     attribute_id
         .parse::<u32>()
         .ok()

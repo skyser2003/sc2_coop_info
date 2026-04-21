@@ -1,4 +1,6 @@
-use s2coop_analyzer::detailed_replay_analysis::analyze_replay_file;
+mod common;
+
+use s2coop_analyzer::detailed_replay_analysis::analyze_replay_file_with_resources;
 use s2protocol_port::{build_protocol_store, parse_file_with_store, ReplayParseMode};
 use std::collections::HashSet;
 use std::fs;
@@ -94,12 +96,13 @@ fn malwarfare_weekly_replay_with_korean_filename_builds_detailed_report() {
     };
 
     let main_handles = HashSet::new();
+    let resources = common::load_replay_resources();
     let store = build_protocol_store().expect("protocol store should build");
     let parsed = parse_file_with_store(&replay_path, &store, ReplayParseMode::Detailed)
         .expect("detailed replay parser should read the replay");
     assert!(!parsed.tracker_events.is_empty());
 
-    let report = analyze_replay_file(&replay_path, &main_handles)
+    let report = analyze_replay_file_with_resources(&replay_path, &main_handles, &resources)
         .unwrap_or_else(|error| panic!("replay analysis should succeed: {error}"));
 
     assert!(report.replaydata);

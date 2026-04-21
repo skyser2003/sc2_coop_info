@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
@@ -8,7 +9,10 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use s2coop_analyzer::detailed_replay_analysis::GenerateCacheStopController;
+use s2coop_analyzer::detailed_replay_analysis::{
+    GenerateCacheStopController, ReplayAnalysisResources,
+};
+use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use serde::Serialize;
 use serde_json::Value;
 use tauri::{tray::TrayIcon, Wry};
@@ -18,9 +22,22 @@ use crate::{
     apply_rebuild_snapshot, configured_main_handles_from_settings,
     configured_main_names_from_settings, overlay_info::ResolvedHotkeyBinding,
     replay_analysis::ReplayAnalysis, session_counter_delta,
-    sync_detailed_analysis_status_from_replays, AnalysisMode, AppSettings, ReplayInfo, StatsState,
-    UNLIMITED_REPLAY_LIMIT,
+    sync_detailed_analysis_status_from_replays,
+    sync_detailed_analysis_status_from_replays_with_dictionary, AnalysisMode, AppSettings,
+    ReplayInfo, StatsState, UNLIMITED_REPLAY_LIMIT,
 };
+
+enum CachedLoad<T> {
+    Uninitialized,
+    Loaded(Arc<T>),
+    Failed(String),
+}
+
+impl<T> Default for CachedLoad<T> {
+    fn default() -> Self {
+        Self::Uninitialized
+    }
+}
 
 pub struct BackendState {
     pub tray_icon: Arc<Mutex<Option<TrayIcon<Wry>>>>,
@@ -45,6 +62,9 @@ pub struct BackendState {
     performance_edit_mode: Arc<AtomicBool>,
     file_logging_enabled: Arc<AtomicBool>,
     replay_state: Arc<Mutex<ReplayState>>,
+    analyzer_data_dir: PathBuf,
+    dictionary_data: Arc<Mutex<CachedLoad<Sc2DictionaryData>>>,
+    replay_analysis_resources: Arc<Mutex<CachedLoad<ReplayAnalysisResources>>>,
 }
 
 pub struct ReplayState {
@@ -270,7 +290,81 @@ impl BackendState {
                 replays: Arc::new(Mutex::new(HashMap::new())),
                 selected_replay_file: Arc::new(Mutex::new(None)),
             })),
+            analyzer_data_dir: crate::path_manager::get_json_data_dir(),
+            dictionary_data: Arc::new(Mutex::new(CachedLoad::Uninitialized)),
+            replay_analysis_resources: Arc::new(Mutex::new(CachedLoad::Uninitialized)),
         }
+    }
+
+    pub fn analyzer_data_dir(&self) -> PathBuf {
+        self.analyzer_data_dir.clone()
+    }
+
+    pub fn dictionary_data(&self) -> Result<Arc<Sc2DictionaryData>, String> {
+        if let Ok(slot) = self.dictionary_data.lock() {
+            match &*slot {
+                CachedLoad::Loaded(data) => return Ok(data.clone()),
+                CachedLoad::Failed(error) => return Err(error.clone()),
+                CachedLoad::Uninitialized => {}
+            }
+        }
+
+        let loaded = Sc2DictionaryData::load(Some(self.analyzer_data_dir()))
+            .map(Arc::new)
+            .map_err(|error| format!("Failed to load dictionary data: {error}"));
+
+        if let Ok(mut slot) = self.dictionary_data.lock() {
+            match (&*slot, &loaded) {
+                (CachedLoad::Loaded(existing), _) => return Ok(existing.clone()),
+                (CachedLoad::Failed(error), _) => return Err(error.clone()),
+                (CachedLoad::Uninitialized, Ok(data)) => {
+                    *slot = CachedLoad::Loaded(data.clone());
+                }
+                (CachedLoad::Uninitialized, Err(error)) => {
+                    *slot = CachedLoad::Failed(error.clone());
+                }
+            }
+        }
+
+        loaded
+    }
+
+    pub fn replay_analysis_resources(&self) -> Result<Arc<ReplayAnalysisResources>, String> {
+        if let Ok(slot) = self.replay_analysis_resources.lock() {
+            match &*slot {
+                CachedLoad::Loaded(resources) => return Ok(resources.clone()),
+                CachedLoad::Failed(error) => return Err(error.clone()),
+                CachedLoad::Uninitialized => {}
+            }
+        }
+
+        let dictionary_data = self.dictionary_data()?;
+        let loaded = ReplayAnalysisResources::from_dictionary_data(dictionary_data)
+            .map(Arc::new)
+            .map_err(|error| format!("Failed to build replay analysis resources: {error}"));
+
+        if let Ok(mut slot) = self.replay_analysis_resources.lock() {
+            match (&*slot, &loaded) {
+                (CachedLoad::Loaded(existing), _) => return Ok(existing.clone()),
+                (CachedLoad::Failed(error), _) => return Err(error.clone()),
+                (CachedLoad::Uninitialized, Ok(resources)) => {
+                    *slot = CachedLoad::Loaded(resources.clone());
+                }
+                (CachedLoad::Uninitialized, Err(error)) => {
+                    *slot = CachedLoad::Failed(error.clone());
+                }
+            }
+        }
+
+        loaded
+    }
+
+    pub fn warm_dictionary_data(&self) {
+        let _ = self.dictionary_data();
+    }
+
+    pub fn warm_replay_analysis_resources(&self) {
+        let _ = self.replay_analysis_resources();
     }
 
     pub fn read_settings_memory(&self) -> AppSettings {
@@ -502,9 +596,19 @@ impl BackendState {
     pub fn sync_replay_cache_slots(&self, limit: usize) -> Vec<ReplayInfo> {
         let main_names = self.configured_main_names();
         let main_handles = self.configured_main_handles();
+        let settings = self.read_settings_memory();
+        let resources = self.replay_analysis_resources().ok();
         self.replay_state
             .lock()
-            .map(|state| state.sync_replay_cache_slots(limit, &main_names, &main_handles))
+            .map(|state| {
+                state.sync_replay_cache_slots_with_resources(
+                    limit,
+                    &settings,
+                    &main_names,
+                    &main_handles,
+                    resources.as_deref(),
+                )
+            })
             .unwrap_or_default()
     }
 
@@ -593,6 +697,7 @@ impl BackendState {
         let settings = self.read_settings_memory();
         let main_names = self.configured_main_names();
         let main_handles = self.configured_main_handles();
+        let replay_analysis_resources = self.replay_analysis_resources();
         let replay_scan_progress = self.replay_scan_progress();
         let replay_scan_in_flight = self.replay_scan_in_flight();
         let players_scan_in_flight = self.players_scan_in_flight.clone();
@@ -606,14 +711,21 @@ impl BackendState {
 
         thread::spawn(move || {
             crate::sco_log!("[SCO/players] background player scan started (limit={limit})");
-            let replays = ReplayAnalysis::analyze_replays_with_identity(
-                limit,
-                &settings,
-                &main_names,
-                &main_handles,
-                replay_scan_progress.as_ref(),
-                replay_scan_in_flight.as_ref(),
-            );
+            let replays = match replay_analysis_resources {
+                Ok(resources) => ReplayAnalysis::analyze_replays_with_resources(
+                    limit,
+                    &settings,
+                    &main_names,
+                    &main_handles,
+                    replay_scan_progress.as_ref(),
+                    replay_scan_in_flight.as_ref(),
+                    resources.as_ref(),
+                ),
+                Err(error) => {
+                    crate::sco_log!("[SCO/players] background player scan skipped: {error}");
+                    Vec::new()
+                }
+            };
             let selected = replays.first().map(|replay| replay.file.clone());
 
             match replay_state.lock() {
@@ -669,15 +781,35 @@ impl BackendState {
         let mode = AnalysisMode::from_include_detailed(include_detailed);
         let main_names = self.configured_main_names();
         let main_handles = self.configured_main_handles();
-        let snapshot = ReplayAnalysis::build_rebuild_snapshot_with_identity(
-            &stats_replays,
-            include_detailed,
-            &main_names,
-            &main_handles,
-        );
+        let dictionary = self.dictionary_data().ok();
+        let snapshot = dictionary
+            .as_deref()
+            .map(|dictionary| {
+                ReplayAnalysis::build_rebuild_snapshot_with_dictionary(
+                    &stats_replays,
+                    include_detailed,
+                    &main_names,
+                    &main_handles,
+                    dictionary,
+                )
+            })
+            .unwrap_or_else(|| crate::StatsSnapshot {
+                ready: true,
+                games: stats_replays.len() as u64,
+                message: "Dictionary data is unavailable.".to_string(),
+                ..crate::StatsSnapshot::default()
+            });
         apply_rebuild_snapshot(&mut stats, snapshot, mode);
         if !include_detailed {
-            sync_detailed_analysis_status_from_replays(&mut stats, &stats_replays);
+            if let Some(dictionary) = dictionary.as_deref() {
+                sync_detailed_analysis_status_from_replays_with_dictionary(
+                    &mut stats,
+                    &stats_replays,
+                    dictionary,
+                );
+            } else {
+                sync_detailed_analysis_status_from_replays(&mut stats, &stats_replays);
+            }
         }
     }
 
@@ -761,6 +893,17 @@ impl ReplayState {
         main_names: &HashSet<String>,
         main_handles: &HashSet<String>,
     ) -> Vec<ReplayInfo> {
+        let settings = AppSettings::from_saved_file();
+        self.sync_full_replay_cache_slots_with_resources(&settings, main_names, main_handles, None)
+    }
+
+    pub fn sync_full_replay_cache_slots_with_resources(
+        &self,
+        settings: &AppSettings,
+        main_names: &HashSet<String>,
+        main_handles: &HashSet<String>,
+        resources: Option<&ReplayAnalysisResources>,
+    ) -> Vec<ReplayInfo> {
         let cached = self
             .replays
             .lock()
@@ -768,14 +911,34 @@ impl ReplayState {
             .unwrap_or_default();
 
         let replays = if cached.is_empty() {
-            let from_detailed_analysis = ReplayAnalysis::load_detailed_analysis_replays_snapshot(
-                UNLIMITED_REPLAY_LIMIT,
-                main_names,
-                main_handles,
-            );
+            let from_detailed_analysis = resources
+                .map(|resources| {
+                    ReplayAnalysis::load_detailed_analysis_replays_snapshot_from_path_with_dictionary(
+                        &crate::path_manager::get_cache_path(),
+                        UNLIMITED_REPLAY_LIMIT,
+                        main_names,
+                        main_handles,
+                        resources.dictionary_data(),
+                    )
+                })
+                .unwrap_or_default();
 
             let loaded = if from_detailed_analysis.is_empty() {
-                ReplayAnalysis::analyze_replays(UNLIMITED_REPLAY_LIMIT)
+                resources
+                    .map(|resources| {
+                        let scan_progress = ReplayScanProgress::default();
+                        let replay_scan_in_flight = AtomicBool::new(false);
+                        ReplayAnalysis::analyze_replays_with_resources(
+                            UNLIMITED_REPLAY_LIMIT,
+                            settings,
+                            main_names,
+                            main_handles,
+                            &scan_progress,
+                            &replay_scan_in_flight,
+                            resources,
+                        )
+                    })
+                    .unwrap_or_default()
             } else {
                 from_detailed_analysis
             };
@@ -815,7 +978,30 @@ impl ReplayState {
         main_names: &HashSet<String>,
         main_handles: &HashSet<String>,
     ) -> Vec<ReplayInfo> {
-        let replays = self.sync_full_replay_cache_slots(main_names, main_handles);
+        let settings = AppSettings::from_saved_file();
+        self.sync_replay_cache_slots_with_resources(
+            limit,
+            &settings,
+            main_names,
+            main_handles,
+            None,
+        )
+    }
+
+    pub fn sync_replay_cache_slots_with_resources(
+        &self,
+        limit: usize,
+        settings: &AppSettings,
+        main_names: &HashSet<String>,
+        main_handles: &HashSet<String>,
+        resources: Option<&ReplayAnalysisResources>,
+    ) -> Vec<ReplayInfo> {
+        let replays = self.sync_full_replay_cache_slots_with_resources(
+            settings,
+            main_names,
+            main_handles,
+            resources,
+        );
 
         let mut limited = replays.clone();
         if limit > 0 {

@@ -7,7 +7,7 @@ use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use display_info::DisplayInfo;
-use s2coop_analyzer::dictionary_data;
+use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use serde_json::{Map, Value};
 use tauri::{
     menu::{MenuBuilder, MenuItem},
@@ -73,25 +73,34 @@ fn as_u32_vec(values: &[u64]) -> Vec<u32> {
     values.iter().copied().map(as_u32).collect()
 }
 
-fn overlay_mutator_name(mutator_id: &str) -> String {
-    let canonical = if dictionary_data::mutator_data(mutator_id).is_some() {
+fn overlay_mutator_name_with_dictionary(
+    mutator_id: &str,
+    dictionary: &Sc2DictionaryData,
+) -> String {
+    let canonical = if dictionary.mutator_data(mutator_id).is_some() {
         mutator_id.to_string()
-    } else if let Some(mapped) = dictionary_data::mutator_id_from_name(mutator_id) {
+    } else if let Some(mapped) = dictionary.mutator_id_from_name(mutator_id) {
         mapped.to_string()
     } else {
         mutator_id.to_string()
     };
 
-    dictionary_data::mutator_data(&canonical)
+    dictionary
+        .mutator_data(&canonical)
         .map(|value| value.name.en.trim())
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
         .or_else(|| {
-            dictionary_data::mutator_ids()
+            dictionary
+                .mutator_ids
                 .get(&canonical)
                 .map(|value| value.to_string())
         })
         .unwrap_or_default()
+}
+
+fn overlay_mutator_name(mutator_id: &str) -> String {
+    mutator_id.to_string()
 }
 
 pub(crate) struct OverlayPlacement {
@@ -128,7 +137,12 @@ pub struct ResolvedHotkeyBinding {
 }
 
 impl OverlayReplayPayload {
-    pub fn localized_prestige_text(commander: &str, prestige: u64, language: &str) -> String {
+    pub fn localized_prestige_text_with_dictionary(
+        commander: &str,
+        prestige: u64,
+        language: &str,
+        dictionary: &Sc2DictionaryData,
+    ) -> String {
         if prestige == 0 {
             return String::new();
         }
@@ -137,7 +151,8 @@ impl OverlayReplayPayload {
         let Some(index) = usize::try_from(prestige).ok() else {
             return format!("P{prestige}");
         };
-        if let Some(lookup) = dictionary_data::prestige_names()
+        if let Some(lookup) = dictionary
+            .prestige_names_json
             .get(&commander)
             .and_then(|value| match language {
                 "ko" => value.ko.get(index).or_else(|| value.en.get(index)),
@@ -148,11 +163,85 @@ impl OverlayReplayPayload {
             return lookup.to_string();
         }
 
-        if let Some(lookup) = dictionary_data::prestige_name(&commander, prestige) {
+        if let Some(lookup) = dictionary.prestige_name(&commander, prestige) {
             return lookup.to_string();
         }
 
         format!("P{prestige}")
+    }
+
+    pub fn localized_prestige_text(commander: &str, prestige: u64, language: &str) -> String {
+        let _ = (commander, language);
+        if prestige == 0 {
+            String::new()
+        } else {
+            format!("P{prestige}")
+        }
+    }
+
+    fn from_replay_with_dictionary(
+        replay: &crate::ReplayInfo,
+        language: &str,
+        dictionary: &Sc2DictionaryData,
+    ) -> Self {
+        let sanitized = replay.sanitized_for_client_with_dictionary(dictionary);
+        let main_prestige = Self::localized_prestige_text_with_dictionary(
+            sanitized.main_commander(),
+            sanitized.main_prestige(),
+            language,
+            dictionary,
+        );
+        let ally_prestige = Self::localized_prestige_text_with_dictionary(
+            sanitized.ally_commander(),
+            sanitized.ally_prestige(),
+            language,
+            dictionary,
+        );
+        Self {
+            file: sanitized.file.clone(),
+            map_name: sanitized.map.clone(),
+            main: sanitized.main().name.clone(),
+            ally: sanitized.ally().name.clone(),
+            main_commander: sanitized.main_commander().to_string(),
+            ally_commander: sanitized.ally_commander().to_string(),
+            main_apm: as_u32(sanitized.main_apm()),
+            ally_apm: as_u32(sanitized.ally_apm()),
+            mainkills: as_u32(sanitized.main_kills()),
+            allykills: as_u32(sanitized.ally_kills()),
+            result: sanitized.result.clone(),
+            difficulty: sanitized.difficulty.clone(),
+            length: as_u32(sanitized.length),
+            brutal_plus: as_u32(sanitized.brutal_plus),
+            weekly: sanitized.weekly,
+            weekly_name: sanitized.weekly_name.clone(),
+            extension: sanitized.extension,
+            main_commander_level: as_u32(sanitized.main_commander_level()),
+            ally_commander_level: as_u32(sanitized.ally_commander_level()),
+            main_masteries: as_u32_vec(sanitized.main_masteries()),
+            ally_masteries: as_u32_vec(sanitized.ally_masteries()),
+            main_units: unit_stats_map_from_value(sanitized.main_units()),
+            ally_units: unit_stats_map_from_value(sanitized.ally_units()),
+            amon_units: unit_stats_map_from_value(&sanitized.amon_units),
+            main_icons: overlay_icon_payload_from_value(sanitized.main_icons()),
+            ally_icons: overlay_icon_payload_from_value(sanitized.ally_icons()),
+            mutators: sanitized
+                .mutators
+                .iter()
+                .map(|mutator_id| overlay_mutator_name_with_dictionary(mutator_id, dictionary))
+                .collect(),
+            bonus: sanitized.bonus.iter().copied().map(as_u32).collect(),
+            bonus_total: sanitized.bonus_total.map(as_u32),
+            player_stats: Some(replay_data_record_from_value(&sanitized.player_stats)),
+            main_prestige,
+            ally_prestige,
+            victory: None,
+            defeat: None,
+            commander: None,
+            prestige: None,
+            new_replay: None,
+            fastest: None,
+            comp: sanitized.comp,
+        }
     }
 
     fn from_replay(replay: &crate::ReplayInfo, language: &str) -> Self {
@@ -194,11 +283,7 @@ impl OverlayReplayPayload {
             amon_units: unit_stats_map_from_value(&sanitized.amon_units),
             main_icons: overlay_icon_payload_from_value(sanitized.main_icons()),
             ally_icons: overlay_icon_payload_from_value(sanitized.ally_icons()),
-            mutators: sanitized
-                .mutators
-                .iter()
-                .map(|mutator_id| overlay_mutator_name(mutator_id))
-                .collect(),
+            mutators: sanitized.mutators.clone(),
             bonus: sanitized.bonus.iter().copied().map(as_u32).collect(),
             bonus_total: sanitized.bonus_total.map(as_u32),
             player_stats: Some(replay_data_record_from_value(&sanitized.player_stats)),
@@ -855,7 +940,13 @@ pub fn overlay_payload_from_replay(
     let main_handles = state.configured_main_handles();
     let settings = state.read_settings_memory();
     let language = overlay_language_from_settings(&settings);
-    let mut payload = OverlayReplayPayload::from_replay(replay, language);
+    let dictionary = state.dictionary_data().ok();
+    let mut payload = dictionary
+        .as_deref()
+        .map(|dictionary| {
+            OverlayReplayPayload::from_replay_with_dictionary(replay, language, dictionary)
+        })
+        .unwrap_or_else(|| OverlayReplayPayload::from_replay(replay, language));
     if replay_should_swap_main_and_ally(replay, &main_names, &main_handles) {
         payload.swap_sides();
     }
@@ -1144,25 +1235,30 @@ pub(crate) fn perform_overlay_action(
         "create_desktop_shortcut" => Some(crate::OverlayActionResponse::success(
             "Create desktop shortcut is not available in this build",
         )),
-        "randomizer_generate" => Some(match randomizer::generate_from_body(body) {
-            Ok(result) => crate::OverlayActionResponse {
-                status: "ok",
-                result: crate::OverlayActionResult {
-                    ok: true,
-                    path: None,
-                },
-                message: "Generated random commander".to_string(),
-                randomizer: Some(result),
-            },
-            Err(error) => crate::OverlayActionResponse {
-                status: "ok",
-                result: crate::OverlayActionResult {
-                    ok: false,
-                    path: None,
-                },
-                message: error,
-                randomizer: None,
-            },
+        "randomizer_generate" => Some(match state.dictionary_data() {
+            Ok(dictionary) => {
+                match randomizer::generate_from_body_with_dictionary(body, &dictionary) {
+                    Ok(result) => crate::OverlayActionResponse {
+                        status: "ok",
+                        result: crate::OverlayActionResult {
+                            ok: true,
+                            path: None,
+                        },
+                        message: "Generated random commander".to_string(),
+                        randomizer: Some(result),
+                    },
+                    Err(error) => crate::OverlayActionResponse {
+                        status: "ok",
+                        result: crate::OverlayActionResult {
+                            ok: false,
+                            path: None,
+                        },
+                        message: error,
+                        randomizer: None,
+                    },
+                }
+            }
+            Err(error) => crate::OverlayActionResponse::failure(error),
         }),
         _ => None,
     }

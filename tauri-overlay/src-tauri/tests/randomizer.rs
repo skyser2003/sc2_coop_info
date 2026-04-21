@@ -1,10 +1,15 @@
+mod common;
+
 use fastrand::Rng;
-use sco_tauri_overlay::randomizer::{catalog_payload, generate_with_rng, RandomizerRequest};
+use sco_tauri_overlay::randomizer::{
+    catalog_payload_with_dictionary, generate_with_dictionary_with_rng, RandomizerRequest,
+};
 use std::collections::BTreeMap;
 
 #[test]
 fn randomizer_catalog_exposes_prestige_metadata() {
-    let payload = catalog_payload();
+    let dictionary = common::load_dictionary();
+    let payload = catalog_payload_with_dictionary(&dictionary);
 
     assert!(!payload.prestige_names.is_empty());
     assert!(!payload.mutators.is_empty());
@@ -18,6 +23,7 @@ fn randomizer_catalog_exposes_prestige_metadata() {
 
 #[test]
 fn randomizer_defaults_to_p0_when_saved_choices_are_empty() {
+    let dictionary = common::load_dictionary();
     let request = RandomizerRequest {
         mode: "commander".to_string(),
         rng_choices: BTreeMap::new(),
@@ -31,8 +37,8 @@ fn randomizer_defaults_to_p0_when_saved_choices_are_empty() {
     };
     let mut rng = Rng::with_seed(7);
 
-    let result =
-        generate_with_rng(&request, &mut rng).expect("randomizer should use default P0 selections");
+    let result = generate_with_dictionary_with_rng(&request, &mut rng, &dictionary)
+        .expect("randomizer should use default P0 selections");
 
     match result {
         sco_tauri_overlay::randomizer::RandomizerResult::Commander {
@@ -54,6 +60,7 @@ fn randomizer_defaults_to_p0_when_saved_choices_are_empty() {
 
 #[test]
 fn randomizer_respects_selected_choices_and_none_mode() {
+    let dictionary = common::load_dictionary();
     let request = RandomizerRequest {
         mode: "commander".to_string(),
         rng_choices: BTreeMap::from([(String::from("Fenix_2"), true)]),
@@ -67,7 +74,7 @@ fn randomizer_respects_selected_choices_and_none_mode() {
     };
     let mut rng = Rng::with_seed(11);
 
-    let result = generate_with_rng(&request, &mut rng)
+    let result = generate_with_dictionary_with_rng(&request, &mut rng, &dictionary)
         .expect("randomizer should accept a single explicit selection");
 
     match result {
@@ -89,6 +96,7 @@ fn randomizer_respects_selected_choices_and_none_mode() {
 
 #[test]
 fn randomizer_all_in_mode_assigns_one_side_of_each_mastery_pair() {
+    let dictionary = common::load_dictionary();
     let request = RandomizerRequest {
         mode: "commander".to_string(),
         rng_choices: BTreeMap::from([(String::from("Abathur_1"), true)]),
@@ -102,8 +110,8 @@ fn randomizer_all_in_mode_assigns_one_side_of_each_mastery_pair() {
     };
     let mut rng = Rng::with_seed(19);
 
-    let result =
-        generate_with_rng(&request, &mut rng).expect("randomizer should produce mastery points");
+    let result = generate_with_dictionary_with_rng(&request, &mut rng, &dictionary)
+        .expect("randomizer should produce mastery points");
 
     match result {
         sco_tauri_overlay::randomizer::RandomizerResult::Commander {
@@ -125,6 +133,7 @@ fn randomizer_all_in_mode_assigns_one_side_of_each_mastery_pair() {
 
 #[test]
 fn randomizer_generates_random_mutators_without_point_budget() {
+    let dictionary = common::load_dictionary();
     let request = RandomizerRequest {
         mode: "mutator".to_string(),
         rng_choices: BTreeMap::new(),
@@ -138,7 +147,8 @@ fn randomizer_generates_random_mutators_without_point_budget() {
     };
     let mut rng = Rng::with_seed(23);
 
-    let result = generate_with_rng(&request, &mut rng).expect("randomizer should produce mutators");
+    let result = generate_with_dictionary_with_rng(&request, &mut rng, &dictionary)
+        .expect("randomizer should produce mutators");
 
     match result {
         sco_tauri_overlay::randomizer::RandomizerResult::Mutator {
@@ -159,6 +169,7 @@ fn randomizer_generates_random_mutators_without_point_budget() {
 
 #[test]
 fn randomizer_generates_brutal_plus_matched_mutators() {
+    let dictionary = common::load_dictionary();
     let request = RandomizerRequest {
         mode: "mutator".to_string(),
         rng_choices: BTreeMap::new(),
@@ -172,7 +183,8 @@ fn randomizer_generates_brutal_plus_matched_mutators() {
     };
     let mut rng = Rng::with_seed(31);
 
-    let result = generate_with_rng(&request, &mut rng).expect("randomizer should produce mutators");
+    let result = generate_with_dictionary_with_rng(&request, &mut rng, &dictionary)
+        .expect("randomizer should produce mutators");
 
     match result {
         sco_tauri_overlay::randomizer::RandomizerResult::Mutator {

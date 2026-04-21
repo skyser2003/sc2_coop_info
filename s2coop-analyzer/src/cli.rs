@@ -2,8 +2,12 @@ use crate::cache_overall_stats_detailed_analysis::{
     run_test_cache_overall_stats_detailed_analysis, TestCacheOverallStatsDetailedAnalysisArgs,
     TestCacheOverallStatsDetailedAnalysisError,
 };
-use crate::detailed_replay_analysis::{GenerateCacheConfig, GenerateCacheError};
+use crate::detailed_replay_analysis::{
+    GenerateCacheConfig, GenerateCacheError, ReplayAnalysisResources,
+};
+use crate::dictionary_data::Sc2DictionaryData;
 use std::path::PathBuf;
+use std::sync::Arc;
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -213,10 +217,16 @@ fn run_cli_impl(
                 output_file: args.output_file,
                 recent_replay_count: args.recent_replay_count,
             };
+            let dictionary_data =
+                Arc::new(Sc2DictionaryData::load(None).map_err(|error| {
+                    GenerateCacheError::DetailedAnalysisConfig(error.to_string())
+                })?);
+            let resources = ReplayAnalysisResources::from_dictionary_data(dictionary_data)
+                .map_err(|error| GenerateCacheError::DetailedAnalysisConfig(error.to_string()))?;
             let summary = if let Some(logger) = logger {
-                config.generate_with_logger(logger)?
+                config.generate_with_logger(&resources, logger)?
             } else {
-                config.generate()?
+                config.generate(&resources)?
             };
 
             Ok(format!(

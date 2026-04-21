@@ -1,4 +1,4 @@
-use crate::dictionary_data::{self, WeeklyMutationDateJson, WeeklyMutationsJson};
+use crate::dictionary_data::{Sc2DictionaryData, WeeklyMutationDateJson, WeeklyMutationsJson};
 use chrono::{Duration, Local, NaiveDate};
 use thiserror::Error;
 
@@ -23,17 +23,17 @@ pub enum WeeklyMutationManagerError {
     InvalidInitialDate(String),
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct WeeklyMutationManager<'a> {
-    weekly_mutations: &'a WeeklyMutationsJson,
-    initial_name: &'a str,
+#[derive(Clone, Debug)]
+pub struct WeeklyMutationManager {
+    weekly_mutations: WeeklyMutationsJson,
+    initial_name: String,
     initial_date: NaiveDate,
 }
 
-impl<'a> WeeklyMutationManager<'a> {
+impl WeeklyMutationManager {
     pub fn new(
-        weekly_mutations: &'a WeeklyMutationsJson,
-        initial: &'a WeeklyMutationDateJson,
+        weekly_mutations: &WeeklyMutationsJson,
+        initial: &WeeklyMutationDateJson,
     ) -> Result<Self, WeeklyMutationManagerError> {
         if weekly_mutations.is_empty() {
             return Err(WeeklyMutationManagerError::EmptyMutationList);
@@ -49,17 +49,18 @@ impl<'a> WeeklyMutationManager<'a> {
             .map_err(|_| WeeklyMutationManagerError::InvalidInitialDate(initial.date.clone()))?;
 
         Ok(Self {
-            weekly_mutations,
-            initial_name: &initial.name,
+            weekly_mutations: weekly_mutations.clone(),
+            initial_name: initial.name.clone(),
             initial_date,
         })
     }
 
     pub fn from_dictionary_data(
-    ) -> Result<WeeklyMutationManager<'static>, WeeklyMutationManagerError> {
+        dictionary_data: &Sc2DictionaryData,
+    ) -> Result<WeeklyMutationManager, WeeklyMutationManagerError> {
         WeeklyMutationManager::new(
-            dictionary_data::weekly_mutations(),
-            dictionary_data::weekly_mutation_date(),
+            &dictionary_data.weekly_mutations_json,
+            &dictionary_data.weekly_mutation_date_json,
         )
     }
 
@@ -135,7 +136,7 @@ impl<'a> WeeklyMutationManager<'a> {
         let start_index = self
             .weekly_mutations
             .keys()
-            .position(|name| name == self.initial_name)
+            .position(|name| name == &self.initial_name)
             .ok_or_else(|| {
                 WeeklyMutationManagerError::InitialMutationNotFound(self.initial_name.to_string())
             })?;

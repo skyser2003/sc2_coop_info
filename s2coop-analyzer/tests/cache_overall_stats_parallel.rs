@@ -1,3 +1,5 @@
+mod common;
+
 use s2coop_analyzer::cache_overall_stats_generator::CacheReplayEntry;
 use s2coop_analyzer::detailed_replay_analysis::GenerateCacheConfig;
 use std::fs;
@@ -15,6 +17,7 @@ fn write_replay_file(path: &Path) {
 
 #[test]
 fn generate_cache_parallel_runs_are_deterministic() {
+    let resources = common::load_replay_resources();
     let temp_dir = TempDir::new().expect("failed to create tempdir");
     let account_dir = temp_dir.path().join("Accounts");
 
@@ -36,14 +39,14 @@ fn generate_cache_parallel_runs_are_deterministic() {
         output_file: first_output.clone(),
         recent_replay_count: None,
     }
-    .generate()
+    .generate(&resources)
     .expect("first cache generation should succeed");
     let second_summary = GenerateCacheConfig {
         account_dir,
         output_file: second_output.clone(),
         recent_replay_count: None,
     }
-    .generate()
+    .generate(&resources)
     .expect("second cache generation should succeed");
 
     assert_eq!(first_summary.scanned_replays, 0);

@@ -4,7 +4,7 @@ use crate::cache_overall_stats_generator::{
     PrettyCacheError,
 };
 use crate::dictionary_data::{
-    self, CacheGenerationData, DictionaryDataError, UnitAddKillsToJson, UnitNamesJson,
+    CacheGenerationData, Sc2DictionaryData, UnitAddKillsToJson, UnitNamesJson,
 };
 use crate::tauri_replay_analysis_impl::{
     ParsedReplayInput, ParsedReplayMessage, ParsedReplayPlayer, PlayerPositions, ReplayReport,
@@ -26,7 +26,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering},
-    Arc, OnceLock,
+    Arc,
 };
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
@@ -91,6 +91,13 @@ const CUSTOM_KILL_ICON_KEYS: [&str; 10] = [
 ];
 
 type UnitStats = (i64, i64, i64, f64);
+
+#[derive(Clone)]
+pub struct ReplayAnalysisResources {
+    dictionary_data: Arc<Sc2DictionaryData>,
+    hidden_created_lost: HashSet<String>,
+    protocol_store: ProtocolStore,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(untagged)]
@@ -228,15 +235,44 @@ impl ReplayNumericValue {
     }
 }
 
-pub(crate) fn protocol_store() -> Result<&'static ProtocolStore, ReplayBaseParseError> {
-    static STORE: OnceLock<Result<ProtocolStore, String>> = OnceLock::new();
-    let store = STORE.get_or_init(|| {
-        build_protocol_store().map_err(|error| format!("failed to build protocol store: {error}"))
-    });
+impl ReplayAnalysisResources {
+    pub fn from_dictionary_data(
+        dictionary_data: Arc<Sc2DictionaryData>,
+    ) -> Result<Self, DetailedReplayAnalysisError> {
+        let hidden_created_lost = dictionary_data
+            .replay_analysis_data
+            .dont_show_created_lost
+            .iter()
+            .cloned()
+            .collect::<HashSet<String>>();
+        let protocol_store = build_protocol_store().map_err(|error| {
+            DetailedReplayAnalysisError::ProtocolStore(format!(
+                "failed to build protocol store: {error}"
+            ))
+        })?;
 
-    store
-        .as_ref()
-        .map_err(|message| ReplayBaseParseError::ProtocolStore(message.clone()))
+        Ok(Self {
+            dictionary_data,
+            hidden_created_lost,
+            protocol_store,
+        })
+    }
+
+    pub fn dictionary_data(&self) -> &Sc2DictionaryData {
+        self.dictionary_data.as_ref()
+    }
+
+    pub fn cache_generation_data(&self) -> CacheGenerationData<'_> {
+        self.dictionary_data.cache_generation_data()
+    }
+
+    pub fn hidden_created_lost(&self) -> &HashSet<String> {
+        &self.hidden_created_lost
+    }
+
+    pub fn protocol_store(&self) -> &ProtocolStore {
+        &self.protocol_store
+    }
 }
 
 fn replay_game_speed_code(details: &ReplayDetails, init_data: &ReplayInitData) -> i64 {
@@ -280,24 +316,25 @@ pub fn realtime_length_from_replay(
 pub(crate) fn parse_replay_base(
     replay_path: &Path,
     inputs: &CacheGenerationData<'_>,
+    protocol_store: &ProtocolStore,
     options: ReplayBaseParseOptions,
 ) -> Result<Option<ReplayBaseParse>, ReplayBaseParseError> {
     if options.filters.only_blizzard && replay_path.to_string_lossy().contains("[MM]") {
         return Ok(None);
     }
 
-    let store = protocol_store()?;
     let parse_mode = if options.include_events {
         ReplayParseMode::Detailed
     } else {
         ReplayParseMode::Simple
     };
-    let parsed = parse_file_with_store(replay_path, store, parse_mode).map_err(|error| {
-        ReplayBaseParseError::ReplayParse {
-            path: replay_path.display().to_string(),
-            message: error.to_string(),
-        }
-    })?;
+    let parsed =
+        parse_file_with_store(replay_path, protocol_store, parse_mode).map_err(|error| {
+            ReplayBaseParseError::ReplayParse {
+                path: replay_path.display().to_string(),
+                message: error.to_string(),
+            }
+        })?;
 
     let ParsedReplay {
         base_build,
@@ -338,15 +375,15 @@ pub(crate) fn parse_replay_base(
 
     let replay_build = i64::from(base_build);
     let latest_build = i64::from(
-        store
+        protocol_store
             .latest()
             .map_err(|error| ReplayBaseParseError::ProtocolStore(error.to_string()))?
             .build,
     );
-    let selected_build = if store.build(base_build).is_ok() {
+    let selected_build = if protocol_store.build(base_build).is_ok() {
         replay_build
     } else {
-        store
+        protocol_store
             .closest_build(base_build)
             .map(i64::from)
             .unwrap_or(latest_build)
@@ -900,36 +937,6 @@ pub struct DetailedReplayAnalysisResult {
     pub cache_persistable: bool,
 }
 
-fn load_sc2_dictionary_data() -> Result<CacheGenerationData<'static>, DetailedReplayAnalysisError> {
-    dictionary_data::cache_generation_data().map_err(map_dictionary_data_error)
-}
-
-fn map_dictionary_data_error(error: DictionaryDataError) -> DetailedReplayAnalysisError {
-    match error {
-        DictionaryDataError::DictionaryDirNotFound(path) => {
-            DetailedReplayAnalysisError::DictionaryDirNotFound(path)
-        }
-        DictionaryDataError::IoRead { path, message } => {
-            DetailedReplayAnalysisError::IoRead { path, message }
-        }
-        DictionaryDataError::JsonParse { path, message } => {
-            DetailedReplayAnalysisError::JsonParse { path, message }
-        }
-        DictionaryDataError::InvalidDictionaryData { file, message } => {
-            DetailedReplayAnalysisError::InvalidDictionaryData { file, message }
-        }
-    }
-}
-
-pub fn cache_hidden_created_lost_units() -> Result<HashSet<String>, DetailedReplayAnalysisError> {
-    Ok(load_sc2_dictionary_data()?
-        .replay_analysis_data
-        .dont_show_created_lost
-        .iter()
-        .cloned()
-        .collect())
-}
-
 fn map_base_parse_error(error: ReplayBaseParseError) -> DetailedReplayAnalysisError {
     match error {
         ReplayBaseParseError::ProtocolStore(message) => {
@@ -1030,27 +1037,50 @@ pub enum GenerateCacheError {
 }
 
 impl GenerateCacheConfig {
-    pub fn generate(&self) -> Result<GenerateCacheSummary, GenerateCacheError> {
-        self.generate_with_logger_and_runtime(None, &GenerateCacheRuntimeOptions::default())
+    pub fn generate(
+        &self,
+        resources: &ReplayAnalysisResources,
+    ) -> Result<GenerateCacheSummary, GenerateCacheError> {
+        self.generate_with_resources_and_logger_and_runtime(
+            resources,
+            None,
+            &GenerateCacheRuntimeOptions::default(),
+        )
     }
 
     pub fn generate_with_logger(
         &self,
+        resources: &ReplayAnalysisResources,
         logger: &(dyn Fn(String) + Send + Sync),
     ) -> Result<GenerateCacheSummary, GenerateCacheError> {
-        self.generate_with_logger_and_runtime(Some(logger), &GenerateCacheRuntimeOptions::default())
+        self.generate_with_resources_and_logger_and_runtime(
+            resources,
+            Some(logger),
+            &GenerateCacheRuntimeOptions::default(),
+        )
     }
 
     pub fn generate_with_runtime_and_logger(
         &self,
+        resources: &ReplayAnalysisResources,
         logger: &(dyn Fn(String) + Send + Sync),
         runtime: &GenerateCacheRuntimeOptions,
     ) -> Result<GenerateCacheSummary, GenerateCacheError> {
-        self.generate_with_logger_and_runtime(Some(logger), runtime)
+        self.generate_with_resources_and_logger_and_runtime(resources, Some(logger), runtime)
     }
 
-    fn generate_with_logger_and_runtime(
+    pub fn generate_with_resources_and_runtime_and_logger(
         &self,
+        resources: &ReplayAnalysisResources,
+        logger: &(dyn Fn(String) + Send + Sync),
+        runtime: &GenerateCacheRuntimeOptions,
+    ) -> Result<GenerateCacheSummary, GenerateCacheError> {
+        self.generate_with_resources_and_logger_and_runtime(resources, Some(logger), runtime)
+    }
+
+    fn generate_with_resources_and_logger_and_runtime(
+        &self,
+        resources: &ReplayAnalysisResources,
         logger: Option<&(dyn Fn(String) + Send + Sync + '_)>,
         runtime: &GenerateCacheRuntimeOptions,
     ) -> Result<GenerateCacheSummary, GenerateCacheError> {
@@ -1061,7 +1091,7 @@ impl GenerateCacheConfig {
         }
 
         self.ensure_output_directory()?;
-        let analysis = generate_cache_analysis_output(self, logger, runtime)?;
+        let analysis = generate_cache_analysis_output(self, logger, runtime, resources)?;
         CacheReplayEntry::write_entries(&analysis.entries, &self.output_file)?;
         write_pretty_cache_file(&self.output_file, None)?;
 
@@ -1358,10 +1388,12 @@ struct CandidateReplay {
 }
 
 impl CandidateReplay {
-    fn collect(replay_path: &Path, cache_data: &CacheGenerationData<'_>) -> Option<Self> {
+    fn collect(replay_path: &Path, resources: &ReplayAnalysisResources) -> Option<Self> {
+        let cache_data = resources.cache_generation_data();
         let (_, parsed) = CacheReplayEntry::parse_with_options(
             replay_path,
-            cache_data,
+            &cache_data,
+            resources.protocol_store(),
             ReplayBaseParseOptions {
                 include_events: false,
                 filters: ReplayBaseParseFilters::saved_cache(),
@@ -1377,16 +1409,17 @@ impl CandidateReplay {
     fn analyze(
         self,
         main_handles: &HashSet<String>,
-        hidden_created_lost: &HashSet<String>,
+        resources: &ReplayAnalysisResources,
     ) -> CacheReplayEntry {
         let Self { path, parsed } = self;
         let basic = parsed.cache_entry();
 
-        if let Ok(result) = analyze_replay_file_with_cache_entry(
+        if let Ok(result) = analyze_replay_file_with_cache_entry_with_resources(
             &path,
             main_handles,
-            hidden_created_lost,
+            resources.hidden_created_lost(),
             Some(&basic),
+            resources,
         ) {
             if result.report.has_non_empty_player_stats() {
                 return result.cache_entry;
@@ -1520,13 +1553,10 @@ pub(crate) fn generate_cache_analysis_output(
     config: &GenerateCacheConfig,
     logger: Option<&(dyn Fn(String) + Send + Sync + '_)>,
     runtime: &GenerateCacheRuntimeOptions,
+    resources: &ReplayAnalysisResources,
 ) -> Result<GenerateCacheAnalysisOutput, GenerateCacheError> {
     let replay_files = collect_cache_replay_files(&config.account_dir, config.recent_replay_count);
     let main_handles = resolve_main_handles(&config.account_dir);
-    let hidden_created_lost = cache_hidden_created_lost_units()
-        .map_err(|error| GenerateCacheError::DetailedAnalysisConfig(error.to_string()))?;
-    let cache_data = dictionary_data::cache_generation_data()
-        .map_err(|error| GenerateCacheError::DetailedAnalysisConfig(error.to_string()))?;
     let existing_detailed_analysis_entries =
         CacheReplayEntry::load_existing_detailed_analysis(config.output_file.as_path(), logger);
     let temp_file_path = cache_analysis_temp_file_path(config.output_file.as_path());
@@ -1556,7 +1586,7 @@ pub(crate) fn generate_cache_analysis_output(
                         stop_requested_for_candidates.store(true, AtomicOrdering::Release);
                         return None;
                     }
-                    CandidateReplay::collect(path, &cache_data)
+                    CandidateReplay::collect(path, &resources)
                 })
                 .collect::<Vec<CandidateReplay>>()
         });
@@ -1595,7 +1625,7 @@ pub(crate) fn generate_cache_analysis_output(
                                 stop_requested_for_workers.store(true, AtomicOrdering::Release);
                                 return None;
                             }
-                            let entry = candidate.analyze(&main_handles, &hidden_created_lost);
+                            let entry = candidate.analyze(&main_handles, &resources);
                             if entry.detailed_analysis {
                                 progress_for_workers.add_temp_entry(entry.clone());
                             }
@@ -1850,9 +1880,11 @@ impl ReplayParsedInputBundle {
     pub(crate) fn parse(
         replay_path: &Path,
         dictionaries: &CacheGenerationData<'_>,
+        protocol_store: &ProtocolStore,
         options: ReplayBaseParseOptions,
     ) -> Result<Option<Self>, ReplayBaseParseError> {
-        let Some(base) = parse_replay_base(replay_path, dictionaries, options)? else {
+        let Some(base) = parse_replay_base(replay_path, dictionaries, protocol_store, options)?
+        else {
             return Ok(None);
         };
 
@@ -1862,10 +1894,12 @@ impl ReplayParsedInputBundle {
     fn parse_detailed_required(
         replay_path: &Path,
         dictionaries: &CacheGenerationData<'_>,
+        protocol_store: &ProtocolStore,
     ) -> Result<Self, DetailedReplayAnalysisError> {
         Self::parse(
             replay_path,
             dictionaries,
+            protocol_store,
             ReplayBaseParseOptions {
                 include_events: true,
                 ..ReplayBaseParseOptions::default()
@@ -2055,11 +2089,15 @@ impl CacheIconValue {
 }
 
 impl CacheReplayEntry {
-    pub fn parse_basic(replay_path: &Path) -> Option<Self> {
-        let cache_data = dictionary_data::cache_generation_data().ok()?;
+    pub fn parse_basic_with_resources(
+        replay_path: &Path,
+        resources: &ReplayAnalysisResources,
+    ) -> Option<Self> {
+        let cache_data = resources.cache_generation_data();
         Self::parse_with_options(
             replay_path,
             &cache_data,
+            resources.protocol_store(),
             ReplayBaseParseOptions {
                 include_events: false,
                 filters: ReplayBaseParseFilters::saved_cache(),
@@ -2162,9 +2200,10 @@ impl CacheReplayEntry {
     pub(crate) fn parse_with_options(
         replay_path: &Path,
         inputs: &CacheGenerationData<'_>,
+        protocol_store: &ProtocolStore,
         options: ReplayBaseParseOptions,
     ) -> Option<(Self, ReplayParsedInputBundle)> {
-        let parsed = ReplayParsedInputBundle::parse(replay_path, inputs, options)
+        let parsed = ReplayParsedInputBundle::parse(replay_path, inputs, protocol_store, options)
             .ok()
             .flatten()?;
 
@@ -2925,23 +2964,33 @@ fn apply_custom_kill_icons(
     }
 }
 
-pub fn analyze_replay_file(
+pub fn analyze_replay_file_with_resources(
     replay_path: &Path,
     main_player_handles: &HashSet<String>,
+    resources: &ReplayAnalysisResources,
 ) -> Result<ReplayReport, DetailedReplayAnalysisError> {
-    let dictionaries = load_sc2_dictionary_data()?;
-    let parsed = ReplayParsedInputBundle::parse_detailed_required(replay_path, &dictionaries)?;
+    let dictionaries = resources.cache_generation_data();
+    let parsed = ReplayParsedInputBundle::parse_detailed_required(
+        replay_path,
+        &dictionaries,
+        resources.protocol_store(),
+    )?;
     analyze_replay_file_impl(main_player_handles, parsed, &dictionaries)
 }
 
-pub fn analyze_replay_file_with_cache_entry(
+pub fn analyze_replay_file_with_cache_entry_with_resources(
     replay_path: &Path,
     main_player_handles: &HashSet<String>,
     hidden_created_lost: &HashSet<String>,
     basic_cache_entry: Option<&CacheReplayEntry>,
+    resources: &ReplayAnalysisResources,
 ) -> Result<DetailedReplayAnalysisResult, DetailedReplayAnalysisError> {
-    let dictionaries = load_sc2_dictionary_data()?;
-    let parsed = ReplayParsedInputBundle::parse_detailed_required(replay_path, &dictionaries)?;
+    let dictionaries = resources.cache_generation_data();
+    let parsed = ReplayParsedInputBundle::parse_detailed_required(
+        replay_path,
+        &dictionaries,
+        resources.protocol_store(),
+    )?;
     let fallback_basic = basic_cache_entry
         .cloned()
         .unwrap_or_else(|| parsed.cache_entry());

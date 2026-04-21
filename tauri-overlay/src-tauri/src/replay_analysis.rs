@@ -5,9 +5,10 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     CacheReplayEntry, CacheUnitStats, ReplayMessage,
 };
 use s2coop_analyzer::detailed_replay_analysis::{
-    analyze_replay_file, analyze_replay_file_with_cache_entry, cache_hidden_created_lost_units,
+    analyze_replay_file_with_cache_entry_with_resources, analyze_replay_file_with_resources,
+    ReplayAnalysisResources,
 };
-use s2coop_analyzer::dictionary_data;
+use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use s2coop_analyzer::tauri_replay_analysis_impl::{
     ParsedReplayMessage, ParsedReplayPlayer, ReplayReport,
 };
@@ -28,10 +29,11 @@ use crate::shared_types::{
     LocalizedLabels, LocalizedText, ReplayScanProgressPayload, UiMutatorRow,
 };
 use crate::{
-    build_amon_unit_data, build_commander_unit_data, canonicalize_coop_map_id,
-    commander_mind_control_unit, configured_main_handles_from_settings,
-    configured_main_names_from_settings, coop_map_id_to_english, empty_stats_payload,
-    format_date_from_system_time, infer_region_from_handle, is_official_coop_replay, kill_fraction,
+    build_amon_unit_data, build_commander_unit_data_with_dictionary,
+    canonicalize_coop_map_id_with_dictionary, commander_mind_control_unit_with_dictionary,
+    configured_main_handles_from_settings, configured_main_names_from_settings,
+    coop_map_id_to_english_with_dictionary, empty_stats_payload, format_date_from_system_time,
+    infer_region_from_handle, is_official_coop_replay_with_dictionary, kill_fraction,
     map_display_name, median_f64, median_u64, normalize_mastery_values, normalized_commander_name,
     orient_replay_for_main_names, parse_query_bool, parse_query_csv, parse_query_i64,
     parse_query_value, ratio, resolve_replay_root, result_is_victory, sanitize_replay_text,
@@ -70,10 +72,10 @@ fn decode_html_entities(value: &str) -> String {
         .replace("&apos;", "'")
 }
 
-fn canonical_mutator_id(mutator: &str) -> String {
-    let canonical = if dictionary_data::mutator_data(mutator).is_some() {
+fn canonical_mutator_id_with_dictionary(mutator: &str, dictionary: &Sc2DictionaryData) -> String {
+    let canonical = if dictionary.mutator_data(mutator).is_some() {
         mutator.to_string()
-    } else if let Some(mutator_id) = dictionary_data::mutator_id_from_name(mutator) {
+    } else if let Some(mutator_id) = dictionary.mutator_id_from_name(mutator) {
         mutator_id.to_string()
     } else {
         mutator.to_string()
@@ -86,17 +88,34 @@ fn canonical_mutator_id(mutator: &str) -> String {
     }
 }
 
-fn mutator_display_name_en(mutator: &str) -> String {
-    let mutator_id = canonical_mutator_id(mutator);
-    dictionary_data::mutator_data(&mutator_id)
+fn canonical_mutator_id(mutator: &str) -> String {
+    match mutator {
+        "HeroesfromtheStormOld" => "HeroesFromTheStorm".to_string(),
+        "AfraidOfTheDark" => "UberDarkness".to_string(),
+        _ => mutator.to_string(),
+    }
+}
+
+fn mutator_display_name_en_with_dictionary(
+    mutator: &str,
+    dictionary: &Sc2DictionaryData,
+) -> String {
+    let mutator_id = canonical_mutator_id_with_dictionary(mutator, dictionary);
+    dictionary
+        .mutator_data(&mutator_id)
         .map(|value| decode_html_entities(&value.name.en))
         .filter(|value| !value.is_empty())
         .or_else(|| {
-            dictionary_data::mutator_ids()
+            dictionary
+                .mutator_ids
                 .get(&mutator_id)
                 .map(|value| value.to_string())
         })
         .unwrap_or_default()
+}
+
+fn mutator_display_name_en(mutator: &str) -> String {
+    decode_html_entities(&canonical_mutator_id(mutator))
 }
 
 fn accurate_length_seconds_from_cache(value: &CacheNumericValue, fallback: u64) -> f64 {
@@ -216,11 +235,21 @@ fn record_prestige_count(target: &mut [u64; 4], raw_prestige: u64) {
     target[prestige] = target[prestige].saturating_add(1);
 }
 
-fn fastest_map_prestige_name(commander: &str, prestige: u64) -> String {
+fn fastest_map_prestige_name_with_dictionary(
+    commander: &str,
+    prestige: u64,
+    dictionary: &Sc2DictionaryData,
+) -> String {
     let sanitized_commander = sanitize_replay_text(commander);
-    dictionary_data::prestige_name(&sanitized_commander, prestige)
+    dictionary
+        .prestige_name(&sanitized_commander, prestige)
         .map(|value| value.to_string())
         .unwrap_or_else(|| format!("P{prestige}"))
+}
+
+fn fastest_map_prestige_name(commander: &str, prestige: u64) -> String {
+    let _ = commander;
+    format!("P{prestige}")
 }
 
 #[derive(Serialize)]
@@ -253,6 +282,28 @@ fn fastest_map_player_value(
         masteries: normalize_mastery_values(masteries),
         prestige,
         prestige_name: fastest_map_prestige_name(commander, prestige),
+    })
+}
+
+fn fastest_map_player_value_with_dictionary(
+    name: &str,
+    handle: &str,
+    commander: &str,
+    apm: u64,
+    mastery_level: u64,
+    masteries: &[u64],
+    prestige: u64,
+    dictionary: &Sc2DictionaryData,
+) -> Value {
+    report_value(&FastestMapPlayer {
+        name: sanitize_replay_text(name),
+        handle: handle.to_string(),
+        commander: sanitize_replay_text(commander),
+        apm,
+        mastery_level,
+        masteries: normalize_mastery_values(masteries),
+        prestige,
+        prestige_name: fastest_map_prestige_name_with_dictionary(commander, prestige, dictionary),
     })
 }
 
@@ -307,12 +358,19 @@ pub struct WeeklyRowPayload {
     pub winrate: f64,
 }
 
-fn hidden_unit_stats_names() -> HashSet<String> {
-    cache_hidden_created_lost_units().unwrap_or_default()
+fn hidden_unit_stats_names_with_dictionary(dictionary: &Sc2DictionaryData) -> HashSet<String> {
+    dictionary
+        .replay_analysis_data
+        .dont_show_created_lost
+        .iter()
+        .cloned()
+        .collect()
 }
 
-pub fn sanitize_hidden_unit_stats(mut units: Value) -> Value {
-    let hidden_units = hidden_unit_stats_names();
+fn sanitize_hidden_unit_stats_with_hidden_units(
+    mut units: Value,
+    hidden_units: &HashSet<String>,
+) -> Value {
     let Some(map) = units.as_object_mut() else {
         return units;
     };
@@ -336,6 +394,19 @@ pub fn sanitize_hidden_unit_stats(mut units: Value) -> Value {
     units
 }
 
+pub fn sanitize_hidden_unit_stats(units: Value) -> Value {
+    let hidden_units = HashSet::new();
+    sanitize_hidden_unit_stats_with_hidden_units(units, &hidden_units)
+}
+
+pub fn sanitize_hidden_unit_stats_with_dictionary(
+    units: Value,
+    dictionary: &Sc2DictionaryData,
+) -> Value {
+    let hidden_units = hidden_unit_stats_names_with_dictionary(dictionary);
+    sanitize_hidden_unit_stats_with_hidden_units(units, &hidden_units)
+}
+
 pub fn collect_main_identity_lists<R>(
     replays: &[R],
     main_names: &HashSet<String>,
@@ -348,8 +419,72 @@ where
     let mut player_handles = BTreeSet::new();
     let has_known_identity = !main_names.is_empty() || !main_handles.is_empty();
 
+    for replay in replays
+        .iter()
+        .map(Borrow::borrow)
+        .filter(|replay| replay.result != "Unparsed" && replay.map.trim().starts_with("AC_"))
+    {
+        let p1_is_main = ReplayAnalysis::is_main_player_identity(
+            &replay.main().name,
+            &replay.main().handle,
+            main_names,
+            main_handles,
+        );
+        let p2_is_main = ReplayAnalysis::is_main_player_identity(
+            &replay.ally().name,
+            &replay.ally().handle,
+            main_names,
+            main_handles,
+        );
+        let should_take_p1 = p1_is_main || (!has_known_identity && !p2_is_main);
+
+        if should_take_p1 {
+            let name = replay.main().name.trim();
+            if !name.is_empty() {
+                player_names.insert(name.to_string());
+            }
+
+            let handle = replay.main().handle.trim();
+            if !handle.is_empty() {
+                player_handles.insert(handle.to_string());
+            }
+        }
+
+        if p2_is_main {
+            let name = replay.ally().name.trim();
+            if !name.is_empty() {
+                player_names.insert(name.to_string());
+            }
+
+            let handle = replay.ally().handle.trim();
+            if !handle.is_empty() {
+                player_handles.insert(handle.to_string());
+            }
+        }
+    }
+
+    (
+        player_names.into_iter().collect(),
+        player_handles.into_iter().collect(),
+    )
+}
+
+pub fn collect_main_identity_lists_with_dictionary<R>(
+    replays: &[R],
+    main_names: &HashSet<String>,
+    main_handles: &HashSet<String>,
+    dictionary: &Sc2DictionaryData,
+) -> (Vec<String>, Vec<String>)
+where
+    R: Borrow<ReplayInfo>,
+{
+    let mut player_names = BTreeSet::new();
+    let mut player_handles = BTreeSet::new();
+    let has_known_identity = !main_names.is_empty() || !main_handles.is_empty();
+
     for replay in replays.iter().map(Borrow::borrow).filter(|replay| {
-        replay.result != "Unparsed" && canonicalize_coop_map_id(&replay.map).is_some()
+        replay.result != "Unparsed"
+            && canonicalize_coop_map_id_with_dictionary(&replay.map, dictionary).is_some()
     }) {
         let p1_is_main = ReplayAnalysis::is_main_player_identity(
             &replay.main().name,
@@ -612,14 +747,30 @@ fn wildcard_match(pattern: &str, value: &str) -> bool {
     previous[value_bytes.len()]
 }
 
+fn bonus_objective_total_for_canonical_map_with_dictionary(
+    map_name: &str,
+    dictionary: &Sc2DictionaryData,
+) -> Option<u64> {
+    dictionary.bonus_objectives.get(map_name).copied()
+}
+
 fn bonus_objective_total_for_canonical_map(map_name: &str) -> Option<u64> {
-    dictionary_data::bonus_objectives().get(map_name).copied()
+    let _ = map_name;
+    None
+}
+
+pub fn bonus_objective_total_for_map_id_with_dictionary(
+    map_id: &str,
+    dictionary: &Sc2DictionaryData,
+) -> Option<u64> {
+    coop_map_id_to_english_with_dictionary(map_id, dictionary)
+        .as_ref()
+        .and_then(|name| bonus_objective_total_for_canonical_map_with_dictionary(name, dictionary))
 }
 
 pub fn bonus_objective_total_for_map_id(map_id: &str) -> Option<u64> {
-    coop_map_id_to_english(map_id)
-        .as_ref()
-        .and_then(|name| bonus_objective_total_for_canonical_map(name))
+    let _ = map_id;
+    None
 }
 
 fn cache_json_value<T: serde::Serialize>(value: &T) -> Value {
@@ -652,11 +803,19 @@ fn cache_player_masteries(player: Option<&CachePlayer>) -> Vec<u64> {
 }
 
 fn cache_player_units(player: Option<&CachePlayer>) -> Value {
+    let hidden_units = HashSet::new();
+    cache_player_units_with_hidden_units(player, &hidden_units)
+}
+
+fn cache_player_units_with_hidden_units(
+    player: Option<&CachePlayer>,
+    hidden_units: &HashSet<String>,
+) -> Value {
     player
         .and_then(|player| player.units.as_ref())
         .map(
             |units: &std::collections::BTreeMap<String, CacheUnitStats>| {
-                sanitize_hidden_unit_stats(cache_json_value(units))
+                sanitize_hidden_unit_stats_with_hidden_units(cache_json_value(units), hidden_units)
             },
         )
         .unwrap_or_else(|| Value::Object(Default::default()))
@@ -881,11 +1040,12 @@ fn apply_replay_unit_count(target: &mut i64, hidden: &mut bool, value: ReplayUni
     }
 }
 
-pub fn append_units_to_rollup(
+pub fn append_units_to_rollup_with_dictionary(
     side_rollup: &mut std::collections::BTreeMap<String, CommanderUnitRollup>,
     commander_name: &str,
     units_payload: &Value,
     player_kills: u64,
+    dictionary: &Sc2DictionaryData,
 ) {
     let commander = sanitize_replay_text(commander_name);
     if commander.trim().is_empty() {
@@ -906,7 +1066,7 @@ pub fn append_units_to_rollup(
         replay_units.push((sanitize_replay_text(unit_name), replay_unit_row(values)));
     }
 
-    let mc_unit = commander_mind_control_unit(&commander).map(|unit| unit.to_string());
+    let mc_unit = commander_mind_control_unit_with_dictionary(&commander, dictionary);
     let mut mc_unit_bonus_kills = 0_i64;
     if let Some(mc_unit_name) = mc_unit.as_deref() {
         if replay_units.iter().any(|(unit, _)| unit == mc_unit_name) {
@@ -950,6 +1110,75 @@ pub fn append_units_to_rollup(
     }
 }
 
+pub fn append_units_to_rollup(
+    side_rollup: &mut std::collections::BTreeMap<String, CommanderUnitRollup>,
+    commander_name: &str,
+    units_payload: &Value,
+    player_kills: u64,
+) {
+    let commander = sanitize_replay_text(commander_name);
+    if commander.trim().is_empty() {
+        return;
+    }
+    let Some(units) = units_payload.as_object() else {
+        return;
+    };
+
+    let commander_entry = side_rollup.entry(commander.clone()).or_default();
+    commander_entry.count = commander_entry.count.saturating_add(1);
+
+    for (unit_name, row) in units {
+        let Some(values) = row.as_array() else {
+            continue;
+        };
+        let row = replay_unit_row(values);
+        let entry = commander_entry
+            .units
+            .entry(sanitize_replay_text(unit_name))
+            .or_default();
+        apply_replay_unit_count(&mut entry.created, &mut entry.created_hidden, row.created);
+        apply_replay_unit_count(&mut entry.lost, &mut entry.lost_hidden, row.lost);
+        entry.kills = entry.kills.saturating_add(row.kills);
+        if !matches!(row.created, ReplayUnitCountValue::Hidden) || commander == "Tychus" {
+            entry.made = entry.made.saturating_add(1);
+        }
+        if player_kills > 0 {
+            entry
+                .kill_percentages
+                .push(row.kills as f64 / player_kills as f64);
+        }
+    }
+}
+
+pub fn append_player_units_to_rollups_with_dictionary(
+    main_rollup: &mut std::collections::BTreeMap<String, CommanderUnitRollup>,
+    ally_rollup: &mut std::collections::BTreeMap<String, CommanderUnitRollup>,
+    commander_name: &str,
+    units_payload: &Value,
+    player_kills: u64,
+    player_handle: &str,
+    main_handles: &HashSet<String>,
+    dictionary: &Sc2DictionaryData,
+) {
+    if ReplayAnalysis::is_main_player_by_handle(player_handle, main_handles) {
+        append_units_to_rollup_with_dictionary(
+            main_rollup,
+            commander_name,
+            units_payload,
+            player_kills,
+            dictionary,
+        );
+    } else {
+        append_units_to_rollup_with_dictionary(
+            ally_rollup,
+            commander_name,
+            units_payload,
+            player_kills,
+            dictionary,
+        );
+    }
+}
+
 pub fn append_player_units_to_rollups(
     main_rollup: &mut std::collections::BTreeMap<String, CommanderUnitRollup>,
     ally_rollup: &mut std::collections::BTreeMap<String, CommanderUnitRollup>,
@@ -966,9 +1195,13 @@ pub fn append_player_units_to_rollups(
     }
 }
 
-pub fn replay_info_from_cache_entry(entry: &CacheReplayEntry) -> ReplayInfo {
+pub fn replay_info_from_cache_entry_with_dictionary(
+    entry: &CacheReplayEntry,
+    dictionary: &Sc2DictionaryData,
+) -> ReplayInfo {
     let player_one = cache_player(entry, 1);
     let player_two = cache_player(entry, 2);
+    let hidden_units = hidden_unit_stats_names_with_dictionary(dictionary);
     let slot1 = ReplayPlayerInfo {
         name: cache_player_text(player_one, |player| player.name.as_ref()),
         handle: cache_player_text(player_one, |player| player.handle.as_ref()),
@@ -983,7 +1216,7 @@ pub fn replay_info_from_cache_entry(entry: &CacheReplayEntry) -> ReplayInfo {
         }),
         prestige: cache_player_u64(player_one, |player| player.prestige.map(u64::from)),
         masteries: cache_player_masteries(player_one),
-        units: cache_player_units(player_one),
+        units: cache_player_units_with_hidden_units(player_one, &hidden_units),
         icons: cache_player_icons(player_one),
     };
     let slot2 = ReplayPlayerInfo {
@@ -1000,22 +1233,31 @@ pub fn replay_info_from_cache_entry(entry: &CacheReplayEntry) -> ReplayInfo {
         }),
         prestige: cache_player_u64(player_two, |player| player.prestige.map(u64::from)),
         masteries: cache_player_masteries(player_two),
-        units: cache_player_units(player_two),
+        units: cache_player_units_with_hidden_units(player_two, &hidden_units),
         icons: cache_player_icons(player_two),
     };
     let normalized_mutators = entry
         .mutators
         .iter()
-        .map(|mutator| normalize_mutator_id(mutator))
+        .map(|mutator| normalize_mutator_id_with_dictionary(mutator, dictionary))
         .collect::<Vec<_>>();
     let weekly_name = if entry.weekly {
-        resolve_weekly_mutation_name(&entry.map_name, &normalized_mutators)
+        resolve_weekly_mutation_name_with_dictionary(
+            &entry.map_name,
+            &normalized_mutators,
+            dictionary,
+        )
     } else {
         None
     };
-    let bonus_total = canonicalize_coop_map_id(&entry.map_name)
+    let bonus_total = dictionary
+        .canonicalize_coop_map_id(&entry.map_name)
         .as_deref()
-        .and_then(bonus_objective_total_for_map_id);
+        .and_then(|map_id| dictionary.coop_map_id_to_english(map_id))
+        .as_deref()
+        .and_then(|map_name| {
+            bonus_objective_total_for_canonical_map_with_dictionary(map_name, dictionary)
+        });
     let file_path = Path::new(&entry.file);
     let accurate_length = accurate_length_seconds_from_cache(&entry.accurate_length, entry.length);
     let difficulty = if !entry.ext_difficulty.trim().is_empty() {
@@ -1032,7 +1274,9 @@ pub fn replay_info_from_cache_entry(entry: &CacheReplayEntry) -> ReplayInfo {
         file: entry.file.clone(),
         date: parse_replay_timestamp_seconds(&entry.date)
             .unwrap_or_else(|| file_modified_seconds(file_path)),
-        map: canonicalize_coop_map_id(&entry.map_name).unwrap_or_else(|| entry.map_name.clone()),
+        map: dictionary
+            .canonicalize_coop_map_id(&entry.map_name)
+            .unwrap_or_else(|| entry.map_name.clone()),
         result: entry.result.clone(),
         difficulty,
         enemy: entry
@@ -1077,20 +1321,366 @@ pub fn replay_info_from_cache_entry(entry: &CacheReplayEntry) -> ReplayInfo {
     }
 }
 
-fn replay_info_from_report(path: &Path, report: &ReplayReport) -> ReplayInfo {
+pub fn replay_info_from_cache_entry(entry: &CacheReplayEntry) -> ReplayInfo {
+    let player_one = cache_player(entry, 1);
+    let player_two = cache_player(entry, 2);
+    let slot1 = ReplayPlayerInfo {
+        name: cache_player_text(player_one, |player| player.name.as_ref()),
+        handle: cache_player_text(player_one, |player| player.handle.as_ref()),
+        apm: cache_player_u64(player_one, |player| player.apm.map(u64::from)),
+        kills: cache_player_u64(player_one, |player| player.kills),
+        commander: cache_player_text(player_one, |player| player.commander.as_ref()),
+        commander_level: cache_player_u64(player_one, |player| {
+            player.commander_level.map(u64::from)
+        }),
+        mastery_level: cache_player_u64(player_one, |player| {
+            player.commander_mastery_level.map(u64::from)
+        }),
+        prestige: cache_player_u64(player_one, |player| player.prestige.map(u64::from)),
+        masteries: cache_player_masteries(player_one),
+        units: cache_player_units(player_one),
+        icons: cache_player_icons(player_one),
+    };
+    let slot2 = ReplayPlayerInfo {
+        name: cache_player_text(player_two, |player| player.name.as_ref()),
+        handle: cache_player_text(player_two, |player| player.handle.as_ref()),
+        apm: cache_player_u64(player_two, |player| player.apm.map(u64::from)),
+        kills: cache_player_u64(player_two, |player| player.kills),
+        commander: cache_player_text(player_two, |player| player.commander.as_ref()),
+        commander_level: cache_player_u64(player_two, |player| {
+            player.commander_level.map(u64::from)
+        }),
+        mastery_level: cache_player_u64(player_two, |player| {
+            player.commander_mastery_level.map(u64::from)
+        }),
+        prestige: cache_player_u64(player_two, |player| player.prestige.map(u64::from)),
+        masteries: cache_player_masteries(player_two),
+        units: cache_player_units(player_two),
+        icons: cache_player_icons(player_two),
+    };
+    let file_path = Path::new(&entry.file);
+    let accurate_length = accurate_length_seconds_from_cache(&entry.accurate_length, entry.length);
+    let difficulty = if !entry.ext_difficulty.trim().is_empty() {
+        entry.ext_difficulty.trim().to_string()
+    } else if !entry.difficulty.1.trim().is_empty() {
+        entry.difficulty.1.trim().to_string()
+    } else if !entry.difficulty.0.trim().is_empty() {
+        entry.difficulty.0.trim().to_string()
+    } else {
+        "Unknown".to_string()
+    };
+
+    ReplayInfo {
+        file: entry.file.clone(),
+        date: parse_replay_timestamp_seconds(&entry.date)
+            .unwrap_or_else(|| file_modified_seconds(file_path)),
+        map: entry.map_name.clone(),
+        result: entry.result.clone(),
+        difficulty,
+        enemy: entry
+            .enemy_race
+            .as_ref()
+            .filter(|value| !value.trim().is_empty())
+            .cloned()
+            .unwrap_or_else(|| "Unknown".to_string()),
+        length: display_length_seconds(accurate_length),
+        accurate_length,
+        slot1,
+        slot2,
+        main_slot: 0,
+        amon_units: entry
+            .amon_units
+            .as_ref()
+            .map(cache_json_value)
+            .unwrap_or_else(|| Value::Object(Default::default())),
+        player_stats: entry
+            .player_stats
+            .as_ref()
+            .map(cache_json_value)
+            .unwrap_or_else(|| Value::Object(Default::default())),
+        extension: entry.extension,
+        brutal_plus: u64::from(entry.brutal_plus),
+        weekly: entry.weekly,
+        weekly_name: None,
+        mutators: entry.mutators.clone(),
+        comp: entry
+            .comp
+            .clone()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| "Unidentified AI".to_string()),
+        bonus: entry
+            .bonus
+            .as_ref()
+            .map(|bonus| vec![1; bonus.len()])
+            .unwrap_or_default(),
+        bonus_total: None,
+        messages: replay_chat_messages_from_cache(&entry.messages),
+        is_detailed: entry.detailed_analysis,
+    }
+}
+
+fn replay_info_from_report_with_dictionary(
+    path: &Path,
+    report: &ReplayReport,
+    dictionary: &Sc2DictionaryData,
+) -> ReplayInfo {
+    let hidden_units = hidden_unit_stats_names_with_dictionary(dictionary);
     let normalized_mutators = report
         .mutators
         .iter()
-        .map(|mutator| normalize_mutator_id(mutator))
+        .map(|mutator| normalize_mutator_id_with_dictionary(mutator, dictionary))
         .collect::<Vec<_>>();
     let weekly_name = if report.weekly {
-        resolve_weekly_mutation_name(&report.map_name, &normalized_mutators)
+        resolve_weekly_mutation_name_with_dictionary(
+            &report.map_name,
+            &normalized_mutators,
+            dictionary,
+        )
     } else {
         None
     };
-    let bonus_total = canonicalize_coop_map_id(&report.map_name)
+    let bonus_total = dictionary
+        .canonicalize_coop_map_id(&report.map_name)
         .as_deref()
-        .and_then(bonus_objective_total_for_map_id);
+        .and_then(|map_id| dictionary.coop_map_id_to_english(map_id))
+        .as_deref()
+        .and_then(|map_name| {
+            bonus_objective_total_for_canonical_map_with_dictionary(map_name, dictionary)
+        });
+    let slot1_player = report_player(report, 1);
+    let slot2_player = report_player(report, 2);
+    let accurate_length =
+        if report.parser.accurate_length.is_finite() && report.parser.accurate_length > 0.0 {
+            report.parser.accurate_length
+        } else {
+            report.length.max(0.0)
+        };
+    let main_slot = match report.positions.main {
+        2 => 1,
+        _ => 0,
+    };
+    let slot_player = |slot_index: usize,
+                       player: Option<&ParsedReplayPlayer>,
+                       commander: &str,
+                       commander_level: u64,
+                       mastery_level: u64,
+                       prestige: u64,
+                       masteries: Vec<u64>,
+                       units: Value,
+                       icons: Value,
+                       kills: u64|
+     -> ReplayPlayerInfo {
+        let fallback_name = if slot_index == 0 {
+            report.main.clone()
+        } else {
+            report.ally.clone()
+        };
+        ReplayPlayerInfo {
+            name: player
+                .map(|value| value.name.clone())
+                .unwrap_or_else(|| fallback_name),
+            handle: player.map(|value| value.handle.clone()).unwrap_or_default(),
+            apm: player.map(|value| u64::from(value.apm)).unwrap_or(0),
+            kills,
+            commander: player
+                .map(|value| value.commander.clone())
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| commander.to_string()),
+            commander_level: player
+                .map(|value| u64::from(value.commander_level))
+                .unwrap_or(commander_level),
+            mastery_level: player
+                .map(|value| u64::from(value.commander_mastery_level))
+                .unwrap_or(mastery_level),
+            prestige: player
+                .map(|value| u64::from(value.prestige))
+                .unwrap_or(prestige),
+            masteries: player
+                .map(|value| {
+                    value
+                        .masteries
+                        .iter()
+                        .map(|entry| u64::from(*entry))
+                        .collect()
+                })
+                .unwrap_or(masteries),
+            units,
+            icons,
+        }
+    };
+    let slot1_is_main = main_slot == 0;
+    let slot1 = slot_player(
+        0,
+        slot1_player,
+        if slot1_is_main {
+            &report.main_commander
+        } else {
+            &report.ally_commander
+        },
+        if slot1_is_main {
+            u64::from(report.main_commander_level)
+        } else {
+            u64::from(report.ally_commander_level)
+        },
+        slot1_player
+            .map(|value| u64::from(value.commander_mastery_level))
+            .unwrap_or(0),
+        slot1_player
+            .map(|value| u64::from(value.prestige))
+            .unwrap_or(0),
+        if slot1_is_main {
+            report
+                .main_masteries
+                .iter()
+                .map(|value| u64::from(*value))
+                .collect()
+        } else {
+            report
+                .ally_masteries
+                .iter()
+                .map(|value| u64::from(*value))
+                .collect()
+        },
+        sanitize_hidden_unit_stats_with_hidden_units(
+            report_value(if slot1_is_main {
+                &report.main_units
+            } else {
+                &report.ally_units
+            }),
+            &hidden_units,
+        ),
+        with_outlaw_icons(
+            report_value(if slot1_is_main {
+                &report.main_icons
+            } else {
+                &report.ally_icons
+            }),
+            if slot1_is_main {
+                &report.main_commander
+            } else {
+                &report.ally_commander
+            },
+            if (if slot1_is_main {
+                &report.main_commander
+            } else {
+                &report.ally_commander
+            }) == "Tychus"
+            {
+                report.outlaw_order.as_ref()
+            } else {
+                None
+            },
+        ),
+        if slot1_is_main {
+            report.main_kills
+        } else {
+            report.ally_kills
+        },
+    );
+    let slot2 = slot_player(
+        1,
+        slot2_player,
+        if slot1_is_main {
+            &report.ally_commander
+        } else {
+            &report.main_commander
+        },
+        if slot1_is_main {
+            u64::from(report.ally_commander_level)
+        } else {
+            u64::from(report.main_commander_level)
+        },
+        slot2_player
+            .map(|value| u64::from(value.commander_mastery_level))
+            .unwrap_or(0),
+        slot2_player
+            .map(|value| u64::from(value.prestige))
+            .unwrap_or(0),
+        if slot1_is_main {
+            report
+                .ally_masteries
+                .iter()
+                .map(|value| u64::from(*value))
+                .collect()
+        } else {
+            report
+                .main_masteries
+                .iter()
+                .map(|value| u64::from(*value))
+                .collect()
+        },
+        sanitize_hidden_unit_stats_with_hidden_units(
+            report_value(if slot1_is_main {
+                &report.ally_units
+            } else {
+                &report.main_units
+            }),
+            &hidden_units,
+        ),
+        with_outlaw_icons(
+            report_value(if slot1_is_main {
+                &report.ally_icons
+            } else {
+                &report.main_icons
+            }),
+            if slot1_is_main {
+                &report.ally_commander
+            } else {
+                &report.main_commander
+            },
+            if (if slot1_is_main {
+                &report.ally_commander
+            } else {
+                &report.main_commander
+            }) == "Tychus"
+            {
+                report.outlaw_order.as_ref()
+            } else {
+                None
+            },
+        ),
+        if slot1_is_main {
+            report.ally_kills
+        } else {
+            report.main_kills
+        },
+    );
+
+    ReplayInfo {
+        file: path.display().to_string(),
+        date: parse_replay_timestamp_seconds(&report.parser.date)
+            .unwrap_or_else(|| file_modified_seconds(path)),
+        map: dictionary
+            .canonicalize_coop_map_id(&report.map_name)
+            .unwrap_or_else(|| report.map_name.clone()),
+        result: report.result.clone(),
+        difficulty: report.difficulty.clone(),
+        enemy: if report.parser.enemy_race.trim().is_empty() {
+            "Unknown".to_string()
+        } else {
+            report.parser.enemy_race.clone()
+        },
+        length: display_length_seconds(accurate_length),
+        accurate_length,
+        slot1,
+        slot2,
+        main_slot,
+        amon_units: report_value(&report.amon_units),
+        player_stats: report_value(&report.player_stats),
+        extension: report.extension,
+        brutal_plus: u64::from(report.brutal_plus),
+        weekly: report.weekly,
+        weekly_name,
+        mutators: normalized_mutators,
+        comp: report.comp.clone(),
+        bonus: vec![1; report.bonus.len()],
+        bonus_total,
+        messages: replay_chat_messages_from_report(&report.parser.messages),
+        is_detailed: true,
+    }
+}
+
+fn replay_info_from_report(path: &Path, report: &ReplayReport) -> ReplayInfo {
     let slot1_player = report_player(report, 1);
     let slot2_player = report_player(report, 2);
     let accurate_length =
@@ -1288,7 +1878,7 @@ fn replay_info_from_report(path: &Path, report: &ReplayReport) -> ReplayInfo {
         file: path.display().to_string(),
         date: parse_replay_timestamp_seconds(&report.parser.date)
             .unwrap_or_else(|| file_modified_seconds(path)),
-        map: canonicalize_coop_map_id(&report.map_name).unwrap_or_else(|| report.map_name.clone()),
+        map: report.map_name.clone(),
         result: report.result.clone(),
         difficulty: report.difficulty.clone(),
         enemy: if report.parser.enemy_race.trim().is_empty() {
@@ -1306,11 +1896,11 @@ fn replay_info_from_report(path: &Path, report: &ReplayReport) -> ReplayInfo {
         extension: report.extension,
         brutal_plus: u64::from(report.brutal_plus),
         weekly: report.weekly,
-        weekly_name,
-        mutators: normalized_mutators,
+        weekly_name: None,
+        mutators: report.mutators.clone(),
         comp: report.comp.clone(),
         bonus: vec![1; report.bonus.len()],
-        bonus_total,
+        bonus_total: None,
         messages: replay_chat_messages_from_report(&report.parser.messages),
         is_detailed: true,
     }
@@ -1396,6 +1986,26 @@ impl ReplayAnalysis {
         include_detailed: bool,
         main_names: &HashSet<String>,
         main_handles: &HashSet<String>,
+    ) -> Value
+    where
+        R: Borrow<ReplayInfo>,
+    {
+        let dictionary = Sc2DictionaryData::default();
+        Self::rebuild_analysis_payload_with_dictionary(
+            replays,
+            include_detailed,
+            main_names,
+            main_handles,
+            &dictionary,
+        )
+    }
+
+    pub fn rebuild_analysis_payload_with_dictionary<R>(
+        replays: &[R],
+        include_detailed: bool,
+        main_names: &HashSet<String>,
+        main_handles: &HashSet<String>,
+        dictionary: &Sc2DictionaryData,
     ) -> Value
     where
         R: Borrow<ReplayInfo>,
@@ -1565,7 +2175,8 @@ impl ReplayAnalysis {
             if replay.result == "Unparsed" {
                 continue;
             }
-            let Some(map_key) = canonicalize_coop_map_id(&replay.map) else {
+            let Some(map_key) = canonicalize_coop_map_id_with_dictionary(&replay.map, dictionary)
+            else {
                 continue;
             };
             let main_player_name = sanitize_replay_text(&replay.main().name);
@@ -1574,7 +2185,7 @@ impl ReplayAnalysis {
             let ally_commander_text = sanitize_replay_text(replay.ally_commander());
             let map_bonus_total = replay
                 .bonus_total
-                .or_else(|| bonus_objective_total_for_map_id(&map_key));
+                .or_else(|| bonus_objective_total_for_map_id_with_dictionary(&map_key, dictionary));
 
             let replay_is_victory = match result_is_victory(&replay.result) {
                 Some(result) => result,
@@ -1898,7 +2509,8 @@ impl ReplayAnalysis {
         let mut map_data = Map::new();
         let map_started_at = Instant::now();
         for (map_id, aggregate) in map_values {
-            let map_name = coop_map_id_to_english(&map_id).unwrap_or_else(|| map_id.clone());
+            let map_name = coop_map_id_to_english_with_dictionary(&map_id, dictionary)
+                .unwrap_or_else(|| map_id.clone());
             let games = aggregate.wins + aggregate.losses;
             let winrate = ratio(aggregate.wins, games);
             let bonus_rate = if aggregate.bonus_games == 0 {
@@ -1916,7 +2528,7 @@ impl ReplayAnalysis {
             } else {
                 aggregate.fastest_length
             };
-            let fastest_p1 = fastest_map_player_value(
+            let fastest_p1 = fastest_map_player_value_with_dictionary(
                 &aggregate.fastest_p1,
                 &aggregate.fastest_p1_handle,
                 &aggregate.fastest_p1_commander,
@@ -1924,8 +2536,9 @@ impl ReplayAnalysis {
                 aggregate.fastest_p1_mastery_level,
                 &aggregate.fastest_p1_masteries,
                 aggregate.fastest_p1_prestige,
+                dictionary,
             );
-            let fastest_p2 = fastest_map_player_value(
+            let fastest_p2 = fastest_map_player_value_with_dictionary(
                 &aggregate.fastest_p2,
                 &aggregate.fastest_p2_handle,
                 &aggregate.fastest_p2_commander,
@@ -1933,6 +2546,7 @@ impl ReplayAnalysis {
                 aggregate.fastest_p2_mastery_level,
                 &aggregate.fastest_p2_masteries,
                 aggregate.fastest_p2_prestige,
+                dictionary,
             );
             let p1_is_main = ReplayAnalysis::is_main_player_identity(
                 &aggregate.fastest_p1,
@@ -2225,9 +2839,7 @@ impl ReplayAnalysis {
             player_data.len()
         );
 
-        let prestige_names = super::dictionary_data::tauri_ui_data()
-            .map(|data| data.prestige_names_json.clone())
-            .unwrap_or_default();
+        let prestige_names = dictionary.prestige_names_json.clone();
 
         let unit_data = if include_detailed {
             let mut main_rollup: std::collections::BTreeMap<String, CommanderUnitRollup> =
@@ -2264,11 +2876,11 @@ impl ReplayAnalysis {
                 if replay.result == "Unparsed" {
                     continue;
                 }
-                if canonicalize_coop_map_id(&replay.map).is_none() {
+                if canonicalize_coop_map_id_with_dictionary(&replay.map, dictionary).is_none() {
                     continue;
                 }
 
-                append_player_units_to_rollups(
+                append_player_units_to_rollups_with_dictionary(
                     &mut main_rollup,
                     &mut ally_rollup,
                     replay.main_commander(),
@@ -2276,8 +2888,9 @@ impl ReplayAnalysis {
                     replay.main_kills(),
                     &replay.main().handle,
                     &main_handles,
+                    dictionary,
                 );
-                append_player_units_to_rollups(
+                append_player_units_to_rollups_with_dictionary(
                     &mut main_rollup,
                     &mut ally_rollup,
                     replay.ally_commander(),
@@ -2285,13 +2898,14 @@ impl ReplayAnalysis {
                     replay.ally_kills(),
                     &replay.ally().handle,
                     &main_handles,
+                    dictionary,
                 );
                 append_amon_units(&replay.amon_units);
             }
 
             report_value(&UnitDataPayload {
-                main: build_commander_unit_data(main_rollup),
-                ally: build_commander_unit_data(ally_rollup),
+                main: build_commander_unit_data_with_dictionary(main_rollup, dictionary),
+                ally: build_commander_unit_data_with_dictionary(ally_rollup, dictionary),
                 amon: build_amon_unit_data(amon_rollup),
             })
         } else {
@@ -2431,12 +3045,22 @@ impl ReplayAnalysis {
     }
 
     pub fn rebuild_weeklies_rows(replays: &[ReplayInfo]) -> Vec<WeeklyRowPayload> {
-        Self::rebuild_weeklies_rows_for_date(replays, Local::now().date_naive())
+        let dictionary = Sc2DictionaryData::default();
+        Self::rebuild_weeklies_rows_with_dictionary(replays, Local::now().date_naive(), &dictionary)
     }
 
     pub fn rebuild_weeklies_rows_for_date(
         replays: &[ReplayInfo],
         current_date: NaiveDate,
+    ) -> Vec<WeeklyRowPayload> {
+        let dictionary = Sc2DictionaryData::default();
+        Self::rebuild_weeklies_rows_with_dictionary(replays, current_date, &dictionary)
+    }
+
+    pub fn rebuild_weeklies_rows_with_dictionary(
+        replays: &[ReplayInfo],
+        current_date: NaiveDate,
+        dictionary: &Sc2DictionaryData,
     ) -> Vec<WeeklyRowPayload> {
         #[derive(Default)]
         struct WeeklyMutatorUi<'a> {
@@ -2488,23 +3112,14 @@ impl ReplayAnalysis {
             (rank, trimmed.to_string())
         }
 
-        let weekly_mutation_order = dictionary_data::tauri_ui_data()
-            .map(|data| {
-                data.weekly_mutations_json
-                    .keys()
-                    .enumerate()
-                    .map(|(index, name)| (name.clone(), index))
-                    .collect::<HashMap<String, usize>>()
-            })
-            .unwrap_or_else(|_| {
-                dictionary_data::weekly_mutations()
-                    .keys()
-                    .enumerate()
-                    .map(|(index, name)| (name.clone(), index))
-                    .collect::<HashMap<String, usize>>()
-            });
+        let weekly_mutation_order = dictionary
+            .weekly_mutations_json
+            .keys()
+            .enumerate()
+            .map(|(index, name)| (name.clone(), index))
+            .collect::<HashMap<String, usize>>();
 
-        let schedule_statuses = WeeklyMutationManager::from_dictionary_data()
+        let schedule_statuses = WeeklyMutationManager::from_dictionary_data(dictionary)
             .ok()
             .and_then(|manager| manager.statuses_for_date(current_date).ok());
         let schedule_lookup = schedule_statuses
@@ -2519,26 +3134,28 @@ impl ReplayAnalysis {
             .unwrap_or_default();
 
         let mut aggregates = HashMap::<String, WeeklyAggregate>::new();
-        let weekly_mutation_details = dictionary_data::weekly_mutations()
+        let weekly_mutation_details = dictionary
+            .weekly_mutations_json
             .iter()
             .map(|(weekly_name, weekly_data)| {
                 let mutators = weekly_data
                     .mutators
                     .iter()
                     .map(|mutator| {
-                        let mutator_id = canonical_mutator_id(mutator);
-                        let (name_en, name_ko, description_en, description_ko) =
-                            dictionary_data::mutator_data(&mutator_id)
-                                .map(|value| {
-                                    (
-                                        decode_html_entities(&value.name.en),
-                                        decode_html_entities(&value.name.ko),
-                                        decode_html_entities(&value.description.en),
-                                        decode_html_entities(&value.description.ko),
-                                    )
-                                })
-                                .unwrap_or_default();
-                        let fallback_name_en = mutator_display_name_en(&mutator_id);
+                        let mutator_id = canonical_mutator_id_with_dictionary(mutator, dictionary);
+                        let (name_en, name_ko, description_en, description_ko) = dictionary
+                            .mutator_data(&mutator_id)
+                            .map(|value| {
+                                (
+                                    decode_html_entities(&value.name.en),
+                                    decode_html_entities(&value.name.ko),
+                                    decode_html_entities(&value.description.en),
+                                    decode_html_entities(&value.description.ko),
+                                )
+                            })
+                            .unwrap_or_default();
+                        let fallback_name_en =
+                            mutator_display_name_en_with_dictionary(&mutator_id, dictionary);
                         let icon_name = if name_en.is_empty() {
                             fallback_name_en.to_string()
                         } else {
@@ -2614,7 +3231,7 @@ impl ReplayAnalysis {
         }
 
         let mut rows = Vec::new();
-        for mutation in dictionary_data::weekly_mutations().keys() {
+        for mutation in dictionary.weekly_mutations_json.keys() {
             let aggregate = aggregates.remove(mutation).unwrap_or_default();
             let total = aggregate.wins + aggregate.losses;
             let weekly_details = weekly_mutation_details.get(mutation);
@@ -2723,6 +3340,23 @@ impl ReplayAnalysis {
         main_names: &HashSet<String>,
         main_handles: &HashSet<String>,
     ) -> StatsSnapshot {
+        let dictionary = Sc2DictionaryData::default();
+        Self::build_rebuild_snapshot_with_dictionary(
+            replays,
+            include_detailed,
+            main_names,
+            main_handles,
+            &dictionary,
+        )
+    }
+
+    pub fn build_rebuild_snapshot_with_dictionary(
+        replays: &[ReplayInfo],
+        include_detailed: bool,
+        main_names: &HashSet<String>,
+        main_handles: &HashSet<String>,
+        dictionary: &Sc2DictionaryData,
+    ) -> StatsSnapshot {
         let started_at = Instant::now();
         crate::sco_log!(
             "[SCO/stats] rebuild_state_from_replays start mode={} replays={}",
@@ -2736,21 +3370,27 @@ impl ReplayAnalysis {
         let replay_count = replays
             .iter()
             .filter(|replay| {
-                replay.result != "Unparsed" && canonicalize_coop_map_id(&replay.map).is_some()
+                replay.result != "Unparsed"
+                    && dictionary.canonicalize_coop_map_id(&replay.map).is_some()
             })
             .count();
-        let payload = Self::rebuild_analysis_payload_with_identity(
+        let payload = Self::rebuild_analysis_payload_with_dictionary(
             replays,
             include_detailed,
             main_names,
             main_handles,
+            dictionary,
         );
         let analysis = payload
             .get("analysis")
             .cloned()
             .unwrap_or_else(empty_stats_payload);
-        let (main_players, main_handles) =
-            collect_main_identity_lists(replays, &main_names, &main_handles);
+        let (main_players, main_handles) = collect_main_identity_lists_with_dictionary(
+            replays,
+            &main_names,
+            &main_handles,
+            dictionary,
+        );
         crate::sco_log!(
             "[SCO/stats] rebuild_state_from_replays extracted {} main identities",
             main_players.len().max(main_handles.len())
@@ -2796,12 +3436,30 @@ impl ReplayAnalysis {
         main_names: &HashSet<String>,
         main_handles: &HashSet<String>,
     ) -> Vec<ReplayInfo> {
+        let dictionary = Sc2DictionaryData::default();
+        Self::load_detailed_analysis_replays_snapshot_from_path_with_dictionary(
+            cache_path,
+            limit,
+            main_names,
+            main_handles,
+            &dictionary,
+        )
+    }
+
+    pub fn load_detailed_analysis_replays_snapshot_from_path_with_dictionary(
+        cache_path: &Path,
+        limit: usize,
+        main_names: &HashSet<String>,
+        main_handles: &HashSet<String>,
+        dictionary: &Sc2DictionaryData,
+    ) -> Vec<ReplayInfo> {
         let mut replays = recover_cache_entries_from_temp(cache_path, "detailed-analysis cache")
             .into_iter()
             .filter(|entry| entry.detailed_analysis && Path::new(&entry.file).exists())
             .map(|entry| {
                 orient_replay_for_main_names(
-                    replay_info_from_cache_entry(&entry).sanitized(),
+                    replay_info_from_cache_entry_with_dictionary(&entry, dictionary)
+                        .sanitized_for_client_with_dictionary(dictionary),
                     main_names,
                     main_handles,
                 )
@@ -2853,12 +3511,30 @@ impl ReplayAnalysis {
         main_names: &HashSet<String>,
         main_handles: &HashSet<String>,
     ) -> Vec<ReplayInfo> {
+        let dictionary = Sc2DictionaryData::default();
+        Self::load_all_analysis_replays_snapshot_from_path_with_dictionary(
+            cache_path,
+            limit,
+            main_names,
+            main_handles,
+            &dictionary,
+        )
+    }
+
+    pub(crate) fn load_all_analysis_replays_snapshot_from_path_with_dictionary(
+        cache_path: &Path,
+        limit: usize,
+        main_names: &HashSet<String>,
+        main_handles: &HashSet<String>,
+        dictionary: &Sc2DictionaryData,
+    ) -> Vec<ReplayInfo> {
         let mut replays = recover_cache_entries_from_temp(cache_path, "unified cache")
             .into_iter()
             .filter(|entry| Path::new(&entry.file).exists())
             .map(|entry| {
                 orient_replay_for_main_names(
-                    replay_info_from_cache_entry(&entry).sanitized(),
+                    replay_info_from_cache_entry_with_dictionary(&entry, dictionary)
+                        .sanitized_for_client_with_dictionary(dictionary),
                     main_names,
                     main_handles,
                 )
@@ -2939,7 +3615,10 @@ impl ReplayAnalysis {
         }
     }
 
-    fn summarize_replay_impl(path: &Path) -> ReplayInfo {
+    fn summarize_replay_impl_with_resources(
+        path: &Path,
+        resources: &ReplayAnalysisResources,
+    ) -> ReplayInfo {
         let parse_started_at = Instant::now();
         let file_label = path
             .file_name()
@@ -2947,9 +3626,14 @@ impl ReplayAnalysis {
             .unwrap_or("<unknown>");
         let empty_handles = std::collections::HashSet::new();
 
-        match analyze_replay_file(path, &empty_handles) {
+        match analyze_replay_file_with_resources(path, &empty_handles, resources) {
             Ok(report) => {
-                let replay = replay_info_from_report(path, &report).sanitized();
+                let replay = replay_info_from_report_with_dictionary(
+                    path,
+                    &report,
+                    resources.dictionary_data(),
+                )
+                .sanitized();
                 crate::sco_log!(
                     "[SCO/replay] parsed file='{}' map='{}' result='{}' main='{}' ally='{}' kills={}/{} apm={}/{} duration={}ms",
                     file_label,
@@ -2978,18 +3662,35 @@ impl ReplayAnalysis {
     pub fn summarize_replay_with_cache_entry(
         path: &Path,
     ) -> Option<(ReplayInfo, Option<CacheReplayEntry>)> {
+        let _ = path;
+        None
+    }
+
+    pub fn summarize_replay_with_cache_entry_with_resources(
+        path: &Path,
+        resources: &ReplayAnalysisResources,
+    ) -> Option<(ReplayInfo, Option<CacheReplayEntry>)> {
         let parse_started_at = Instant::now();
         let file_label = path
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("<unknown>");
         let empty_handles = std::collections::HashSet::new();
-        let hidden_created_lost = cache_hidden_created_lost_units().ok()?;
 
-        match analyze_replay_file_with_cache_entry(path, &empty_handles, &hidden_created_lost, None)
-        {
+        match analyze_replay_file_with_cache_entry_with_resources(
+            path,
+            &empty_handles,
+            resources.hidden_created_lost(),
+            None,
+            resources,
+        ) {
             Ok(result) => {
-                let replay = replay_info_from_report(path, &result.report).sanitized();
+                let replay = replay_info_from_report_with_dictionary(
+                    path,
+                    &result.report,
+                    resources.dictionary_data(),
+                )
+                .sanitized();
                 let cache_entry = result.cache_persistable.then_some(result.cache_entry);
                 crate::sco_log!(
                     "[SCO/replay] parsed file='{}' for cache projection in {}ms persistable={}",
@@ -3010,29 +3711,30 @@ impl ReplayAnalysis {
     }
 
     pub fn summarize_replay(path: &Path) -> ReplayInfo {
-        Self::summarize_replay_impl(path)
+        Self::summarize_replay_lightweight(path)
+    }
+
+    pub fn summarize_replay_lightweight_with_resources(
+        path: &Path,
+        resources: &ReplayAnalysisResources,
+    ) -> ReplayInfo {
+        CacheReplayEntry::parse_basic_with_resources(path, resources)
+            .map(|entry| {
+                replay_info_from_cache_entry_with_dictionary(&entry, resources.dictionary_data())
+                    .sanitized()
+            })
+            .unwrap_or_else(|| unparsed_replay(path))
     }
 
     pub fn summarize_replay_lightweight(path: &Path) -> ReplayInfo {
-        CacheReplayEntry::parse_basic(path)
-            .map(|entry| replay_info_from_cache_entry(&entry).sanitized())
-            .unwrap_or_else(|| unparsed_replay(path))
+        unparsed_replay(path)
     }
 
     pub fn analyze_replays(limit: usize) -> Vec<ReplayInfo> {
         let settings = AppSettings::from_saved_file();
         let main_names = configured_main_names_from_settings(&settings);
         let main_handles = configured_main_handles_from_settings(&settings);
-        let scan_progress = ReplayScanProgress::default();
-        let replay_scan_in_flight = AtomicBool::new(false);
-        Self::analyze_replays_with_identity(
-            limit,
-            &settings,
-            &main_names,
-            &main_handles,
-            &scan_progress,
-            &replay_scan_in_flight,
-        )
+        Self::load_all_analysis_replays_snapshot(limit, &main_names, &main_handles)
     }
 
     pub fn analyze_replays_with_identity(
@@ -3042,6 +3744,19 @@ impl ReplayAnalysis {
         main_handles: &HashSet<String>,
         scan_progress: &ReplayScanProgress,
         replay_scan_in_flight: &AtomicBool,
+    ) -> Vec<ReplayInfo> {
+        let _ = (settings, scan_progress, replay_scan_in_flight);
+        Self::load_all_analysis_replays_snapshot(limit, main_names, main_handles)
+    }
+
+    pub fn analyze_replays_with_resources(
+        limit: usize,
+        settings: &AppSettings,
+        main_names: &HashSet<String>,
+        main_handles: &HashSet<String>,
+        scan_progress: &ReplayScanProgress,
+        replay_scan_in_flight: &AtomicBool,
+        resources: &ReplayAnalysisResources,
     ) -> Vec<ReplayInfo> {
         let _scan_guard = match replay_scan_in_flight.compare_exchange(
             false,
@@ -3161,8 +3876,10 @@ impl ReplayAnalysis {
                     .enumerate()
                     .map(|(_index, path)| {
                         let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            let replay = Self::summarize_replay_lightweight(&path);
-                            let cache_entry = CacheReplayEntry::parse_basic(&path);
+                            let replay =
+                                Self::summarize_replay_lightweight_with_resources(&path, resources);
+                            let cache_entry =
+                                CacheReplayEntry::parse_basic_with_resources(&path, resources);
                             (replay, cache_entry)
                         }));
                         let (replay, cache_entry) = match parsed {
@@ -3328,6 +4045,16 @@ impl ReplayAnalysis {
         replay: &ReplayInfo,
         main_handles: &HashSet<String>,
     ) -> bool {
+        let dictionary = Sc2DictionaryData::default();
+        Self::replay_matches_stats_filters_with_dictionary(path, replay, main_handles, &dictionary)
+    }
+
+    fn replay_matches_stats_filters_with_dictionary(
+        path: &str,
+        replay: &ReplayInfo,
+        main_handles: &HashSet<String>,
+        dictionary: &Sc2DictionaryData,
+    ) -> bool {
         let include_mutations = parse_query_bool(path, "include_mutations", true);
         let include_normal_games = parse_query_bool(path, "include_normal_games", true);
         let include_wins = parse_query_value(path, "include_wins")
@@ -3371,7 +4098,7 @@ impl ReplayAnalysis {
         if replay.result == "Unparsed" {
             return false;
         }
-        if !is_official_coop_replay(replay) {
+        if !is_official_coop_replay_with_dictionary(replay, dictionary) {
             return false;
         }
 
@@ -3495,10 +4222,32 @@ impl ReplayAnalysis {
         replays: &[&'a ReplayInfo],
         main_handles: &HashSet<String>,
     ) -> Vec<&'a ReplayInfo> {
+        let dictionary = Sc2DictionaryData::default();
+        Self::filter_replays_for_stats_refs_with_dictionary(
+            path,
+            replays,
+            main_handles,
+            &dictionary,
+        )
+    }
+
+    fn filter_replays_for_stats_refs_with_dictionary<'a>(
+        path: &str,
+        replays: &[&'a ReplayInfo],
+        main_handles: &HashSet<String>,
+        dictionary: &Sc2DictionaryData,
+    ) -> Vec<&'a ReplayInfo> {
         replays
             .iter()
             .copied()
-            .filter(|replay| Self::replay_matches_stats_filters(path, replay, main_handles))
+            .filter(|replay| {
+                Self::replay_matches_stats_filters_with_dictionary(
+                    path,
+                    replay,
+                    main_handles,
+                    dictionary,
+                )
+            })
             .collect()
     }
 
@@ -3575,6 +4324,29 @@ impl ReplayAnalysis {
         main_names: &HashSet<String>,
         main_handles: &HashSet<String>,
     ) -> Result<Value, String> {
+        let dictionary = Sc2DictionaryData::default();
+        Self::build_stats_response_with_dictionary(
+            path,
+            stats,
+            replays,
+            stats_current_replay_files,
+            scan_progress,
+            main_names,
+            main_handles,
+            &dictionary,
+        )
+    }
+
+    pub fn build_stats_response_with_dictionary(
+        path: &str,
+        stats: &Arc<Mutex<StatsState>>,
+        replays: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
+        stats_current_replay_files: &Arc<Mutex<HashSet<String>>>,
+        scan_progress: ReplayScanProgressPayload,
+        main_names: &HashSet<String>,
+        main_handles: &HashSet<String>,
+        dictionary: &Sc2DictionaryData,
+    ) -> Result<Value, String> {
         let mut response = match stats.try_lock() {
             Ok(state) => state.as_payload(scan_progress.clone()),
             Err(error) => match error {
@@ -3609,27 +4381,30 @@ impl ReplayAnalysis {
                             &response,
                             &cached_replays,
                         );
-                        let stats_replays = Self::stats_replays_for_response_with_identity(
+                        let stats_replays = Self::stats_replays_for_response_with_dictionary(
                             include_detailed,
                             &cached_replays,
                             main_names,
                             main_handles,
+                            dictionary,
                         );
                         let selected_replays = Self::stats_source_replays_for_response(
                             path,
                             stats_replays.as_ref(),
                             &current_replay_files,
                         );
-                        let filtered_replays = Self::filter_replays_for_stats_refs(
+                        let filtered_replays = Self::filter_replays_for_stats_refs_with_dictionary(
                             path,
                             &selected_replays,
                             main_handles,
+                            dictionary,
                         );
-                        let filtered_payload = Self::rebuild_analysis_payload_with_identity(
+                        let filtered_payload = Self::rebuild_analysis_payload_with_dictionary(
                             &filtered_replays,
                             include_detailed,
                             main_names,
                             main_handles,
+                            dictionary,
                         );
                         if let Some(analysis) = filtered_payload.get("analysis") {
                             response["analysis"] = analysis.clone();
@@ -3643,11 +4418,13 @@ impl ReplayAnalysis {
                         response["detailed_parsed_count"] = Value::from(detailed_parsed_count);
                         response["total_valid_files"] = Value::from(total_valid_files);
 
-                        let (main_players, main_handles) = collect_main_identity_lists(
-                            &filtered_replays,
-                            main_names,
-                            main_handles,
-                        );
+                        let (main_players, main_handles) =
+                            collect_main_identity_lists_with_dictionary(
+                                &filtered_replays,
+                                main_names,
+                                main_handles,
+                                dictionary,
+                            );
                         response["main_players"] = report_value(&main_players);
                         response["main_handles"] = report_value(&main_handles);
                     }
@@ -3699,8 +4476,29 @@ impl ReplayAnalysis {
             include_detailed,
             cached_replays,
             &get_cache_path(),
-            &main_names,
-            &main_handles,
+            main_names,
+            main_handles,
+        )
+    }
+
+    pub fn stats_replays_for_response_with_dictionary<'a>(
+        include_detailed: bool,
+        cached_replays: &'a [ReplayInfo],
+        main_names: &HashSet<String>,
+        main_handles: &HashSet<String>,
+        dictionary: &Sc2DictionaryData,
+    ) -> Cow<'a, [ReplayInfo]> {
+        if !cached_replays.is_empty() {
+            return Cow::Borrowed(cached_replays);
+        }
+
+        Self::stats_replays_for_response_from_path_with_dictionary(
+            include_detailed,
+            cached_replays,
+            &get_cache_path(),
+            main_names,
+            main_handles,
+            dictionary,
         )
     }
 
@@ -3711,16 +4509,37 @@ impl ReplayAnalysis {
         main_names: &HashSet<String>,
         main_handles: &HashSet<String>,
     ) -> Cow<'a, [ReplayInfo]> {
+        let dictionary = Sc2DictionaryData::default();
+        Self::stats_replays_for_response_from_path_with_dictionary(
+            include_detailed,
+            cached_replays,
+            cache_path,
+            main_names,
+            main_handles,
+            &dictionary,
+        )
+    }
+
+    pub fn stats_replays_for_response_from_path_with_dictionary<'a>(
+        include_detailed: bool,
+        cached_replays: &'a [ReplayInfo],
+        cache_path: &Path,
+        main_names: &HashSet<String>,
+        main_handles: &HashSet<String>,
+        dictionary: &Sc2DictionaryData,
+    ) -> Cow<'a, [ReplayInfo]> {
         if !include_detailed {
             return Cow::Borrowed(cached_replays);
         }
 
-        let from_detailed_analysis = Self::load_detailed_analysis_replays_snapshot_from_path(
-            cache_path,
-            UNLIMITED_REPLAY_LIMIT,
-            main_names,
-            main_handles,
-        );
+        let from_detailed_analysis =
+            Self::load_detailed_analysis_replays_snapshot_from_path_with_dictionary(
+                cache_path,
+                UNLIMITED_REPLAY_LIMIT,
+                main_names,
+                main_handles,
+                dictionary,
+            );
         if from_detailed_analysis.is_empty() {
             Cow::Borrowed(cached_replays)
         } else {
@@ -3753,11 +4572,19 @@ fn normalize_lookup_key(value: &str) -> String {
         .collect()
 }
 
+fn normalize_mutator_id_with_dictionary(mutator: &str, dictionary: &Sc2DictionaryData) -> String {
+    canonical_mutator_id_with_dictionary(mutator, dictionary)
+}
+
 fn normalize_mutator_id(mutator: &str) -> String {
     canonical_mutator_id(mutator)
 }
 
-fn resolve_weekly_mutation_name(map_name: &str, mutators: &[String]) -> Option<String> {
+fn resolve_weekly_mutation_name_with_dictionary(
+    map_name: &str,
+    mutators: &[String],
+    dictionary: &Sc2DictionaryData,
+) -> Option<String> {
     if mutators.is_empty() {
         return None;
     }
@@ -3769,17 +4596,16 @@ fn resolve_weekly_mutation_name(map_name: &str, mutators: &[String]) -> Option<S
 
     let mutator_set: HashSet<String> = mutators
         .iter()
-        .map(|mutator| normalize_lookup_key(&normalize_mutator_id(mutator)))
+        .map(|mutator| {
+            normalize_lookup_key(&normalize_mutator_id_with_dictionary(mutator, dictionary))
+        })
         .filter(|key| !key.is_empty())
         .collect();
     if mutator_set.is_empty() {
         return None;
     }
 
-    let weekly = dictionary_data::tauri_ui_data()
-        .map(|data| data.weekly_mutations_as_sets)
-        .unwrap_or_else(|_| dictionary_data::weekly_mutations_as_sets());
-    for (weekly_name, row) in weekly.iter() {
+    for (weekly_name, row) in dictionary.weekly_mutations_as_sets.iter() {
         if normalize_lookup_key(&row.map) != map_key {
             continue;
         }
@@ -3788,5 +4614,10 @@ fn resolve_weekly_mutation_name(map_name: &str, mutators: &[String]) -> Option<S
         }
     }
 
+    None
+}
+
+fn resolve_weekly_mutation_name(map_name: &str, mutators: &[String]) -> Option<String> {
+    let _ = (map_name, mutators);
     None
 }

@@ -1,13 +1,13 @@
-use s2coop_analyzer::dictionary_data;
+mod common;
+
 use sco_tauri_overlay::path_manager::get_cache_path;
 use sco_tauri_overlay::replay_analysis::{
-    collect_main_identity_lists, parse_replay_timestamp_seconds, sanitize_hidden_unit_stats,
-    ReplayAnalysis,
+    collect_main_identity_lists, parse_replay_timestamp_seconds,
+    sanitize_hidden_unit_stats_with_dictionary, ReplayAnalysis,
 };
 use sco_tauri_overlay::{
-    canonicalize_coop_map_id, configured_main_handles_from_settings,
-    configured_main_names_from_settings, sanitize_unit_map, AppSettings, ReplayInfo,
-    ReplayPlayerInfo,
+    configured_main_handles_from_settings, configured_main_names_from_settings, sanitize_unit_map,
+    AppSettings, ReplayInfo, ReplayPlayerInfo,
 };
 use serde_json::json;
 use serde_json::Value;
@@ -15,7 +15,9 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 fn test_map_id(raw: &str) -> String {
-    canonicalize_coop_map_id(raw).expect("map id should resolve")
+    common::load_dictionary()
+        .canonicalize_coop_map_id(raw)
+        .expect("map id should resolve")
 }
 
 fn sample_replay(
@@ -119,12 +121,13 @@ fn filter_replays_for_stats_excludes_unparsed_replays() {
 
 #[test]
 fn sanitize_hidden_unit_stats_masks_created_and_lost_counts() {
+    let dictionary = common::load_dictionary();
     let payload = json!({
         "Karax's Top Bar": [1, 2, 3, 0.25],
         "Zealot": [4, 5, 6, 0.5]
     });
 
-    let sanitized = sanitize_hidden_unit_stats(payload);
+    let sanitized = sanitize_hidden_unit_stats_with_dictionary(payload, &dictionary);
 
     assert_eq!(sanitized["Karax's Top Bar"], json!(["-", "-", 3, 0.25]));
     assert_eq!(sanitized["Zealot"], json!([4, 5, 6, 0.5]));
@@ -143,6 +146,7 @@ fn sanitize_unit_map_preserves_negative_counts() {
 
 #[test]
 fn map_times_use_accurate_length_like_wx_version() {
+    let dictionary = common::load_dictionary();
     let replays = vec![
         {
             let mut replay = sample_replay(
@@ -186,7 +190,13 @@ fn map_times_use_accurate_length_like_wx_version() {
         },
     ];
 
-    let snapshot = ReplayAnalysis::build_rebuild_snapshot(&replays, false);
+    let snapshot = ReplayAnalysis::build_rebuild_snapshot_with_dictionary(
+        &replays,
+        false,
+        &HashSet::new(),
+        &HashSet::new(),
+        &dictionary,
+    );
     let map_data = snapshot
         .analysis
         .get("MapData")
@@ -212,6 +222,7 @@ fn map_times_use_accurate_length_like_wx_version() {
 
 #[test]
 fn map_fastest_payload_includes_player_metadata() {
+    let dictionary = common::load_dictionary();
     let fastest_date = 1_700_000_000;
     let replays = vec![{
         let mut replay = sample_replay(
@@ -246,7 +257,13 @@ fn map_fastest_payload_includes_player_metadata() {
         replay
     }];
 
-    let snapshot = ReplayAnalysis::build_rebuild_snapshot(&replays, false);
+    let snapshot = ReplayAnalysis::build_rebuild_snapshot_with_dictionary(
+        &replays,
+        false,
+        &HashSet::new(),
+        &HashSet::new(),
+        &dictionary,
+    );
     let fastest = snapshot
         .analysis
         .get("MapData")
@@ -276,7 +293,9 @@ fn map_fastest_payload_includes_player_metadata() {
     assert_eq!(players[0]["prestige"], json!(0));
     assert_eq!(
         players[0]["prestige_name"],
-        json!(dictionary_data::prestige_name("Raynor", 0).expect("Raynor prestige 0 should exist"))
+        json!(dictionary
+            .prestige_name("Raynor", 0)
+            .expect("Raynor prestige 0 should exist"))
     );
 
     assert_eq!(players[1]["name"], json!("Ally"));
@@ -288,12 +307,15 @@ fn map_fastest_payload_includes_player_metadata() {
     assert_eq!(players[1]["prestige"], json!(2));
     assert_eq!(
         players[1]["prestige_name"],
-        json!(dictionary_data::prestige_name("Karax", 2).expect("Karax prestige 2 should exist"))
+        json!(dictionary
+            .prestige_name("Karax", 2)
+            .expect("Karax prestige 2 should exist"))
     );
 }
 
 #[test]
 fn map_fastest_prefers_oldest_replay_when_lengths_tie() {
+    let dictionary = common::load_dictionary();
     let replays = vec![
         {
             let mut replay = sample_replay(
@@ -349,7 +371,13 @@ fn map_fastest_prefers_oldest_replay_when_lengths_tie() {
         },
     ];
 
-    let snapshot = ReplayAnalysis::build_rebuild_snapshot(&replays, false);
+    let snapshot = ReplayAnalysis::build_rebuild_snapshot_with_dictionary(
+        &replays,
+        false,
+        &HashSet::new(),
+        &HashSet::new(),
+        &dictionary,
+    );
     let fastest = snapshot
         .analysis
         .get("MapData")

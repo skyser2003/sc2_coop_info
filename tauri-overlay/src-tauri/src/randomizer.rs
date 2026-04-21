@@ -1,5 +1,5 @@
 use fastrand::Rng;
-use s2coop_analyzer::dictionary_data;
+use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
@@ -103,25 +103,22 @@ struct RandomizerMutatorEntry {
     points: u32,
 }
 
-pub fn catalog_payload() -> OverlayRandomizerCatalog {
-    let prestige_names = dictionary_data::tauri_ui_data()
-        .map(|data| {
-            data.prestige_names_json
-                .iter()
-                .map(|(key, value)| {
-                    (
-                        key.clone(),
-                        LocalizedLabels {
-                            en: value.en.clone(),
-                            ko: value.ko.clone(),
-                        },
-                    )
-                })
-                .collect()
+pub fn catalog_payload_with_dictionary(dictionary: &Sc2DictionaryData) -> OverlayRandomizerCatalog {
+    let prestige_names = dictionary
+        .prestige_names_json
+        .iter()
+        .map(|(key, value)| {
+            (
+                key.clone(),
+                LocalizedLabels {
+                    en: value.en.clone(),
+                    ko: value.ko.clone(),
+                },
+            )
         })
-        .unwrap_or_default();
+        .collect();
 
-    let mutators = mutator_pool()
+    let mutators = mutator_pool_with_dictionary(dictionary)
         .into_iter()
         .map(|entry| OverlayRandomizerMutator {
             id: entry.id,
@@ -132,7 +129,8 @@ pub fn catalog_payload() -> OverlayRandomizerCatalog {
         })
         .collect();
 
-    let brutal_plus = dictionary_data::mutator_brutal_plus()
+    let brutal_plus = dictionary
+        .mutator_brutal_plus
         .iter()
         .map(|entry| OverlayRandomizerBrutalPlus {
             brutal_plus: entry.brutal_plus,
@@ -154,7 +152,14 @@ pub fn catalog_payload() -> OverlayRandomizerCatalog {
     }
 }
 
-pub(crate) fn generate_from_body(body: Option<&Value>) -> Result<RandomizerResult, String> {
+pub fn catalog_payload() -> OverlayRandomizerCatalog {
+    OverlayRandomizerCatalog::default()
+}
+
+pub(crate) fn generate_from_body_with_dictionary(
+    body: Option<&Value>,
+    dictionary: &Sc2DictionaryData,
+) -> Result<RandomizerResult, String> {
     let request = body
         .cloned()
         .map(serde_json::from_value::<RandomizerRequest>)
@@ -173,16 +178,30 @@ pub(crate) fn generate_from_body(body: Option<&Value>) -> Result<RandomizerResul
         });
 
     let mut rng = Rng::new();
-    generate_with_rng(&request, &mut rng)
+    generate_with_dictionary_with_rng(&request, &mut rng, dictionary)
+}
+
+pub(crate) fn generate_from_body(body: Option<&Value>) -> Result<RandomizerResult, String> {
+    let _ = body;
+    Err("Dictionary data is unavailable.".to_string())
 }
 
 pub fn generate_with_rng(
     request: &RandomizerRequest,
     rng: &mut Rng,
 ) -> Result<RandomizerResult, String> {
+    let _ = (request, rng);
+    Err("Dictionary data is unavailable.".to_string())
+}
+
+pub fn generate_with_dictionary_with_rng(
+    request: &RandomizerRequest,
+    rng: &mut Rng,
+    dictionary: &Sc2DictionaryData,
+) -> Result<RandomizerResult, String> {
     match request.mode.as_str() {
-        "commander" => generate_commander_with_rng(request, rng),
-        "mutator" => generate_mutators_with_rng(request, rng),
+        "commander" => generate_commander_with_rng(request, rng, dictionary),
+        "mutator" => generate_mutators_with_rng(request, rng, dictionary),
         other => Err(format!("Unsupported randomizer mode: {other}")),
     }
 }
@@ -190,8 +209,9 @@ pub fn generate_with_rng(
 fn generate_commander_with_rng(
     request: &RandomizerRequest,
     rng: &mut Rng,
+    dictionary: &Sc2DictionaryData,
 ) -> Result<RandomizerResult, String> {
-    let commander_choices = effective_commander_choices(&request.rng_choices);
+    let commander_choices = effective_commander_choices(&request.rng_choices, dictionary);
     let available_commanders = commander_choices
         .iter()
         .filter(|(_, prestiges)| !prestiges.is_empty())
@@ -205,7 +225,7 @@ fn generate_commander_with_rng(
     let prestige = prestiges[rng.usize(0..prestiges.len())];
     let mastery_indices = generate_mastery_indices(&request.mastery_mode, rng)?;
 
-    let map_name = random_map_name(rng);
+    let map_name = random_map_name(rng, dictionary);
     let race_name = RANDOMIZER_RACES[rng.usize(0..RANDOMIZER_RACES.len())].to_string();
     let mut map_race_parts = Vec::<String>::new();
     if request.include_map && !map_name.is_empty() {
@@ -226,8 +246,9 @@ fn generate_commander_with_rng(
 fn generate_mutators_with_rng(
     request: &RandomizerRequest,
     rng: &mut Rng,
+    dictionary: &Sc2DictionaryData,
 ) -> Result<RandomizerResult, String> {
-    let pool = mutator_pool();
+    let pool = mutator_pool_with_dictionary(dictionary);
     if pool.is_empty() {
         return Err("Mutator data is not available".to_string());
     }
@@ -261,7 +282,8 @@ fn generate_mutators_with_rng(
             build_mutator_result(chosen, None)
         }
         "brutal_plus" => {
-            let Some(bplus_entry) = dictionary_data::mutator_brutal_plus()
+            let Some(bplus_entry) = dictionary
+                .mutator_brutal_plus
                 .iter()
                 .find(|entry| entry.brutal_plus == request.brutal_plus)
             else {
@@ -317,11 +339,14 @@ fn build_mutator_result(
     })
 }
 
-fn effective_commander_choices(saved: &RandomizerChoices) -> BTreeMap<String, Vec<u32>> {
+fn effective_commander_choices(
+    saved: &RandomizerChoices,
+    dictionary: &Sc2DictionaryData,
+) -> BTreeMap<String, Vec<u32>> {
     let has_saved = !saved.is_empty();
     let mut out = BTreeMap::<String, Vec<u32>>::new();
 
-    for commander in commander_names() {
+    for commander in commander_names_with_dictionary(dictionary) {
         let mut prestiges = Vec::<u32>::new();
         for prestige in 0..=3 {
             let is_selected = if has_saved {
@@ -342,16 +367,16 @@ fn effective_commander_choices(saved: &RandomizerChoices) -> BTreeMap<String, Ve
     out
 }
 
-fn commander_names() -> Vec<String> {
-    dictionary_data::tauri_ui_data()
-        .map(|data| data.prestige_names_json.keys().cloned().collect())
-        .unwrap_or_default()
+fn commander_names_with_dictionary(dictionary: &Sc2DictionaryData) -> Vec<String> {
+    dictionary.prestige_names_json.keys().cloned().collect()
 }
 
-fn random_map_name(rng: &mut Rng) -> String {
-    let maps = dictionary_data::tauri_ui_data()
-        .map(|data| data.amon_player_ids.keys().cloned().collect::<Vec<_>>())
-        .unwrap_or_default();
+fn random_map_name(rng: &mut Rng, dictionary: &Sc2DictionaryData) -> String {
+    let maps = dictionary
+        .amon_player_ids
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
     if maps.is_empty() {
         String::new()
     } else {
@@ -380,9 +405,9 @@ fn generate_mastery_indices(mastery_mode: &str, rng: &mut Rng) -> Result<[Option
     }
 }
 
-fn mutator_points_lookup() -> HashMap<String, u32> {
+fn mutator_points_lookup(dictionary: &Sc2DictionaryData) -> HashMap<String, u32> {
     let mut out = HashMap::<String, u32>::new();
-    for entry in dictionary_data::mutator_points().iter() {
+    for entry in dictionary.mutator_points.iter() {
         for id in &entry.ids {
             out.insert(id.clone(), entry.value);
         }
@@ -394,13 +419,14 @@ fn is_randomizer_excluded_mutator(mutator_id: &str) -> bool {
     mutator_id == "Random"
 }
 
-fn mutator_pool() -> Vec<RandomizerMutatorEntry> {
-    let point_lookup = mutator_points_lookup();
-    dictionary_data::mutator_list()
+fn mutator_pool_with_dictionary(dictionary: &Sc2DictionaryData) -> Vec<RandomizerMutatorEntry> {
+    let point_lookup = mutator_points_lookup(dictionary);
+    dictionary
+        .mutator_list()
         .iter()
         .filter(|mutator_id| !is_randomizer_excluded_mutator(mutator_id))
         .map(|mutator_id| {
-            let data = dictionary_data::mutator_data(mutator_id);
+            let data = dictionary.mutator_data(mutator_id);
             let name = data
                 .map(|value| LocalizedText {
                     en: decode_html_entities(&value.name.en),
@@ -414,7 +440,8 @@ fn mutator_pool() -> Vec<RandomizerMutatorEntry> {
                 })
                 .unwrap_or_default();
             let icon_name_source = if name.en.is_empty() {
-                dictionary_data::mutator_ids()
+                dictionary
+                    .mutator_ids
                     .get(mutator_id)
                     .cloned()
                     .unwrap_or_else(|| mutator_id.clone())
@@ -432,6 +459,10 @@ fn mutator_pool() -> Vec<RandomizerMutatorEntry> {
             }
         })
         .collect()
+}
+
+fn mutator_pool() -> Vec<RandomizerMutatorEntry> {
+    Vec::new()
 }
 
 fn decode_html_entities(value: &str) -> String {

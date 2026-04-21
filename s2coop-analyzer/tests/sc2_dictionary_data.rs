@@ -1,14 +1,8 @@
 use s2coop_analyzer::cache_overall_stats_detailed_analysis::{repo_root, runtime_root};
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
 use std::{collections::HashSet, path::Path};
 
 const REQUIRED_FILES: [&str; 2] = ["mutators_exclude_ids.json", "replay_analysis_data.json"];
-
-fn current_dir_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
 
 struct CurrentDirReset {
     original_dir: PathBuf,
@@ -77,9 +71,6 @@ pub(crate) fn resolve_sc2_dictionary_data_dir(required_files: &[&str]) -> Result
 
 #[test]
 fn resolve_sc2_dictionary_data_dir_prefers_complete_analyzer_data_from_tauri_cwd() {
-    let _guard = current_dir_lock()
-        .lock()
-        .expect("failed to lock current-dir guard");
     let original_dir = std::env::current_dir().expect("failed to read current dir");
     let _reset = CurrentDirReset {
         original_dir: original_dir.clone(),
