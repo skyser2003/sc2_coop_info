@@ -1,10 +1,9 @@
-mod common;
-
 use sco_tauri_overlay::path_manager::get_cache_path;
 use sco_tauri_overlay::replay_analysis::{
     collect_main_identity_lists, parse_replay_timestamp_seconds,
     sanitize_hidden_unit_stats_with_dictionary, ReplayAnalysis,
 };
+use sco_tauri_overlay::test_helper::load_dictionary;
 use sco_tauri_overlay::{
     configured_main_handles_from_settings, configured_main_names_from_settings, sanitize_unit_map,
     AppSettings, ReplayInfo, ReplayPlayerInfo,
@@ -15,7 +14,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 fn test_map_id(raw: &str) -> String {
-    common::load_dictionary()
+    load_dictionary()
         .canonicalize_coop_map_id(raw)
         .expect("map id should resolve")
 }
@@ -121,7 +120,7 @@ fn filter_replays_for_stats_excludes_unparsed_replays() {
 
 #[test]
 fn sanitize_hidden_unit_stats_masks_created_and_lost_counts() {
-    let dictionary = common::load_dictionary();
+    let dictionary = load_dictionary();
     let payload = json!({
         "Karax's Top Bar": [1, 2, 3, 0.25],
         "Zealot": [4, 5, 6, 0.5]
@@ -146,7 +145,7 @@ fn sanitize_unit_map_preserves_negative_counts() {
 
 #[test]
 fn map_times_use_accurate_length_like_wx_version() {
-    let dictionary = common::load_dictionary();
+    let dictionary = load_dictionary();
     let replays = vec![
         {
             let mut replay = sample_replay(
@@ -222,7 +221,7 @@ fn map_times_use_accurate_length_like_wx_version() {
 
 #[test]
 fn map_fastest_payload_includes_player_metadata() {
-    let dictionary = common::load_dictionary();
+    let dictionary = load_dictionary();
     let fastest_date = 1_700_000_000;
     let replays = vec![{
         let mut replay = sample_replay(
@@ -315,7 +314,7 @@ fn map_fastest_payload_includes_player_metadata() {
 
 #[test]
 fn map_fastest_prefers_oldest_replay_when_lengths_tie() {
-    let dictionary = common::load_dictionary();
+    let dictionary = load_dictionary();
     let replays = vec![
         {
             let mut replay = sample_replay(

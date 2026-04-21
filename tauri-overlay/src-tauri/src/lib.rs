@@ -38,6 +38,7 @@ mod performance_overlay;
 pub mod randomizer;
 pub mod replay_analysis;
 pub mod shared_types;
+pub mod test_helper;
 pub use app_settings::AppSettings;
 pub use backend_state::BackendState;
 pub use game_launch_detector::{GameLaunchDetector, GameLaunchStatus};

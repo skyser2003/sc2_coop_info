@@ -1,7 +1,6 @@
-mod common;
-
 use chrono::NaiveDate;
 use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
+use sco_tauri_overlay::test_helper::load_dictionary;
 use sco_tauri_overlay::ReplayInfo;
 
 fn weekly_replay(weekly_name: &str, result: &str) -> ReplayInfo {
@@ -16,7 +15,7 @@ fn weekly_replay(weekly_name: &str, result: &str) -> ReplayInfo {
 
 #[test]
 fn rebuild_weeklies_rows_uses_dictionary_order_for_mutation_sort() {
-    let dictionary = common::load_dictionary();
+    let dictionary = load_dictionary();
     let replays = vec![
         weekly_replay("Time Lock", "Victory"),
         weekly_replay("Train of the Dead", "Defeat"),
@@ -77,7 +76,7 @@ fn rebuild_weeklies_rows_uses_dictionary_order_for_mutation_sort() {
 
 #[test]
 fn rebuild_weeklies_rows_without_record_uses_na_for_best_difficulty() {
-    let dictionary = common::load_dictionary();
+    let dictionary = load_dictionary();
     let seeded_current_date =
         NaiveDate::parse_from_str(&dictionary.weekly_mutation_date_json.date, "%Y-%m-%d")
             .expect("seeded weekly mutation date should parse");

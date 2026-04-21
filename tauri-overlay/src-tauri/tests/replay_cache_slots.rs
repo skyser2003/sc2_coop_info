@@ -1,6 +1,4 @@
-mod common;
-
-use common::test_replay_path;
+use sco_tauri_overlay::test_helper::test_replay_path;
 use sco_tauri_overlay::{update_analysis_replay_cache_slots, ReplayInfo};
 use std::{
     collections::HashMap,

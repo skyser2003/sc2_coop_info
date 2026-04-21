@@ -1,14 +1,13 @@
-mod common;
-
 use fastrand::Rng;
 use sco_tauri_overlay::randomizer::{
     catalog_payload_with_dictionary, generate_with_dictionary_with_rng, RandomizerRequest,
 };
+use sco_tauri_overlay::test_helper::load_dictionary;
 use std::collections::BTreeMap;
 
 #[test]
 fn randomizer_catalog_exposes_prestige_metadata() {
-    let dictionary = common::load_dictionary();
+    let dictionary = load_dictionary();
     let payload = catalog_payload_with_dictionary(&dictionary);
 
     assert!(!payload.prestige_names.is_empty());
@@ -23,7 +22,7 @@ fn randomizer_catalog_exposes_prestige_metadata() {
 
 #[test]
 fn randomizer_defaults_to_p0_when_saved_choices_are_empty() {
-    let dictionary = common::load_dictionary();
+    let dictionary = load_dictionary();
     let request = RandomizerRequest {
         mode: "commander".to_string(),
         rng_choices: BTreeMap::new(),
@@ -60,7 +59,7 @@ fn randomizer_defaults_to_p0_when_saved_choices_are_empty() {
 
 #[test]
 fn randomizer_respects_selected_choices_and_none_mode() {
-    let dictionary = common::load_dictionary();
+    let dictionary = load_dictionary();
     let request = RandomizerRequest {
         mode: "commander".to_string(),
         rng_choices: BTreeMap::from([(String::from("Fenix_2"), true)]),
@@ -96,7 +95,7 @@ fn randomizer_respects_selected_choices_and_none_mode() {
 
 #[test]
 fn randomizer_all_in_mode_assigns_one_side_of_each_mastery_pair() {
-    let dictionary = common::load_dictionary();
+    let dictionary = load_dictionary();
     let request = RandomizerRequest {
         mode: "commander".to_string(),
         rng_choices: BTreeMap::from([(String::from("Abathur_1"), true)]),
@@ -133,7 +132,7 @@ fn randomizer_all_in_mode_assigns_one_side_of_each_mastery_pair() {
 
 #[test]
 fn randomizer_generates_random_mutators_without_point_budget() {
-    let dictionary = common::load_dictionary();
+    let dictionary = load_dictionary();
     let request = RandomizerRequest {
         mode: "mutator".to_string(),
         rng_choices: BTreeMap::new(),
@@ -169,7 +168,7 @@ fn randomizer_generates_random_mutators_without_point_budget() {
 
 #[test]
 fn randomizer_generates_brutal_plus_matched_mutators() {
-    let dictionary = common::load_dictionary();
+    let dictionary = load_dictionary();
     let request = RandomizerRequest {
         mode: "mutator".to_string(),
         rng_choices: BTreeMap::new(),

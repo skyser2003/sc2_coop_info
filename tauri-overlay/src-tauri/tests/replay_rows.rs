@@ -1,6 +1,4 @@
-mod common;
-
-use common::test_replay_path;
+use sco_tauri_overlay::test_helper::test_replay_path;
 use sco_tauri_overlay::{orient_replay_for_main_names, ReplayInfo, ReplayPlayerInfo};
 use serde_json::json;
 use std::collections::HashSet;

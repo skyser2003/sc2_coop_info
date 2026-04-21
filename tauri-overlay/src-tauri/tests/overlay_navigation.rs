@@ -1,9 +1,7 @@
-mod common;
-
-use common::test_replay_path;
 use sco_tauri_overlay::overlay_info::{
     replay_for_display, replay_move_should_be_ignored, replay_move_target_index,
 };
+use sco_tauri_overlay::test_helper::test_replay_path;
 use sco_tauri_overlay::ReplayInfo;
 
 fn sample_replay(file: &str) -> ReplayInfo {

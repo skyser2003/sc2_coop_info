@@ -1,9 +1,7 @@
 #![cfg(not(windows))]
 
-mod common;
-
-use common::test_replay_path;
 use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
+use sco_tauri_overlay::test_helper::test_replay_path;
 use sco_tauri_overlay::{
     canonicalize_coop_map_id, sync_detailed_analysis_status_from_replays, BackendState, ReplayInfo,
     StatsState,

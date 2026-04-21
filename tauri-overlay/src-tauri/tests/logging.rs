@@ -1,6 +1,4 @@
-mod common;
-
-use common::test_config_path;
+use sco_tauri_overlay::test_helper::test_config_path;
 use sco_tauri_overlay::{session_counter_delta, AppSettings};
 use serde_json::json;
 use serde_json::Value;

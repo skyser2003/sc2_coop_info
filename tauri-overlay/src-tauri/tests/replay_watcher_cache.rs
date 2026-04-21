@@ -1,11 +1,9 @@
 #![cfg(not(windows))]
 
-mod common;
-
-use common::test_replay_path;
 use s2coop_analyzer::cache_overall_stats_generator::{
     pretty_output_path, CacheNumericValue, CacheReplayEntry, ProtocolBuildValue, ReplayBuildInfo,
 };
+use sco_tauri_overlay::test_helper::test_replay_path;
 use sco_tauri_overlay::{
     canonicalize_coop_map_id, persist_detailed_cache_entry_to_path, BackendState, ReplayInfo,
     ReplayPlayerInfo, StatsState,
