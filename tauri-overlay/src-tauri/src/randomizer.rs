@@ -135,12 +135,12 @@ pub fn catalog_payload_with_dictionary(dictionary: &Sc2DictionaryData) -> Overla
         .map(|entry| OverlayRandomizerBrutalPlus {
             brutal_plus: entry.brutal_plus,
             mutator_points: OverlayRandomizerRange {
-                min: u32::try_from(entry.mutator_points.min).unwrap_or(u32::MAX),
-                max: u32::try_from(entry.mutator_points.max).unwrap_or(u32::MAX),
+                min: entry.mutator_points.min,
+                max: entry.mutator_points.max,
             },
             mutator_count: OverlayRandomizerRange {
-                min: u32::try_from(entry.mutator_count.min).unwrap_or(u32::MAX),
-                max: u32::try_from(entry.mutator_count.max).unwrap_or(u32::MAX),
+                min: entry.mutator_count.min,
+                max: entry.mutator_count.max,
             },
         })
         .collect();
@@ -383,15 +383,15 @@ fn generate_mastery_indices(mastery_mode: &str, rng: &mut Rng) -> Result<[Option
     let mut mastery = [None; 3];
     match mastery_mode {
         "all_in" => {
-            for pair_index in 0..3 {
+            for pair in &mut mastery {
                 let chosen = rng.usize(0..2);
-                mastery[pair_index] = Some(if chosen == 0 { 30 } else { 0 });
+                *pair = Some(if chosen == 0 { 30 } else { 0 });
             }
             Ok(mastery)
         }
         "random" => {
-            for pair_index in 0..3 {
-                mastery[pair_index] = Some(rng.usize(0..31) as u32);
+            for pair in &mut mastery {
+                *pair = Some(rng.usize(0..31) as u32);
             }
             Ok(mastery)
         }

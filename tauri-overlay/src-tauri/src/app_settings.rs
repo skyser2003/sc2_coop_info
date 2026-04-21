@@ -80,7 +80,7 @@ impl AppSettings {
     }
 
     pub fn to_value(&self) -> Value {
-        serde_json::to_value(&self).unwrap_or_else(|_| Value::Object(Default::default()))
+        serde_json::to_value(self).unwrap_or_else(|_| Value::Object(Default::default()))
     }
 
     pub fn from_saved_file() -> Self {
@@ -116,7 +116,7 @@ impl AppSettings {
             merged.extend(settings);
         }
 
-        let mut settings = Self::from_value(Value::Object(merged)).unwrap_or_else(|_| settings);
+        let mut settings = Self::from_value(Value::Object(merged)).unwrap_or(settings);
         settings.initialize_unset_hotkeys();
         settings.analysis_worker_threads =
             Self::clamp_analysis_worker_threads(settings.analysis_worker_threads);

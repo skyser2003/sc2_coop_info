@@ -109,13 +109,12 @@ fn parse_saved_geometry(settings: &AppSettings) -> Option<PerformanceGeometry> {
     let width = u32::try_from(geometry[2]).ok()?;
     let height = u32::try_from(geometry[3]).ok()?;
 
-    Some(PerformanceGeometry {
+    Some(normalized_geometry(PerformanceGeometry {
         x,
         y,
         width,
         height,
-    })
-    .map(normalized_geometry)
+    }))
 }
 
 fn default_geometry(
@@ -211,20 +210,20 @@ fn default_payload(system: &System, networks: &Networks) -> PerformancePayload {
         (system.used_memory() as f32 / system.total_memory() as f32) * 100.0
     };
     let down_total = networks
-        .iter()
-        .map(|(_, network)| network.total_received())
+        .values()
+        .map(|network| network.total_received())
         .sum::<u64>();
     let up_total = networks
-        .iter()
-        .map(|(_, network)| network.total_transmitted())
+        .values()
+        .map(|network| network.total_transmitted())
         .sum::<u64>();
     let down_speed = networks
-        .iter()
-        .map(|(_, network)| network.received())
+        .values()
+        .map(|network| network.received())
         .sum::<u64>();
     let up_speed = networks
-        .iter()
-        .map(|(_, network)| network.transmitted())
+        .values()
+        .map(|network| network.transmitted())
         .sum::<u64>();
     let cpu_cores = system
         .cpus()
@@ -417,7 +416,7 @@ fn emit_visibility_event<R: Runtime>(app: &tauri::AppHandle<R>, visible: bool) {
     if let Some(config_window) = app.get_webview_window("config") {
         let _ = config_window.emit(PERFORMANCE_VISIBILITY_EVENT, payload);
         let visible_script = if visible { "true" } else { "false" };
-        let _ = config_window.eval(&format!(
+        let _ = config_window.eval(format!(
             "window.__scoSetPerformanceVisibility && window.__scoSetPerformanceVisibility({visible_script});"
         ));
     }

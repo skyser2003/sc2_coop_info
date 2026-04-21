@@ -1367,7 +1367,7 @@ pub fn player_note_from_settings_value(
 }
 
 fn player_note_from_settings(settings: &AppSettings, player_handle: &str) -> Option<String> {
-    player_note_from_settings_value(&settings, player_handle)
+    player_note_from_settings_value(settings, player_handle)
 }
 
 fn relative_last_seen_text(last_seen: u64) -> String {
@@ -1420,7 +1420,7 @@ fn build_overlay_player_stats_payload_for_player(
             analysis
                 .get("PlayerData")
                 .and_then(Value::as_object)
-                .map(|value| value.clone())
+                .cloned()
         });
 
     let input_name = sanitize_replay_text(player_name);

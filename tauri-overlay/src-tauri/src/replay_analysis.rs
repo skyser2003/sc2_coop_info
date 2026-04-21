@@ -969,7 +969,7 @@ pub fn append_units_to_rollup_with_dictionary(
     }
 
     for (unit, row) in replay_units {
-        let is_mc_bonus_target = mc_unit.as_deref() == Some(unit.as_str());
+        let is_mc_bonus_target = mc_unit == Some(unit.as_str());
         let entry = commander_entry.units.entry(unit.clone()).or_default();
         apply_replay_unit_count(&mut entry.created, &mut entry.created_hidden, row.created);
         apply_replay_unit_count(&mut entry.lost, &mut entry.lost_hidden, row.lost);
@@ -2212,14 +2212,14 @@ impl ReplayAnalysis {
             let p1_is_main = ReplayAnalysis::is_main_player_identity(
                 &aggregate.fastest_p1,
                 &aggregate.fastest_p1_handle,
-                &main_names,
-                &main_handles,
+                main_names,
+                main_handles,
             );
             let p2_is_main = ReplayAnalysis::is_main_player_identity(
                 &aggregate.fastest_p2,
                 &aggregate.fastest_p2_handle,
-                &main_names,
-                &main_handles,
+                main_names,
+                main_handles,
             );
             let players = if p2_is_main && !p1_is_main {
                 vec![fastest_p2, fastest_p1]
@@ -2295,8 +2295,8 @@ impl ReplayAnalysis {
         }
 
         let main_detailed_count = main_commander
-            .iter()
-            .map(|(_, agg)| agg.detailed_count)
+            .values()
+            .map(|agg| agg.detailed_count)
             .sum::<u64>();
 
         commander_data.insert(
@@ -2374,8 +2374,8 @@ impl ReplayAnalysis {
 
         let sum_ally_games = _sum_ally_wins + _sum_ally_losses;
         let ally_detailed_count = ally_commander
-            .iter()
-            .map(|(_, agg)| agg.detailed_count)
+            .values()
+            .map(|agg| agg.detailed_count)
             .sum::<u64>();
 
         ally_commander_data.insert(
@@ -2548,7 +2548,7 @@ impl ReplayAnalysis {
                     replay.main_units(),
                     replay.main_kills(),
                     &replay.main().handle,
-                    &main_handles,
+                    main_handles,
                     dictionary,
                 );
                 append_player_units_to_rollups_with_dictionary(
@@ -2558,7 +2558,7 @@ impl ReplayAnalysis {
                     replay.ally_units(),
                     replay.ally_kills(),
                     &replay.ally().handle,
-                    &main_handles,
+                    main_handles,
                     dictionary,
                 );
                 append_amon_units(&replay.amon_units);
@@ -3048,8 +3048,8 @@ impl ReplayAnalysis {
             .unwrap_or_else(empty_stats_payload);
         let (main_players, main_handles) = collect_main_identity_lists_with_dictionary(
             replays,
-            &main_names,
-            &main_handles,
+            main_names,
+            main_handles,
             dictionary,
         );
         crate::sco_log!(
@@ -3386,7 +3386,7 @@ impl ReplayAnalysis {
                 scan_progress.set_stage("busy");
                 // When busy, return all cached replays from unified cache
                 let replays =
-                    Self::load_all_analysis_replays_snapshot(limit, &main_names, &main_handles);
+                    Self::load_all_analysis_replays_snapshot(limit, main_names, main_handles);
                 return replays;
             }
         };
@@ -3409,8 +3409,8 @@ impl ReplayAnalysis {
         // Load existing cache (unified for both simple and detailed)
         let existing_replays = Self::load_all_analysis_replays_snapshot(
             UNLIMITED_REPLAY_LIMIT,
-            &main_names,
-            &main_handles,
+            main_names,
+            main_handles,
         );
 
         // Create set of files that already have any analysis
@@ -3506,7 +3506,7 @@ impl ReplayAnalysis {
                             }
                         };
                         let oriented =
-                            orient_replay_for_main_names(replay, &main_names, &main_handles);
+                            orient_replay_for_main_names(replay, main_names, main_handles);
                         progress.completed.fetch_add(1, Ordering::AcqRel);
                         progress.newly_parsed.fetch_add(1, Ordering::AcqRel);
                         Ok(ParseResult {

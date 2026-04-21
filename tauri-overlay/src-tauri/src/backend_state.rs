@@ -26,16 +26,12 @@ use crate::{
     ReplayInfo, StatsState, UNLIMITED_REPLAY_LIMIT,
 };
 
+#[derive(Default)]
 enum CachedLoad<T> {
+    #[default]
     Uninitialized,
     Loaded(Arc<T>),
     Failed(String),
-}
-
-impl<T> Default for CachedLoad<T> {
-    fn default() -> Self {
-        Self::Uninitialized
-    }
 }
 
 fn load_cached_state<T, F>(slot: &Mutex<CachedLoad<T>>, loader: F) -> Result<Arc<T>, String>
@@ -277,6 +273,12 @@ fn include_detailed_stats_for_cache(stats: &StatsState, replays: &[ReplayInfo]) 
         || replays
             .iter()
             .any(ReplayAnalysis::replay_has_detailed_unit_stats)
+}
+
+impl Default for BackendState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BackendState {

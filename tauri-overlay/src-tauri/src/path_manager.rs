@@ -18,7 +18,7 @@ fn is_prod_env() -> bool {
         }
     }
 
-    return !tauri::is_dev();
+    !tauri::is_dev()
 }
 
 fn write_data_dir() -> PathBuf {
@@ -56,7 +56,7 @@ pub(crate) fn get_json_data_dir() -> PathBuf {
         }
     }
 
-    return PathBuf::from(default).join("data");
+    PathBuf::from(default).join("data")
 }
 
 pub(crate) fn get_settings_path() -> PathBuf {

@@ -267,19 +267,11 @@ fn get_system_language() -> String {
     let locale = sys_locale::get_locale();
 
     let language = if let Some(locale) = locale.as_ref() {
-        let language = locale.split("-").nth(0);
-
-        if language.is_none() {
-            default
-        } else {
-            let language = language.unwrap();
-
-            if language.len() == 0 {
-                default
-            } else {
-                language
-            }
-        }
+        locale
+            .split("-")
+            .next()
+            .filter(|language| !language.is_empty())
+            .unwrap_or(default)
     } else {
         "en"
     };
@@ -2282,7 +2274,7 @@ pub fn prepare_startup_analysis_request(
     let include_detailed = stats.detailed_analysis_atstart;
     if stats.startup_analysis_requested {
         return StartupAnalysisRequestOutcome {
-            include_detailed: include_detailed,
+            include_detailed,
             started: false,
         };
     }
@@ -2300,7 +2292,7 @@ pub fn prepare_startup_analysis_request(
     };
 
     StartupAnalysisRequestOutcome {
-        include_detailed: include_detailed,
+        include_detailed,
         started: true,
     }
 }
@@ -3856,12 +3848,15 @@ fn choose_other_coop_player_stats(
     if main_marked_count > 0 && !other_candidates.is_empty() {
         other_candidates.sort_by_key(|player| player.id);
 
-        return other_candidates.into_iter().find_map(|player| {
-            let name = player.name.trim();
-            let handle = player.handle.to_string();
+        return other_candidates
+            .into_iter()
+            .map(|player| {
+                let name = player.name.trim();
+                let handle = player.handle.to_string();
 
-            Some((handle, name.to_string()))
-        });
+                (handle, name.to_string())
+            })
+            .next();
     }
 
     None
@@ -4211,9 +4206,10 @@ impl Default for StatsState {
 
 impl StatsState {
     fn from_settings(settings: &AppSettings) -> Self {
-        let mut state = Self::default();
-        state.detailed_analysis_atstart = settings.detailed_analysis_atstart;
-        state
+        Self {
+            detailed_analysis_atstart: settings.detailed_analysis_atstart,
+            ..Self::default()
+        }
     }
 
     fn as_payload(&self, scan_progress: ReplayScanProgressPayload) -> Value {
@@ -4370,7 +4366,7 @@ async fn config_update(
         .and_then(Value::as_bool)
         .unwrap_or(true);
 
-    next_settings.performance_geometry = previous_settings.performance_geometry.clone();
+    next_settings.performance_geometry = previous_settings.performance_geometry;
 
     if persist {
         state.write_settings_file(&next_settings)?;
@@ -4606,7 +4602,6 @@ async fn config_stats_get(
     })
     .await
     .map_err(|error| format!("Failed to read /config/stats: {error}"))?
-    .map_err(|error| error)
 }
 
 #[tauri::command]
@@ -4658,8 +4653,7 @@ async fn config_replay_chat(
         )
     })
     .await
-    .map_err(|error| format!("Failed to load /config/replays/chat: {error}"))?
-    .map_err(|error| error)?;
+    .map_err(|error| format!("Failed to load /config/replays/chat: {error}"))??;
     Ok(ConfigChatPayload { status: "ok", chat })
 }
 
@@ -5089,7 +5083,7 @@ pub fn run() {
                     WindowCloseAction::AllowClose => {}
                     WindowCloseAction::HidePerformance => {
                         api.prevent_close();
-                        performance_overlay::hide_window(&window.app_handle());
+                        performance_overlay::hide_window(window.app_handle());
                     }
                     WindowCloseAction::HideWindow => {
                         api.prevent_close();
@@ -5097,7 +5091,7 @@ pub fn run() {
                     }
                     WindowCloseAction::ExitApp => {
                         api.prevent_close();
-                        request_clean_exit(&window.app_handle(), 0);
+                        request_clean_exit(window.app_handle(), 0);
                     }
                 }
             }
@@ -5123,23 +5117,21 @@ pub fn run() {
                 let handle = app.handle().clone();
 
                 tauri::async_runtime::spawn(async move {
-                    let result = auto_update(handle).await;
-
-                    if result.is_err() {
-                        crate::sco_log!("Auto update failed: {}", result.unwrap_err());
+                    if let Err(error) = auto_update(handle).await {
+                        crate::sco_log!("Auto update failed: {}", error);
                     }
                 });
             }
 
             // Always start with overlay hidden; user can show it via hotkey/tray/actions.
-            overlay_info::hide_overlay_window(&app.app_handle());
+            overlay_info::hide_overlay_window(app.app_handle());
 
             if flags.start_minimized {
                 if let Some(config_window) = app.get_webview_window("config") {
                     let _ = config_window.hide();
                 }
             } else {
-                overlay_info::show_config_window(&app.app_handle());
+                overlay_info::show_config_window(app.app_handle());
             }
 
             let _ = app
@@ -5177,7 +5169,7 @@ pub fn run() {
                 }
             }
 
-            if let Some(tray_menu) = overlay_info::build_tray_menu(&app.app_handle()) {
+            if let Some(tray_menu) = overlay_info::build_tray_menu(app.app_handle()) {
                 let mut tray_builder = TrayIconBuilder::new()
                     .menu(&tray_menu)
                     .show_menu_on_left_click(true)
@@ -5201,10 +5193,10 @@ pub fn run() {
                 crate::sco_log!("[SCO/settings] Failed to initialize start_with_windows: {error}");
             }
 
-            overlay_info::sync_overlay_runtime_settings(&app.app_handle());
-            performance_overlay::apply_settings(&app.app_handle());
+            overlay_info::sync_overlay_runtime_settings(app.app_handle());
+            performance_overlay::apply_settings(app.app_handle());
 
-            if let Err(error) = overlay_info::register_overlay_hotkeys(&app.app_handle()) {
+            if let Err(error) = overlay_info::register_overlay_hotkeys(app.app_handle()) {
                 crate::sco_log!("[SCO/hotkey] {error}");
             }
 

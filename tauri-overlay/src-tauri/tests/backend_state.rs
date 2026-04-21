@@ -64,8 +64,10 @@ fn prepare_startup_analysis_request_marks_once_and_preserves_existing_status() {
 
 #[test]
 fn backend_state_flags_are_instance_local() {
-    let mut disabled_logging = AppSettings::default();
-    disabled_logging.enable_logging = false;
+    let disabled_logging = AppSettings {
+        enable_logging: false,
+        ..AppSettings::default()
+    };
 
     let first = BackendState::new_with_settings(disabled_logging);
     let second = BackendState::new();
@@ -83,8 +85,10 @@ fn backend_state_flags_are_instance_local() {
 
 #[test]
 fn replace_active_settings_updates_file_logging_flag() {
-    let mut settings = AppSettings::default();
-    settings.enable_logging = false;
+    let settings = AppSettings {
+        enable_logging: false,
+        ..AppSettings::default()
+    };
 
     let state = BackendState::new_with_settings(settings);
     assert!(!state.file_logging_enabled());
