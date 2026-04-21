@@ -15,7 +15,6 @@ use s2coop_analyzer::detailed_replay_analysis::{
 use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use serde::Serialize;
 use serde_json::Value;
-use tauri::{tray::TrayIcon, Wry};
 
 use crate::shared_types::ReplayScanProgressPayload;
 use crate::{
@@ -64,7 +63,6 @@ where
 }
 
 pub struct BackendState {
-    pub tray_icon: Arc<Mutex<Option<TrayIcon<Wry>>>>,
     pub stats: Arc<Mutex<StatsState>>,
     pub stats_current_replay_files: Arc<Mutex<HashSet<String>>>,
     pub overlay_replay_data_active: AtomicBool,
@@ -283,13 +281,12 @@ fn include_detailed_stats_for_cache(stats: &StatsState, replays: &[ReplayInfo]) 
 
 impl BackendState {
     pub fn new() -> Self {
-        Self::new_with_settings(AppSettings::from_saved_file())
+        Self::new_with_settings(AppSettings::default())
     }
 
     pub fn new_with_settings(settings: AppSettings) -> Self {
         let file_logging_enabled = settings.enable_logging;
         Self {
-            tray_icon: Arc::new(Mutex::new(None)),
             stats: Arc::new(Mutex::new(StatsState::from_settings(&settings))),
             stats_current_replay_files: Arc::new(Mutex::new(HashSet::new())),
             overlay_replay_data_active: AtomicBool::new(false),

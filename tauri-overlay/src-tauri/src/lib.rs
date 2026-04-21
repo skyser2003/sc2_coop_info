@@ -62,6 +62,11 @@ const SCO_ANALYSIS_COMPLETED_EVENT: &str = "sco://analysis-completed";
 const WINDOWS_STARTUP_RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 const WINDOWS_STARTUP_VALUE_NAME: &str = "SCO Overlay";
 
+#[derive(Default)]
+struct TrayState {
+    tray_icon: Mutex<Option<tauri::tray::TrayIcon<Wry>>>,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct OverlayActionResult {
@@ -4139,7 +4144,7 @@ fn request_clean_exit(app: &AppHandle<Wry>, exit_code: i32) {
         return;
     }
 
-    if let Ok(mut tray_icon) = state.tray_icon.lock() {
+    if let Ok(mut tray_icon) = app.state::<TrayState>().tray_icon.lock() {
         tray_icon.take();
     }
 
@@ -5055,6 +5060,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(state)
+        .manage(TrayState::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .on_menu_event(|app, event| match event.id() {
@@ -5182,7 +5188,7 @@ pub fn run() {
                 }
 
                 if let Ok(tray) = tray_builder.build(app) {
-                    if let Ok(mut tray_slot) = app.state::<BackendState>().tray_icon.lock() {
+                    if let Ok(mut tray_slot) = app.state::<TrayState>().tray_icon.lock() {
                         *tray_slot = Some(tray);
                     }
                 } else {
