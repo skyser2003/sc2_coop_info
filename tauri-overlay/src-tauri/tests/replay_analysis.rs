@@ -1,9 +1,8 @@
 use sco_tauri_overlay::path_manager::get_cache_path;
 use sco_tauri_overlay::replay_analysis::{
-    collect_main_identity_lists, parse_replay_timestamp_seconds,
-    sanitize_hidden_unit_stats_with_dictionary, ReplayAnalysis,
+    parse_replay_timestamp_seconds, sanitize_hidden_unit_stats_with_dictionary, ReplayAnalysis,
 };
-use sco_tauri_overlay::test_helper::load_dictionary;
+use sco_tauri_overlay::test_helper::{collect_main_identity_lists, load_dictionary};
 use sco_tauri_overlay::{
     configured_main_handles_from_settings, configured_main_names_from_settings, sanitize_unit_map,
     AppSettings, ReplayInfo, ReplayPlayerInfo,

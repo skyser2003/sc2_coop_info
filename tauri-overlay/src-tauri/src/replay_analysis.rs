@@ -366,68 +366,6 @@ pub fn sanitize_hidden_unit_stats_with_dictionary(
     sanitize_hidden_unit_stats_with_hidden_units(units, &hidden_units)
 }
 
-pub fn collect_main_identity_lists<R>(
-    replays: &[R],
-    main_names: &HashSet<String>,
-    main_handles: &HashSet<String>,
-) -> (Vec<String>, Vec<String>)
-where
-    R: Borrow<ReplayInfo>,
-{
-    let mut player_names = BTreeSet::new();
-    let mut player_handles = BTreeSet::new();
-    let has_known_identity = !main_names.is_empty() || !main_handles.is_empty();
-
-    for replay in replays
-        .iter()
-        .map(Borrow::borrow)
-        .filter(|replay| replay.result != "Unparsed" && replay.map.trim().starts_with("AC_"))
-    {
-        let p1_is_main = ReplayAnalysis::is_main_player_identity(
-            &replay.main().name,
-            &replay.main().handle,
-            main_names,
-            main_handles,
-        );
-        let p2_is_main = ReplayAnalysis::is_main_player_identity(
-            &replay.ally().name,
-            &replay.ally().handle,
-            main_names,
-            main_handles,
-        );
-        let should_take_p1 = p1_is_main || (!has_known_identity && !p2_is_main);
-
-        if should_take_p1 {
-            let name = replay.main().name.trim();
-            if !name.is_empty() {
-                player_names.insert(name.to_string());
-            }
-
-            let handle = replay.main().handle.trim();
-            if !handle.is_empty() {
-                player_handles.insert(handle.to_string());
-            }
-        }
-
-        if p2_is_main {
-            let name = replay.ally().name.trim();
-            if !name.is_empty() {
-                player_names.insert(name.to_string());
-            }
-
-            let handle = replay.ally().handle.trim();
-            if !handle.is_empty() {
-                player_handles.insert(handle.to_string());
-            }
-        }
-    }
-
-    (
-        player_names.into_iter().collect(),
-        player_handles.into_iter().collect(),
-    )
-}
-
 pub fn collect_main_identity_lists_with_dictionary<R>(
     replays: &[R],
     main_names: &HashSet<String>,
@@ -720,11 +658,6 @@ pub fn bonus_objective_total_for_map_id_with_dictionary(
         .coop_map_id_to_english(map_id)
         .as_deref()
         .and_then(|name| bonus_objective_total_for_canonical_map_with_dictionary(name, dictionary))
-}
-
-pub fn bonus_objective_total_for_map_id(map_id: &str) -> Option<u64> {
-    let _ = map_id;
-    None
 }
 
 fn cache_json_value<T: serde::Serialize>(value: &T) -> Value {
