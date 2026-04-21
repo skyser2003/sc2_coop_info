@@ -1636,13 +1636,6 @@ pub fn build_commander_unit_data_with_dictionary(
     Value::Object(out)
 }
 
-pub fn build_commander_unit_data(
-    side_rollup: std::collections::BTreeMap<String, CommanderUnitRollup>,
-) -> Value {
-    let dictionary = Sc2DictionaryData::default();
-    build_commander_unit_data_with_dictionary(side_rollup, &dictionary)
-}
-
 fn sanitize_replay_text(value: &str) -> String {
     fn strip_tags(value: &str) -> String {
         let mut output = String::with_capacity(value.len());
