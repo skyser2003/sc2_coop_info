@@ -493,25 +493,58 @@ impl<F> EventTypeInfo<F> {
 
 #[derive(Debug, Clone)]
 pub struct ProtocolDefinition {
-    pub build: u32,
-    pub(crate) typeinfos: Arc<[TypeInfo]>,
-    pub game_event_types: Vec<(u32, u32, String)>,
-    pub message_event_types: Vec<(u32, u32, String)>,
-    pub tracker_event_types: Vec<(u32, u32, String)>,
-    pub(crate) game_event_typeinfos: Arc<[Option<EventTypeInfo<GameEventField>>]>,
-    pub(crate) message_event_typeinfos: Arc<[Option<EventTypeInfo<MessageEventField>>]>,
-    pub(crate) tracker_event_typeinfos: Arc<[Option<EventTypeInfo<TrackerEventField>>]>,
-    pub game_eventid_typeid: usize,
-    pub message_eventid_typeid: usize,
-    pub tracker_eventid_typeid: Option<usize>,
-    pub svaruint32_typeid: usize,
-    pub replay_userid_typeid: Option<usize>,
-    pub replay_header_typeid: usize,
-    pub game_details_typeid: usize,
-    pub replay_initdata_typeid: usize,
+    build: u32,
+    typeinfos: Arc<[TypeInfo]>,
+    game_event_typeinfos: Arc<[Option<EventTypeInfo<GameEventField>>]>,
+    message_event_typeinfos: Arc<[Option<EventTypeInfo<MessageEventField>>]>,
+    tracker_event_typeinfos: Arc<[Option<EventTypeInfo<TrackerEventField>>]>,
+    game_eventid_typeid: usize,
+    message_eventid_typeid: usize,
+    tracker_eventid_typeid: Option<usize>,
+    svaruint32_typeid: usize,
+    replay_userid_typeid: Option<usize>,
+    replay_header_typeid: usize,
+    game_details_typeid: usize,
+    replay_initdata_typeid: usize,
 }
 
 impl ProtocolDefinition {
+    pub(crate) fn new(
+        build: u32,
+        typeinfos: Arc<[TypeInfo]>,
+        game_event_typeinfos: Arc<[Option<EventTypeInfo<GameEventField>>]>,
+        message_event_typeinfos: Arc<[Option<EventTypeInfo<MessageEventField>>]>,
+        tracker_event_typeinfos: Arc<[Option<EventTypeInfo<TrackerEventField>>]>,
+        game_eventid_typeid: usize,
+        message_eventid_typeid: usize,
+        tracker_eventid_typeid: Option<usize>,
+        svaruint32_typeid: usize,
+        replay_userid_typeid: Option<usize>,
+        replay_header_typeid: usize,
+        game_details_typeid: usize,
+        replay_initdata_typeid: usize,
+    ) -> Self {
+        Self {
+            build,
+            typeinfos,
+            game_event_typeinfos,
+            message_event_typeinfos,
+            tracker_event_typeinfos,
+            game_eventid_typeid,
+            message_eventid_typeid,
+            tracker_eventid_typeid,
+            svaruint32_typeid,
+            replay_userid_typeid,
+            replay_header_typeid,
+            game_details_typeid,
+            replay_initdata_typeid,
+        }
+    }
+
+    pub fn build(&self) -> u32 {
+        self.build
+    }
+
     pub fn decode_replay_game_events(
         &self,
         contents: &[u8],

@@ -64,10 +64,7 @@ fn sample_parser_with_commanders(main_commander: &str, ally_commander: &str) -> 
         weekly: false,
         messages: Vec::new(),
         hash: None,
-        build: ReplayBuildInfo {
-            replay_build: 99999,
-            protocol_build: ProtocolBuildValue::Int(99999),
-        },
+        build: ReplayBuildInfo::new(99999, ProtocolBuildValue::Int(99999)),
         date: "2026:02:25:12:00:00".to_string(),
         enemy_race: "Zerg".to_string(),
         ext_difficulty: "Brutal".to_string(),

@@ -15,15 +15,11 @@ fn generate_cache_skips_invalid_replay_candidates() {
         .expect("failed to write invalid replay placeholder");
 
     let output_file = temp_dir.path().join("cache_overall_stats");
-    let summary = GenerateCacheConfig {
-        account_dir,
-        output_file: output_file.clone(),
-        recent_replay_count: None,
-    }
-    .generate(&resources)
-    .expect("cache generation should succeed for invalid replay placeholders");
+    let summary = GenerateCacheConfig::new(account_dir, output_file.clone())
+        .generate(&resources)
+        .expect("cache generation should succeed for invalid replay placeholders");
 
-    assert_eq!(summary.scanned_replays, 0);
+    assert_eq!(summary.scanned_replays(), 0);
     assert!(output_file.is_file(), "cache output should be written");
     assert_eq!(
         fs::read_to_string(&output_file).expect("cache output should be readable"),

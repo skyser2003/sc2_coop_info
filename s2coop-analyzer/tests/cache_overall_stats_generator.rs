@@ -7,10 +7,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn sample_build_info() -> ReplayBuildInfo {
-    ReplayBuildInfo {
-        replay_build: 12345,
-        protocol_build: ProtocolBuildValue::Int(12345),
-    }
+    ReplayBuildInfo::new(12345, ProtocolBuildValue::Int(12345))
 }
 
 fn sample_player(pid: u8) -> CachePlayer {

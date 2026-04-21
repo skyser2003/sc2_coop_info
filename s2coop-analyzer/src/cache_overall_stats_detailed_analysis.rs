@@ -123,11 +123,7 @@ pub fn run_test_cache_overall_stats_detailed_analysis(
         );
     }
 
-    let config = GenerateCacheConfig {
-        account_dir,
-        output_file: generated_output.clone(),
-        recent_replay_count: None,
-    };
+    let config = GenerateCacheConfig::new(account_dir, generated_output.clone());
     let dictionary_data = Arc::new(
         Sc2DictionaryData::load(None)
             .map_err(|error| GenerateCacheError::DetailedAnalysisConfig(error.to_string()))?,
@@ -153,15 +149,17 @@ pub fn run_test_cache_overall_stats_detailed_analysis(
         );
     }
 
-    let generated_payload = read_json_payload(&summary.output_file)?;
+    let generated_payload = read_json_payload(summary.output_file())?;
     let entries = generated_payload.as_array().ok_or_else(|| {
         TestCacheOverallStatsDetailedAnalysisError::GeneratedCacheNotArray(
-            summary.output_file.clone(),
+            summary.output_file().to_path_buf(),
         )
     })?;
     if entries.is_empty() {
         return Err(
-            TestCacheOverallStatsDetailedAnalysisError::EmptyGeneratedCache(summary.output_file),
+            TestCacheOverallStatsDetailedAnalysisError::EmptyGeneratedCache(
+                summary.output_file().to_path_buf(),
+            ),
         );
     }
     if !entries.iter().any(|entry| {

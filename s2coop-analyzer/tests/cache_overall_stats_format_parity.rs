@@ -73,10 +73,7 @@ fn cache_entry_matches_python_style_detailed_report_formatting() {
             time: 20.0,
         }],
         hash: Some("hash-abc".to_string()),
-        build: ReplayBuildInfo {
-            replay_build: 99999,
-            protocol_build: ProtocolBuildValue::Int(99999),
-        },
+        build: ReplayBuildInfo::new(99999, ProtocolBuildValue::Int(99999)),
         date: "2026:02:25:12:00:00".to_string(),
         enemy_race: "Zerg".to_string(),
         ext_difficulty: "Brutal".to_string(),

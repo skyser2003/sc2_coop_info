@@ -6,6 +6,7 @@ pub fn load_dictionary() -> Sc2DictionaryData {
     Sc2DictionaryData::load(None).expect("dictionary data should load for tests")
 }
 
+#[allow(dead_code)]
 pub fn load_replay_resources() -> ReplayAnalysisResources {
     ReplayAnalysisResources::from_dictionary_data(Arc::new(load_dictionary()))
         .expect("replay analysis resources should load for tests")

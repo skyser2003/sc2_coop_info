@@ -8,10 +8,7 @@ use s2coop_analyzer::tauri_replay_analysis_impl::{
 use std::collections::{BTreeMap, HashSet};
 
 fn sample_build_info() -> ReplayBuildInfo {
-    ReplayBuildInfo {
-        replay_build: 12345,
-        protocol_build: ProtocolBuildValue::Int(12345),
-    }
+    ReplayBuildInfo::new(12345, ProtocolBuildValue::Int(12345))
 }
 
 fn sample_player(

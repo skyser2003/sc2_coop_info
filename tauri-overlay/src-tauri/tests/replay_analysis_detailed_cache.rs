@@ -61,10 +61,7 @@ fn sample_cache_entry(file: &Path, detailed_analysis: bool) -> CacheReplayEntry 
         amon_units: None,
         bonus: Some(vec!["First".to_string(), "Second".to_string()]),
         brutal_plus: 0,
-        build: ReplayBuildInfo {
-            replay_build: 1,
-            protocol_build: ProtocolBuildValue::Int(1),
-        },
+        build: ReplayBuildInfo::new(1, ProtocolBuildValue::Int(1)),
         comp: Some("Terran".to_string()),
         date: "2026-03-09 12:00:00".to_string(),
         difficulty: ("Brutal".to_string(), "Brutal".to_string()),

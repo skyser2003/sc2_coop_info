@@ -85,24 +85,21 @@ impl ProtocolStore {
                 &mut TrackerEventField::from_key,
             )?;
 
-            let build_def = ProtocolDefinition {
+            let build_def = ProtocolDefinition::new(
                 build,
                 typeinfos,
-                game_event_types,
-                message_event_types,
-                tracker_event_types,
                 game_event_typeinfos,
                 message_event_typeinfos,
                 tracker_event_typeinfos,
-                game_eventid_typeid: to_usize(proto, "game_eventid_typeid")?,
-                message_eventid_typeid: to_usize(proto, "message_eventid_typeid")?,
-                tracker_eventid_typeid: to_usize_opt(proto, "tracker_eventid_typeid"),
-                svaruint32_typeid: to_usize(proto, "svaruint32_typeid")?,
-                replay_userid_typeid: to_usize_opt(proto, "replay_userid_typeid"),
-                replay_header_typeid: to_usize(proto, "replay_header_typeid")?,
-                game_details_typeid: to_usize(proto, "game_details_typeid")?,
-                replay_initdata_typeid: to_usize(proto, "replay_initdata_typeid")?,
-            };
+                to_usize(proto, "game_eventid_typeid")?,
+                to_usize(proto, "message_eventid_typeid")?,
+                to_usize_opt(proto, "tracker_eventid_typeid"),
+                to_usize(proto, "svaruint32_typeid")?,
+                to_usize_opt(proto, "replay_userid_typeid"),
+                to_usize(proto, "replay_header_typeid")?,
+                to_usize(proto, "game_details_typeid")?,
+                to_usize(proto, "replay_initdata_typeid")?,
+            );
 
             latest = latest.max(build);
             map.insert(build, build_def);

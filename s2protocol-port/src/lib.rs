@@ -18,9 +18,9 @@ pub use crate::replay::{
     unit_tag_recycle, ParsedReplay, ReplayParseMode,
 };
 pub use crate::replay_data::{
-    process_scope_attributes, ReplayAttributeScope, ReplayAttributeValue, ReplayAttributes,
-    ReplayDetails, ReplayDetailsPlayer, ReplayGameDescription, ReplayHeader, ReplayInitData,
-    ReplayLobbySlot, ReplayLobbyState, ReplayMetadata, ReplayMetadataPlayer, ReplaySyncLobbyState,
-    ReplayToon, ReplayUserInitialData, ReplayVersion,
+    ReplayAttributeScope, ReplayAttributeValue, ReplayAttributes, ReplayDetails,
+    ReplayDetailsPlayer, ReplayGameDescription, ReplayHeader, ReplayInitData, ReplayLobbySlot,
+    ReplayLobbyState, ReplayMetadata, ReplayMetadataPlayer, ReplaySyncLobbyState, ReplayToon,
+    ReplayUserInitialData, ReplayVersion,
 };
 pub use crate::value::Value;

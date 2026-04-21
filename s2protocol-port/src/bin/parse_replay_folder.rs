@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use s2protocol_port::{build_protocol_store, parse_file_with_store, ParsedReplay, ReplayParseMode};
+use s2protocol_port::{build_protocol_store, parse_file_with_store, ReplayParseMode};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -88,14 +88,14 @@ fn main() {
         let elapsed = start.elapsed();
 
         match result {
-            Ok(ParsedReplay { base_build, .. }) => {
+            Ok(replay) => {
                 println!(
                     "{:>5}/{:>5} ok {:>8?} {} ({})",
                     idx + 1,
                     files.len(),
                     elapsed,
                     name,
-                    base_build
+                    replay.base_build()
                 );
             }
             Err(err) => {

@@ -107,8 +107,8 @@ fn replay_parse_mode_controls_event_streams() {
     let detailed = parse_file_with_store(&replay_path, &store, ReplayParseMode::Detailed)
         .expect("detailed replay parser should read the replay");
 
-    assert!(simple.game_events.is_empty());
-    assert!(simple.tracker_events.is_empty());
-    assert!(!detailed.game_events.is_empty());
-    assert!(!detailed.tracker_events.is_empty());
+    assert!(simple.game_events().is_empty());
+    assert!(simple.tracker_events().is_empty());
+    assert!(!detailed.game_events().is_empty());
+    assert!(!detailed.tracker_events().is_empty());
 }

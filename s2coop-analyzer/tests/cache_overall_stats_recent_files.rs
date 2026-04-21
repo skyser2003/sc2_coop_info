@@ -31,12 +31,10 @@ fn generate_cache_collects_only_requested_recent_replays() {
     let newest = replay_dir.join("newest.SC2Replay");
     write_replay_file(&newest);
 
-    let replay_files = GenerateCacheConfig {
-        account_dir,
-        output_file: temp_dir.path().join("cache_overall_stats"),
-        recent_replay_count: Some(2),
-    }
-    .collect_replay_files();
+    let replay_files =
+        GenerateCacheConfig::new(account_dir, temp_dir.path().join("cache_overall_stats"))
+            .with_recent_replay_count(Some(2))
+            .collect_replay_files();
 
     let replay_names = replay_files
         .iter()

@@ -34,23 +34,15 @@ fn generate_cache_parallel_runs_are_deterministic() {
     let first_output = temp_dir.path().join("cache_overall_stats_first");
     let second_output = temp_dir.path().join("cache_overall_stats_second");
 
-    let first_summary = GenerateCacheConfig {
-        account_dir: account_dir.clone(),
-        output_file: first_output.clone(),
-        recent_replay_count: None,
-    }
-    .generate(&resources)
-    .expect("first cache generation should succeed");
-    let second_summary = GenerateCacheConfig {
-        account_dir,
-        output_file: second_output.clone(),
-        recent_replay_count: None,
-    }
-    .generate(&resources)
-    .expect("second cache generation should succeed");
+    let first_summary = GenerateCacheConfig::new(account_dir.clone(), first_output.clone())
+        .generate(&resources)
+        .expect("first cache generation should succeed");
+    let second_summary = GenerateCacheConfig::new(account_dir, second_output.clone())
+        .generate(&resources)
+        .expect("second cache generation should succeed");
 
-    assert_eq!(first_summary.scanned_replays, 0);
-    assert_eq!(second_summary.scanned_replays, 0);
+    assert_eq!(first_summary.scanned_replays(), 0);
+    assert_eq!(second_summary.scanned_replays(), 0);
 
     let first_entries: Vec<CacheReplayEntry> = serde_json::from_str(
         &fs::read_to_string(first_output).expect("first cache file should exist"),

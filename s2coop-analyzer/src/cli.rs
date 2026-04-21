@@ -212,11 +212,8 @@ fn run_cli_impl(
                 return Ok(usage_text());
             }
 
-            let config = GenerateCacheConfig {
-                account_dir: args.account_dir,
-                output_file: args.output_file,
-                recent_replay_count: args.recent_replay_count,
-            };
+            let config = GenerateCacheConfig::new(args.account_dir, args.output_file)
+                .with_recent_replay_count(args.recent_replay_count);
             let dictionary_data =
                 Arc::new(Sc2DictionaryData::load(None).map_err(|error| {
                     GenerateCacheError::DetailedAnalysisConfig(error.to_string())
@@ -231,13 +228,13 @@ fn run_cli_impl(
 
             Ok(format!(
                 "Generated cache_overall_stats with {} replay entr{} at {}",
-                summary.scanned_replays,
-                if summary.scanned_replays == 1 {
+                summary.scanned_replays(),
+                if summary.scanned_replays() == 1 {
                     "y"
                 } else {
                     "ies"
                 },
-                summary.output_file.display()
+                summary.output_file().display()
             ))
         }
         Command::TestCacheOverallStatsDetailedAnalysis(args) => {

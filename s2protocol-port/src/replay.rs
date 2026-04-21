@@ -2,8 +2,8 @@ use crate::{
     error::DecodeError,
     events::{GameEvent, MessageEvent, TrackerEvent},
     replay_data::{
-        process_scope_attributes, ReplayAttributeScope, ReplayAttributes, ReplayDetails,
-        ReplayHeader, ReplayInitData, ReplayMetadata,
+        ReplayAttributeScope, ReplayAttributes, ReplayDetails, ReplayHeader, ReplayInitData,
+        ReplayMetadata,
     },
 };
 use mpq::Archive;
@@ -13,18 +13,122 @@ use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct ParsedReplay {
-    pub path: String,
-    pub base_build: u32,
-    pub header: ReplayHeader,
-    pub details: Option<ReplayDetails>,
-    pub details_backup: Option<ReplayDetails>,
-    pub init_data: Option<ReplayInitData>,
-    pub metadata: Option<ReplayMetadata>,
-    pub game_events: Vec<GameEvent>,
-    pub message_events: Vec<MessageEvent>,
-    pub tracker_events: Vec<TrackerEvent>,
-    pub attributes: Option<ReplayAttributes>,
-    pub attribute_scopes: Vec<ReplayAttributeScope>,
+    path: String,
+    base_build: u32,
+    header: ReplayHeader,
+    details: Option<ReplayDetails>,
+    details_backup: Option<ReplayDetails>,
+    init_data: Option<ReplayInitData>,
+    metadata: Option<ReplayMetadata>,
+    game_events: Vec<GameEvent>,
+    message_events: Vec<MessageEvent>,
+    tracker_events: Vec<TrackerEvent>,
+    attributes: Option<ReplayAttributes>,
+    attribute_scopes: Vec<ReplayAttributeScope>,
+}
+
+impl ParsedReplay {
+    fn new(
+        path: String,
+        base_build: u32,
+        header: ReplayHeader,
+        details: Option<ReplayDetails>,
+        details_backup: Option<ReplayDetails>,
+        init_data: Option<ReplayInitData>,
+        metadata: Option<ReplayMetadata>,
+        game_events: Vec<GameEvent>,
+        message_events: Vec<MessageEvent>,
+        tracker_events: Vec<TrackerEvent>,
+        attributes: Option<ReplayAttributes>,
+        attribute_scopes: Vec<ReplayAttributeScope>,
+    ) -> Self {
+        Self {
+            path,
+            base_build,
+            header,
+            details,
+            details_backup,
+            init_data,
+            metadata,
+            game_events,
+            message_events,
+            tracker_events,
+            attributes,
+            attribute_scopes,
+        }
+    }
+
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    pub fn base_build(&self) -> u32 {
+        self.base_build
+    }
+
+    pub fn header(&self) -> &ReplayHeader {
+        &self.header
+    }
+
+    pub fn details(&self) -> Option<&ReplayDetails> {
+        self.details.as_ref()
+    }
+
+    pub fn details_backup(&self) -> Option<&ReplayDetails> {
+        self.details_backup.as_ref()
+    }
+
+    pub fn init_data(&self) -> Option<&ReplayInitData> {
+        self.init_data.as_ref()
+    }
+
+    pub fn metadata(&self) -> Option<&ReplayMetadata> {
+        self.metadata.as_ref()
+    }
+
+    pub fn game_events(&self) -> &[GameEvent] {
+        &self.game_events
+    }
+
+    pub fn message_events(&self) -> &[MessageEvent] {
+        &self.message_events
+    }
+
+    pub fn tracker_events(&self) -> &[TrackerEvent] {
+        &self.tracker_events
+    }
+
+    pub fn attributes(&self) -> Option<&ReplayAttributes> {
+        self.attributes.as_ref()
+    }
+
+    pub fn attribute_scopes(&self) -> &[ReplayAttributeScope] {
+        &self.attribute_scopes
+    }
+
+    pub fn take_details(&mut self) -> Option<ReplayDetails> {
+        self.details.take()
+    }
+
+    pub fn take_init_data(&mut self) -> Option<ReplayInitData> {
+        self.init_data.take()
+    }
+
+    pub fn take_metadata(&mut self) -> Option<ReplayMetadata> {
+        self.metadata.take()
+    }
+
+    pub fn take_game_events(&mut self) -> Vec<GameEvent> {
+        std::mem::take(&mut self.game_events)
+    }
+
+    pub fn take_message_events(&mut self) -> Vec<MessageEvent> {
+        std::mem::take(&mut self.message_events)
+    }
+
+    pub fn take_tracker_events(&mut self) -> Vec<TrackerEvent> {
+        std::mem::take(&mut self.tracker_events)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,7 +235,7 @@ fn read_user_data_header_content(path: &Path) -> Result<Vec<u8>, DecodeError> {
 }
 
 fn extract_base_build(header: &ReplayHeader) -> Result<u32, DecodeError> {
-    Ok(header.m_version.m_baseBuild)
+    Ok(header.base_build())
 }
 
 pub fn parse_file_with_store(
@@ -259,14 +363,14 @@ fn parse_file_with_store_internal(
                     DecodeError::Corrupted(format!("decode replay.attributes.events: {err}"))
                 })?;
             let attributes = ReplayAttributes::from_value(value)?;
-            let scopes = process_scope_attributes(&attributes);
+            let scopes = attributes.scope_attributes();
             (Some(attributes), scopes)
         } else {
             (None, Vec::new())
         };
 
-    Ok(ParsedReplay {
-        path: path.display().to_string(),
+    Ok(ParsedReplay::new(
+        path.display().to_string(),
         base_build,
         header,
         details,
@@ -278,7 +382,7 @@ fn parse_file_with_store_internal(
         tracker_events,
         attributes,
         attribute_scopes,
-    })
+    ))
 }
 
 pub fn convert_fourcc(bytes: &[u8]) -> String {

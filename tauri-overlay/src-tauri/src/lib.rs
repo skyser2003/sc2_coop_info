@@ -2023,21 +2023,16 @@ fn generate_detailed_analysis_cache(
         .replay_analysis_resources()
         .map_err(|error| format!("Failed to access replay analysis resources: {error}"))?;
 
-    GenerateCacheConfig {
-        account_dir,
-        output_file: output_file.clone(),
-        recent_replay_count: None,
-    }
-    .generate_with_resources_and_runtime_and_logger(
-        resources.as_ref(),
-        &logger,
-        &GenerateCacheRuntimeOptions {
-            worker_count: Some(worker_count),
-            stop_controller: Some(stop_controller),
-        },
-    )
-    .map(|summary| (summary.scanned_replays, summary.completed))
-    .map_err(|error| format!("Failed to generate '{}': {error}", output_file.display()))
+    GenerateCacheConfig::new(account_dir, output_file.clone())
+        .generate_with_resources_and_runtime_and_logger(
+            resources.as_ref(),
+            &logger,
+            &GenerateCacheRuntimeOptions::default()
+                .with_worker_count(worker_count)
+                .with_stop_controller(stop_controller),
+        )
+        .map(|summary| (summary.scanned_replays(), summary.completed()))
+        .map_err(|error| format!("Failed to generate '{}': {error}", output_file.display()))
 }
 
 fn normalize_region_code(code: &str) -> Option<&'static str> {

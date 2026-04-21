@@ -13,8 +13,8 @@ use crate::tauri_replay_analysis_impl::{
 use chrono::{DateTime, Local};
 use indexmap::IndexMap;
 use s2protocol_port::{
-    build_protocol_store, parse_file_with_store, ParsedReplay, ProtocolStore, ReplayDetails,
-    ReplayEvent, ReplayInitData, ReplayMetadata, ReplayParseMode, TrackerEvent,
+    build_protocol_store, parse_file_with_store, ProtocolStore, ReplayDetails, ReplayEvent,
+    ReplayInitData, ReplayMetadata, ReplayParseMode, TrackerEvent,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value as JsonValue};
@@ -108,79 +108,96 @@ pub enum ProtocolBuildValue {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ReplayBuildInfo {
-    pub replay_build: u32,
-    pub protocol_build: ProtocolBuildValue,
+    replay_build: u32,
+    protocol_build: ProtocolBuildValue,
+}
+
+impl ReplayBuildInfo {
+    pub fn new(replay_build: u32, protocol_build: ProtocolBuildValue) -> Self {
+        Self {
+            replay_build,
+            protocol_build,
+        }
+    }
+
+    pub fn replay_build(&self) -> u32 {
+        self.replay_build
+    }
+
+    pub fn protocol_build(&self) -> &ProtocolBuildValue {
+        &self.protocol_build
+    }
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ReplayParsedContext {
-    pub details: ReplayDetails,
-    pub init_data: ReplayInitData,
-    pub metadata: ReplayMetadata,
+struct ReplayParsedContext {
+    details: ReplayDetails,
+    init_data: ReplayInitData,
+    metadata: ReplayMetadata,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ReplayDetailedParseContext {
-    pub events: Vec<ReplayEvent>,
-    pub start_time: f64,
-    pub end_time: f64,
+struct ReplayDetailedParseContext {
+    events: Vec<ReplayEvent>,
+    start_time: f64,
+    end_time: f64,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ReplayBaseParse {
-    pub context: ReplayParsedContext,
-    pub build: ReplayBuildInfo,
-    pub file: String,
-    pub map_name: String,
-    pub extension: bool,
-    pub brutal_plus: u32,
-    pub result: String,
-    pub accurate_length: f64,
-    pub accurate_length_force_float: bool,
-    pub realtime_length: f64,
-    pub form_alength: String,
-    pub length: u64,
-    pub mutators: Vec<String>,
-    pub weekly: bool,
-    pub raw_messages: Vec<ParsedReplayMessage>,
-    pub hash: String,
-    pub date: String,
-    pub detailed: Option<ReplayDetailedParseContext>,
+struct ReplayBaseParse {
+    context: ReplayParsedContext,
+    build: ReplayBuildInfo,
+    file: String,
+    map_name: String,
+    extension: bool,
+    brutal_plus: u32,
+    result: String,
+    accurate_length: f64,
+    accurate_length_force_float: bool,
+    realtime_length: f64,
+    form_alength: String,
+    length: u64,
+    mutators: Vec<String>,
+    weekly: bool,
+    raw_messages: Vec<ParsedReplayMessage>,
+    hash: String,
+    date: String,
+    detailed: Option<ReplayDetailedParseContext>,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ReplayParsedInputBundle {
-    pub parser: ParsedReplayInput,
-    pub all_players: Vec<ParsedReplayPlayer>,
-    pub accurate_length_force_float: bool,
-    pub realtime_length: f64,
-    pub commander_found: bool,
-    pub enemy_race_present: bool,
-    pub cache_context: ReplayCacheContext,
-    pub detailed: Option<ReplayDetailedParseContext>,
+struct ReplayParsedInputBundle {
+    parser: ParsedReplayInput,
+    all_players: Vec<ParsedReplayPlayer>,
+    accurate_length_force_float: bool,
+    realtime_length: f64,
+    commander_found: bool,
+    enemy_race_present: bool,
+    cache_context: ReplayCacheContext,
+    detailed: Option<ReplayDetailedParseContext>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct ReplayCacheContext {
-    pub is_mm_replay: bool,
-    pub is_blizzard_map: bool,
-    pub recover_disabled: bool,
+struct ReplayCacheContext {
+    is_mm_replay: bool,
+    is_blizzard_map: bool,
+    recover_disabled: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct ReplayBaseParseFilters {
-    pub only_blizzard: bool,
-    pub require_recover_disabled: bool,
+struct ReplayBaseParseFilters {
+    only_blizzard: bool,
+    require_recover_disabled: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct ReplayBaseParseOptions {
-    pub include_events: bool,
-    pub filters: ReplayBaseParseFilters,
+struct ReplayBaseParseOptions {
+    include_events: bool,
+    filters: ReplayBaseParseFilters,
 }
 
 impl ReplayBaseParseFilters {
-    pub(crate) fn saved_cache() -> Self {
+    fn saved_cache() -> Self {
         Self {
             only_blizzard: true,
             require_recover_disabled: true,
@@ -189,7 +206,7 @@ impl ReplayBaseParseFilters {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ReplayBaseParseError {
+enum ReplayBaseParseError {
     ProtocolStore(String),
     ReplayParse { path: String, message: String },
     InvalidReplayData(String),
@@ -213,8 +230,23 @@ impl std::fmt::Display for ReplayBaseParseError {
 
 impl std::error::Error for ReplayBaseParseError {}
 
+impl ReplayBaseParseError {
+    fn into_detailed_analysis_error(self) -> DetailedReplayAnalysisError {
+        match self {
+            Self::ProtocolStore(message) => DetailedReplayAnalysisError::ProtocolStore(message),
+            Self::ReplayParse { path, message } => {
+                DetailedReplayAnalysisError::ReplayParse { path, message }
+            }
+            Self::InvalidReplayData(message) => {
+                DetailedReplayAnalysisError::InvalidReplayData(message)
+            }
+            Self::IoRead { path, message } => DetailedReplayAnalysisError::IoRead { path, message },
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
-pub(crate) enum ReplayNumericValue {
+enum ReplayNumericValue {
     Int(i64),
     Float(f64),
 }
@@ -273,6 +305,15 @@ impl ReplayAnalysisResources {
     pub fn protocol_store(&self) -> &ProtocolStore {
         &self.protocol_store
     }
+
+    fn parse_replay_base(
+        &self,
+        replay_path: &Path,
+        options: ReplayBaseParseOptions,
+    ) -> Result<Option<ReplayBaseParse>, ReplayBaseParseError> {
+        let inputs = self.cache_generation_data();
+        parse_replay_base(replay_path, &inputs, self.protocol_store(), options)
+    }
 }
 
 fn replay_game_speed_code(details: &ReplayDetails, init_data: &ReplayInitData) -> i64 {
@@ -313,7 +354,7 @@ pub fn realtime_length_from_replay(
     accurate_length / multiplier
 }
 
-pub(crate) fn parse_replay_base(
+fn parse_replay_base(
     replay_path: &Path,
     inputs: &CacheGenerationData<'_>,
     protocol_store: &ProtocolStore,
@@ -328,7 +369,7 @@ pub(crate) fn parse_replay_base(
     } else {
         ReplayParseMode::Simple
     };
-    let parsed =
+    let mut parsed =
         parse_file_with_store(replay_path, protocol_store, parse_mode).map_err(|error| {
             ReplayBaseParseError::ReplayParse {
                 path: replay_path.display().to_string(),
@@ -336,16 +377,13 @@ pub(crate) fn parse_replay_base(
             }
         })?;
 
-    let ParsedReplay {
-        base_build,
-        details,
-        init_data,
-        metadata,
-        game_events,
-        message_events,
-        tracker_events,
-        ..
-    } = parsed;
+    let base_build = parsed.base_build();
+    let details = parsed.take_details();
+    let init_data = parsed.take_init_data();
+    let metadata = parsed.take_metadata();
+    let game_events = parsed.take_game_events();
+    let message_events = parsed.take_message_events();
+    let tracker_events = parsed.take_tracker_events();
 
     let details = details.ok_or_else(|| {
         ReplayBaseParseError::InvalidReplayData("missing replay.details".to_string())
@@ -378,7 +416,7 @@ pub(crate) fn parse_replay_base(
         protocol_store
             .latest()
             .map_err(|error| ReplayBaseParseError::ProtocolStore(error.to_string()))?
-            .build,
+            .build(),
     );
     let selected_build = if protocol_store.build(base_build).is_ok() {
         replay_build
@@ -474,10 +512,10 @@ pub(crate) fn parse_replay_base(
             init_data,
             metadata,
         },
-        build: ReplayBuildInfo {
-            replay_build: base_build,
-            protocol_build: resolve_protocol_build(replay_build, latest_build, selected_build),
-        },
+        build: ReplayBuildInfo::new(
+            base_build,
+            resolve_protocol_build(replay_build, latest_build, selected_build),
+        ),
         file: replay_path.display().to_string(),
         map_name,
         extension,
@@ -509,7 +547,7 @@ pub(crate) fn parse_replay_base(
     }))
 }
 
-pub(crate) fn resolve_protocol_build(
+fn resolve_protocol_build(
     replay_build: i64,
     latest_build: i64,
     selected_build: i64,
@@ -527,7 +565,7 @@ pub(crate) fn resolve_protocol_build(
     }
 }
 
-pub(crate) fn collect_user_leave_times(events: &[ReplayEvent]) -> IndexMap<i64, f64> {
+fn collect_user_leave_times(events: &[ReplayEvent]) -> IndexMap<i64, f64> {
     let mut user_leave_times = IndexMap::new();
     for event in events {
         if event_name(event) != "NNet.Game.SGameUserLeaveEvent" {
@@ -542,13 +580,13 @@ pub(crate) fn collect_user_leave_times(events: &[ReplayEvent]) -> IndexMap<i64, 
     user_leave_times
 }
 
-pub(crate) fn file_date_string(file: &Path) -> Result<String, std::io::Error> {
+fn file_date_string(file: &Path) -> Result<String, std::io::Error> {
     let modified = fs::metadata(file)?.modified()?;
     let datetime: DateTime<Local> = DateTime::from(modified);
     Ok(datetime.format("%Y:%m:%d:%H:%M:%S").to_string())
 }
 
-pub(crate) fn normalized_path_string(path: &Path) -> String {
+fn normalized_path_string(path: &Path) -> String {
     let mut normalized = PathBuf::new();
     for component in path.components() {
         normalized.push(component.as_os_str());
@@ -563,7 +601,7 @@ pub fn calculate_replay_hash(path: &Path) -> String {
     }
 }
 
-pub(crate) fn parse_masteries(values: &[u32]) -> [u32; 6] {
+fn parse_masteries(values: &[u32]) -> [u32; 6] {
     let mut out = [0_u32; 6];
     for (index, value) in values.iter().take(6).enumerate() {
         out[index] = *value;
@@ -571,36 +609,36 @@ pub(crate) fn parse_masteries(values: &[u32]) -> [u32; 6] {
     out
 }
 
-pub(crate) fn event_name(event: &ReplayEvent) -> &str {
+fn event_name(event: &ReplayEvent) -> &str {
     event._event()
 }
 
-pub(crate) fn event_gameloop(event: &ReplayEvent) -> i64 {
+fn event_gameloop(event: &ReplayEvent) -> i64 {
     event._gameloop()
 }
 
-pub(crate) fn event_control_id(event: &ReplayEvent) -> Option<i64> {
+fn event_control_id(event: &ReplayEvent) -> Option<i64> {
     match event {
         ReplayEvent::Game(event) => event.m_control_id,
         ReplayEvent::Tracker(_) => None,
     }
 }
 
-pub(crate) fn event_event_type(event: &ReplayEvent) -> Option<i64> {
+fn event_event_type(event: &ReplayEvent) -> Option<i64> {
     match event {
         ReplayEvent::Game(event) => event.m_event_type,
         ReplayEvent::Tracker(_) => None,
     }
 }
 
-pub(crate) fn event_user_id(event: &ReplayEvent) -> Option<i64> {
+fn event_user_id(event: &ReplayEvent) -> Option<i64> {
     match event {
         ReplayEvent::Game(event) => event.user_id,
         ReplayEvent::Tracker(_) => None,
     }
 }
 
-pub(crate) fn difficulty_name(code: i64) -> &'static str {
+fn difficulty_name(code: i64) -> &'static str {
     match code {
         1 => "Casual",
         2 => "Normal",
@@ -612,7 +650,7 @@ pub(crate) fn difficulty_name(code: i64) -> &'static str {
     }
 }
 
-pub(crate) fn region_name(code: i64) -> &'static str {
+fn region_name(code: i64) -> &'static str {
     match code {
         1 => "NA",
         2 => "EU",
@@ -623,7 +661,7 @@ pub(crate) fn region_name(code: i64) -> &'static str {
     }
 }
 
-pub(crate) fn format_duration(seconds: f64) -> String {
+fn format_duration(seconds: f64) -> String {
     if !seconds.is_finite() || seconds <= 0.0 {
         return "00:00".to_string();
     }
@@ -639,7 +677,7 @@ pub(crate) fn format_duration(seconds: f64) -> String {
     }
 }
 
-pub(crate) fn duration_to_u64(value: f64) -> u64 {
+fn duration_to_u64(value: f64) -> u64 {
     if !value.is_finite() || value <= 0.0 {
         0
     } else {
@@ -647,7 +685,7 @@ pub(crate) fn duration_to_u64(value: f64) -> u64 {
     }
 }
 
-pub(crate) fn normalize_json_float(value: f64) -> f64 {
+fn normalize_json_float(value: f64) -> f64 {
     if !value.is_finite() {
         return value;
     }
@@ -662,7 +700,7 @@ pub(crate) fn normalize_json_float(value: f64) -> f64 {
     }
 }
 
-pub(crate) fn valid_protocol_mapping(build: i64) -> Option<i64> {
+fn valid_protocol_mapping(build: i64) -> Option<i64> {
     match build {
         81102 => Some(81433),
         80871 => Some(81433),
@@ -675,11 +713,11 @@ pub(crate) fn valid_protocol_mapping(build: i64) -> Option<i64> {
     }
 }
 
-pub(crate) fn supported_legacy_protocol(build: i64) -> bool {
+fn supported_legacy_protocol(build: i64) -> bool {
     matches!(build, 76114 | 78285 | 83830)
 }
 
-pub(crate) fn get_last_deselect_event(events: &[ReplayEvent]) -> Option<ReplayNumericValue> {
+fn get_last_deselect_event(events: &[ReplayEvent]) -> Option<ReplayNumericValue> {
     let mut last_event = None;
     for event in events {
         if event_name(event) == "NNet.Game.SSelectionDeltaEvent" {
@@ -691,7 +729,7 @@ pub(crate) fn get_last_deselect_event(events: &[ReplayEvent]) -> Option<ReplayNu
     last_event
 }
 
-pub(crate) fn get_start_time(events: &[ReplayEvent]) -> ReplayNumericValue {
+fn get_start_time(events: &[ReplayEvent]) -> ReplayNumericValue {
     for event in events {
         if let ReplayEvent::Tracker(event) = event {
             if event.event == "NNet.Replay.Tracker.SPlayerStatsEvent"
@@ -726,7 +764,7 @@ fn cache_handle_id(handle: &str) -> String {
     tail.split('.').next().unwrap_or("").to_string()
 }
 
-pub(crate) fn mutator_from_button(button: i64, panel: i64, mutators: &[String]) -> Option<String> {
+fn mutator_from_button(button: i64, panel: i64, mutators: &[String]) -> Option<String> {
     let idx = (button - 41) / 3 + (panel - 1) * 15;
     if idx < 0 {
         return None;
@@ -737,7 +775,7 @@ pub(crate) fn mutator_from_button(button: i64, panel: i64, mutators: &[String]) 
     mutators.get(index).cloned()
 }
 
-pub(crate) fn identify_mutators_for_replay(
+fn identify_mutators_for_replay(
     events: &[ReplayEvent],
     mutators_all: &[String],
     mutators_ui: &[String],
@@ -932,40 +970,49 @@ pub enum DetailedReplayAnalysisError {
 
 #[derive(Debug, Clone)]
 pub struct DetailedReplayAnalysisResult {
-    pub report: ReplayReport,
-    pub cache_entry: CacheReplayEntry,
-    pub cache_persistable: bool,
+    report: ReplayReport,
+    cache_entry: CacheReplayEntry,
+    cache_persistable: bool,
 }
 
-fn map_base_parse_error(error: ReplayBaseParseError) -> DetailedReplayAnalysisError {
-    match error {
-        ReplayBaseParseError::ProtocolStore(message) => {
-            DetailedReplayAnalysisError::ProtocolStore(message)
+impl DetailedReplayAnalysisResult {
+    fn new(report: ReplayReport, cache_entry: CacheReplayEntry, cache_persistable: bool) -> Self {
+        Self {
+            report,
+            cache_entry,
+            cache_persistable,
         }
-        ReplayBaseParseError::ReplayParse { path, message } => {
-            DetailedReplayAnalysisError::ReplayParse { path, message }
-        }
-        ReplayBaseParseError::InvalidReplayData(message) => {
-            DetailedReplayAnalysisError::InvalidReplayData(message)
-        }
-        ReplayBaseParseError::IoRead { path, message } => {
-            DetailedReplayAnalysisError::IoRead { path, message }
-        }
+    }
+
+    pub fn report(&self) -> &ReplayReport {
+        &self.report
+    }
+
+    pub fn cache_entry(&self) -> &CacheReplayEntry {
+        &self.cache_entry
+    }
+
+    pub fn into_cache_entry(self) -> CacheReplayEntry {
+        self.cache_entry
+    }
+
+    pub fn cache_persistable(&self) -> bool {
+        self.cache_persistable
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GenerateCacheConfig {
-    pub account_dir: PathBuf,
-    pub output_file: PathBuf,
-    pub recent_replay_count: Option<usize>,
+    account_dir: PathBuf,
+    output_file: PathBuf,
+    recent_replay_count: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GenerateCacheSummary {
-    pub scanned_replays: usize,
-    pub output_file: PathBuf,
-    pub completed: bool,
+    scanned_replays: usize,
+    output_file: PathBuf,
+    completed: bool,
 }
 
 #[derive(Debug, Default)]
@@ -989,12 +1036,25 @@ impl GenerateCacheStopController {
 
 #[derive(Clone, Debug, Default)]
 pub struct GenerateCacheRuntimeOptions {
-    pub worker_count: Option<usize>,
-    pub stop_controller: Option<Arc<GenerateCacheStopController>>,
+    worker_count: Option<usize>,
+    stop_controller: Option<Arc<GenerateCacheStopController>>,
 }
 
 impl GenerateCacheRuntimeOptions {
-    pub(crate) fn resolved_worker_count(&self, total_files: usize) -> usize {
+    pub fn with_worker_count(mut self, worker_count: usize) -> Self {
+        self.worker_count = Some(worker_count);
+        self
+    }
+
+    pub fn with_stop_controller(
+        mut self,
+        stop_controller: Arc<GenerateCacheStopController>,
+    ) -> Self {
+        self.stop_controller = Some(stop_controller);
+        self
+    }
+
+    fn resolved_worker_count(&self, total_files: usize) -> usize {
         self.worker_count
             .map(|value| std::cmp::max(1, std::cmp::min(value, total_files)))
             .unwrap_or_else(|| Self::default_worker_count(total_files))
@@ -1037,6 +1097,31 @@ pub enum GenerateCacheError {
 }
 
 impl GenerateCacheConfig {
+    pub fn new(account_dir: impl Into<PathBuf>, output_file: impl Into<PathBuf>) -> Self {
+        Self {
+            account_dir: account_dir.into(),
+            output_file: output_file.into(),
+            recent_replay_count: None,
+        }
+    }
+
+    pub fn with_recent_replay_count(mut self, recent_replay_count: Option<usize>) -> Self {
+        self.recent_replay_count = recent_replay_count;
+        self
+    }
+
+    pub fn account_dir(&self) -> &Path {
+        &self.account_dir
+    }
+
+    pub fn output_file(&self) -> &Path {
+        &self.output_file
+    }
+
+    pub fn recent_replay_count(&self) -> Option<usize> {
+        self.recent_replay_count
+    }
+
     pub fn generate(
         &self,
         resources: &ReplayAnalysisResources,
@@ -1095,11 +1180,11 @@ impl GenerateCacheConfig {
         CacheReplayEntry::write_entries(&analysis.entries, &self.output_file)?;
         write_pretty_cache_file(&self.output_file, None)?;
 
-        Ok(GenerateCacheSummary {
-            scanned_replays: analysis.entries.len(),
-            output_file: self.output_file.clone(),
-            completed: analysis.completed,
-        })
+        Ok(GenerateCacheSummary::new(
+            analysis.entries.len(),
+            self.output_file.clone(),
+            analysis.completed,
+        ))
     }
 
     fn ensure_output_directory(&self) -> Result<(), GenerateCacheError> {
@@ -1116,9 +1201,31 @@ impl GenerateCacheConfig {
     }
 }
 
-pub(crate) struct GenerateCacheAnalysisOutput {
-    pub entries: Vec<CacheReplayEntry>,
-    pub completed: bool,
+impl GenerateCacheSummary {
+    fn new(scanned_replays: usize, output_file: PathBuf, completed: bool) -> Self {
+        Self {
+            scanned_replays,
+            output_file,
+            completed,
+        }
+    }
+
+    pub fn scanned_replays(&self) -> usize {
+        self.scanned_replays
+    }
+
+    pub fn output_file(&self) -> &Path {
+        &self.output_file
+    }
+
+    pub fn completed(&self) -> bool {
+        self.completed
+    }
+}
+
+struct GenerateCacheAnalysisOutput {
+    entries: Vec<CacheReplayEntry>,
+    completed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1389,11 +1496,9 @@ struct CandidateReplay {
 
 impl CandidateReplay {
     fn collect(replay_path: &Path, resources: &ReplayAnalysisResources) -> Option<Self> {
-        let cache_data = resources.cache_generation_data();
         let (_, parsed) = CacheReplayEntry::parse_with_options(
             replay_path,
-            &cache_data,
-            resources.protocol_store(),
+            resources,
             ReplayBaseParseOptions {
                 include_events: false,
                 filters: ReplayBaseParseFilters::saved_cache(),
@@ -1421,8 +1526,8 @@ impl CandidateReplay {
             Some(&basic),
             resources,
         ) {
-            if result.report.has_non_empty_player_stats() {
-                return result.cache_entry;
+            if result.report().has_non_empty_player_stats() {
+                return result.into_cache_entry();
             }
         }
 
@@ -1454,7 +1559,7 @@ impl CandidateReplay {
     }
 }
 
-pub(crate) fn collect_cache_replay_files(
+fn collect_cache_replay_files(
     account_dir: &Path,
     recent_replay_count: Option<usize>,
 ) -> Vec<PathBuf> {
@@ -1549,7 +1654,7 @@ fn cache_analysis_temp_file_path(output_file: &Path) -> PathBuf {
     output_file.with_extension("temp.jsonl")
 }
 
-pub(crate) fn generate_cache_analysis_output(
+fn generate_cache_analysis_output(
     config: &GenerateCacheConfig,
     logger: Option<&(dyn Fn(String) + Send + Sync + '_)>,
     runtime: &GenerateCacheRuntimeOptions,
@@ -1675,11 +1780,11 @@ impl ReplayParsedInputBundle {
         ParsedReplayPlayer::normalize_slots(players, true, Some(2))
     }
 
-    pub(crate) fn normalized_cache_players(&self) -> Vec<ParsedReplayPlayer> {
+    fn normalized_cache_players(&self) -> Vec<ParsedReplayPlayer> {
         ParsedReplayPlayer::normalize_slots(&self.all_players, true, None)
     }
 
-    pub(crate) fn normalized_cache_messages(&self) -> Vec<ParsedReplayMessage> {
+    fn normalized_cache_messages(&self) -> Vec<ParsedReplayMessage> {
         let user_leave_times = self
             .detailed
             .as_ref()
@@ -1688,11 +1793,11 @@ impl ReplayParsedInputBundle {
         ParsedReplayMessage::sorted_with_leave_events(&self.parser.messages, &user_leave_times)
     }
 
-    pub(crate) fn cache_entry(&self) -> CacheReplayEntry {
+    fn cache_entry(&self) -> CacheReplayEntry {
         CacheReplayEntry::from_parsed_bundle(self)
     }
 
-    pub(crate) fn supports_cache_filters(&self, filters: ReplayBaseParseFilters) -> bool {
+    fn supports_cache_filters(&self, filters: ReplayBaseParseFilters) -> bool {
         if filters.only_blizzard
             && (self.cache_context.is_mm_replay || !self.cache_context.is_blizzard_map)
         {
@@ -1706,19 +1811,19 @@ impl ReplayParsedInputBundle {
         true
     }
 
-    pub(crate) fn is_cache_candidate(&self, filters: ReplayBaseParseFilters) -> bool {
+    fn is_cache_candidate(&self, filters: ReplayBaseParseFilters) -> bool {
         self.supports_cache_filters(filters)
             && self.parser.accurate_length != 0.0
             && (!filters.only_blizzard || self.commander_found)
     }
 
-    pub(crate) fn is_saved_cache_candidate(&self) -> bool {
+    fn is_saved_cache_candidate(&self) -> bool {
         self.is_cache_candidate(ReplayBaseParseFilters::saved_cache())
     }
 
-    pub(crate) fn from_base_parse(
+    fn from_base_parse(
         base: ReplayBaseParse,
-        dictionaries: &CacheGenerationData<'_>,
+        dictionaries: CacheGenerationData<'_>,
     ) -> Result<Self, ReplayBaseParseError> {
         let details = &base.context.details;
         let init_data = &base.context.init_data;
@@ -1877,35 +1982,31 @@ impl ReplayParsedInputBundle {
         })
     }
 
-    pub(crate) fn parse(
+    fn parse(
         replay_path: &Path,
-        dictionaries: &CacheGenerationData<'_>,
-        protocol_store: &ProtocolStore,
+        resources: &ReplayAnalysisResources,
         options: ReplayBaseParseOptions,
     ) -> Result<Option<Self>, ReplayBaseParseError> {
-        let Some(base) = parse_replay_base(replay_path, dictionaries, protocol_store, options)?
-        else {
+        let Some(base) = resources.parse_replay_base(replay_path, options)? else {
             return Ok(None);
         };
 
-        Self::from_base_parse(base, dictionaries).map(Some)
+        Self::from_base_parse(base, resources.cache_generation_data()).map(Some)
     }
 
     fn parse_detailed_required(
         replay_path: &Path,
-        dictionaries: &CacheGenerationData<'_>,
-        protocol_store: &ProtocolStore,
+        resources: &ReplayAnalysisResources,
     ) -> Result<Self, DetailedReplayAnalysisError> {
         Self::parse(
             replay_path,
-            dictionaries,
-            protocol_store,
+            resources,
             ReplayBaseParseOptions {
                 include_events: true,
                 ..ReplayBaseParseOptions::default()
             },
         )
-        .map_err(map_base_parse_error)?
+        .map_err(ReplayBaseParseError::into_detailed_analysis_error)?
         .ok_or_else(|| {
             DetailedReplayAnalysisError::InvalidReplayData(
                 "detailed replay parsing unexpectedly skipped the replay".to_string(),
@@ -1922,7 +2023,7 @@ impl CachePlayer {
         }
     }
 
-    pub(crate) fn empty(pid: u8) -> Self {
+    fn empty(pid: u8) -> Self {
         Self {
             pid,
             apm: None,
@@ -2093,11 +2194,9 @@ impl CacheReplayEntry {
         replay_path: &Path,
         resources: &ReplayAnalysisResources,
     ) -> Option<Self> {
-        let cache_data = resources.cache_generation_data();
         Self::parse_with_options(
             replay_path,
-            &cache_data,
-            resources.protocol_store(),
+            resources,
             ReplayBaseParseOptions {
                 include_events: false,
                 filters: ReplayBaseParseFilters::saved_cache(),
@@ -2110,7 +2209,7 @@ impl CacheReplayEntry {
         Self::from_report_with_basic(report, None, hidden_created_lost)
     }
 
-    pub(crate) fn from_report_with_basic(
+    fn from_report_with_basic(
         report: &ReplayReport,
         basic: Option<&Self>,
         hidden_created_lost: &HashSet<String>,
@@ -2133,7 +2232,7 @@ impl CacheReplayEntry {
         entry
     }
 
-    pub(crate) fn from_parsed_bundle(parsed: &ReplayParsedInputBundle) -> Self {
+    fn from_parsed_bundle(parsed: &ReplayParsedInputBundle) -> Self {
         let players = parsed.normalized_cache_players();
         let messages = parsed.normalized_cache_messages();
         Self::from_parser_projection(
@@ -2197,13 +2296,12 @@ impl CacheReplayEntry {
         }
     }
 
-    pub(crate) fn parse_with_options(
+    fn parse_with_options(
         replay_path: &Path,
-        inputs: &CacheGenerationData<'_>,
-        protocol_store: &ProtocolStore,
+        resources: &ReplayAnalysisResources,
         options: ReplayBaseParseOptions,
     ) -> Option<(Self, ReplayParsedInputBundle)> {
-        let parsed = ReplayParsedInputBundle::parse(replay_path, inputs, protocol_store, options)
+        let parsed = ReplayParsedInputBundle::parse(replay_path, resources, options)
             .ok()
             .flatten()?;
 
@@ -2242,7 +2340,7 @@ impl CacheReplayEntry {
         self.result = basic.result.clone();
     }
 
-    pub(crate) fn refreshed_for_parsed(&self, parsed: &ReplayParsedInputBundle) -> Self {
+    fn refreshed_for_parsed(&self, parsed: &ReplayParsedInputBundle) -> Self {
         let mut reused_entry = self.clone();
         reused_entry.file = normalized_path_string(Path::new(&parsed.parser.file));
         reused_entry.hash = parsed.parser.hash.clone().unwrap_or_default();
@@ -2318,7 +2416,7 @@ impl CacheReplayEntry {
         }
     }
 
-    pub(crate) fn cmp_cache_order(&self, other: &Self) -> Ordering {
+    fn cmp_cache_order(&self, other: &Self) -> Ordering {
         match (self.sort_date_key(), other.sort_date_key()) {
             (Some(left_date), Some(right_date)) => left_date
                 .cmp(&right_date)
@@ -2970,11 +3068,7 @@ pub fn analyze_replay_file_with_resources(
     resources: &ReplayAnalysisResources,
 ) -> Result<ReplayReport, DetailedReplayAnalysisError> {
     let dictionaries = resources.cache_generation_data();
-    let parsed = ReplayParsedInputBundle::parse_detailed_required(
-        replay_path,
-        &dictionaries,
-        resources.protocol_store(),
-    )?;
+    let parsed = ReplayParsedInputBundle::parse_detailed_required(replay_path, resources)?;
     analyze_replay_file_impl(main_player_handles, parsed, &dictionaries)
 }
 
@@ -2986,11 +3080,7 @@ pub fn analyze_replay_file_with_cache_entry_with_resources(
     resources: &ReplayAnalysisResources,
 ) -> Result<DetailedReplayAnalysisResult, DetailedReplayAnalysisError> {
     let dictionaries = resources.cache_generation_data();
-    let parsed = ReplayParsedInputBundle::parse_detailed_required(
-        replay_path,
-        &dictionaries,
-        resources.protocol_store(),
-    )?;
+    let parsed = ReplayParsedInputBundle::parse_detailed_required(replay_path, resources)?;
     let fallback_basic = basic_cache_entry
         .cloned()
         .unwrap_or_else(|| parsed.cache_entry());
@@ -3002,11 +3092,11 @@ pub fn analyze_replay_file_with_cache_entry_with_resources(
         hidden_created_lost,
     );
 
-    Ok(DetailedReplayAnalysisResult {
+    Ok(DetailedReplayAnalysisResult::new(
         report,
         cache_entry,
         cache_persistable,
-    })
+    ))
 }
 
 fn analyze_replay_file_impl(

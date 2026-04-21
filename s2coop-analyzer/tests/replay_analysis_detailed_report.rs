@@ -47,10 +47,7 @@ fn sample_replay() -> ParsedReplayInput {
             time: 120.0,
         }],
         hash: None,
-        build: ReplayBuildInfo {
-            replay_build: 99999,
-            protocol_build: ProtocolBuildValue::Int(99999),
-        },
+        build: ReplayBuildInfo::new(99999, ProtocolBuildValue::Int(99999)),
         date: "2026:02:25:12:00:00".to_string(),
         enemy_race: "Zerg".to_string(),
         ext_difficulty: "Brutal".to_string(),

@@ -33,10 +33,7 @@ fn sample_cache_entry(ext_difficulty: &str, difficulty_pair: (&str, &str)) -> Ca
         amon_units: None,
         bonus: Some(vec!["First".to_string()]),
         brutal_plus: 0,
-        build: ReplayBuildInfo {
-            replay_build: 1,
-            protocol_build: ProtocolBuildValue::Int(1),
-        },
+        build: ReplayBuildInfo::new(1, ProtocolBuildValue::Int(1)),
         comp: Some("Terran".to_string()),
         date: "2026:03:10:12:00:00".to_string(),
         difficulty: (difficulty_pair.0.to_string(), difficulty_pair.1.to_string()),

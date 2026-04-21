@@ -26,10 +26,7 @@ fn sample_cache_entry(file: &str, hash: &str, date: &str, result: &str) -> Cache
         amon_units: None,
         bonus: None,
         brutal_plus: 0,
-        build: ReplayBuildInfo {
-            replay_build: 1,
-            protocol_build: ProtocolBuildValue::Int(1),
-        },
+        build: ReplayBuildInfo::new(1, ProtocolBuildValue::Int(1)),
         comp: Some("Terran".to_string()),
         date: date.to_string(),
         difficulty: ("Brutal".to_string(), "Brutal".to_string()),

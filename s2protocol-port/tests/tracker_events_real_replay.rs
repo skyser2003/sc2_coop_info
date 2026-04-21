@@ -115,7 +115,7 @@ fn malwarfare_weekly_replay_has_tracker_events() {
     let store = build_protocol_store().expect("protocol store should build");
     let parsed = parse_file_with_store(&replay_path, &store, ReplayParseMode::Detailed)
         .expect("full replay parser should read the replay");
-    assert!(!parsed.tracker_events.is_empty());
+    assert!(!parsed.tracker_events().is_empty());
 
     let raw = read_mpq_file(&replay_path, "replay.tracker.events")
         .expect("tracker stream should be present in replay archive");

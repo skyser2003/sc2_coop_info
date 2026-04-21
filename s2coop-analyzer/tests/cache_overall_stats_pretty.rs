@@ -28,17 +28,13 @@ fn generate_cache_writes_pretty_sibling_file() {
     write_replay_file(&account_dir.join("1-S2-1-42").join("single.SC2Replay"));
 
     let output_file = temp_dir.path().join("cache_overall_stats");
-    let summary = GenerateCacheConfig {
-        account_dir,
-        output_file: output_file.clone(),
-        recent_replay_count: None,
-    }
-    .generate(&resources)
-    .expect("cache generation should succeed");
+    let summary = GenerateCacheConfig::new(account_dir, output_file.clone())
+        .generate(&resources)
+        .expect("cache generation should succeed");
 
-    let pretty_file = pretty_output_path(&summary.output_file);
+    let pretty_file = pretty_output_path(summary.output_file());
     assert!(pretty_file.is_file(), "pretty cache file should be created");
-    assert_eq!(read_json(&summary.output_file), read_json(&pretty_file));
+    assert_eq!(read_json(summary.output_file()), read_json(&pretty_file));
 
     let pretty_text = fs::read_to_string(&pretty_file).expect("pretty file should be readable");
     assert!(

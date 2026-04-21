@@ -136,6 +136,10 @@ pub struct ReplayAttributeScope {
 }
 
 impl ReplayHeader {
+    pub fn base_build(&self) -> u32 {
+        self.m_version.m_baseBuild
+    }
+
     pub(crate) fn from_value(value: Value) -> Result<Self, DecodeError> {
         let map = as_object(&value)?;
         let version = map
@@ -381,6 +385,27 @@ impl ReplayMetadataPlayer {
 }
 
 impl ReplayAttributes {
+    pub fn scope_attributes(&self) -> Vec<ReplayAttributeScope> {
+        let attribute_name_map = parse_attribute_name_map();
+        let mut out = Vec::new();
+        for (scope, attrs) in &self.scopes {
+            let mut values = BTreeMap::new();
+            for (attribute_id, raw_values) in attrs {
+                let value = raw_values
+                    .first()
+                    .map(|entry| entry.value.clone())
+                    .unwrap_or_default();
+                let symbolic = attribute_id_to_name(&attribute_name_map, attribute_id);
+                values.insert(symbolic, value);
+            }
+            out.push(ReplayAttributeScope {
+                scope: scope.clone(),
+                values,
+            });
+        }
+        out
+    }
+
     pub(crate) fn from_value(value: Value) -> Result<Self, DecodeError> {
         let map = as_object(&value)?;
         let mut scopes = BTreeMap::new();
@@ -422,27 +447,6 @@ impl ReplayAttributeValue {
                 .unwrap_or_default(),
         })
     }
-}
-
-pub fn process_scope_attributes(attributes: &ReplayAttributes) -> Vec<ReplayAttributeScope> {
-    let attribute_name_map = parse_attribute_name_map();
-    let mut out = Vec::new();
-    for (scope, attrs) in &attributes.scopes {
-        let mut values = BTreeMap::new();
-        for (attribute_id, raw_values) in attrs {
-            let value = raw_values
-                .first()
-                .map(|entry| entry.value.clone())
-                .unwrap_or_default();
-            let symbolic = attribute_id_to_name(&attribute_name_map, attribute_id);
-            values.insert(symbolic, value);
-        }
-        out.push(ReplayAttributeScope {
-            scope: scope.clone(),
-            values,
-        });
-    }
-    out
 }
 
 fn parse_attribute_name_map() -> HashMap<u32, String> {

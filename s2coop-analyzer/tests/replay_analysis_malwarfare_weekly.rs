@@ -100,7 +100,7 @@ fn malwarfare_weekly_replay_with_korean_filename_builds_detailed_report() {
     let store = build_protocol_store().expect("protocol store should build");
     let parsed = parse_file_with_store(&replay_path, &store, ReplayParseMode::Detailed)
         .expect("detailed replay parser should read the replay");
-    assert!(!parsed.tracker_events.is_empty());
+    assert!(!parsed.tracker_events().is_empty());
 
     let report = analyze_replay_file_with_resources(&replay_path, &main_handles, &resources)
         .unwrap_or_else(|error| panic!("replay analysis should succeed: {error}"));
