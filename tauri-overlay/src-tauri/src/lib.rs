@@ -1153,7 +1153,11 @@ impl ReplayInfo {
         Self {
             file: self.file.clone(),
             date: self.date,
-            map: sanitize_replay_text(&map_display_name_with_dictionary(&self.map, dictionary)),
+            map: sanitize_replay_text(
+                &dictionary
+                    .coop_map_english_name(&self.map)
+                    .unwrap_or_else(|| self.map.to_string()),
+            ),
             result: client_result,
             difficulty: sanitize_replay_text(&self.difficulty),
             enemy: sanitize_replay_text(&self.enemy),
@@ -1369,62 +1373,13 @@ pub fn canonicalize_coop_map_id(raw: &str) -> Option<String> {
     }
 }
 
-pub fn canonicalize_coop_map_id_with_dictionary(
-    raw: &str,
-    dictionary: &Sc2DictionaryData,
-) -> Option<String> {
-    dictionary.canonicalize_coop_map_id(raw)
-}
-
-fn coop_map_id_to_english(map_id: &str) -> Option<String> {
-    let trimmed = map_id.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
-}
-
-fn coop_map_id_to_english_with_dictionary(
-    map_id: &str,
-    dictionary: &Sc2DictionaryData,
-) -> Option<String> {
-    dictionary.coop_map_id_to_english(map_id)
-}
-
-fn canonicalize_coop_map_name(raw: &str) -> Option<String> {
+fn map_display_name(raw: &str) -> String {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
-        None
+        raw.to_string()
     } else {
-        Some(trimmed.to_string())
+        trimmed.to_string()
     }
-}
-
-fn canonicalize_coop_map_name_with_dictionary(
-    raw: &str,
-    dictionary: &Sc2DictionaryData,
-) -> Option<String> {
-    dictionary.coop_map_english_name(raw)
-}
-
-fn map_display_name(raw: &str) -> String {
-    canonicalize_coop_map_name(raw).unwrap_or_else(|| raw.to_string())
-}
-
-fn map_display_name_with_dictionary(raw: &str, dictionary: &Sc2DictionaryData) -> String {
-    canonicalize_coop_map_name_with_dictionary(raw, dictionary).unwrap_or_else(|| raw.to_string())
-}
-
-fn is_official_coop_replay(replay: &ReplayInfo) -> bool {
-    replay.map.trim().starts_with("AC_")
-}
-
-fn is_official_coop_replay_with_dictionary(
-    replay: &ReplayInfo,
-    dictionary: &Sc2DictionaryData,
-) -> bool {
-    canonicalize_coop_map_id_with_dictionary(&replay.map, dictionary).is_some()
 }
 
 #[derive(Default, Clone)]
@@ -1469,20 +1424,6 @@ fn unit_excluded_from_sum_for_commander(commander: &str, unit: &str) -> bool {
             | "Imperial Intercessor"
             | "Archangel"
     ) || (commander != "Tychus" && unit == "Auto-Turret")
-}
-
-fn commander_mind_control_unit(commander: &str) -> Option<String> {
-    let _ = commander;
-    None
-}
-
-fn commander_mind_control_unit_with_dictionary(
-    commander: &str,
-    dictionary: &Sc2DictionaryData,
-) -> Option<String> {
-    dictionary
-        .commander_mind_control_unit(commander)
-        .map(ToString::to_string)
 }
 
 fn unit_rollup_count_value(value: i64, hidden: bool) -> Value {
@@ -3482,14 +3423,14 @@ pub fn sync_detailed_analysis_status_from_replays_with_dictionary(
         .iter()
         .filter(|replay| {
             replay.result != "Unparsed"
-                && canonicalize_coop_map_id_with_dictionary(&replay.map, dictionary).is_some()
+                && dictionary.canonicalize_coop_map_id(&replay.map).is_some()
         })
         .count();
     let detailed_parsed_count = replays
         .iter()
         .filter(|replay| {
             replay.result != "Unparsed"
-                && canonicalize_coop_map_id_with_dictionary(&replay.map, dictionary).is_some()
+                && dictionary.canonicalize_coop_map_id(&replay.map).is_some()
                 && ReplayAnalysis::replay_has_detailed_unit_stats(replay)
         })
         .count();

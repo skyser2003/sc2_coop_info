@@ -30,10 +30,8 @@ use crate::shared_types::{
 };
 use crate::{
     build_amon_unit_data, build_commander_unit_data_with_dictionary,
-    canonicalize_coop_map_id_with_dictionary, commander_mind_control_unit_with_dictionary,
     configured_main_handles_from_settings, configured_main_names_from_settings,
-    coop_map_id_to_english_with_dictionary, empty_stats_payload, format_date_from_system_time,
-    infer_region_from_handle, is_official_coop_replay_with_dictionary, kill_fraction,
+    empty_stats_payload, format_date_from_system_time, infer_region_from_handle, kill_fraction,
     map_display_name, median_f64, median_u64, normalize_mastery_values, normalized_commander_name,
     orient_replay_for_main_names, parse_query_bool, parse_query_csv, parse_query_i64,
     parse_query_value, ratio, resolve_replay_root, result_is_victory, sanitize_replay_text,
@@ -483,8 +481,7 @@ where
     let has_known_identity = !main_names.is_empty() || !main_handles.is_empty();
 
     for replay in replays.iter().map(Borrow::borrow).filter(|replay| {
-        replay.result != "Unparsed"
-            && canonicalize_coop_map_id_with_dictionary(&replay.map, dictionary).is_some()
+        replay.result != "Unparsed" && dictionary.canonicalize_coop_map_id(&replay.map).is_some()
     }) {
         let p1_is_main = ReplayAnalysis::is_main_player_identity(
             &replay.main().name,
@@ -763,8 +760,9 @@ pub fn bonus_objective_total_for_map_id_with_dictionary(
     map_id: &str,
     dictionary: &Sc2DictionaryData,
 ) -> Option<u64> {
-    coop_map_id_to_english_with_dictionary(map_id, dictionary)
-        .as_ref()
+    dictionary
+        .coop_map_id_to_english(map_id)
+        .as_deref()
         .and_then(|name| bonus_objective_total_for_canonical_map_with_dictionary(name, dictionary))
 }
 
@@ -1066,9 +1064,9 @@ pub fn append_units_to_rollup_with_dictionary(
         replay_units.push((sanitize_replay_text(unit_name), replay_unit_row(values)));
     }
 
-    let mc_unit = commander_mind_control_unit_with_dictionary(&commander, dictionary);
+    let mc_unit = dictionary.commander_mind_control_unit(&commander);
     let mut mc_unit_bonus_kills = 0_i64;
-    if let Some(mc_unit_name) = mc_unit.as_deref() {
+    if let Some(mc_unit_name) = mc_unit {
         if replay_units.iter().any(|(unit, _)| unit == mc_unit_name) {
             for (unit, row) in &replay_units {
                 if row.created.is_explicit_zero()
@@ -2175,8 +2173,7 @@ impl ReplayAnalysis {
             if replay.result == "Unparsed" {
                 continue;
             }
-            let Some(map_key) = canonicalize_coop_map_id_with_dictionary(&replay.map, dictionary)
-            else {
+            let Some(map_key) = dictionary.canonicalize_coop_map_id(&replay.map) else {
                 continue;
             };
             let main_player_name = sanitize_replay_text(&replay.main().name);
@@ -2509,7 +2506,8 @@ impl ReplayAnalysis {
         let mut map_data = Map::new();
         let map_started_at = Instant::now();
         for (map_id, aggregate) in map_values {
-            let map_name = coop_map_id_to_english_with_dictionary(&map_id, dictionary)
+            let map_name = dictionary
+                .coop_map_id_to_english(&map_id)
                 .unwrap_or_else(|| map_id.clone());
             let games = aggregate.wins + aggregate.losses;
             let winrate = ratio(aggregate.wins, games);
@@ -2876,7 +2874,7 @@ impl ReplayAnalysis {
                 if replay.result == "Unparsed" {
                     continue;
                 }
-                if canonicalize_coop_map_id_with_dictionary(&replay.map, dictionary).is_none() {
+                if dictionary.canonicalize_coop_map_id(&replay.map).is_none() {
                     continue;
                 }
 
@@ -4098,7 +4096,7 @@ impl ReplayAnalysis {
         if replay.result == "Unparsed" {
             return false;
         }
-        if !is_official_coop_replay_with_dictionary(replay, dictionary) {
+        if dictionary.canonicalize_coop_map_id(&replay.map).is_none() {
             return false;
         }
 
