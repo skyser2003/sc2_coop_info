@@ -39,6 +39,30 @@ impl<T> Default for CachedLoad<T> {
     }
 }
 
+fn load_cached_state<T, F>(slot: &Mutex<CachedLoad<T>>, loader: F) -> Result<Arc<T>, String>
+where
+    F: FnOnce() -> Result<Arc<T>, String>,
+{
+    let mut slot = slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    match &*slot {
+        CachedLoad::Loaded(value) => Ok(value.clone()),
+        CachedLoad::Failed(error) => Err(error.clone()),
+        CachedLoad::Uninitialized => {
+            let loaded = loader();
+            match loaded {
+                Ok(value) => {
+                    *slot = CachedLoad::Loaded(value.clone());
+                    Ok(value)
+                }
+                Err(error) => {
+                    *slot = CachedLoad::Failed(error.clone());
+                    Err(error)
+                }
+            }
+        }
+    }
+}
+
 pub struct BackendState {
     pub tray_icon: Arc<Mutex<Option<TrayIcon<Wry>>>>,
     pub stats: Arc<Mutex<StatsState>>,
@@ -301,62 +325,20 @@ impl BackendState {
     }
 
     pub fn dictionary_data(&self) -> Result<Arc<Sc2DictionaryData>, String> {
-        if let Ok(slot) = self.dictionary_data.lock() {
-            match &*slot {
-                CachedLoad::Loaded(data) => return Ok(data.clone()),
-                CachedLoad::Failed(error) => return Err(error.clone()),
-                CachedLoad::Uninitialized => {}
-            }
-        }
-
-        let loaded = Sc2DictionaryData::load(Some(self.analyzer_data_dir()))
-            .map(Arc::new)
-            .map_err(|error| format!("Failed to load dictionary data: {error}"));
-
-        if let Ok(mut slot) = self.dictionary_data.lock() {
-            match (&*slot, &loaded) {
-                (CachedLoad::Loaded(existing), _) => return Ok(existing.clone()),
-                (CachedLoad::Failed(error), _) => return Err(error.clone()),
-                (CachedLoad::Uninitialized, Ok(data)) => {
-                    *slot = CachedLoad::Loaded(data.clone());
-                }
-                (CachedLoad::Uninitialized, Err(error)) => {
-                    *slot = CachedLoad::Failed(error.clone());
-                }
-            }
-        }
-
-        loaded
+        load_cached_state(&self.dictionary_data, || {
+            Sc2DictionaryData::load(Some(self.analyzer_data_dir()))
+                .map(Arc::new)
+                .map_err(|error| format!("Failed to load dictionary data: {error}"))
+        })
     }
 
     pub fn replay_analysis_resources(&self) -> Result<Arc<ReplayAnalysisResources>, String> {
-        if let Ok(slot) = self.replay_analysis_resources.lock() {
-            match &*slot {
-                CachedLoad::Loaded(resources) => return Ok(resources.clone()),
-                CachedLoad::Failed(error) => return Err(error.clone()),
-                CachedLoad::Uninitialized => {}
-            }
-        }
-
-        let dictionary_data = self.dictionary_data()?;
-        let loaded = ReplayAnalysisResources::from_dictionary_data(dictionary_data)
-            .map(Arc::new)
-            .map_err(|error| format!("Failed to build replay analysis resources: {error}"));
-
-        if let Ok(mut slot) = self.replay_analysis_resources.lock() {
-            match (&*slot, &loaded) {
-                (CachedLoad::Loaded(existing), _) => return Ok(existing.clone()),
-                (CachedLoad::Failed(error), _) => return Err(error.clone()),
-                (CachedLoad::Uninitialized, Ok(resources)) => {
-                    *slot = CachedLoad::Loaded(resources.clone());
-                }
-                (CachedLoad::Uninitialized, Err(error)) => {
-                    *slot = CachedLoad::Failed(error.clone());
-                }
-            }
-        }
-
-        loaded
+        load_cached_state(&self.replay_analysis_resources, || {
+            let dictionary_data = self.dictionary_data()?;
+            ReplayAnalysisResources::from_dictionary_data(dictionary_data)
+                .map(Arc::new)
+                .map_err(|error| format!("Failed to build replay analysis resources: {error}"))
+        })
     }
 
     pub fn warm_dictionary_data(&self) {

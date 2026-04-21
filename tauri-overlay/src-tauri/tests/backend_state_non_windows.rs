@@ -10,6 +10,7 @@ use sco_tauri_overlay::{
 };
 use serde_json::json;
 use serde_json::Value;
+use std::sync::Arc;
 
 #[test]
 fn sync_replay_cache_slots_uses_cached_entries_and_sets_selected_file() {
@@ -92,4 +93,25 @@ fn should_include_detailed_stats_response_uses_cached_detailed_replays() {
         &response,
         &cached_replays
     ));
+}
+
+#[test]
+fn backend_state_reuses_cached_dictionary_and_resources() {
+    let state = BackendState::new();
+
+    let dictionary_a = state
+        .dictionary_data()
+        .expect("dictionary data should load from backend state");
+    let dictionary_b = state
+        .dictionary_data()
+        .expect("dictionary data should be cached in backend state");
+    assert!(Arc::ptr_eq(&dictionary_a, &dictionary_b));
+
+    let resources_a = state
+        .replay_analysis_resources()
+        .expect("replay analysis resources should load from backend state");
+    let resources_b = state
+        .replay_analysis_resources()
+        .expect("replay analysis resources should be cached in backend state");
+    assert!(Arc::ptr_eq(&resources_a, &resources_b));
 }
