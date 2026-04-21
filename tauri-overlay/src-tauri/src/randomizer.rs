@@ -181,11 +181,6 @@ pub(crate) fn generate_from_body_with_dictionary(
     generate_with_dictionary_with_rng(&request, &mut rng, dictionary)
 }
 
-pub(crate) fn generate_from_body(body: Option<&Value>) -> Result<RandomizerResult, String> {
-    let _ = body;
-    Err("Dictionary data is unavailable.".to_string())
-}
-
 pub fn generate_with_rng(
     request: &RandomizerRequest,
     rng: &mut Rng,
@@ -459,10 +454,6 @@ fn mutator_pool_with_dictionary(dictionary: &Sc2DictionaryData) -> Vec<Randomize
             }
         })
         .collect()
-}
-
-fn mutator_pool() -> Vec<RandomizerMutatorEntry> {
-    Vec::new()
 }
 
 fn decode_html_entities(value: &str) -> String {

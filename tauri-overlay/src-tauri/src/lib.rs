@@ -238,14 +238,6 @@ fn canonical_mutator_id_with_dictionary(mutator: &str, dictionary: &Sc2Dictionar
     }
 }
 
-fn canonical_mutator_id(mutator: &str) -> String {
-    match mutator {
-        "HeroesfromtheStormOld" => "HeroesFromTheStorm".to_string(),
-        "AfraidOfTheDark" => "UberDarkness".to_string(),
-        _ => mutator.to_string(),
-    }
-}
-
 fn mutator_display_name_en_with_dictionary(
     mutator: &str,
     dictionary: &Sc2DictionaryData,
@@ -262,10 +254,6 @@ fn mutator_display_name_en_with_dictionary(
                 .map(|value| value.to_string())
         })
         .unwrap_or_default()
-}
-
-fn mutator_display_name_en(mutator: &str) -> String {
-    decode_html_entities(&canonical_mutator_id(mutator))
 }
 
 fn get_system_language() -> String {
@@ -508,10 +496,6 @@ pub fn session_counter_delta(result: &str) -> (u64, u64) {
         "defeat" => (0, 1),
         _ => (0, 0),
     }
-}
-
-fn units_to_stats() -> HashSet<String> {
-    HashSet::new()
 }
 
 fn units_to_stats_with_dictionary(dictionary: &Sc2DictionaryData) -> HashSet<String> {

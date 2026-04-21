@@ -99,10 +99,6 @@ fn overlay_mutator_name_with_dictionary(
         .unwrap_or_default()
 }
 
-fn overlay_mutator_name(mutator_id: &str) -> String {
-    mutator_id.to_string()
-}
-
 pub(crate) struct OverlayPlacement {
     monitor: usize,
     width: f64,
