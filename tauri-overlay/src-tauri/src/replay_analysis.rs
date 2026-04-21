@@ -552,69 +552,69 @@ fn query_date_boundary_seconds(path: &str, key: &str) -> Option<u64> {
     parse_replay_timestamp_seconds(&value)
 }
 
-fn record_player_aggregate(
-    aggregate: &mut PlayerAggregate,
-    player_name: &str,
-    handle: &str,
-    commander: &str,
-    replay_is_victory: bool,
-    apm: u64,
-    kill_fraction: f64,
-    replay_date: u64,
-) {
-    let sanitized_name = sanitize_replay_text(player_name);
-    if !sanitized_name.is_empty() {
-        aggregate
-            .names
-            .entry(sanitized_name)
-            .and_modify(|last_seen| *last_seen = (*last_seen).max(replay_date))
-            .or_insert(replay_date);
+impl PlayerAggregate {
+    fn record_replay(
+        &mut self,
+        player_name: &str,
+        handle: &str,
+        commander: &str,
+        replay_is_victory: bool,
+        apm: u64,
+        kill_fraction: f64,
+        replay_date: u64,
+    ) {
+        let sanitized_name = sanitize_replay_text(player_name);
+        if !sanitized_name.is_empty() {
+            self.names
+                .entry(sanitized_name)
+                .and_modify(|last_seen| *last_seen = (*last_seen).max(replay_date))
+                .or_insert(replay_date);
+        }
+        let sanitized_handle = sanitize_replay_text(handle);
+        if !sanitized_handle.is_empty() {
+            self.handles.insert(sanitized_handle);
+        }
+        if !commander.is_empty() {
+            self.commander = commander.to_string();
+            self.commander_counts
+                .entry(commander.to_string())
+                .and_modify(|count| *count = count.saturating_add(1))
+                .or_insert(1);
+        }
+        if replay_is_victory {
+            self.wins = self.wins.saturating_add(1);
+        } else {
+            self.losses = self.losses.saturating_add(1);
+        }
+        self.apm_values.push(apm);
+        self.kill_fractions.push(kill_fraction);
+        if replay_date > self.last_seen {
+            self.last_seen = replay_date;
+        }
     }
-    let sanitized_handle = sanitize_replay_text(handle);
-    if !sanitized_handle.is_empty() {
-        aggregate.handles.insert(sanitized_handle);
-    }
-    if !commander.is_empty() {
-        aggregate.commander = commander.to_string();
-        aggregate
+
+    fn dominant_commander(&self) -> (String, f64) {
+        let games = self.wins.saturating_add(self.losses);
+        let Some((commander, count)) = self
             .commander_counts
-            .entry(commander.to_string())
-            .and_modify(|count| *count = count.saturating_add(1))
-            .or_insert(1);
-    }
-    if replay_is_victory {
-        aggregate.wins = aggregate.wins.saturating_add(1);
-    } else {
-        aggregate.losses = aggregate.losses.saturating_add(1);
-    }
-    aggregate.apm_values.push(apm);
-    aggregate.kill_fractions.push(kill_fraction);
-    if replay_date > aggregate.last_seen {
-        aggregate.last_seen = replay_date;
-    }
-}
+            .iter()
+            .max_by(|left, right| left.1.cmp(right.1).then_with(|| right.0.cmp(left.0)))
+        else {
+            return (sanitize_replay_text(&self.commander), 0.0);
+        };
 
-fn dominant_player_commander(aggregate: &PlayerAggregate) -> (String, f64) {
-    let games = aggregate.wins.saturating_add(aggregate.losses);
-    let Some((commander, count)) = aggregate
-        .commander_counts
-        .iter()
-        .max_by(|left, right| left.1.cmp(right.1).then_with(|| right.0.cmp(left.0)))
-    else {
-        return (sanitize_replay_text(&aggregate.commander), 0.0);
-    };
+        (sanitize_replay_text(commander), ratio(*count, games))
+    }
 
-    (sanitize_replay_text(commander), ratio(*count, games))
-}
-
-fn player_names_by_recency(aggregate: &PlayerAggregate) -> Vec<String> {
-    let mut names = aggregate
-        .names
-        .iter()
-        .map(|(name, last_seen)| (name.clone(), *last_seen))
-        .collect::<Vec<_>>();
-    names.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
-    names.into_iter().map(|(name, _)| name).collect()
+    fn names_by_recency(&self) -> Vec<String> {
+        let mut names = self
+            .names
+            .iter()
+            .map(|(name, last_seen)| (name.clone(), *last_seen))
+            .collect::<Vec<_>>();
+        names.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+        names.into_iter().map(|(name, _)| name).collect()
+    }
 }
 
 fn wildcard_match(pattern: &str, value: &str) -> bool {
@@ -2113,8 +2113,7 @@ impl ReplayAnalysis {
 
             if !main_player_name.is_empty() {
                 let p1 = player_values.entry(main_player_name).or_default();
-                record_player_aggregate(
-                    p1,
+                p1.record_replay(
                     &replay.main().name,
                     &replay.main().handle,
                     &main_commander_text,
@@ -2127,8 +2126,7 @@ impl ReplayAnalysis {
 
             if !ally_player_name.is_empty() {
                 let p2 = player_values.entry(ally_player_name).or_default();
-                record_player_aggregate(
-                    p2,
+                p2.record_replay(
                     &replay.ally().name,
                     &replay.ally().handle,
                     &ally_commander_text,
@@ -2475,7 +2473,7 @@ impl ReplayAnalysis {
         for (name, agg) in &player_values {
             let name = sanitize_replay_text(name);
             let games = agg.wins + agg.losses;
-            let (commander, commander_frequency) = dominant_player_commander(agg);
+            let (commander, commander_frequency) = agg.dominant_commander();
             player_data.insert(
                 name,
                 report_value(&PlayerDataRow {
@@ -2623,8 +2621,7 @@ impl ReplayAnalysis {
             if !p1_name.is_empty() {
                 let p1_handle_key = ReplayAnalysis::normalized_handle_key(&replay.main().handle);
                 let p1 = player_values.entry(p1_handle_key).or_default();
-                record_player_aggregate(
-                    p1,
+                p1.record_replay(
                     &p1_name,
                     &replay.main().handle,
                     &main_commander,
@@ -2638,8 +2635,7 @@ impl ReplayAnalysis {
             if !p2_name.is_empty() {
                 let p2_handle_key = ReplayAnalysis::normalized_handle_key(&replay.ally().handle);
                 let p2 = player_values.entry(p2_handle_key).or_default();
-                record_player_aggregate(
-                    p2,
+                p2.record_replay(
                     &p2_name,
                     &replay.ally().handle,
                     &ally_commander,
@@ -2657,7 +2653,7 @@ impl ReplayAnalysis {
                 continue;
             }
             let games = agg.wins + agg.losses;
-            let (commander, commander_frequency) = dominant_player_commander(&agg);
+            let (commander, commander_frequency) = agg.dominant_commander();
             let apm = if games == 0 {
                 0.0
             } else {
@@ -2669,7 +2665,7 @@ impl ReplayAnalysis {
                 .next()
                 .cloned()
                 .unwrap_or_else(|| handle_key.clone());
-            let player_names = player_names_by_recency(&agg);
+            let player_names = agg.names_by_recency();
             let player = player_names
                 .first()
                 .cloned()
