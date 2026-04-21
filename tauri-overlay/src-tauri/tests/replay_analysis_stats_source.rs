@@ -3,16 +3,18 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     ProtocolBuildValue, ReplayBuildInfo,
 };
 use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
-use sco_tauri_overlay::{
-    canonicalize_coop_map_id, ReplayInfo, ReplayPlayerInfo, UNLIMITED_REPLAY_LIMIT,
+use sco_tauri_overlay::test_helper::{
+    canonicalize_map_id, load_detailed_analysis_replays_snapshot_from_path_with_identity,
+    stats_replays_for_response_from_path_with_identity,
 };
+use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo, UNLIMITED_REPLAY_LIMIT};
 use serde_json::json;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn test_map_id(raw: &str) -> String {
-    canonicalize_coop_map_id(raw).expect("map id should resolve")
+    canonicalize_map_id(raw).expect("map id should resolve")
 }
 
 fn sample_replay(file: &str, main: ReplayPlayerInfo, ally: ReplayPlayerInfo) -> ReplayInfo {
@@ -150,7 +152,7 @@ fn merge_cached_detailed_replays_from_path(
         return Vec::new();
     }
 
-    let detailed_replays = ReplayAnalysis::load_detailed_analysis_replays_snapshot_from_path(
+    let detailed_replays = load_detailed_analysis_replays_snapshot_from_path_with_identity(
         cache_path,
         UNLIMITED_REPLAY_LIMIT,
         main_names,
@@ -209,7 +211,7 @@ fn stats_response_prefers_detailed_analysis_cache_when_unit_data_is_enabled() {
     );
 
     let stale_replays = [stale_replay];
-    let replays = ReplayAnalysis::stats_replays_for_response_from_path(
+    let replays = stats_replays_for_response_from_path_with_identity(
         true,
         &stale_replays,
         &cache_path,

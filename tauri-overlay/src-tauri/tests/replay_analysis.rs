@@ -2,7 +2,10 @@ use sco_tauri_overlay::path_manager::get_cache_path;
 use sco_tauri_overlay::replay_analysis::{
     parse_replay_timestamp_seconds, sanitize_hidden_unit_stats_with_dictionary, ReplayAnalysis,
 };
-use sco_tauri_overlay::test_helper::{collect_main_identity_lists, load_dictionary};
+use sco_tauri_overlay::test_helper::{
+    build_rebuild_snapshot, collect_main_identity_lists, filter_replays_for_stats, load_dictionary,
+    stats_replays_for_response_from_path_with_identity,
+};
 use sco_tauri_overlay::{
     configured_main_handles_from_settings, configured_main_names_from_settings, sanitize_unit_map,
     AppSettings, ReplayInfo, ReplayPlayerInfo,
@@ -73,7 +76,7 @@ fn collect_replay_paths_returns_empty_for_missing_root() {
 
 #[test]
 fn rebuild_snapshot_returns_empty_payload() {
-    let snapshot = ReplayAnalysis::build_rebuild_snapshot(&[], true);
+    let snapshot = build_rebuild_snapshot(&[], true);
     assert!(snapshot.ready);
     assert_eq!(snapshot.games, 0);
     assert!(snapshot.main_players.is_empty());
@@ -100,7 +103,7 @@ fn rebuild_snapshot_without_detailed_data_uses_null_unit_data() {
         },
     )];
 
-    let snapshot = ReplayAnalysis::build_rebuild_snapshot(&replays, false);
+    let snapshot = build_rebuild_snapshot(&replays, false);
 
     assert!(snapshot
         .analysis
@@ -113,7 +116,7 @@ fn filter_replays_for_stats_excludes_unparsed_replays() {
     let mut replay = ReplayInfo::default();
     replay.result = "Unparsed".to_string();
 
-    let filtered = ReplayAnalysis::filter_replays_for_stats("/config/stats", &[replay]);
+    let filtered = filter_replays_for_stats("/config/stats", &[replay]);
     assert!(filtered.is_empty());
 }
 
@@ -449,14 +452,14 @@ fn miner_evacuation_fastest_payload_matches_reference_fastest_replay() {
 
     let main_names = configured_main_names_from_settings(&settings);
     let main_handles = configured_main_handles_from_settings(&settings);
-    let replays = ReplayAnalysis::stats_replays_for_response_from_path(
+    let replays = stats_replays_for_response_from_path_with_identity(
         true,
         &[],
         &current_cache,
         &main_names,
         &main_handles,
     );
-    let snapshot = ReplayAnalysis::build_rebuild_snapshot(&replays, true);
+    let snapshot = build_rebuild_snapshot(&replays, true);
     let Some(fastest) = snapshot
         .analysis
         .get("MapData")
@@ -527,7 +530,7 @@ fn mastery_sum_filters_partition_existing_cache_replays() {
 
     let main_names = configured_main_names_from_settings(&settings);
     let main_handles = configured_main_handles_from_settings(&settings);
-    let replays = ReplayAnalysis::stats_replays_for_response_from_path(
+    let replays = stats_replays_for_response_from_path_with_identity(
         true,
         &[],
         &current_cache,
@@ -535,40 +538,25 @@ fn mastery_sum_filters_partition_existing_cache_replays() {
         &main_handles,
     );
 
-    let total = ReplayAnalysis::filter_replays_for_stats("/config/stats", &replays).len();
-    let wins_only =
-        ReplayAnalysis::filter_replays_for_stats("/config/stats?include_losses=0", &replays).len();
-    let losses_only =
-        ReplayAnalysis::filter_replays_for_stats("/config/stats?include_wins=0", &replays).len();
-    let main_levels_1_14 =
-        ReplayAnalysis::filter_replays_for_stats("/config/stats?over_15=0", &replays).len();
-    let main_levels_15_plus =
-        ReplayAnalysis::filter_replays_for_stats("/config/stats?sub_15=0", &replays).len();
-    let ally_levels_1_14 =
-        ReplayAnalysis::filter_replays_for_stats("/config/stats?ally_over_15=0", &replays).len();
+    let total = filter_replays_for_stats("/config/stats", &replays).len();
+    let wins_only = filter_replays_for_stats("/config/stats?include_losses=0", &replays).len();
+    let losses_only = filter_replays_for_stats("/config/stats?include_wins=0", &replays).len();
+    let main_levels_1_14 = filter_replays_for_stats("/config/stats?over_15=0", &replays).len();
+    let main_levels_15_plus = filter_replays_for_stats("/config/stats?sub_15=0", &replays).len();
+    let ally_levels_1_14 = filter_replays_for_stats("/config/stats?ally_over_15=0", &replays).len();
     let ally_levels_15_plus =
-        ReplayAnalysis::filter_replays_for_stats("/config/stats?ally_sub_15=0", &replays).len();
+        filter_replays_for_stats("/config/stats?ally_sub_15=0", &replays).len();
     assert_eq!(total, wins_only + losses_only);
     assert_eq!(total, main_levels_1_14 + main_levels_15_plus);
     assert_eq!(total, ally_levels_1_14 + ally_levels_15_plus);
     assert_eq!(
         total,
-        ReplayAnalysis::filter_replays_for_stats("/config/stats?main_abnormal_mastery=0", &replays)
-            .len()
-            + ReplayAnalysis::filter_replays_for_stats(
-                "/config/stats?main_normal_mastery=0",
-                &replays,
-            )
-            .len()
+        filter_replays_for_stats("/config/stats?main_abnormal_mastery=0", &replays).len()
+            + filter_replays_for_stats("/config/stats?main_normal_mastery=0", &replays).len()
     );
     assert_eq!(
         total,
-        ReplayAnalysis::filter_replays_for_stats("/config/stats?ally_abnormal_mastery=0", &replays)
-            .len()
-            + ReplayAnalysis::filter_replays_for_stats(
-                "/config/stats?ally_normal_mastery=0",
-                &replays,
-            )
-            .len()
+        filter_replays_for_stats("/config/stats?ally_abnormal_mastery=0", &replays).len()
+            + filter_replays_for_stats("/config/stats?ally_normal_mastery=0", &replays).len()
     );
 }

@@ -3119,8 +3119,7 @@ impl ReplayAnalysis {
             .filter(|entry| entry.detailed_analysis && Path::new(&entry.file).exists())
             .map(|entry| {
                 orient_replay_for_main_names(
-                    replay_info_from_cache_entry_with_dictionary(&entry, dictionary)
-                        .sanitized_for_client_with_dictionary(dictionary),
+                    replay_info_from_cache_entry_with_dictionary(&entry, dictionary),
                     main_names,
                     main_handles,
                 )
@@ -3194,8 +3193,7 @@ impl ReplayAnalysis {
             .filter(|entry| Path::new(&entry.file).exists())
             .map(|entry| {
                 orient_replay_for_main_names(
-                    replay_info_from_cache_entry_with_dictionary(&entry, dictionary)
-                        .sanitized_for_client_with_dictionary(dictionary),
+                    replay_info_from_cache_entry_with_dictionary(&entry, dictionary),
                     main_names,
                     main_handles,
                 )
@@ -3666,7 +3664,7 @@ impl ReplayAnalysis {
         Self::replay_matches_stats_filters_with_dictionary(path, replay, main_handles, &dictionary)
     }
 
-    fn replay_matches_stats_filters_with_dictionary(
+    pub(crate) fn replay_matches_stats_filters_with_dictionary(
         path: &str,
         replay: &ReplayInfo,
         main_handles: &HashSet<String>,

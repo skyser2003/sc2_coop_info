@@ -2,16 +2,17 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     pretty_output_path, CacheCountValue, CacheNumericValue, CachePlayer, CacheReplayEntry,
     CacheUnitStats, ProtocolBuildValue, ReplayBuildInfo,
 };
-use sco_tauri_overlay::canonicalize_coop_map_id;
-use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
-use sco_tauri_overlay::test_helper::bonus_objective_total_for_map_id;
+use sco_tauri_overlay::test_helper::{
+    bonus_objective_total_for_map_id, canonicalize_map_id,
+    load_detailed_analysis_replays_snapshot_from_path,
+};
 use serde_json::json;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn test_map_id(raw: &str) -> String {
-    canonicalize_coop_map_id(raw).expect("map id should resolve")
+    canonicalize_map_id(raw).expect("map id should resolve")
 }
 
 fn unique_temp_path(label: &str) -> PathBuf {
@@ -153,12 +154,7 @@ fn load_detailed_analysis_replays_snapshot_from_path_uses_cache_entries() {
     let payload = serde_json::to_vec(&entries).expect("cache payload should serialize");
     std::fs::write(&cache_path, payload).expect("cache file should be written");
 
-    let replays = ReplayAnalysis::load_detailed_analysis_replays_snapshot_from_path(
-        &cache_path,
-        0,
-        &HashSet::new(),
-        &HashSet::new(),
-    );
+    let replays = load_detailed_analysis_replays_snapshot_from_path(&cache_path, 0);
 
     assert_eq!(replays.len(), 1);
     assert_eq!(replays[0].file, replay_path.display().to_string());
@@ -209,12 +205,7 @@ fn load_detailed_analysis_replays_snapshot_from_path_recovers_temp_cache_entries
     )
     .expect("temp cache file should be written");
 
-    let replays = ReplayAnalysis::load_detailed_analysis_replays_snapshot_from_path(
-        &cache_path,
-        0,
-        &HashSet::new(),
-        &HashSet::new(),
-    );
+    let replays = load_detailed_analysis_replays_snapshot_from_path(&cache_path, 0);
 
     assert_eq!(replays.len(), 2);
     assert!(replays
@@ -278,12 +269,7 @@ fn load_detailed_analysis_replays_snapshot_from_path_persists_simple_temp_entry_
     )
     .expect("temp cache file should be written");
 
-    let replays = ReplayAnalysis::load_detailed_analysis_replays_snapshot_from_path(
-        &cache_path,
-        0,
-        &HashSet::new(),
-        &HashSet::new(),
-    );
+    let replays = load_detailed_analysis_replays_snapshot_from_path(&cache_path, 0);
 
     assert_eq!(replays.len(), 1);
     assert_eq!(replays[0].file, existing_replay_path.display().to_string());

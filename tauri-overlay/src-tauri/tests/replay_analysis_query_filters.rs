@@ -1,4 +1,4 @@
-use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
+use sco_tauri_overlay::test_helper::{build_rebuild_snapshot, filter_replays_for_stats};
 use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo};
 
 fn replay_with_players(
@@ -138,7 +138,7 @@ fn filter_replays_for_stats_decodes_checkbox_filter_lists_from_query_string() {
         replay_for_checkbox_filter("kr_bplus3", "Brutal", 3, "3-S2-1-333"),
     ];
 
-    let filtered = ReplayAnalysis::filter_replays_for_stats(
+    let filtered = filter_replays_for_stats(
         "/config/stats?difficulty_filter=Normal%2C3&region_filter=EU%2CKR",
         &replays,
     );
@@ -154,7 +154,7 @@ fn filter_replays_for_stats_decodes_brutal_plus_checkbox_values() {
         replay_for_checkbox_filter("bplus1", "Brutal", 1, "1-S2-1-222"),
     ];
 
-    let filtered = ReplayAnalysis::filter_replays_for_stats(
+    let filtered = filter_replays_for_stats(
         "/config/stats?difficulty_filter=1%2C2%2C3%2C4%2C5%2C6",
         &replays,
     );
@@ -171,8 +171,7 @@ fn filter_replays_for_stats_can_limit_results_to_main_normal_mastery_games() {
         replay_for_mastery_filter("main_normal_60", 60, 150),
     ];
 
-    let filtered =
-        ReplayAnalysis::filter_replays_for_stats("/config/stats?main_abnormal_mastery=0", &replays);
+    let filtered = filter_replays_for_stats("/config/stats?main_abnormal_mastery=0", &replays);
 
     assert_eq!(filtered.len(), 2);
     assert_eq!(
@@ -193,8 +192,7 @@ fn filter_replays_for_stats_can_limit_results_to_ally_abnormal_mastery_games() {
         replay_for_mastery_filter("ally_abnormal_120", 20, 120),
     ];
 
-    let filtered =
-        ReplayAnalysis::filter_replays_for_stats("/config/stats?ally_normal_mastery=0", &replays);
+    let filtered = filter_replays_for_stats("/config/stats?ally_normal_mastery=0", &replays);
 
     assert_eq!(filtered.len(), 2);
     assert_eq!(
@@ -214,8 +212,7 @@ fn filter_replays_for_stats_can_limit_results_to_losses() {
         replay_for_result_filter("loss", "Defeat"),
     ];
 
-    let filtered =
-        ReplayAnalysis::filter_replays_for_stats("/config/stats?include_wins=0", &replays);
+    let filtered = filter_replays_for_stats("/config/stats?include_wins=0", &replays);
 
     assert_eq!(filtered.len(), 1);
     assert_eq!(filtered[0].file, "fixtures/replays/loss.SC2Replay");
@@ -228,8 +225,7 @@ fn filter_replays_for_stats_can_limit_results_to_ally_levels_1_14() {
         replay_for_ally_level_filter("ally_high", 15),
     ];
 
-    let filtered =
-        ReplayAnalysis::filter_replays_for_stats("/config/stats?ally_over_15=0", &replays);
+    let filtered = filter_replays_for_stats("/config/stats?ally_over_15=0", &replays);
 
     assert_eq!(filtered.len(), 1);
     assert_eq!(filtered[0].file, "fixtures/replays/ally_low.SC2Replay");
@@ -306,7 +302,7 @@ fn filter_replays_for_stats_uses_or_logic_within_main_level_group() {
         ),
     ];
 
-    let filtered = ReplayAnalysis::filter_replays_for_stats(
+    let filtered = filter_replays_for_stats(
         "/config/stats?sub_15=1&over_15=1&main_abnormal_mastery=0",
         &replays,
     );
@@ -383,9 +379,8 @@ fn abnormal_main_mastery_filter_updates_fastest_map_payload() {
         },
     ];
 
-    let filtered =
-        ReplayAnalysis::filter_replays_for_stats("/config/stats?main_normal_mastery=0", &replays);
-    let snapshot = ReplayAnalysis::build_rebuild_snapshot(&filtered, false);
+    let filtered = filter_replays_for_stats("/config/stats?main_normal_mastery=0", &replays);
+    let snapshot = build_rebuild_snapshot(&filtered, false);
     let fastest = snapshot
         .analysis
         .get("MapData")

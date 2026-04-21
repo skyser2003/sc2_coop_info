@@ -166,13 +166,12 @@ impl OverlayReplayPayload {
         format!("P{prestige}")
     }
 
-    pub fn localized_prestige_text(commander: &str, prestige: u64, language: &str) -> String {
-        let _ = (commander, language);
+    pub fn localized_prestige_text(prestige: u64) -> String {
         if prestige == 0 {
-            String::new()
-        } else {
-            format!("P{prestige}")
+            return String::new();
         }
+
+        format!("P{prestige}")
     }
 
     fn from_replay_with_dictionary(
@@ -241,17 +240,10 @@ impl OverlayReplayPayload {
     }
 
     fn from_replay(replay: &crate::ReplayInfo, language: &str) -> Self {
+        let _ = language;
         let sanitized = replay.sanitized_for_client();
-        let main_prestige = Self::localized_prestige_text(
-            sanitized.main_commander(),
-            sanitized.main_prestige(),
-            language,
-        );
-        let ally_prestige = Self::localized_prestige_text(
-            sanitized.ally_commander(),
-            sanitized.ally_prestige(),
-            language,
-        );
+        let main_prestige = Self::localized_prestige_text(sanitized.main_prestige());
+        let ally_prestige = Self::localized_prestige_text(sanitized.ally_prestige());
         Self {
             file: sanitized.file.clone(),
             map_name: sanitized.map.clone(),

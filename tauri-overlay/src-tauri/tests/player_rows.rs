@@ -1,4 +1,5 @@
 use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
+use sco_tauri_overlay::test_helper::rebuild_analysis_payload;
 use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo};
 
 fn replay_for_player_rows(
@@ -79,7 +80,7 @@ fn analysis_player_data_uses_dominant_commander_frequency_for_overlay_player_row
         replay_for_player_rows("MemoTarget", "Raynor", "Victory", 100, 200),
     ];
 
-    let payload = ReplayAnalysis::rebuild_analysis_payload(&replays, false);
+    let payload = rebuild_analysis_payload(&replays, false);
     let row = payload["analysis"]["PlayerData"]["MemoTarget"]
         .as_object()
         .expect("expected player data row");

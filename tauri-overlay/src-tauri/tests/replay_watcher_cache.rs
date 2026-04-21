@@ -3,10 +3,9 @@
 use s2coop_analyzer::cache_overall_stats_generator::{
     pretty_output_path, CacheNumericValue, CacheReplayEntry, ProtocolBuildValue, ReplayBuildInfo,
 };
-use sco_tauri_overlay::test_helper::test_replay_path;
+use sco_tauri_overlay::test_helper::{canonicalize_map_id, test_replay_path};
 use sco_tauri_overlay::{
-    canonicalize_coop_map_id, persist_detailed_cache_entry_to_path, BackendState, ReplayInfo,
-    ReplayPlayerInfo, StatsState,
+    persist_detailed_cache_entry_to_path, BackendState, ReplayInfo, ReplayPlayerInfo, StatsState,
 };
 use serde_json::json;
 use serde_json::Value;
@@ -139,7 +138,7 @@ fn upsert_replay_in_memory_cache_refreshes_ready_stats_with_detailed_data() {
     let existing_replay = ReplayInfo {
         file: test_replay_path("existing_detailed.SC2Replay"),
         date: 100,
-        map: canonicalize_coop_map_id("Void Launch").expect("map id should resolve"),
+        map: canonicalize_map_id("Void Launch").expect("map id should resolve"),
         result: "Victory".to_string(),
         ..ReplayInfo::with_players(
             ReplayPlayerInfo {
@@ -163,7 +162,7 @@ fn upsert_replay_in_memory_cache_refreshes_ready_stats_with_detailed_data() {
     let updated_replay = ReplayInfo {
         file: test_replay_path("new_detailed.SC2Replay"),
         date: 200,
-        map: canonicalize_coop_map_id("Void Launch").expect("map id should resolve"),
+        map: canonicalize_map_id("Void Launch").expect("map id should resolve"),
         result: "Victory".to_string(),
         ..ReplayInfo::with_players(
             ReplayPlayerInfo {

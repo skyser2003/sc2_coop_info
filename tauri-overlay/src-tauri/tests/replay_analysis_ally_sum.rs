@@ -1,10 +1,10 @@
-use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
-use sco_tauri_overlay::{canonicalize_coop_map_id, ReplayInfo, ReplayPlayerInfo};
+use sco_tauri_overlay::test_helper::{build_rebuild_snapshot, canonicalize_map_id};
+use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo};
 use serde_json::json;
 use serde_json::Value;
 
 fn test_map_id(raw: &str) -> String {
-    canonicalize_coop_map_id(raw).expect("map id should resolve")
+    canonicalize_map_id(raw).expect("map id should resolve")
 }
 
 fn replay_with_players(result: &str, main: ReplayPlayerInfo, ally: ReplayPlayerInfo) -> ReplayInfo {
@@ -54,7 +54,7 @@ fn ally_commander_data_includes_sum_row() {
         ),
     ];
 
-    let snapshot = ReplayAnalysis::build_rebuild_snapshot(&replays, false);
+    let snapshot = build_rebuild_snapshot(&replays, false);
     let ally_commander_data = snapshot
         .analysis
         .get("AllyCommanderData")
@@ -121,7 +121,7 @@ fn ally_commander_frequency_matches_wx_preference_correction_rule() {
         ),
     ];
 
-    let snapshot = ReplayAnalysis::build_rebuild_snapshot(&replays, false);
+    let snapshot = build_rebuild_snapshot(&replays, false);
     let ally_commander_data = snapshot
         .analysis
         .get("AllyCommanderData")

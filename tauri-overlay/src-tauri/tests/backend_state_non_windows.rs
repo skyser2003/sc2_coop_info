@@ -1,10 +1,9 @@
 #![cfg(not(windows))]
 
 use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
-use sco_tauri_overlay::test_helper::test_replay_path;
+use sco_tauri_overlay::test_helper::{canonicalize_map_id, test_replay_path};
 use sco_tauri_overlay::{
-    canonicalize_coop_map_id, sync_detailed_analysis_status_from_replays, BackendState, ReplayInfo,
-    StatsState,
+    sync_detailed_analysis_status_from_replays, BackendState, ReplayInfo, StatsState,
 };
 use serde_json::json;
 use serde_json::Value;
@@ -49,7 +48,7 @@ fn sync_detailed_analysis_status_from_replays_reports_cached_progress() {
     let mut stats = StatsState::default();
     let detailed_replay = ReplayInfo {
         file: test_replay_path("detailed.SC2Replay"),
-        map: canonicalize_coop_map_id("Void Launch").expect("map id should resolve"),
+        map: canonicalize_map_id("Void Launch").expect("map id should resolve"),
         result: "Victory".to_string(),
         main_units: json!({
             "Marine": [4, 1, 10, 0.5]
@@ -58,7 +57,7 @@ fn sync_detailed_analysis_status_from_replays_reports_cached_progress() {
     };
     let simple_replay = ReplayInfo {
         file: test_replay_path("simple.SC2Replay"),
-        map: canonicalize_coop_map_id("Void Launch").expect("map id should resolve"),
+        map: canonicalize_map_id("Void Launch").expect("map id should resolve"),
         result: "Victory".to_string(),
         ..ReplayInfo::default()
     };

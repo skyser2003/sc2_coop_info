@@ -3,8 +3,9 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     ReplayBuildInfo,
 };
 use sco_tauri_overlay::replay_analysis::{
-    parse_replay_timestamp_seconds, replay_info_from_cache_entry, ReplayAnalysis,
+    parse_replay_timestamp_seconds, replay_info_from_cache_entry,
 };
+use sco_tauri_overlay::test_helper::filter_replays_for_stats;
 use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -155,7 +156,7 @@ fn filter_replays_for_stats_uses_strict_maxdate_boundary() {
         replay_for_date_filter("2020:12:31:13:00:00", "excluded"),
     ];
 
-    let filtered = ReplayAnalysis::filter_replays_for_stats(
+    let filtered = filter_replays_for_stats(
         "/config/stats?mindate=2020-12-30&maxdate=2020-12-31",
         &replays,
     );

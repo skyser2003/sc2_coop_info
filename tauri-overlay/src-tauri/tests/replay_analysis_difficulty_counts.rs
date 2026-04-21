@@ -1,7 +1,8 @@
 use s2coop_analyzer::cache_overall_stats_generator::{
     CacheNumericValue, CachePlayer, CacheReplayEntry, ProtocolBuildValue, ReplayBuildInfo,
 };
-use sco_tauri_overlay::replay_analysis::{replay_info_from_cache_entry, ReplayAnalysis};
+use sco_tauri_overlay::replay_analysis::replay_info_from_cache_entry;
+use sco_tauri_overlay::test_helper::build_rebuild_snapshot;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -91,7 +92,7 @@ fn replay_info_from_cache_entry_preserves_mixed_difficulty_label() {
     assert_eq!(mixed.difficulty, "Hard/Brutal");
     assert_eq!(brutal.difficulty, "Brutal");
 
-    let snapshot = ReplayAnalysis::build_rebuild_snapshot(&[mixed, brutal], false);
+    let snapshot = build_rebuild_snapshot(&[mixed, brutal], false);
     let difficulty_data = snapshot
         .analysis
         .get("DifficultyData")

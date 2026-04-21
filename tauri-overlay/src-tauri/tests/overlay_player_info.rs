@@ -1,8 +1,7 @@
 use sco_tauri_overlay::overlay_info::{
     overlay_payload_from_replay, player_note_from_settings_value,
 };
-use sco_tauri_overlay::shared_types::OverlayReplayPayload;
-use sco_tauri_overlay::test_helper::test_replay_path;
+use sco_tauri_overlay::test_helper::{localized_prestige_text, test_replay_path};
 use sco_tauri_overlay::{AppSettings, BackendState, ReplayInfo, ReplayPlayerInfo};
 use serde_json::json;
 
@@ -64,15 +63,9 @@ fn player_note_lookup_matches_case_insensitive_names() {
 #[test]
 fn overlay_prestige_text_uses_selected_language() {
     assert_eq!(
-        OverlayReplayPayload::localized_prestige_text("Abathur", 1, "en"),
+        localized_prestige_text("Abathur", 1, "en"),
         "Essence Hoarder"
     );
-    assert_eq!(
-        OverlayReplayPayload::localized_prestige_text("Abathur", 1, "ko"),
-        "정수 축적가"
-    );
-    assert_eq!(
-        OverlayReplayPayload::localized_prestige_text("Swann", 2, "ko"),
-        "노련한 기계공"
-    );
+    assert_eq!(localized_prestige_text("Abathur", 1, "ko"), "정수 축적가");
+    assert_eq!(localized_prestige_text("Swann", 2, "ko"), "노련한 기계공");
 }
