@@ -60,10 +60,10 @@ struct PerformancePayload {
 
 #[derive(Clone, Copy)]
 pub(crate) struct PerformanceGeometry {
-    pub(crate) x: i32,
-    pub(crate) y: i32,
-    pub(crate) width: u32,
-    pub(crate) height: u32,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
 }
 
 fn required_window_height() -> u32 {
@@ -75,10 +75,35 @@ fn required_window_height() -> u32 {
 }
 
 impl PerformanceGeometry {
+    pub(crate) fn new(x: i32, y: i32, width: u32, height: u32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
     pub(crate) fn normalized(mut self) -> Self {
         self.width = self.width.max(MIN_WINDOW_WIDTH);
         self.height = self.height.max(required_window_height());
         self
+    }
+
+    pub(crate) fn x(&self) -> i32 {
+        self.x
+    }
+
+    pub(crate) fn y(&self) -> i32 {
+        self.y
+    }
+
+    pub(crate) fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub(crate) fn height(&self) -> u32 {
+        self.height
     }
 }
 
@@ -86,7 +111,7 @@ fn default_geometry(
     window: &tauri::WebviewWindow<Wry>,
     settings: &AppSettings,
 ) -> Result<PerformanceGeometry, String> {
-    let monitor_setting = settings.monitor.max(1);
+    let monitor_setting = settings.monitor().max(1);
     let monitor_index = monitor_setting.saturating_sub(1);
     let monitors = window.available_monitors().unwrap_or_default();
     if monitors.is_empty() {
@@ -106,24 +131,18 @@ fn default_geometry(
     let x = position.x + i32::try_from(size.width.saturating_sub(width)).unwrap_or(0) - 24;
     let y = position.y + 180;
 
-    Ok(PerformanceGeometry {
-        x,
-        y,
-        width,
-        height,
-    }
-    .normalized())
+    Ok(PerformanceGeometry::new(x, y, width, height).normalized())
 }
 
 fn current_geometry(window: &tauri::WebviewWindow<Wry>) -> Option<PerformanceGeometry> {
     let position = window.outer_position().ok()?;
     let size = window.outer_size().ok()?;
-    Some(PerformanceGeometry {
-        x: position.x,
-        y: position.y,
-        width: size.width,
-        height: size.height,
-    })
+    Some(PerformanceGeometry::new(
+        position.x,
+        position.y,
+        size.width,
+        size.height,
+    ))
 }
 
 fn apply_geometry(
@@ -133,14 +152,14 @@ fn apply_geometry(
     let geometry = geometry.normalized();
     window
         .set_size(tauri::PhysicalSize {
-            width: geometry.width,
-            height: geometry.height,
+            width: geometry.width(),
+            height: geometry.height(),
         })
         .map_err(|error| format!("Failed to set performance overlay size: {error}"))?;
     window
         .set_position(tauri::PhysicalPosition {
-            x: geometry.x,
-            y: geometry.y,
+            x: geometry.x(),
+            y: geometry.y(),
         })
         .map_err(|error| format!("Failed to set performance overlay position: {error}"))?;
     Ok(())
@@ -288,9 +307,9 @@ pub(crate) fn persist_geometry(window: &tauri::WebviewWindow<Wry>) {
         return;
     };
     let geometry = geometry.normalized();
-    let width = i32::try_from(geometry.width).unwrap_or(i32::MAX);
-    let height = i32::try_from(geometry.height).unwrap_or(i32::MAX);
-    let value = [geometry.x, geometry.y, width, height];
+    let width = i32::try_from(geometry.width()).unwrap_or(i32::MAX);
+    let height = i32::try_from(geometry.height()).unwrap_or(i32::MAX);
+    let value = [geometry.x(), geometry.y(), width, height];
     if let Err(error) = state.persist_serialized_setting_value("performance_geometry", &value) {
         crate::sco_log!("[SCO/performance] Failed to save geometry: {error}");
     }

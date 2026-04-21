@@ -5,22 +5,18 @@ use serde_json::json;
 
 fn sample_replay() -> ReplayInfo {
     let mut replay = ReplayInfo::with_players(
-        ReplayPlayerInfo {
-            name: "MainPlayer".to_string(),
-            commander: "Abathur".to_string(),
-            prestige: 1,
-            ..ReplayPlayerInfo::default()
-        },
-        ReplayPlayerInfo {
-            name: "AllyPlayer".to_string(),
-            commander: "Swann".to_string(),
-            prestige: 2,
-            ..ReplayPlayerInfo::default()
-        },
+        ReplayPlayerInfo::default()
+            .with_name("MainPlayer")
+            .with_commander("Abathur")
+            .with_prestige(1),
+        ReplayPlayerInfo::default()
+            .with_name("AllyPlayer")
+            .with_commander("Swann")
+            .with_prestige(2),
         0,
     );
-    replay.file = test_replay_path("example.SC2Replay");
-    replay.result = "Victory".to_string();
+    replay.set_file(test_replay_path("example.SC2Replay"));
+    replay.set_result("Victory");
     replay
 }
 

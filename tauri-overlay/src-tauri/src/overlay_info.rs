@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::FromStr;
-use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::SystemTime;
 
@@ -98,19 +97,19 @@ fn overlay_mutator_name_with_dictionary(
 }
 
 pub(crate) struct OverlayPlacement {
-    pub(crate) monitor: usize,
-    pub(crate) width: f64,
-    pub(crate) height: f64,
-    pub(crate) top_offset: i32,
-    pub(crate) right_offset: i32,
-    pub(crate) subtract_height: i32,
+    monitor: usize,
+    width: f64,
+    height: f64,
+    top_offset: i32,
+    right_offset: i32,
+    subtract_height: i32,
 }
 
 #[derive(Clone, Copy)]
 pub struct RuntimeFlags {
-    pub start_minimized: bool,
-    pub minimize_to_tray: bool,
-    pub auto_update: bool,
+    start_minimized: bool,
+    minimize_to_tray: bool,
+    auto_update: bool,
 }
 
 #[derive(Clone)]
@@ -124,10 +123,108 @@ struct MonitorDescriptor {
 
 #[derive(Clone)]
 pub struct ResolvedHotkeyBinding {
-    pub path: &'static str,
-    pub action: &'static str,
-    pub shortcut: String,
-    pub canonical: String,
+    path: &'static str,
+    action: &'static str,
+    shortcut: String,
+    canonical: String,
+}
+
+impl OverlayPlacement {
+    pub(crate) fn new(
+        monitor: usize,
+        width: f64,
+        height: f64,
+        top_offset: i32,
+        right_offset: i32,
+        subtract_height: i32,
+    ) -> Self {
+        Self {
+            monitor,
+            width,
+            height,
+            top_offset,
+            right_offset,
+            subtract_height,
+        }
+    }
+
+    pub(crate) fn monitor(&self) -> usize {
+        self.monitor
+    }
+
+    pub(crate) fn width(&self) -> f64 {
+        self.width
+    }
+
+    pub(crate) fn height(&self) -> f64 {
+        self.height
+    }
+
+    pub(crate) fn top_offset(&self) -> i32 {
+        self.top_offset
+    }
+
+    pub(crate) fn right_offset(&self) -> i32 {
+        self.right_offset
+    }
+
+    pub(crate) fn subtract_height(&self) -> i32 {
+        self.subtract_height
+    }
+}
+
+impl RuntimeFlags {
+    pub fn new(start_minimized: bool, minimize_to_tray: bool, auto_update: bool) -> Self {
+        Self {
+            start_minimized,
+            minimize_to_tray,
+            auto_update,
+        }
+    }
+
+    pub fn start_minimized(&self) -> bool {
+        self.start_minimized
+    }
+
+    pub fn minimize_to_tray(&self) -> bool {
+        self.minimize_to_tray
+    }
+
+    pub fn auto_update(&self) -> bool {
+        self.auto_update
+    }
+}
+
+impl ResolvedHotkeyBinding {
+    pub fn new(
+        path: &'static str,
+        action: &'static str,
+        shortcut: impl Into<String>,
+        canonical: impl Into<String>,
+    ) -> Self {
+        Self {
+            path,
+            action,
+            shortcut: shortcut.into(),
+            canonical: canonical.into(),
+        }
+    }
+
+    pub fn path(&self) -> &'static str {
+        self.path
+    }
+
+    pub fn action(&self) -> &'static str {
+        self.action
+    }
+
+    pub fn shortcut(&self) -> &str {
+        &self.shortcut
+    }
+
+    pub fn canonical(&self) -> &str {
+        &self.canonical
+    }
 }
 
 impl OverlayReplayPayload {
@@ -353,10 +450,10 @@ pub(crate) fn apply_overlay_placement_from_settings(
     settings_value: &AppSettings,
 ) -> Result<(), String> {
     let settings = settings_value.overlay_placement();
-    let monitor_index = if settings.monitor == 0 {
+    let monitor_index = if settings.monitor() == 0 {
         0
     } else {
-        settings.monitor - 1
+        settings.monitor() - 1
     };
     let monitors = monitor_descriptors(window);
     if monitors.is_empty() {
@@ -373,11 +470,11 @@ pub(crate) fn apply_overlay_placement_from_settings(
         selected.position_y,
         selected.width,
         selected.height,
-        settings.width,
-        settings.height,
-        settings.top_offset,
-        settings.right_offset,
-        settings.subtract_height,
+        settings.width(),
+        settings.height(),
+        settings.top_offset(),
+        settings.right_offset(),
+        settings.subtract_height(),
     );
     let provisional_position = tauri::PhysicalPosition {
         x: selected.position_x,
@@ -620,29 +717,34 @@ fn register_hotkey_binding(
     app: &tauri::AppHandle<Wry>,
     binding: &ResolvedHotkeyBinding,
 ) -> Result<(), String> {
-    let parsed = Shortcut::from_str(&binding.shortcut)
-        .map_err(|error| format!("Failed to parse hotkey '{}': {error}", binding.shortcut))?;
-    let action = binding.action;
+    let parsed = Shortcut::from_str(binding.shortcut())
+        .map_err(|error| format!("Failed to parse hotkey '{}': {error}", binding.shortcut()))?;
+    let action = binding.action();
     app.global_shortcut()
         .on_shortcut(parsed, move |app_handle, shortcut, event| {
             register_shortcut_action(app_handle, shortcut, action, event.state);
         })
-        .map_err(|error| format!("Failed to register hotkey '{}': {error}", binding.shortcut))
+        .map_err(|error| {
+            format!(
+                "Failed to register hotkey '{}': {error}",
+                binding.shortcut()
+            )
+        })
 }
 
 fn unregister_hotkey_binding(
     app: &tauri::AppHandle<Wry>,
     binding: &ResolvedHotkeyBinding,
 ) -> Result<(), String> {
-    let parsed = Shortcut::from_str(&binding.shortcut)
-        .map_err(|error| format!("Failed to parse hotkey '{}': {error}", binding.shortcut))?;
+    let parsed = Shortcut::from_str(binding.shortcut())
+        .map_err(|error| format!("Failed to parse hotkey '{}': {error}", binding.shortcut()))?;
     if !app.global_shortcut().is_registered(parsed) {
         return Ok(());
     }
     app.global_shortcut().unregister(parsed).map_err(|error| {
         format!(
             "Failed to unregister hotkey '{}': {error}",
-            binding.shortcut
+            binding.shortcut()
         )
     })
 }
@@ -656,37 +758,37 @@ pub(crate) fn register_overlay_hotkeys(app: &tauri::AppHandle<Wry>) -> Result<()
     let mut registered_count = 0usize;
 
     for binding in state.resolved_overlay_hotkey_bindings() {
-        if active_reassign_path.as_deref() == Some(binding.path) {
+        if active_reassign_path.as_deref() == Some(binding.path()) {
             crate::sco_log!(
                 "[SCO/hotkey] Skipping '{}' because it is currently being reassigned",
-                binding.path
+                binding.path()
             );
             continue;
         }
-        if let Some(existing_action) = registered.get(&binding.canonical) {
-            if *existing_action == binding.action {
+        if let Some(existing_action) = registered.get(binding.canonical()) {
+            if *existing_action == binding.action() {
                 crate::sco_log!(
                     "[SCO/hotkey] Duplicate hotkey '{}' for '{}' ignored.",
-                    binding.canonical,
-                    binding.action
+                    binding.canonical(),
+                    binding.action()
                 );
             } else {
                 crate::sco_log!(
                     "[SCO/hotkey] Hotkey '{}' already bound to '{}', skipping '{}'.",
-                    binding.canonical,
+                    binding.canonical(),
                     existing_action,
-                    binding.action
+                    binding.action()
                 );
             }
             continue;
         }
         crate::sco_log!(
             "[SCO/hotkey] Registering '{}' for '{}'",
-            binding.shortcut,
-            binding.action
+            binding.shortcut(),
+            binding.action()
         );
         register_hotkey_binding(app, &binding)?;
-        registered.insert(binding.canonical.clone(), binding.action);
+        registered.insert(binding.canonical().to_string(), binding.action());
         registered_count += 1;
     }
 
@@ -709,7 +811,7 @@ pub(crate) fn begin_hotkey_reassign(app: &tauri::AppHandle<Wry>, path: &str) -> 
     let binding = state
         .resolved_overlay_hotkey_bindings()
         .into_iter()
-        .find(|binding| binding.path == path);
+        .find(|binding| binding.path() == path);
     state.set_active_hotkey_reassign_binding(binding.clone());
 
     if let Some(binding) = binding {
@@ -742,13 +844,13 @@ pub(crate) fn end_hotkey_reassign(app: &tauri::AppHandle<Wry>, path: &str) -> Re
     let bindings = settings_value.resolved_overlay_hotkey_bindings();
     if bindings
         .iter()
-        .any(|other| other.path != binding.path && other.canonical == binding.canonical)
+        .any(|other| other.path() != binding.path() && other.canonical() == binding.canonical())
     {
         state.set_active_hotkey_reassign_binding(None);
         crate::sco_log!(
             "[SCO/hotkey] Hotkey '{}' conflicts with another binding, skipping '{}'.",
-            binding.canonical,
-            binding.path
+            binding.canonical(),
+            binding.path()
         );
         return Ok(());
     }
@@ -758,7 +860,7 @@ pub(crate) fn end_hotkey_reassign(app: &tauri::AppHandle<Wry>, path: &str) -> Re
     crate::sco_log!(
         "[SCO/hotkey] Recreated hotkey trigger for '{}' as '{}'",
         path,
-        binding.shortcut
+        binding.shortcut()
     );
     Ok(())
 }
@@ -812,7 +914,7 @@ pub(crate) fn emit_replay_to_overlay_from_replay(
         .unwrap_or_else(|| replay.clone());
 
     let settings = state.read_settings_memory();
-    let show_session = settings.show_session;
+    let show_session = settings.show_session();
     let (session_victories, session_defeats) = state.session_counts();
     let payload = overlay_payload_from_replay(
         &state,
@@ -894,9 +996,7 @@ pub(crate) fn replay_show_for_window(
     let file = replay.file.clone();
 
     emit_replay_to_overlay_from_replay(app, replay, false);
-    state
-        .overlay_replay_data_active
-        .store(true, Ordering::Release);
+    state.set_overlay_replay_data_active(true);
     state.set_current_replay_file(Some(&file));
 
     crate::OverlayActionResponse::success("Replay shown")
@@ -920,7 +1020,7 @@ pub(crate) fn replay_move_window(
     }
 
     let selected = state.get_current_replay_file();
-    let replay_data_active = state.overlay_replay_data_active.load(Ordering::Acquire);
+    let replay_data_active = state.overlay_replay_data_active();
     let current_index = replay_index_by_file(&replays, &selected);
     let index = replay_move_target_index(&replays, &selected, delta, replay_data_active);
     if replay_move_should_be_ignored(current_index, index, replay_data_active) {
@@ -931,9 +1031,7 @@ pub(crate) fn replay_move_window(
     let file = replay.file.clone();
 
     emit_replay_to_overlay_from_replay(app, replay, false);
-    state
-        .overlay_replay_data_active
-        .store(true, Ordering::Release);
+    state.set_overlay_replay_data_active(true);
     state.set_current_replay_file(Some(&file));
 
     crate::OverlayActionResponse::success("Replay moved")
@@ -976,9 +1074,7 @@ pub(crate) fn perform_overlay_action(
                 .and_then(|payload| payload.get("active"))
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
-            state
-                .overlay_replay_data_active
-                .store(active, Ordering::Release);
+            state.set_overlay_replay_data_active(active);
             if !active {
                 state.set_current_replay_file(None);
             }

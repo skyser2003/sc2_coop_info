@@ -19,12 +19,12 @@ fn normalize_hotkey_accepts_shifted_symbol_variants() {
 
 #[test]
 fn reassign_end_uses_cached_binding_when_current_settings_do_not_resolve_path() {
-    let fallback = overlay_info::ResolvedHotkeyBinding {
-        path: "performance_hotkey",
-        action: "performance_show_hide",
-        shortcut: "control+shift+p".to_string(),
-        canonical: "control+shift+p".to_string(),
-    };
+    let fallback = overlay_info::ResolvedHotkeyBinding::new(
+        "performance_hotkey",
+        "performance_show_hide",
+        "control+shift+p",
+        "control+shift+p",
+    );
 
     let resolved = AppSettings::merge_settings_with_defaults(json!({
         "hotkey_show/hide": "Ctrl+Shift+*"
@@ -32,20 +32,20 @@ fn reassign_end_uses_cached_binding_when_current_settings_do_not_resolve_path() 
     .hotkey_binding_for_reassign_end("performance_hotkey", Some(&fallback))
     .expect("cached binding should be reused when the path cannot be resolved");
 
-    assert_eq!(resolved.path, "performance_hotkey");
-    assert_eq!(resolved.action, "performance_show_hide");
-    assert_eq!(resolved.shortcut, "control+shift+p");
-    assert_eq!(resolved.canonical, "control+shift+p");
+    assert_eq!(resolved.path(), "performance_hotkey");
+    assert_eq!(resolved.action(), "performance_show_hide");
+    assert_eq!(resolved.shortcut(), "control+shift+p");
+    assert_eq!(resolved.canonical(), "control+shift+p");
 }
 
 #[test]
 fn reassign_end_reuses_cached_binding_when_hotkey_is_null() {
-    let fallback = overlay_info::ResolvedHotkeyBinding {
-        path: "performance_hotkey",
-        action: "performance_show_hide",
-        shortcut: "control+shift+p".to_string(),
-        canonical: "control+shift+p".to_string(),
-    };
+    let fallback = overlay_info::ResolvedHotkeyBinding::new(
+        "performance_hotkey",
+        "performance_show_hide",
+        "control+shift+p",
+        "control+shift+p",
+    );
 
     let resolved = AppSettings::merge_settings_with_defaults(json!({
         "performance_hotkey": null
@@ -53,18 +53,18 @@ fn reassign_end_reuses_cached_binding_when_hotkey_is_null() {
     .hotkey_binding_for_reassign_end("performance_hotkey", Some(&fallback));
 
     let resolved = resolved.expect("null hotkey should be treated as not set");
-    assert_eq!(resolved.path, "performance_hotkey");
-    assert_eq!(resolved.shortcut, "control+shift+p");
+    assert_eq!(resolved.path(), "performance_hotkey");
+    assert_eq!(resolved.shortcut(), "control+shift+p");
 }
 
 #[test]
 fn reassign_end_does_not_restore_explicitly_cleared_hotkey() {
-    let fallback = overlay_info::ResolvedHotkeyBinding {
-        path: "performance_hotkey",
-        action: "performance_show_hide",
-        shortcut: "control+shift+p".to_string(),
-        canonical: "control+shift+p".to_string(),
-    };
+    let fallback = overlay_info::ResolvedHotkeyBinding::new(
+        "performance_hotkey",
+        "performance_show_hide",
+        "control+shift+p",
+        "control+shift+p",
+    );
 
     let resolved = AppSettings::merge_settings_with_defaults(json!({
         "performance_hotkey": ""
@@ -82,8 +82,8 @@ fn reassign_end_uses_builtin_default_when_overlay_hotkey_is_null() {
     .hotkey_binding_for_reassign_end("hotkey_show/hide", None)
     .expect("null overlay hotkey should use builtin default");
 
-    assert_eq!(resolved.path, "hotkey_show/hide");
-    assert_eq!(resolved.action, "overlay_show_hide");
-    assert_eq!(resolved.shortcut, "control+shift+8");
-    assert_eq!(resolved.canonical, "shift+control+digit8");
+    assert_eq!(resolved.path(), "hotkey_show/hide");
+    assert_eq!(resolved.action(), "overlay_show_hide");
+    assert_eq!(resolved.shortcut(), "control+shift+8");
+    assert_eq!(resolved.canonical(), "shift+control+digit8");
 }

@@ -14,9 +14,9 @@ fn update_settings_player_note_only_changes_player_notes_branch() {
         .update_player_note("1-S2-1-111", "new note")
         .expect("player note update should succeed");
 
-    assert!(settings.show_charts);
+    assert!(settings.show_charts());
     assert_eq!(
-        settings.player_notes.get("1-S2-1-111"),
+        settings.player_notes().get("1-S2-1-111"),
         Some(&"new note".to_string())
     );
 }
@@ -34,7 +34,7 @@ fn update_settings_player_note_removes_case_insensitive_match_when_cleared() {
         .update_player_note("1-s2-1-111", "")
         .expect("clearing player note should succeed");
 
-    let notes = &settings.player_notes;
+    let notes = settings.player_notes();
     assert!(!notes.contains_key("1-S2-1-111"));
     assert_eq!(notes.get("1-S2-1-222"), Some(&"keep me".to_string()));
 }

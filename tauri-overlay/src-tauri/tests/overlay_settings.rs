@@ -80,21 +80,17 @@ fn overlay_runtime_settings_preserve_saved_chart_visibility_and_colors() {
 
 #[test]
 fn replay_overlay_after_game_setting_defaults_to_enabled() {
-    assert!(AppSettings::merge_settings_with_defaults(json!({})).show_replay_info_after_game);
+    assert!(AppSettings::merge_settings_with_defaults(json!({})).show_replay_info_after_game());
 }
 
 #[test]
 fn replay_overlay_after_game_setting_uses_saved_value() {
-    assert!(
-        !AppSettings::merge_settings_with_defaults(json!({
-            "show_replay_info_after_game": false,
-        }))
-        .show_replay_info_after_game
-    );
-    assert!(
-        AppSettings::merge_settings_with_defaults(json!({
-            "show_replay_info_after_game": true,
-        }))
-        .show_replay_info_after_game
-    );
+    assert!(!AppSettings::merge_settings_with_defaults(json!({
+        "show_replay_info_after_game": false,
+    }))
+    .show_replay_info_after_game());
+    assert!(AppSettings::merge_settings_with_defaults(json!({
+        "show_replay_info_after_game": true,
+    }))
+    .show_replay_info_after_game());
 }

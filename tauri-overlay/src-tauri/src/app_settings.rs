@@ -31,46 +31,46 @@ pub type PlayerNotes = BTreeMap<String, String>;
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, TS)]
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct AppSettings {
-    pub start_with_windows: bool,
-    pub minimize_to_tray: bool,
-    pub start_minimized: bool,
-    pub auto_update: bool,
-    pub duration: u32,
-    pub show_player_winrates: bool,
-    pub show_replay_info_after_game: bool,
-    pub show_session: bool,
-    pub show_charts: bool,
-    pub hide_nicknames_in_overlay: bool,
-    pub account_folder: String,
-    pub screenshot_folder: String,
-    pub color_player1: String,
-    pub color_player2: String,
-    pub color_amon: String,
-    pub color_mastery: String,
+    start_with_windows: bool,
+    minimize_to_tray: bool,
+    start_minimized: bool,
+    auto_update: bool,
+    duration: u32,
+    show_player_winrates: bool,
+    show_replay_info_after_game: bool,
+    show_session: bool,
+    show_charts: bool,
+    hide_nicknames_in_overlay: bool,
+    account_folder: String,
+    screenshot_folder: String,
+    color_player1: String,
+    color_player2: String,
+    color_amon: String,
+    color_mastery: String,
     #[serde(rename = "hotkey_show/hide")]
-    pub hotkey_show_hide: Option<String>,
-    pub hotkey_show: Option<String>,
-    pub hotkey_hide: Option<String>,
-    pub hotkey_newer: Option<String>,
-    pub hotkey_older: Option<String>,
-    pub hotkey_winrates: Option<String>,
-    pub enable_logging: bool,
-    pub dark_theme: bool,
-    pub language: String,
-    pub monitor: usize,
-    pub performance_show: bool,
-    pub performance_hotkey: Option<String>,
-    pub performance_processes: Vec<String>,
+    hotkey_show_hide: Option<String>,
+    hotkey_show: Option<String>,
+    hotkey_hide: Option<String>,
+    hotkey_newer: Option<String>,
+    hotkey_older: Option<String>,
+    hotkey_winrates: Option<String>,
+    enable_logging: bool,
+    dark_theme: bool,
+    language: String,
+    monitor: usize,
+    performance_show: bool,
+    performance_hotkey: Option<String>,
+    performance_processes: Vec<String>,
     #[ts(optional)]
-    pub performance_geometry: Option<[i32; 4]>,
-    pub rng_choices: RandomizerChoices,
-    pub player_notes: PlayerNotes,
-    pub main_names: Vec<String>,
-    pub detailed_analysis_atstart: bool,
-    pub analysis_worker_threads: usize,
+    performance_geometry: Option<[i32; 4]>,
+    rng_choices: RandomizerChoices,
+    player_notes: PlayerNotes,
+    main_names: Vec<String>,
+    detailed_analysis_atstart: bool,
+    analysis_worker_threads: usize,
     #[serde(skip)]
     #[ts(skip)]
-    pub present_keys: BTreeSet<String>,
+    present_keys: BTreeSet<String>,
 }
 
 impl AppSettings {
@@ -215,6 +215,176 @@ impl AppSettings {
 
     pub fn normalized_analysis_worker_threads(&self) -> usize {
         Self::clamp_analysis_worker_threads(self.analysis_worker_threads)
+    }
+
+    pub fn start_with_windows(&self) -> bool {
+        self.start_with_windows
+    }
+
+    pub fn minimize_to_tray(&self) -> bool {
+        self.minimize_to_tray
+    }
+
+    pub fn start_minimized(&self) -> bool {
+        self.start_minimized
+    }
+
+    pub fn auto_update(&self) -> bool {
+        self.auto_update
+    }
+
+    pub fn duration(&self) -> u32 {
+        self.duration
+    }
+
+    pub fn show_player_winrates(&self) -> bool {
+        self.show_player_winrates
+    }
+
+    pub fn show_replay_info_after_game(&self) -> bool {
+        self.show_replay_info_after_game
+    }
+
+    pub fn show_session(&self) -> bool {
+        self.show_session
+    }
+
+    pub fn show_charts(&self) -> bool {
+        self.show_charts
+    }
+
+    pub fn hide_nicknames_in_overlay(&self) -> bool {
+        self.hide_nicknames_in_overlay
+    }
+
+    pub fn account_folder(&self) -> &str {
+        &self.account_folder
+    }
+
+    pub fn screenshot_folder(&self) -> &str {
+        &self.screenshot_folder
+    }
+
+    pub fn color_player1(&self) -> &str {
+        &self.color_player1
+    }
+
+    pub fn color_player2(&self) -> &str {
+        &self.color_player2
+    }
+
+    pub fn color_amon(&self) -> &str {
+        &self.color_amon
+    }
+
+    pub fn color_mastery(&self) -> &str {
+        &self.color_mastery
+    }
+
+    pub fn hotkey_show_hide(&self) -> Option<&str> {
+        self.hotkey_show_hide.as_deref()
+    }
+
+    pub fn hotkey_show(&self) -> Option<&str> {
+        self.hotkey_show.as_deref()
+    }
+
+    pub fn hotkey_hide(&self) -> Option<&str> {
+        self.hotkey_hide.as_deref()
+    }
+
+    pub fn hotkey_newer(&self) -> Option<&str> {
+        self.hotkey_newer.as_deref()
+    }
+
+    pub fn hotkey_older(&self) -> Option<&str> {
+        self.hotkey_older.as_deref()
+    }
+
+    pub fn hotkey_winrates(&self) -> Option<&str> {
+        self.hotkey_winrates.as_deref()
+    }
+
+    pub fn enable_logging(&self) -> bool {
+        self.enable_logging
+    }
+
+    pub fn dark_theme(&self) -> bool {
+        self.dark_theme
+    }
+
+    pub fn language(&self) -> &str {
+        &self.language
+    }
+
+    pub fn monitor(&self) -> usize {
+        self.monitor
+    }
+
+    pub fn performance_show(&self) -> bool {
+        self.performance_show
+    }
+
+    pub fn performance_hotkey(&self) -> Option<&str> {
+        self.performance_hotkey.as_deref()
+    }
+
+    pub fn performance_processes(&self) -> &[String] {
+        &self.performance_processes
+    }
+
+    pub fn performance_geometry(&self) -> Option<[i32; 4]> {
+        self.performance_geometry
+    }
+
+    pub fn rng_choices(&self) -> &RandomizerChoices {
+        &self.rng_choices
+    }
+
+    pub fn player_notes(&self) -> &PlayerNotes {
+        &self.player_notes
+    }
+
+    pub fn main_names_raw(&self) -> &[String] {
+        &self.main_names
+    }
+
+    pub fn detailed_analysis_atstart(&self) -> bool {
+        self.detailed_analysis_atstart
+    }
+
+    pub fn analysis_worker_threads(&self) -> usize {
+        self.analysis_worker_threads
+    }
+
+    pub fn present_keys(&self) -> &BTreeSet<String> {
+        &self.present_keys
+    }
+
+    pub fn clear_present_keys(&mut self) {
+        self.present_keys.clear();
+    }
+
+    pub fn set_enable_logging(&mut self, value: bool) {
+        self.enable_logging = value;
+    }
+
+    pub fn with_enable_logging(mut self, value: bool) -> Self {
+        self.set_enable_logging(value);
+        self
+    }
+
+    pub fn set_detailed_analysis_atstart(&mut self, value: bool) {
+        self.detailed_analysis_atstart = value;
+    }
+
+    pub fn with_detailed_analysis_atstart(mut self, value: bool) -> Self {
+        self.set_detailed_analysis_atstart(value);
+        self
+    }
+
+    pub fn set_performance_geometry(&mut self, value: Option<[i32; 4]>) {
+        self.performance_geometry = value;
     }
 }
 
@@ -540,14 +710,7 @@ impl AppSettings {
     }
 
     pub(crate) fn overlay_placement(&self) -> OverlayPlacement {
-        OverlayPlacement {
-            monitor: self.monitor.max(1),
-            width: 0.7,
-            height: 1.0,
-            top_offset: 0,
-            right_offset: 0,
-            subtract_height: 1,
-        }
+        OverlayPlacement::new(self.monitor.max(1), 0.7, 1.0, 0, 0, 1)
     }
 
     pub(crate) fn runtime_flags(&self) -> RuntimeFlags {
@@ -558,11 +721,7 @@ impl AppSettings {
             false
         };
 
-        RuntimeFlags {
-            start_minimized,
-            minimize_to_tray,
-            auto_update: self.auto_update,
-        }
+        RuntimeFlags::new(start_minimized, minimize_to_tray, self.auto_update)
     }
 
     pub(crate) fn resolved_overlay_hotkey_bindings(&self) -> Vec<ResolvedHotkeyBinding> {
@@ -627,12 +786,12 @@ impl AppSettings {
                 crate::sco_log!("[SCO/hotkey] Falling back to default for '{path}'.");
             }
 
-            bindings.push(ResolvedHotkeyBinding {
+            bindings.push(ResolvedHotkeyBinding::new(
                 path,
                 action,
                 shortcut,
-                canonical: parsed.to_string().to_ascii_lowercase(),
-            });
+                parsed.to_string().to_ascii_lowercase(),
+            ));
         }
 
         bindings
@@ -644,7 +803,7 @@ impl AppSettings {
         fallback_binding: Option<&ResolvedHotkeyBinding>,
     ) -> Option<ResolvedHotkeyBinding> {
         let bindings = self.resolved_overlay_hotkey_bindings();
-        if let Some(binding) = bindings.into_iter().find(|binding| binding.path == path) {
+        if let Some(binding) = bindings.into_iter().find(|binding| binding.path() == path) {
             return Some(binding);
         }
 
@@ -664,7 +823,7 @@ impl AppSettings {
         }
 
         fallback_binding
-            .filter(|binding| binding.path == path)
+            .filter(|binding| binding.path() == path)
             .cloned()
     }
 
@@ -773,15 +932,7 @@ impl AppSettings {
         let width = u32::try_from(geometry[2]).ok()?;
         let height = u32::try_from(geometry[3]).ok()?;
 
-        Some(
-            PerformanceGeometry {
-                x,
-                y,
-                width,
-                height,
-            }
-            .normalized(),
-        )
+        Some(PerformanceGeometry::new(x, y, width, height).normalized())
     }
 }
 

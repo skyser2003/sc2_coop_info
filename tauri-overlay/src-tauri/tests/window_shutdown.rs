@@ -53,16 +53,16 @@ fn runtime_flags_follow_active_settings_before_save() {
         "minimize_to_tray": false,
     })));
     let disabled_flags = state.runtime_flags();
-    assert!(!disabled_flags.start_minimized);
-    assert!(!disabled_flags.minimize_to_tray);
+    assert!(!disabled_flags.start_minimized());
+    assert!(!disabled_flags.minimize_to_tray());
 
     state.replace_active_settings(&AppSettings::merge_settings_with_defaults(json!({
         "start_minimized": false,
         "minimize_to_tray": true,
     })));
     let enabled_flags = state.runtime_flags();
-    assert!(!enabled_flags.start_minimized);
-    assert!(enabled_flags.minimize_to_tray);
+    assert!(!enabled_flags.start_minimized());
+    assert!(enabled_flags.minimize_to_tray());
 
     state.replace_active_settings(&previous_settings);
 }

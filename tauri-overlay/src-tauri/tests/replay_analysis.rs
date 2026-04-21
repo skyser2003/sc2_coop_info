@@ -18,6 +18,13 @@ fn test_map_id(raw: &str) -> String {
         .expect("map id should resolve")
 }
 
+fn player(name: &str, handle: &str, commander: &str) -> ReplayPlayerInfo {
+    ReplayPlayerInfo::default()
+        .with_name(name)
+        .with_handle(handle)
+        .with_commander(commander)
+}
+
 fn sample_replay(
     file: &str,
     result: &str,
@@ -26,10 +33,10 @@ fn sample_replay(
     ally: ReplayPlayerInfo,
 ) -> ReplayInfo {
     let mut replay = ReplayInfo::with_players(main, ally, 0);
-    replay.file = file.to_string();
-    replay.map = test_map_id("Void Launch");
-    replay.result = result.to_string();
-    replay.difficulty = difficulty.to_string();
+    replay.set_file(file);
+    replay.set_map(test_map_id("Void Launch"));
+    replay.set_result(result);
+    replay.set_difficulty(difficulty);
     replay
 }
 
@@ -74,12 +81,12 @@ fn collect_replay_paths_returns_empty_for_missing_root() {
 #[test]
 fn rebuild_snapshot_returns_empty_payload() {
     let snapshot = build_rebuild_snapshot(&[], true);
-    assert!(snapshot.ready);
-    assert_eq!(snapshot.games, 0);
-    assert!(snapshot.main_players.is_empty());
-    assert!(snapshot.main_handles.is_empty());
-    assert!(snapshot.analysis.get("MapData").is_some());
-    assert_eq!(snapshot.message, "No replay files found.");
+    assert!(snapshot.ready());
+    assert_eq!(snapshot.games(), 0);
+    assert!(snapshot.main_players().is_empty());
+    assert!(snapshot.main_handles().is_empty());
+    assert!(snapshot.analysis().get("MapData").is_some());
+    assert_eq!(snapshot.message(), "No replay files found.");
 }
 
 #[test]
@@ -88,22 +95,14 @@ fn rebuild_snapshot_without_detailed_data_uses_null_unit_data() {
         "simple.SC2Replay",
         "Victory",
         "Brutal",
-        ReplayPlayerInfo {
-            name: "Main".to_string(),
-            commander: "Raynor".to_string(),
-            ..ReplayPlayerInfo::default()
-        },
-        ReplayPlayerInfo {
-            name: "Ally".to_string(),
-            commander: "Karax".to_string(),
-            ..ReplayPlayerInfo::default()
-        },
+        player("Main", "", "Raynor"),
+        player("Ally", "", "Karax"),
     )];
 
     let snapshot = build_rebuild_snapshot(&replays, false);
 
     assert!(snapshot
-        .analysis
+        .analysis()
         .get("UnitData")
         .is_some_and(Value::is_null));
 }
@@ -111,7 +110,7 @@ fn rebuild_snapshot_without_detailed_data_uses_null_unit_data() {
 #[test]
 fn filter_replays_for_stats_excludes_unparsed_replays() {
     let mut replay = ReplayInfo::default();
-    replay.result = "Unparsed".to_string();
+    replay.set_result("Unparsed");
 
     let filtered = filter_replays_for_stats("/config/stats", &[replay]);
     assert!(filtered.is_empty());
@@ -151,19 +150,11 @@ fn map_times_use_accurate_length_like_wx_version() {
                 "a.SC2Replay",
                 "Victory",
                 "Brutal",
-                ReplayPlayerInfo {
-                    name: "Main".to_string(),
-                    commander: "Raynor".to_string(),
-                    ..ReplayPlayerInfo::default()
-                },
-                ReplayPlayerInfo {
-                    name: "Ally".to_string(),
-                    commander: "Karax".to_string(),
-                    ..ReplayPlayerInfo::default()
-                },
+                player("Main", "", "Raynor"),
+                player("Ally", "", "Karax"),
             );
-            replay.length = 590;
-            replay.accurate_length = 600.5;
+            replay.set_length(590);
+            replay.set_accurate_length(600.5);
             replay
         },
         {
@@ -171,19 +162,11 @@ fn map_times_use_accurate_length_like_wx_version() {
                 "b.SC2Replay",
                 "Victory",
                 "Brutal",
-                ReplayPlayerInfo {
-                    name: "Main".to_string(),
-                    commander: "Raynor".to_string(),
-                    ..ReplayPlayerInfo::default()
-                },
-                ReplayPlayerInfo {
-                    name: "Ally".to_string(),
-                    commander: "Karax".to_string(),
-                    ..ReplayPlayerInfo::default()
-                },
+                player("Main", "", "Raynor"),
+                player("Ally", "", "Karax"),
             );
-            replay.length = 600;
-            replay.accurate_length = 610.25;
+            replay.set_length(600);
+            replay.set_accurate_length(610.25);
             replay
         },
     ];
@@ -196,7 +179,7 @@ fn map_times_use_accurate_length_like_wx_version() {
         &dictionary,
     );
     let map_data = snapshot
-        .analysis
+        .analysis()
         .get("MapData")
         .and_then(Value::as_object)
         .and_then(|maps| maps.get("Void Launch"))
@@ -227,31 +210,21 @@ fn map_fastest_payload_includes_player_metadata() {
             "fastest.SC2Replay",
             "Victory",
             "Brutal",
-            ReplayPlayerInfo {
-                name: "Main".to_string(),
-                handle: "1-S2-1-111".to_string(),
-                apm: 143,
-                commander: "Raynor".to_string(),
-                mastery_level: 90,
-                prestige: 0,
-                masteries: vec![30, 0, 20, 10, 0, 30],
-                ..ReplayPlayerInfo::default()
-            },
-            ReplayPlayerInfo {
-                name: "Ally".to_string(),
-                handle: "1-S2-1-222".to_string(),
-                apm: 98,
-                commander: "Karax".to_string(),
-                mastery_level: 76,
-                prestige: 2,
-                masteries: vec![15, 15, 0, 30, 20, 10],
-                ..ReplayPlayerInfo::default()
-            },
+            player("Main", "1-S2-1-111", "Raynor")
+                .with_apm(143)
+                .with_mastery_level(90)
+                .with_prestige(0)
+                .with_masteries(vec![30, 0, 20, 10, 0, 30]),
+            player("Ally", "1-S2-1-222", "Karax")
+                .with_apm(98)
+                .with_mastery_level(76)
+                .with_prestige(2)
+                .with_masteries(vec![15, 15, 0, 30, 20, 10]),
         );
-        replay.date = fastest_date;
-        replay.enemy = "Zerg".to_string();
-        replay.length = 590;
-        replay.accurate_length = 600.5;
+        replay.set_date(fastest_date);
+        replay.set_enemy("Zerg");
+        replay.set_length(590);
+        replay.set_accurate_length(600.5);
         replay
     }];
 
@@ -263,7 +236,7 @@ fn map_fastest_payload_includes_player_metadata() {
         &dictionary,
     );
     let fastest = snapshot
-        .analysis
+        .analysis()
         .get("MapData")
         .and_then(Value::as_object)
         .and_then(|maps| maps.get("Void Launch"))
@@ -320,25 +293,15 @@ fn map_fastest_prefers_oldest_replay_when_lengths_tie() {
                 "newer_fastest.SC2Replay",
                 "Victory",
                 "Brutal",
-                ReplayPlayerInfo {
-                    name: "Main".to_string(),
-                    handle: "1-S2-1-111".to_string(),
-                    apm: 143,
-                    commander: "Raynor".to_string(),
-                    ..ReplayPlayerInfo::default()
-                },
-                ReplayPlayerInfo {
-                    name: "Ally".to_string(),
-                    handle: "1-S2-1-222".to_string(),
-                    apm: 98,
-                    commander: "Karax".to_string(),
-                    ..ReplayPlayerInfo::default()
-                },
+                player("Main", "1-S2-1-111", "Raynor").with_apm(143),
+                player("Ally", "1-S2-1-222", "Karax").with_apm(98),
             );
-            replay.date = parse_replay_timestamp_seconds("2020:01:02:03:04:05")
-                .expect("newer replay timestamp should parse");
-            replay.enemy = "Zerg".to_string();
-            replay.accurate_length = 600.5;
+            replay.set_date(
+                parse_replay_timestamp_seconds("2020:01:02:03:04:05")
+                    .expect("newer replay timestamp should parse"),
+            );
+            replay.set_enemy("Zerg");
+            replay.set_accurate_length(600.5);
             replay
         },
         {
@@ -346,25 +309,15 @@ fn map_fastest_prefers_oldest_replay_when_lengths_tie() {
                 "older_fastest.SC2Replay",
                 "Victory",
                 "Normal",
-                ReplayPlayerInfo {
-                    name: "Older Main".to_string(),
-                    handle: "1-S2-1-333".to_string(),
-                    apm: 77,
-                    commander: "Artanis".to_string(),
-                    ..ReplayPlayerInfo::default()
-                },
-                ReplayPlayerInfo {
-                    name: "Older Ally".to_string(),
-                    handle: "1-S2-1-444".to_string(),
-                    apm: 66,
-                    commander: "Swann".to_string(),
-                    ..ReplayPlayerInfo::default()
-                },
+                player("Older Main", "1-S2-1-333", "Artanis").with_apm(77),
+                player("Older Ally", "1-S2-1-444", "Swann").with_apm(66),
             );
-            replay.date = parse_replay_timestamp_seconds("2019:01:02:03:04:05")
-                .expect("older replay timestamp should parse");
-            replay.enemy = "Terran".to_string();
-            replay.accurate_length = 600.5;
+            replay.set_date(
+                parse_replay_timestamp_seconds("2019:01:02:03:04:05")
+                    .expect("older replay timestamp should parse"),
+            );
+            replay.set_enemy("Terran");
+            replay.set_accurate_length(600.5);
             replay
         },
     ];
@@ -377,7 +330,7 @@ fn map_fastest_prefers_oldest_replay_when_lengths_tie() {
         &dictionary,
     );
     let fastest = snapshot
-        .analysis
+        .analysis()
         .get("MapData")
         .and_then(Value::as_object)
         .and_then(|maps| maps.get("Void Launch"))
@@ -408,25 +361,15 @@ fn map_fastest_prefers_oldest_replay_when_lengths_tie() {
 fn collect_main_identity_lists_tracks_p2_main_handle_for_fastest_maps() {
     let replays = vec![{
         let mut replay = ReplayInfo::with_players(
-            ReplayPlayerInfo {
-                name: "Teammate".to_string(),
-                handle: "1-S2-1-111".to_string(),
-                commander: "Swann".to_string(),
-                ..ReplayPlayerInfo::default()
-            },
-            ReplayPlayerInfo {
-                name: "Main".to_string(),
-                handle: "1-S2-1-222".to_string(),
-                commander: "Abathur".to_string(),
-                ..ReplayPlayerInfo::default()
-            },
+            player("Teammate", "1-S2-1-111", "Swann"),
+            player("Main", "1-S2-1-222", "Abathur"),
             1,
         );
-        replay.file = "fastest.SC2Replay".to_string();
-        replay.result = "Victory".to_string();
-        replay.difficulty = "Normal".to_string();
-        replay.map = test_map_id("Miner Evacuation");
-        replay.accurate_length = 1041.75;
+        replay.set_file("fastest.SC2Replay");
+        replay.set_result("Victory");
+        replay.set_difficulty("Normal");
+        replay.set_map(test_map_id("Miner Evacuation"));
+        replay.set_accurate_length(1041.75);
         replay
     }];
     let main_names = HashSet::new();
@@ -458,7 +401,7 @@ fn miner_evacuation_fastest_payload_matches_reference_fastest_replay() {
     );
     let snapshot = build_rebuild_snapshot(&replays, true);
     let Some(fastest) = snapshot
-        .analysis
+        .analysis()
         .get("MapData")
         .and_then(Value::as_object)
         .and_then(|maps| maps.get("Miner Evacuation"))
@@ -491,7 +434,7 @@ fn miner_evacuation_fastest_payload_matches_reference_fastest_replay() {
 
     assert_eq!(players[0]["name"], fastest["main"]);
     assert!(snapshot
-        .main_handles
+        .main_handles()
         .iter()
         .any(|handle| Some(handle.as_str()) == players[0]["handle"].as_str()));
     assert_eq!(players[0]["commander"], json!("Abathur"));
@@ -509,11 +452,11 @@ fn miner_evacuation_fastest_payload_matches_reference_fastest_replay() {
     assert_eq!(players[1]["prestige_name"], json!("Chief Engineer"));
 
     assert!(snapshot
-        .main_players
+        .main_players()
         .iter()
         .any(|name| Some(name.as_str()) == players[0]["name"].as_str()));
     assert!(snapshot
-        .main_handles
+        .main_handles()
         .iter()
         .any(|handle| Some(handle.as_str()) == players[0]["handle"].as_str()));
 }

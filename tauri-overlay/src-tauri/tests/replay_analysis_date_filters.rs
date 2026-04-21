@@ -108,27 +108,23 @@ fn sample_cache_entry(file: &Path, date: &str) -> CacheReplayEntry {
 
 fn replay_for_date_filter(date: &str, file_suffix: &str) -> ReplayInfo {
     let mut replay = ReplayInfo::with_players(
-        ReplayPlayerInfo {
-            name: "Main".to_string(),
-            handle: "1-S2-1-111".to_string(),
-            commander: "Dehaka".to_string(),
-            commander_level: 15,
-            ..ReplayPlayerInfo::default()
-        },
-        ReplayPlayerInfo {
-            name: "Ally".to_string(),
-            handle: "1-S2-1-222".to_string(),
-            commander: "Karax".to_string(),
-            commander_level: 15,
-            ..ReplayPlayerInfo::default()
-        },
+        ReplayPlayerInfo::default()
+            .with_name("Main")
+            .with_handle("1-S2-1-111")
+            .with_commander("Dehaka")
+            .with_commander_level(15),
+        ReplayPlayerInfo::default()
+            .with_name("Ally")
+            .with_handle("1-S2-1-222")
+            .with_commander("Karax")
+            .with_commander_level(15),
         0,
     );
-    replay.file = format!("fixtures/replays/{file_suffix}.SC2Replay");
-    replay.date = parse_replay_timestamp_seconds(date).expect("date should parse");
-    replay.map = "Void Launch".to_string();
-    replay.result = "Victory".to_string();
-    replay.difficulty = "Brutal".to_string();
+    replay.set_file(format!("fixtures/replays/{file_suffix}.SC2Replay"));
+    replay.set_date(parse_replay_timestamp_seconds(date).expect("date should parse"));
+    replay.set_map("Void Launch");
+    replay.set_result("Victory");
+    replay.set_difficulty("Brutal");
     replay
 }
 
@@ -141,7 +137,7 @@ fn cache_entry_uses_recorded_replay_timestamp() {
     let replay = replay_info_from_cache_entry(&entry);
 
     assert_eq!(
-        replay.date,
+        replay.date(),
         parse_replay_timestamp_seconds("2018:12:31:21:44:38")
             .expect("recorded replay timestamp should parse")
     );
@@ -162,5 +158,5 @@ fn filter_replays_for_stats_uses_strict_maxdate_boundary() {
     );
 
     assert_eq!(filtered.len(), 1);
-    assert_eq!(filtered[0].file, "fixtures/replays/included.SC2Replay");
+    assert_eq!(filtered[0].file(), "fixtures/replays/included.SC2Replay");
 }

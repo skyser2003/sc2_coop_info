@@ -4,21 +4,15 @@ use sco_tauri_overlay::{ReplayChatMessage, ReplayInfo, ReplayPlayerInfo};
 #[test]
 fn replay_chat_payload_uses_slot_names_and_sanitizes_messages() {
     let mut replay = ReplayInfo::with_players(
-        ReplayPlayerInfo {
-            name: "Slot One".to_string(),
-            ..ReplayPlayerInfo::default()
-        },
-        ReplayPlayerInfo {
-            name: "Slot Two".to_string(),
-            ..ReplayPlayerInfo::default()
-        },
+        ReplayPlayerInfo::default().with_name("Slot One"),
+        ReplayPlayerInfo::default().with_name("Slot Two"),
         0,
     );
-    replay.file = test_replay_path("chat.SC2Replay");
-    replay.date = 1_710_000_000;
-    replay.map = "Void Launch".to_string();
-    replay.result = "Victory".to_string();
-    replay.messages = vec![
+    replay.set_file(test_replay_path("chat.SC2Replay"));
+    replay.set_date(1_710_000_000);
+    replay.set_map("Void Launch");
+    replay.set_result("Victory");
+    replay.set_messages(vec![
         ReplayChatMessage {
             player: 1,
             text: "<span>Hello</span>".to_string(),
@@ -29,7 +23,7 @@ fn replay_chat_payload_uses_slot_names_and_sanitizes_messages() {
             text: "gg".to_string(),
             time: -5.0,
         },
-    ];
+    ]);
     let payload = replay.chat_payload();
 
     assert_eq!(payload.slot1_name, "Slot One");
@@ -43,21 +37,14 @@ fn replay_chat_payload_uses_slot_names_and_sanitizes_messages() {
 
 #[test]
 fn replay_chat_payload_returns_empty_slot_names_when_slot_names_are_missing() {
-    let mut replay = ReplayInfo::with_players(
-        ReplayPlayerInfo {
-            ..ReplayPlayerInfo::default()
-        },
-        ReplayPlayerInfo {
-            ..ReplayPlayerInfo::default()
-        },
-        0,
-    );
-    replay.file = test_replay_path("fallback.SC2Replay");
-    replay.messages = vec![ReplayChatMessage {
+    let mut replay =
+        ReplayInfo::with_players(ReplayPlayerInfo::default(), ReplayPlayerInfo::default(), 0);
+    replay.set_file(test_replay_path("fallback.SC2Replay"));
+    replay.set_messages(vec![ReplayChatMessage {
         player: 1,
         text: "ready".to_string(),
         time: 1.0,
-    }];
+    }]);
 
     let payload = replay.chat_payload();
 

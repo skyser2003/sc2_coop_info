@@ -1,6 +1,13 @@
 use sco_tauri_overlay::test_helper::{build_rebuild_snapshot, filter_replays_for_stats};
 use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo};
 
+fn player(name: &str, handle: &str, commander: &str) -> ReplayPlayerInfo {
+    ReplayPlayerInfo::default()
+        .with_name(name)
+        .with_handle(handle)
+        .with_commander(commander)
+}
+
 fn replay_with_players(
     file_name: &str,
     result: &str,
@@ -10,11 +17,11 @@ fn replay_with_players(
     slot2: ReplayPlayerInfo,
 ) -> ReplayInfo {
     let mut replay = ReplayInfo::with_players(slot1, slot2, 0);
-    replay.file = format!("fixtures/replays/{file_name}.SC2Replay");
-    replay.map = "Void Launch".to_string();
-    replay.result = result.to_string();
-    replay.difficulty = difficulty.to_string();
-    replay.brutal_plus = brutal_plus;
+    replay.set_file(format!("fixtures/replays/{file_name}.SC2Replay"));
+    replay.set_map("Void Launch");
+    replay.set_result(result);
+    replay.set_difficulty(difficulty);
+    replay.set_brutal_plus(brutal_plus);
     replay
 }
 
@@ -29,20 +36,8 @@ fn replay_for_checkbox_filter(
         "Victory",
         difficulty,
         brutal_plus,
-        ReplayPlayerInfo {
-            name: "Main".to_string(),
-            handle: p1_handle.to_string(),
-            commander: "Raynor".to_string(),
-            commander_level: 15,
-            ..ReplayPlayerInfo::default()
-        },
-        ReplayPlayerInfo {
-            name: "Ally".to_string(),
-            handle: "1-S2-1-999".to_string(),
-            commander: "Karax".to_string(),
-            commander_level: 15,
-            ..ReplayPlayerInfo::default()
-        },
+        player("Main", p1_handle, "Raynor").with_commander_level(15),
+        player("Ally", "1-S2-1-999", "Karax").with_commander_level(15),
     )
 }
 
@@ -63,24 +58,14 @@ fn replay_for_mastery_filter(
         "Victory",
         "Brutal",
         0,
-        ReplayPlayerInfo {
-            name: "Main".to_string(),
-            handle: "1-S2-1-111".to_string(),
-            commander: "Raynor".to_string(),
-            commander_level: 15,
-            mastery_level: main_mastery_points,
-            masteries: mastery_distribution(main_mastery_points),
-            ..ReplayPlayerInfo::default()
-        },
-        ReplayPlayerInfo {
-            name: "Ally".to_string(),
-            handle: "1-S2-1-999".to_string(),
-            commander: "Karax".to_string(),
-            commander_level: 15,
-            mastery_level: ally_mastery_points,
-            masteries: mastery_distribution(ally_mastery_points),
-            ..ReplayPlayerInfo::default()
-        },
+        player("Main", "1-S2-1-111", "Raynor")
+            .with_commander_level(15)
+            .with_mastery_level(main_mastery_points)
+            .with_masteries(mastery_distribution(main_mastery_points)),
+        player("Ally", "1-S2-1-999", "Karax")
+            .with_commander_level(15)
+            .with_mastery_level(ally_mastery_points)
+            .with_masteries(mastery_distribution(ally_mastery_points)),
     )
 }
 
@@ -90,20 +75,8 @@ fn replay_for_result_filter(file_name: &str, result: &str) -> ReplayInfo {
         result,
         "Brutal",
         0,
-        ReplayPlayerInfo {
-            name: "Main".to_string(),
-            handle: "1-S2-1-111".to_string(),
-            commander: "Raynor".to_string(),
-            commander_level: 15,
-            ..ReplayPlayerInfo::default()
-        },
-        ReplayPlayerInfo {
-            name: "Ally".to_string(),
-            handle: "1-S2-1-999".to_string(),
-            commander: "Karax".to_string(),
-            commander_level: 15,
-            ..ReplayPlayerInfo::default()
-        },
+        player("Main", "1-S2-1-111", "Raynor").with_commander_level(15),
+        player("Ally", "1-S2-1-999", "Karax").with_commander_level(15),
     )
 }
 
@@ -113,20 +86,8 @@ fn replay_for_ally_level_filter(file_name: &str, ally_commander_level: u64) -> R
         "Victory",
         "Brutal",
         0,
-        ReplayPlayerInfo {
-            name: "Main".to_string(),
-            handle: "1-S2-1-111".to_string(),
-            commander: "Raynor".to_string(),
-            commander_level: 15,
-            ..ReplayPlayerInfo::default()
-        },
-        ReplayPlayerInfo {
-            name: "Ally".to_string(),
-            handle: "1-S2-1-999".to_string(),
-            commander: "Karax".to_string(),
-            commander_level: ally_commander_level,
-            ..ReplayPlayerInfo::default()
-        },
+        player("Main", "1-S2-1-111", "Raynor").with_commander_level(15),
+        player("Ally", "1-S2-1-999", "Karax").with_commander_level(ally_commander_level),
     )
 }
 
@@ -144,7 +105,7 @@ fn filter_replays_for_stats_decodes_checkbox_filter_lists_from_query_string() {
     );
 
     assert_eq!(filtered.len(), 1);
-    assert_eq!(filtered[0].file, "fixtures/replays/na_brutal.SC2Replay");
+    assert_eq!(filtered[0].file(), "fixtures/replays/na_brutal.SC2Replay");
 }
 
 #[test]
@@ -160,7 +121,10 @@ fn filter_replays_for_stats_decodes_brutal_plus_checkbox_values() {
     );
 
     assert_eq!(filtered.len(), 1);
-    assert_eq!(filtered[0].file, "fixtures/replays/plain_brutal.SC2Replay");
+    assert_eq!(
+        filtered[0].file(),
+        "fixtures/replays/plain_brutal.SC2Replay"
+    );
 }
 
 #[test]
@@ -175,11 +139,11 @@ fn filter_replays_for_stats_can_limit_results_to_main_normal_mastery_games() {
 
     assert_eq!(filtered.len(), 2);
     assert_eq!(
-        filtered[0].file,
+        filtered[0].file(),
         "fixtures/replays/main_normal_90.SC2Replay"
     );
     assert_eq!(
-        filtered[1].file,
+        filtered[1].file(),
         "fixtures/replays/main_normal_60.SC2Replay"
     );
 }
@@ -196,11 +160,11 @@ fn filter_replays_for_stats_can_limit_results_to_ally_abnormal_mastery_games() {
 
     assert_eq!(filtered.len(), 2);
     assert_eq!(
-        filtered[0].file,
+        filtered[0].file(),
         "fixtures/replays/ally_abnormal_91.SC2Replay"
     );
     assert_eq!(
-        filtered[1].file,
+        filtered[1].file(),
         "fixtures/replays/ally_abnormal_120.SC2Replay"
     );
 }
@@ -215,7 +179,7 @@ fn filter_replays_for_stats_can_limit_results_to_losses() {
     let filtered = filter_replays_for_stats("/config/stats?include_wins=0", &replays);
 
     assert_eq!(filtered.len(), 1);
-    assert_eq!(filtered[0].file, "fixtures/replays/loss.SC2Replay");
+    assert_eq!(filtered[0].file(), "fixtures/replays/loss.SC2Replay");
 }
 
 #[test]
@@ -228,7 +192,7 @@ fn filter_replays_for_stats_can_limit_results_to_ally_levels_1_14() {
     let filtered = filter_replays_for_stats("/config/stats?ally_over_15=0", &replays);
 
     assert_eq!(filtered.len(), 1);
-    assert_eq!(filtered[0].file, "fixtures/replays/ally_low.SC2Replay");
+    assert_eq!(filtered[0].file(), "fixtures/replays/ally_low.SC2Replay");
 }
 
 #[test]
@@ -239,66 +203,36 @@ fn filter_replays_for_stats_uses_or_logic_within_main_level_group() {
             "Victory",
             "Brutal",
             0,
-            ReplayPlayerInfo {
-                name: "Main".to_string(),
-                handle: "1-S2-1-111".to_string(),
-                commander: "Raynor".to_string(),
-                commander_level: 10,
-                masteries: vec![30, 30, 30, 0, 0, 0],
-                ..ReplayPlayerInfo::default()
-            },
-            ReplayPlayerInfo {
-                name: "Ally".to_string(),
-                handle: "1-S2-1-999".to_string(),
-                commander: "Karax".to_string(),
-                commander_level: 15,
-                masteries: vec![0, 0, 0, 0, 0, 0],
-                ..ReplayPlayerInfo::default()
-            },
+            player("Main", "1-S2-1-111", "Raynor")
+                .with_commander_level(10)
+                .with_masteries(vec![30, 30, 30, 0, 0, 0]),
+            player("Ally", "1-S2-1-999", "Karax")
+                .with_commander_level(15)
+                .with_masteries(vec![0, 0, 0, 0, 0, 0]),
         ),
         replay_with_players(
             "main_group_high_level_match",
             "Victory",
             "Brutal",
             0,
-            ReplayPlayerInfo {
-                name: "Main".to_string(),
-                handle: "1-S2-1-111".to_string(),
-                commander: "Raynor".to_string(),
-                commander_level: 15,
-                masteries: vec![30, 30, 30, 0, 0, 0],
-                ..ReplayPlayerInfo::default()
-            },
-            ReplayPlayerInfo {
-                name: "Ally".to_string(),
-                handle: "1-S2-1-999".to_string(),
-                commander: "Karax".to_string(),
-                commander_level: 15,
-                masteries: vec![0, 0, 0, 0, 0, 0],
-                ..ReplayPlayerInfo::default()
-            },
+            player("Main", "1-S2-1-111", "Raynor")
+                .with_commander_level(15)
+                .with_masteries(vec![30, 30, 30, 0, 0, 0]),
+            player("Ally", "1-S2-1-999", "Karax")
+                .with_commander_level(15)
+                .with_masteries(vec![0, 0, 0, 0, 0, 0]),
         ),
         replay_with_players(
             "main_group_no_match",
             "Victory",
             "Brutal",
             0,
-            ReplayPlayerInfo {
-                name: "Main".to_string(),
-                handle: "1-S2-1-111".to_string(),
-                commander: "Raynor".to_string(),
-                commander_level: 15,
-                masteries: vec![91, 91, 91, 0, 0, 0],
-                ..ReplayPlayerInfo::default()
-            },
-            ReplayPlayerInfo {
-                name: "Ally".to_string(),
-                handle: "1-S2-1-999".to_string(),
-                commander: "Karax".to_string(),
-                commander_level: 15,
-                masteries: vec![0, 0, 0, 0, 0, 0],
-                ..ReplayPlayerInfo::default()
-            },
+            player("Main", "1-S2-1-111", "Raynor")
+                .with_commander_level(15)
+                .with_masteries(vec![91, 91, 91, 0, 0, 0]),
+            player("Ally", "1-S2-1-999", "Karax")
+                .with_commander_level(15)
+                .with_masteries(vec![0, 0, 0, 0, 0, 0]),
         ),
     ];
 
@@ -309,11 +243,11 @@ fn filter_replays_for_stats_uses_or_logic_within_main_level_group() {
 
     assert_eq!(filtered.len(), 2);
     assert_eq!(
-        filtered[0].file,
+        filtered[0].file(),
         "fixtures/replays/main_group_level_match.SC2Replay"
     );
     assert_eq!(
-        filtered[1].file,
+        filtered[1].file(),
         "fixtures/replays/main_group_high_level_match.SC2Replay"
     );
 }
@@ -327,26 +261,16 @@ fn abnormal_main_mastery_filter_updates_fastest_map_payload() {
                 "Victory",
                 "Brutal",
                 0,
-                ReplayPlayerInfo {
-                    name: "Main".to_string(),
-                    handle: "1-S2-1-111".to_string(),
-                    commander: "Raynor".to_string(),
-                    commander_level: 15,
-                    mastery_level: 90,
-                    masteries: vec![30, 0, 30, 0, 30, 0],
-                    ..ReplayPlayerInfo::default()
-                },
-                ReplayPlayerInfo {
-                    name: "Ally".to_string(),
-                    handle: "1-S2-1-999".to_string(),
-                    commander: "Karax".to_string(),
-                    commander_level: 15,
-                    mastery_level: 200,
-                    masteries: vec![30, 0, 30, 0, 140, 0],
-                    ..ReplayPlayerInfo::default()
-                },
+                player("Main", "1-S2-1-111", "Raynor")
+                    .with_commander_level(15)
+                    .with_mastery_level(90)
+                    .with_masteries(vec![30, 0, 30, 0, 30, 0]),
+                player("Ally", "1-S2-1-999", "Karax")
+                    .with_commander_level(15)
+                    .with_mastery_level(200)
+                    .with_masteries(vec![30, 0, 30, 0, 140, 0]),
             );
-            replay.accurate_length = 500.0;
+            replay.set_accurate_length(500.0);
             replay
         },
         {
@@ -355,26 +279,16 @@ fn abnormal_main_mastery_filter_updates_fastest_map_payload() {
                 "Victory",
                 "Brutal",
                 0,
-                ReplayPlayerInfo {
-                    name: "Legacy Main".to_string(),
-                    handle: "1-S2-1-222".to_string(),
-                    commander: "Raynor".to_string(),
-                    commander_level: 15,
-                    mastery_level: 91,
-                    masteries: vec![30, 0, 30, 0, 31, 0],
-                    ..ReplayPlayerInfo::default()
-                },
-                ReplayPlayerInfo {
-                    name: "Legacy Ally".to_string(),
-                    handle: "1-S2-1-333".to_string(),
-                    commander: "Karax".to_string(),
-                    commander_level: 15,
-                    mastery_level: 0,
-                    masteries: vec![0, 0, 0, 0, 0, 0],
-                    ..ReplayPlayerInfo::default()
-                },
+                player("Legacy Main", "1-S2-1-222", "Raynor")
+                    .with_commander_level(15)
+                    .with_mastery_level(91)
+                    .with_masteries(vec![30, 0, 30, 0, 31, 0]),
+                player("Legacy Ally", "1-S2-1-333", "Karax")
+                    .with_commander_level(15)
+                    .with_mastery_level(0)
+                    .with_masteries(vec![0, 0, 0, 0, 0, 0]),
             );
-            replay.accurate_length = 600.0;
+            replay.set_accurate_length(600.0);
             replay
         },
     ];
@@ -382,7 +296,7 @@ fn abnormal_main_mastery_filter_updates_fastest_map_payload() {
     let filtered = filter_replays_for_stats("/config/stats?main_normal_mastery=0", &replays);
     let snapshot = build_rebuild_snapshot(&filtered, false);
     let fastest = snapshot
-        .analysis
+        .analysis()
         .get("MapData")
         .and_then(serde_json::Value::as_object)
         .and_then(|maps| maps.get("Void Launch"))

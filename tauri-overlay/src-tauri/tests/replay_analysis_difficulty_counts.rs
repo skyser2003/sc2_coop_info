@@ -89,12 +89,12 @@ fn replay_info_from_cache_entry_preserves_mixed_difficulty_label() {
         replay_info_from_cache_entry(&sample_cache_entry("Hard/Brutal", ("Hard", "Brutal")));
     let brutal = replay_info_from_cache_entry(&sample_cache_entry("Brutal", ("Brutal", "Brutal")));
 
-    assert_eq!(mixed.difficulty, "Hard/Brutal");
-    assert_eq!(brutal.difficulty, "Brutal");
+    assert_eq!(mixed.difficulty(), "Hard/Brutal");
+    assert_eq!(brutal.difficulty(), "Brutal");
 
     let snapshot = build_rebuild_snapshot(&[mixed, brutal], false);
     let difficulty_data = snapshot
-        .analysis
+        .analysis()
         .get("DifficultyData")
         .and_then(Value::as_object)
         .expect("difficulty data should exist");

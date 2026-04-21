@@ -7,39 +7,35 @@ use serde_json::{json, Value};
 
 fn sanitized_stats_replay() -> ReplayInfo {
     let mut replay = ReplayInfo::with_players(
-        ReplayPlayerInfo {
-            name: "<b>Main Player</b>".to_string(),
-            handle: "1-S2-1-111".to_string(),
-            apm: 150,
-            kills: 30,
-            commander: "<b>Raynor</b>".to_string(),
-            commander_level: 15,
-            mastery_level: 90,
-            masteries: vec![30, 60, 30, 60, 30, 60],
-            ..ReplayPlayerInfo::default()
-        },
-        ReplayPlayerInfo {
-            name: "<i>Ally Player</i>".to_string(),
-            handle: "2-S2-1-222".to_string(),
-            apm: 120,
-            kills: 10,
-            commander: "<i>Karax</i>".to_string(),
-            commander_level: 15,
-            mastery_level: 90,
-            masteries: vec![60, 30, 60, 30, 60, 30],
-            ..ReplayPlayerInfo::default()
-        },
+        ReplayPlayerInfo::default()
+            .with_name("<b>Main Player</b>")
+            .with_handle("1-S2-1-111")
+            .with_apm(150)
+            .with_kills(30)
+            .with_commander("<b>Raynor</b>")
+            .with_commander_level(15)
+            .with_mastery_level(90)
+            .with_masteries(vec![30, 60, 30, 60, 30, 60]),
+        ReplayPlayerInfo::default()
+            .with_name("<i>Ally Player</i>")
+            .with_handle("2-S2-1-222")
+            .with_apm(120)
+            .with_kills(10)
+            .with_commander("<i>Karax</i>")
+            .with_commander_level(15)
+            .with_mastery_level(90)
+            .with_masteries(vec![60, 30, 60, 30, 60, 30]),
         0,
     );
-    replay.file = "fixtures/replays/example.SC2Replay".to_string();
-    replay.date = 1_741_510_400;
-    replay.map = canonicalize_map_id("Void Launch").expect("map id should resolve");
-    replay.result = "Victory".to_string();
-    replay.difficulty = "<b>Brutal</b>".to_string();
-    replay.enemy = "<span>Zerg</span>".to_string();
-    replay.accurate_length = 600.0;
-    replay.weekly = true;
-    replay.weekly_name = Some("<b>Mutation #1</b>".to_string());
+    replay.set_file("fixtures/replays/example.SC2Replay");
+    replay.set_date(1_741_510_400);
+    replay.set_map(canonicalize_map_id("Void Launch").expect("map id should resolve"));
+    replay.set_result("Victory");
+    replay.set_difficulty("<b>Brutal</b>");
+    replay.set_enemy("<span>Zerg</span>");
+    replay.set_accurate_length(600.0);
+    replay.set_weekly(true);
+    replay.set_weekly_name(Some("<b>Mutation #1</b>".to_string()));
     replay
 }
 

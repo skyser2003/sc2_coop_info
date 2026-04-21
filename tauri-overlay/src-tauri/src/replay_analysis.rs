@@ -3410,9 +3410,7 @@ impl ReplayAnalysis {
         scan_progress.set_stage("collecting_paths");
         let all_paths = Self::collect_replay_paths(&root, limit);
         let all_paths_len = all_paths.len();
-        scan_progress
-            .total
-            .store(all_paths_len as u64, Ordering::Release);
+        scan_progress.set_total(all_paths_len as u64);
 
         // Filter paths to only those not in cache
         let paths_to_parse: Vec<PathBuf> = all_paths
@@ -3424,13 +3422,8 @@ impl ReplayAnalysis {
             .collect();
 
         let paths_to_parse_len = paths_to_parse.len();
-        scan_progress
-            .to_parse
-            .store(paths_to_parse_len as u64, Ordering::Release);
-        scan_progress.cache_hits.store(
-            (all_paths_len - paths_to_parse_len) as u64,
-            Ordering::Release,
-        );
+        scan_progress.set_to_parse(paths_to_parse_len as u64);
+        scan_progress.set_cache_hits((all_paths_len - paths_to_parse_len) as u64);
 
         crate::sco_log!(
             "[SCO/replay] collected {} path(s) in {}ms, {} already cached, parsing {}",
@@ -3461,10 +3454,8 @@ impl ReplayAnalysis {
             cache_entry: Option<CacheReplayEntry>,
         }
 
-        scan_progress.cache_hits.store(0, Ordering::Release);
-        scan_progress
-            .to_parse
-            .store(paths_to_parse_len as u64, Ordering::Release);
+        scan_progress.set_cache_hits(0);
+        scan_progress.set_to_parse(paths_to_parse_len as u64);
 
         let parse_started_at = Instant::now();
         scan_progress.set_stage("parsing_replays");
@@ -3489,14 +3480,14 @@ impl ReplayAnalysis {
                         let (replay, cache_entry) = match parsed {
                             Ok((replay, cache_entry)) => (replay, cache_entry),
                             Err(_) => {
-                                progress.completed.fetch_add(1, Ordering::AcqRel);
-                                progress.failed.fetch_add(1, Ordering::AcqRel);
+                                progress.increment_completed();
+                                progress.increment_failed();
                                 return Err(path.to_string_lossy().to_string());
                             }
                         };
                         let oriented = replay.oriented_for_main_identity(main_names, main_handles);
-                        progress.completed.fetch_add(1, Ordering::AcqRel);
-                        progress.newly_parsed.fetch_add(1, Ordering::AcqRel);
+                        progress.increment_completed();
+                        progress.increment_newly_parsed();
                         Ok(ParseResult {
                             replay: oriented,
                             cache_entry,
@@ -3523,10 +3514,8 @@ impl ReplayAnalysis {
         }
 
         let failed_to_parse = failed_to_parse.len();
-        scan_progress
-            .failed
-            .store(failed_to_parse as u64, Ordering::Release);
-        scan_progress.parse_skipped.store(0, Ordering::Release);
+        scan_progress.set_failed(failed_to_parse as u64);
+        scan_progress.set_parse_skipped(0);
 
         crate::sco_log!(
             "[SCO/replay] parsed {} replay(s) with rayon in {}ms (threads={worker_threads})",

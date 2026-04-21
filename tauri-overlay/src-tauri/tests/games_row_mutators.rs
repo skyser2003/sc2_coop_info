@@ -5,10 +5,10 @@ use serde_json::json;
 #[test]
 fn games_rows_include_mutators_and_mutation_flag() {
     let mut replay = ReplayInfo::default();
-    replay.file = test_replay_path("mutation.SC2Replay");
-    replay.difficulty = "Brutal".to_string();
-    replay.mutators = vec!["Barrier".to_string()];
-    replay.weekly = true;
+    replay.set_file(test_replay_path("mutation.SC2Replay"));
+    replay.set_difficulty("Brutal");
+    replay.set_mutators(vec!["Barrier".to_string()]);
+    replay.set_weekly(true);
 
     let row = replay.as_games_row();
 

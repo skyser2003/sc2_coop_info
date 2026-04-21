@@ -27,10 +27,7 @@ fn parse_detailed_analysis_progress_counts_reads_completion_line() {
 
 #[test]
 fn prepare_startup_analysis_request_marks_once_and_preserves_existing_status() {
-    let mut stats = StatsState {
-        detailed_analysis_atstart: true,
-        ..StatsState::default()
-    };
+    let mut stats = StatsState::default().with_detailed_analysis_atstart(true);
 
     let first = prepare_startup_analysis_request(&mut stats, StartupAnalysisTrigger::Setup);
 
@@ -41,13 +38,13 @@ fn prepare_startup_analysis_request_marks_once_and_preserves_existing_status() {
             started: true,
         }
     );
-    assert!(stats.startup_analysis_requested);
+    assert!(stats.startup_analysis_requested());
     assert_eq!(
-        stats.message,
+        stats.message(),
         "Detailed analysis: startup requested while the frontend loads."
     );
 
-    stats.message = "Detailed analysis: generating cache.".to_string();
+    stats.set_message("Detailed analysis: generating cache.");
 
     let second =
         prepare_startup_analysis_request(&mut stats, StartupAnalysisTrigger::FrontendReady);
@@ -59,15 +56,12 @@ fn prepare_startup_analysis_request_marks_once_and_preserves_existing_status() {
             started: false,
         }
     );
-    assert_eq!(stats.message, "Detailed analysis: generating cache.");
+    assert_eq!(stats.message(), "Detailed analysis: generating cache.");
 }
 
 #[test]
 fn backend_state_flags_are_instance_local() {
-    let disabled_logging = AppSettings {
-        enable_logging: false,
-        ..AppSettings::default()
-    };
+    let disabled_logging = AppSettings::default().with_enable_logging(false);
 
     let first = BackendState::new_with_settings(disabled_logging);
     let second = BackendState::new();
@@ -85,16 +79,13 @@ fn backend_state_flags_are_instance_local() {
 
 #[test]
 fn replace_active_settings_updates_file_logging_flag() {
-    let settings = AppSettings {
-        enable_logging: false,
-        ..AppSettings::default()
-    };
+    let settings = AppSettings::default().with_enable_logging(false);
 
     let state = BackendState::new_with_settings(settings);
     assert!(!state.file_logging_enabled());
 
     let mut next = state.read_settings_memory();
-    next.enable_logging = true;
+    next.set_enable_logging(true);
     state.replace_active_settings(&next);
 
     assert!(state.file_logging_enabled());

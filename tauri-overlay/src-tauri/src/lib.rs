@@ -13,7 +13,6 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering;
 use std::sync::{mpsc, Arc, Mutex, TryLockError};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -320,8 +319,8 @@ fn apply_runtime_settings(
         overlay_info::sync_overlay_runtime_settings(app);
     }
 
-    let previous_show_charts = previous_settings.show_charts;
-    let show_charts = next_settings.show_charts;
+    let previous_show_charts = previous_settings.show_charts();
+    let show_charts = next_settings.show_charts();
     if show_charts != previous_show_charts {
         let _ = app.emit(
             overlay_info::OVERLAY_SET_SHOW_CHARTS_FROM_CONFIG_EVENT,
@@ -346,8 +345,8 @@ fn apply_runtime_settings(
         performance_overlay::apply_settings(app);
     }
 
-    if let Ok(mut stats) = app.state::<BackendState>().stats.lock() {
-        stats.detailed_analysis_atstart = next_settings.detailed_analysis_atstart;
+    if let Ok(mut stats) = app.state::<BackendState>().stats_handle().lock() {
+        stats.detailed_analysis_atstart = next_settings.detailed_analysis_atstart();
     }
 }
 
@@ -504,47 +503,190 @@ pub struct GamesRowPayload {
 
 #[derive(Clone, Default)]
 pub struct ReplayInfo {
-    pub file: String,
-    pub date: u64,
-    pub map: String,
-    pub result: String,
-    pub difficulty: String,
-    pub enemy: String,
-    pub length: u64,
-    pub accurate_length: f64,
+    file: String,
+    date: u64,
+    map: String,
+    result: String,
+    difficulty: String,
+    enemy: String,
+    length: u64,
+    accurate_length: f64,
     slot1: ReplayPlayerInfo,
     slot2: ReplayPlayerInfo,
     main_slot: usize,
-    pub amon_units: Value,
-    pub player_stats: Value,
-    pub extension: bool,
-    pub brutal_plus: u64,
-    pub weekly: bool,
-    pub weekly_name: Option<String>,
-    pub mutators: Vec<String>,
-    pub comp: String,
-    pub bonus: Vec<u64>,
-    pub bonus_total: Option<u64>,
-    pub messages: Vec<ReplayChatMessage>,
-    pub is_detailed: bool,
+    amon_units: Value,
+    player_stats: Value,
+    extension: bool,
+    brutal_plus: u64,
+    weekly: bool,
+    weekly_name: Option<String>,
+    mutators: Vec<String>,
+    comp: String,
+    bonus: Vec<u64>,
+    bonus_total: Option<u64>,
+    messages: Vec<ReplayChatMessage>,
+    is_detailed: bool,
 }
 
 #[derive(Clone, Default)]
 pub struct ReplayPlayerInfo {
-    pub name: String,
-    pub handle: String,
-    pub apm: u64,
-    pub kills: u64,
-    pub commander: String,
-    pub commander_level: u64,
-    pub mastery_level: u64,
-    pub prestige: u64,
-    pub masteries: Vec<u64>,
-    pub units: Value,
-    pub icons: Value,
+    name: String,
+    handle: String,
+    apm: u64,
+    kills: u64,
+    commander: String,
+    commander_level: u64,
+    mastery_level: u64,
+    prestige: u64,
+    masteries: Vec<u64>,
+    units: Value,
+    icons: Value,
 }
 
 impl ReplayPlayerInfo {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn handle(&self) -> &str {
+        &self.handle
+    }
+
+    pub fn apm(&self) -> u64 {
+        self.apm
+    }
+
+    pub fn kills(&self) -> u64 {
+        self.kills
+    }
+
+    pub fn commander(&self) -> &str {
+        &self.commander
+    }
+
+    pub fn commander_level(&self) -> u64 {
+        self.commander_level
+    }
+
+    pub fn mastery_level(&self) -> u64 {
+        self.mastery_level
+    }
+
+    pub fn prestige(&self) -> u64 {
+        self.prestige
+    }
+
+    pub fn masteries(&self) -> &[u64] {
+        &self.masteries
+    }
+
+    pub fn units(&self) -> &Value {
+        &self.units
+    }
+
+    pub fn icons(&self) -> &Value {
+        &self.icons
+    }
+
+    pub fn set_name(&mut self, value: impl Into<String>) {
+        self.name = value.into();
+    }
+
+    pub fn with_name(mut self, value: impl Into<String>) -> Self {
+        self.set_name(value);
+        self
+    }
+
+    pub fn set_handle(&mut self, value: impl Into<String>) {
+        self.handle = value.into();
+    }
+
+    pub fn with_handle(mut self, value: impl Into<String>) -> Self {
+        self.set_handle(value);
+        self
+    }
+
+    pub fn set_apm(&mut self, value: u64) {
+        self.apm = value;
+    }
+
+    pub fn with_apm(mut self, value: u64) -> Self {
+        self.set_apm(value);
+        self
+    }
+
+    pub fn set_kills(&mut self, value: u64) {
+        self.kills = value;
+    }
+
+    pub fn with_kills(mut self, value: u64) -> Self {
+        self.set_kills(value);
+        self
+    }
+
+    pub fn set_commander(&mut self, value: impl Into<String>) {
+        self.commander = value.into();
+    }
+
+    pub fn with_commander(mut self, value: impl Into<String>) -> Self {
+        self.set_commander(value);
+        self
+    }
+
+    pub fn set_commander_level(&mut self, value: u64) {
+        self.commander_level = value;
+    }
+
+    pub fn with_commander_level(mut self, value: u64) -> Self {
+        self.set_commander_level(value);
+        self
+    }
+
+    pub fn set_mastery_level(&mut self, value: u64) {
+        self.mastery_level = value;
+    }
+
+    pub fn with_mastery_level(mut self, value: u64) -> Self {
+        self.set_mastery_level(value);
+        self
+    }
+
+    pub fn set_prestige(&mut self, value: u64) {
+        self.prestige = value;
+    }
+
+    pub fn with_prestige(mut self, value: u64) -> Self {
+        self.set_prestige(value);
+        self
+    }
+
+    pub fn set_masteries(&mut self, value: Vec<u64>) {
+        self.masteries = value;
+    }
+
+    pub fn with_masteries(mut self, value: Vec<u64>) -> Self {
+        self.set_masteries(value);
+        self
+    }
+
+    pub fn set_units(&mut self, value: Value) {
+        self.units = value;
+    }
+
+    pub fn with_units(mut self, value: Value) -> Self {
+        self.set_units(value);
+        self
+    }
+
+    pub fn set_icons(&mut self, value: Value) {
+        self.icons = value;
+    }
+
+    pub fn with_icons(mut self, value: Value) -> Self {
+        self.set_icons(value);
+        self
+    }
+
     fn sanitized_for_client(&self) -> Self {
         Self {
             name: sanitize_replay_text(&self.name),
@@ -620,6 +762,166 @@ impl ReplayInfo {
 
     pub fn slot2(&self) -> &ReplayPlayerInfo {
         &self.slot2
+    }
+
+    pub fn file(&self) -> &str {
+        &self.file
+    }
+
+    pub fn date(&self) -> u64 {
+        self.date
+    }
+
+    pub fn map(&self) -> &str {
+        &self.map
+    }
+
+    pub fn result(&self) -> &str {
+        &self.result
+    }
+
+    pub fn difficulty(&self) -> &str {
+        &self.difficulty
+    }
+
+    pub fn enemy(&self) -> &str {
+        &self.enemy
+    }
+
+    pub fn length(&self) -> u64 {
+        self.length
+    }
+
+    pub fn accurate_length(&self) -> f64 {
+        self.accurate_length
+    }
+
+    pub fn amon_units(&self) -> &Value {
+        &self.amon_units
+    }
+
+    pub fn player_stats(&self) -> &Value {
+        &self.player_stats
+    }
+
+    pub fn extension(&self) -> bool {
+        self.extension
+    }
+
+    pub fn brutal_plus(&self) -> u64 {
+        self.brutal_plus
+    }
+
+    pub fn weekly(&self) -> bool {
+        self.weekly
+    }
+
+    pub fn weekly_name(&self) -> Option<&str> {
+        self.weekly_name.as_deref()
+    }
+
+    pub fn mutators(&self) -> &[String] {
+        &self.mutators
+    }
+
+    pub fn comp(&self) -> &str {
+        &self.comp
+    }
+
+    pub fn bonus(&self) -> &[u64] {
+        &self.bonus
+    }
+
+    pub fn bonus_total(&self) -> Option<u64> {
+        self.bonus_total
+    }
+
+    pub fn messages(&self) -> &[ReplayChatMessage] {
+        &self.messages
+    }
+
+    pub fn is_detailed(&self) -> bool {
+        self.is_detailed
+    }
+
+    pub fn set_file(&mut self, value: impl Into<String>) {
+        self.file = value.into();
+    }
+
+    pub fn set_date(&mut self, value: u64) {
+        self.date = value;
+    }
+
+    pub fn set_map(&mut self, value: impl Into<String>) {
+        self.map = value.into();
+    }
+
+    pub fn set_result(&mut self, value: impl Into<String>) {
+        self.result = value.into();
+    }
+
+    pub fn set_difficulty(&mut self, value: impl Into<String>) {
+        self.difficulty = value.into();
+    }
+
+    pub fn set_enemy(&mut self, value: impl Into<String>) {
+        self.enemy = value.into();
+    }
+
+    pub fn set_length(&mut self, value: u64) {
+        self.length = value;
+    }
+
+    pub fn set_accurate_length(&mut self, value: f64) {
+        self.accurate_length = value;
+    }
+
+    pub fn set_amon_units(&mut self, value: Value) {
+        self.amon_units = value;
+    }
+
+    pub fn set_player_stats(&mut self, value: Value) {
+        self.player_stats = value;
+    }
+
+    pub fn set_extension(&mut self, value: bool) {
+        self.extension = value;
+    }
+
+    pub fn set_brutal_plus(&mut self, value: u64) {
+        self.brutal_plus = value;
+    }
+
+    pub fn set_weekly(&mut self, value: bool) {
+        self.weekly = value;
+    }
+
+    pub fn set_weekly_name(&mut self, value: Option<String>) {
+        self.weekly_name = value;
+    }
+
+    pub fn set_mutators(&mut self, value: Vec<String>) {
+        self.mutators = value;
+    }
+
+    pub fn set_comp(&mut self, value: impl Into<String>) {
+        self.comp = value.into();
+    }
+
+    pub fn set_bonus(&mut self, value: Vec<u64>) {
+        self.bonus = value;
+    }
+
+    pub fn set_bonus_total(&mut self, value: Option<u64>) {
+        self.bonus_total = value;
+    }
+
+    pub fn set_messages(&mut self, value: Vec<ReplayChatMessage>) {
+        self.messages = value;
+    }
+
+    pub fn set_is_detailed(&mut self, value: bool) {
+        self.is_detailed = value;
     }
 
     pub fn main_index(&self) -> usize {
@@ -2403,9 +2705,7 @@ fn spawn_analysis_task(
         let current_replay_files =
             settings_for_thread.current_replay_files_snapshot(UNLIMITED_REPLAY_LIMIT);
         if include_detailed && !detailed_completed {
-            replay_scan_progress_for_thread
-                .total
-                .store(current_replay_files.len() as u64, Ordering::Release);
+            replay_scan_progress_for_thread.set_total(current_replay_files.len() as u64);
         }
         update_analysis_replay_cache_slots(&all_replays, &shared_replay_cache_slot);
         if let Ok(mut current_files) = current_replay_files_slot.lock() {
@@ -3177,7 +3477,7 @@ fn process_new_replay_path(
     state.upsert_replay_in_memory_cache(&replay_hash, &replay);
     state.record_session_result(&replay.result);
     let settings = state.read_settings_memory();
-    let show_replay_info_after_game = settings.show_replay_info_after_game;
+    let show_replay_info_after_game = settings.show_replay_info_after_game();
 
     if show_replay_info_after_game {
         crate::sco_log!(
@@ -3185,17 +3485,13 @@ fn process_new_replay_path(
             replay.file
         );
         overlay_info::emit_replay_to_overlay_from_replay(app, &replay, true);
-        state
-            .overlay_replay_data_active
-            .store(true, Ordering::Release);
+        state.set_overlay_replay_data_active(true);
     } else {
         crate::sco_log!(
             "[SCO/watch] replay overlay suppressed by settings file='{}'",
             replay.file
         );
-        state
-            .overlay_replay_data_active
-            .store(false, Ordering::Release);
+        state.set_overlay_replay_data_active(false);
     }
 
     if let Some(cache_entry) = cache_entry {
@@ -3557,7 +3853,7 @@ fn spawn_game_launch_player_stats_task(app: tauri::AppHandle<Wry>) {
 
             let state = app.state::<BackendState>();
             let settings = state.read_settings_memory();
-            let show_player_stats_popups = settings.show_player_winrates;
+            let show_player_stats_popups = settings.show_player_winrates();
             if !show_player_stats_popups {
                 continue;
             }
@@ -3839,30 +4135,30 @@ fn request_clean_exit(app: &AppHandle<Wry>, exit_code: i32) {
 
 #[derive(Debug)]
 pub struct StatsState {
-    pub ready: bool,
-    pub analysis: Option<Value>,
-    pub games: u64,
-    pub main_players: Vec<String>,
-    pub main_handles: Vec<String>,
-    pub startup_analysis_requested: bool,
-    pub analysis_running: bool,
-    pub analysis_running_mode: Option<AnalysisMode>,
-    pub simple_analysis_status: String,
-    pub detailed_analysis_status: String,
-    pub detailed_analysis_atstart: bool,
-    pub prestige_names: std::collections::BTreeMap<String, LocalizedLabels>,
-    pub message: String,
+    ready: bool,
+    analysis: Option<Value>,
+    games: u64,
+    main_players: Vec<String>,
+    main_handles: Vec<String>,
+    startup_analysis_requested: bool,
+    analysis_running: bool,
+    analysis_running_mode: Option<AnalysisMode>,
+    simple_analysis_status: String,
+    detailed_analysis_status: String,
+    detailed_analysis_atstart: bool,
+    prestige_names: std::collections::BTreeMap<String, LocalizedLabels>,
+    message: String,
 }
 
 #[derive(Debug, Default)]
 pub struct StatsSnapshot {
-    pub ready: bool,
-    pub games: u64,
-    pub main_players: Vec<String>,
-    pub main_handles: Vec<String>,
-    pub analysis: Value,
-    pub prestige_names: std::collections::BTreeMap<String, LocalizedLabels>,
-    pub message: String,
+    ready: bool,
+    games: u64,
+    main_players: Vec<String>,
+    main_handles: Vec<String>,
+    analysis: Value,
+    prestige_names: std::collections::BTreeMap<String, LocalizedLabels>,
+    message: String,
 }
 
 impl Default for StatsState {
@@ -3891,9 +4187,70 @@ impl Default for StatsState {
 impl StatsState {
     fn from_settings(settings: &AppSettings) -> Self {
         Self {
-            detailed_analysis_atstart: settings.detailed_analysis_atstart,
+            detailed_analysis_atstart: settings.detailed_analysis_atstart(),
             ..Self::default()
         }
+    }
+
+    pub fn ready(&self) -> bool {
+        self.ready
+    }
+
+    pub fn analysis(&self) -> Option<&Value> {
+        self.analysis.as_ref()
+    }
+
+    pub fn analysis_cloned(&self) -> Option<Value> {
+        self.analysis.clone()
+    }
+
+    pub fn games(&self) -> u64 {
+        self.games
+    }
+
+    pub fn main_players(&self) -> &[String] {
+        &self.main_players
+    }
+
+    pub fn main_handles(&self) -> &[String] {
+        &self.main_handles
+    }
+
+    pub fn startup_analysis_requested(&self) -> bool {
+        self.startup_analysis_requested
+    }
+
+    pub fn analysis_running(&self) -> bool {
+        self.analysis_running
+    }
+
+    pub fn detailed_analysis_status(&self) -> &str {
+        &self.detailed_analysis_status
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    pub fn set_ready(&mut self, value: bool) {
+        self.ready = value;
+    }
+
+    pub fn set_analysis(&mut self, value: Option<Value>) {
+        self.analysis = value;
+    }
+
+    pub fn set_message(&mut self, value: impl Into<String>) {
+        self.message = value.into();
+    }
+
+    pub fn set_detailed_analysis_atstart(&mut self, value: bool) {
+        self.detailed_analysis_atstart = value;
+    }
+
+    pub fn with_detailed_analysis_atstart(mut self, value: bool) -> Self {
+        self.set_detailed_analysis_atstart(value);
+        self
     }
 
     pub(crate) fn include_detailed_stats_for_cache(&self, replays: &[ReplayInfo]) -> bool {
@@ -3953,6 +4310,36 @@ impl StatsState {
     fn as_payload_typed(&self, scan_progress: ReplayScanProgressPayload) -> StatsStatePayload {
         serde_json::from_value(self.as_payload(scan_progress))
             .unwrap_or_else(|error| panic!("Failed to convert stats payload: {error}"))
+    }
+}
+
+impl StatsSnapshot {
+    pub fn ready(&self) -> bool {
+        self.ready
+    }
+
+    pub fn games(&self) -> u64 {
+        self.games
+    }
+
+    pub fn main_players(&self) -> &[String] {
+        &self.main_players
+    }
+
+    pub fn main_handles(&self) -> &[String] {
+        &self.main_handles
+    }
+
+    pub fn analysis(&self) -> &Value {
+        &self.analysis
+    }
+
+    pub fn prestige_names(&self) -> &std::collections::BTreeMap<String, LocalizedLabels> {
+        &self.prestige_names
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
     }
 }
 
@@ -4038,7 +4425,7 @@ async fn config_update(
         .and_then(Value::as_bool)
         .unwrap_or(true);
 
-    next_settings.performance_geometry = previous_settings.performance_geometry;
+    next_settings.set_performance_geometry(previous_settings.performance_geometry());
 
     if persist {
         state.write_settings_file(&next_settings)?;
@@ -4128,7 +4515,7 @@ async fn config_players_get(
     let limit = parse_query_usize(&path, "limit", 500);
     let replay_state = state.get_replay_state();
     let replays = match replay_state.try_lock() {
-        Ok(replay_state) => match replay_state.replays.try_lock() {
+        Ok(replay_state) => match replay_state.replays_handle().try_lock() {
             Ok(replays) if !replays.is_empty() => {
                 let mut replays = replays.values().cloned().collect::<Vec<_>>();
                 ReplayInfo::sort_replays(&mut replays);
@@ -4230,13 +4617,13 @@ async fn config_stats_get(
         "/config/stats".to_string()
     };
     state.log_request("get", &path, &None);
-    let stats = state.stats.clone();
+    let stats = state.stats_handle();
     let replays = state
         .get_replay_state()
         .lock()
-        .map(|replay_state| replay_state.replays.clone())
+        .map(|replay_state| replay_state.replays_handle())
         .unwrap_or_else(|_| Arc::new(Mutex::new(HashMap::new())));
-    let stats_current_replay_files = state.stats_current_replay_files.clone();
+    let stats_current_replay_files = state.stats_current_replay_files_handle();
     let state_snapshot = (
         state.configured_main_names(),
         state.configured_main_handles(),
@@ -4445,18 +4832,18 @@ async fn config_stats_action(
             crate::sco_log!("[SCO/stats/action] frontend_ready requested");
             request_startup_analysis(
                 app.clone(),
-                state.stats.clone(),
+                state.stats_handle(),
                 state
                     .get_replay_state()
                     .lock()
-                    .map(|replay_state| replay_state.replays.clone())
+                    .map(|replay_state| replay_state.replays_handle())
                     .unwrap_or_else(|_| Arc::new(Mutex::new(HashMap::new()))),
-                state.stats_current_replay_files.clone(),
+                state.stats_current_replay_files_handle(),
                 state.detailed_analysis_stop_controller_slot(),
                 StartupAnalysisTrigger::FrontendReady,
             )?;
-            let stats = state
-                .stats
+            let stats_handle = state.stats_handle();
+            let stats = stats_handle
                 .lock()
                 .map_err(|error| format!("Failed to access stats state: {error}"))?;
             crate::sco_log!(
@@ -4481,19 +4868,19 @@ async fn config_stats_action(
             crate::sco_log!("[SCO/stats] {action} requested replay_limit={limit} on thread");
             spawn_analysis_task(
                 app.clone(),
-                state.stats.clone(),
+                state.stats_handle(),
                 state
                     .get_replay_state()
                     .lock()
-                    .map(|replay_state| replay_state.replays.clone())
+                    .map(|replay_state| replay_state.replays_handle())
                     .unwrap_or_else(|_| Arc::new(Mutex::new(HashMap::new()))),
-                state.stats_current_replay_files.clone(),
+                state.stats_current_replay_files_handle(),
                 state.detailed_analysis_stop_controller_slot(),
                 include_detailed,
                 limit,
             );
             let status = state
-                .stats
+                .stats_handle()
                 .lock()
                 .ok()
                 .and_then(|stats| {
@@ -4510,7 +4897,7 @@ async fn config_stats_action(
                 status
             );
             let stats_payload = state
-                .stats
+                .stats_handle()
                 .lock()
                 .ok()
                 .map(|stats| stats.as_payload_typed(state.replay_scan_progress().as_payload()));
@@ -4528,8 +4915,8 @@ async fn config_stats_action(
         _ => {}
     }
 
-    let mut stats = state
-        .stats
+    let stats_handle = state.stats_handle();
+    let mut stats = stats_handle
         .lock()
         .map_err(|error| format!("Failed to access stats state: {error}"))?;
     let request_started_at = Instant::now();
@@ -4601,12 +4988,8 @@ async fn config_stats_action(
             state.set_detailed_analysis_stop_controller(None);
             stats.message = "No parsed statistics available yet.".to_string();
             state.clear_replay_cache_slots();
-            if let Ok(mut stats_current_replay_files) = state.stats_current_replay_files.lock() {
-                stats_current_replay_files.clear();
-            }
-            state
-                .overlay_replay_data_active
-                .store(false, Ordering::Release);
+            state.clear_stats_current_replay_files();
+            state.set_overlay_replay_data_active(false);
             clear_analysis_cache_files();
             crate::sco_log!(
                 "[SCO/stats] delete_parsed_data completed in {}ms",
@@ -4749,7 +5132,7 @@ pub fn run() {
                 let flags = state.runtime_flags();
                 match window_close_action(
                     window.label(),
-                    flags.minimize_to_tray,
+                    flags.minimize_to_tray(),
                     state.exit_in_progress(),
                 ) {
                     WindowCloseAction::AllowClose => {}
@@ -4785,7 +5168,7 @@ pub fn run() {
             let state = app.state::<BackendState>();
             let flags = state.runtime_flags();
 
-            if flags.auto_update {
+            if flags.auto_update() {
                 let handle = app.handle().clone();
 
                 tauri::async_runtime::spawn(async move {
@@ -4798,7 +5181,7 @@ pub fn run() {
             // Always start with overlay hidden; user can show it via hotkey/tray/actions.
             overlay_info::hide_overlay_window(app.app_handle());
 
-            if flags.start_minimized {
+            if flags.start_minimized() {
                 if let Some(config_window) = app.get_webview_window("config") {
                     let _ = config_window.hide();
                 }
@@ -4880,12 +5263,12 @@ pub fn run() {
                 let replays = state
                     .get_replay_state()
                     .lock()
-                    .map(|replay_state| replay_state.replays.clone())
+                    .map(|replay_state| replay_state.replays_handle())
                     .unwrap_or_else(|_| Arc::new(Mutex::new(HashMap::new())));
                 (
-                    state.stats.clone(),
+                    state.stats_handle(),
                     replays,
-                    state.stats_current_replay_files.clone(),
+                    state.stats_current_replay_files_handle(),
                     state.detailed_analysis_stop_controller_slot(),
                 )
             };

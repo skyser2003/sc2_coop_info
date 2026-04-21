@@ -60,11 +60,11 @@ where
 }
 
 pub struct BackendState {
-    pub stats: Arc<Mutex<StatsState>>,
-    pub stats_current_replay_files: Arc<Mutex<HashSet<String>>>,
-    pub overlay_replay_data_active: AtomicBool,
-    pub session_victories: AtomicU64,
-    pub session_defeats: AtomicU64,
+    stats: Arc<Mutex<StatsState>>,
+    stats_current_replay_files: Arc<Mutex<HashSet<String>>>,
+    overlay_replay_data_active: AtomicBool,
+    session_victories: AtomicU64,
+    session_defeats: AtomicU64,
     active_settings: Arc<Mutex<AppSettings>>,
     detailed_cache_persist_lock: Arc<Mutex<()>>,
     discovered_main_names: Arc<Mutex<HashMap<String, HashSet<String>>>>,
@@ -87,21 +87,21 @@ pub struct BackendState {
 }
 
 pub struct ReplayState {
-    pub replays: Arc<Mutex<HashMap<String, ReplayInfo>>>,
-    pub selected_replay_file: Arc<Mutex<Option<String>>>,
+    replays: Arc<Mutex<HashMap<String, ReplayInfo>>>,
+    selected_replay_file: Arc<Mutex<Option<String>>>,
 }
 
 #[derive(Debug)]
 pub struct ReplayScanProgress {
-    pub total: AtomicU64,
-    pub cache_hits: AtomicU64,
-    pub to_parse: AtomicU64,
-    pub newly_parsed: AtomicU64,
-    pub completed: AtomicU64,
-    pub failed: AtomicU64,
-    pub parse_skipped: AtomicU64,
-    pub started_at_ms: AtomicU64,
-    pub elapsed_ms: AtomicU64,
+    total: AtomicU64,
+    cache_hits: AtomicU64,
+    to_parse: AtomicU64,
+    newly_parsed: AtomicU64,
+    completed: AtomicU64,
+    failed: AtomicU64,
+    parse_skipped: AtomicU64,
+    started_at_ms: AtomicU64,
+    elapsed_ms: AtomicU64,
     stage: Mutex<String>,
     status: Mutex<String>,
 }
@@ -132,6 +132,38 @@ impl Default for ReplayScanProgress {
 }
 
 impl ReplayScanProgress {
+    pub(crate) fn set_total(&self, value: u64) {
+        self.total.store(value, Ordering::Release);
+    }
+
+    pub(crate) fn set_cache_hits(&self, value: u64) {
+        self.cache_hits.store(value, Ordering::Release);
+    }
+
+    pub(crate) fn set_to_parse(&self, value: u64) {
+        self.to_parse.store(value, Ordering::Release);
+    }
+
+    pub(crate) fn increment_newly_parsed(&self) {
+        self.newly_parsed.fetch_add(1, Ordering::AcqRel);
+    }
+
+    pub(crate) fn increment_completed(&self) {
+        self.completed.fetch_add(1, Ordering::AcqRel);
+    }
+
+    pub(crate) fn set_failed(&self, value: u64) {
+        self.failed.store(value, Ordering::Release);
+    }
+
+    pub(crate) fn increment_failed(&self) {
+        self.failed.fetch_add(1, Ordering::AcqRel);
+    }
+
+    pub(crate) fn set_parse_skipped(&self, value: u64) {
+        self.parse_skipped.store(value, Ordering::Release);
+    }
+
     pub fn reset(&self, stage: &str) {
         self.total.store(0, Ordering::Release);
         self.cache_hits.store(0, Ordering::Release);
@@ -378,7 +410,7 @@ impl BackendState {
     }
 
     pub fn new_with_settings(settings: AppSettings) -> Self {
-        let file_logging_enabled = settings.enable_logging;
+        let file_logging_enabled = settings.enable_logging();
         Self {
             stats: Arc::new(Mutex::new(StatsState::from_settings(&settings))),
             stats_current_replay_files: Arc::new(Mutex::new(HashSet::new())),
@@ -412,6 +444,29 @@ impl BackendState {
 
     pub fn analyzer_data_dir(&self) -> PathBuf {
         self.analyzer_data_dir.clone()
+    }
+
+    pub fn stats_handle(&self) -> Arc<Mutex<StatsState>> {
+        self.stats.clone()
+    }
+
+    pub fn stats_current_replay_files_handle(&self) -> Arc<Mutex<HashSet<String>>> {
+        self.stats_current_replay_files.clone()
+    }
+
+    pub fn overlay_replay_data_active(&self) -> bool {
+        self.overlay_replay_data_active.load(Ordering::Acquire)
+    }
+
+    pub fn set_overlay_replay_data_active(&self, active: bool) {
+        self.overlay_replay_data_active
+            .store(active, Ordering::Release);
+    }
+
+    pub fn clear_stats_current_replay_files(&self) {
+        if let Ok(mut current_replay_files) = self.stats_current_replay_files.lock() {
+            current_replay_files.clear();
+        }
     }
 
     pub fn dictionary_data(&self) -> Result<Arc<Sc2DictionaryData>, String> {
@@ -485,18 +540,18 @@ impl BackendState {
         }
 
         self.file_logging_enabled
-            .store(sanitized.enable_logging, Ordering::Release);
+            .store(sanitized.enable_logging(), Ordering::Release);
         self.clear_main_identity_cache();
         sanitized
     }
 
     pub fn write_settings_file(&self, value: &AppSettings) -> Result<(), String> {
-        let previous_start_with_windows = self.read_settings_memory().start_with_windows;
+        let previous_start_with_windows = self.read_settings_memory().start_with_windows();
         let sanitized = value.write_saved_settings_file()?;
 
         self.replace_active_settings(&sanitized);
 
-        if previous_start_with_windows != sanitized.start_with_windows {
+        if previous_start_with_windows != sanitized.start_with_windows() {
             if let Err(error) = sanitized.sync_start_with_windows_registration() {
                 crate::sco_log!("[SCO/settings] Failed to sync start_with_windows: {error}");
             }
@@ -639,7 +694,7 @@ impl BackendState {
 
     pub fn configured_main_names(&self) -> HashSet<String> {
         let settings = self.read_settings_memory();
-        let account_root = settings.account_folder.trim().to_string();
+        let account_root = settings.account_folder().trim().to_string();
 
         if !account_root.is_empty() {
             if let Ok(cache) = self.discovered_main_names.lock() {
@@ -662,7 +717,7 @@ impl BackendState {
 
     pub fn configured_main_handles(&self) -> HashSet<String> {
         let settings = self.read_settings_memory();
-        let account_root = settings.account_folder.trim().to_string();
+        let account_root = settings.account_folder().trim().to_string();
 
         if !account_root.is_empty() {
             if let Ok(cache) = self.discovered_main_handles.lock() {
@@ -733,7 +788,7 @@ impl BackendState {
             .stats
             .lock()
             .ok()
-            .and_then(|stats| stats.analysis.clone())
+            .and_then(|stats| stats.analysis_cloned())
             .and_then(|analysis| {
                 analysis
                     .get("PlayerData")
@@ -992,7 +1047,7 @@ impl BackendState {
             Err(_) => return,
         };
 
-        if !stats.ready || stats.analysis_running {
+        if !stats.ready() || stats.analysis_running() {
             return;
         }
 
@@ -1054,7 +1109,7 @@ impl BackendState {
         let mut main_handles = self.configured_main_handles();
 
         if let Ok(stats) = self.stats.lock() {
-            for name in &stats.main_players {
+            for name in stats.main_players() {
                 let normalized = ReplayAnalysis::normalized_player_key(name);
                 if !normalized.is_empty() {
                     main_names.insert(normalized);
@@ -1086,7 +1141,7 @@ impl BackendState {
         self.stats
             .lock()
             .ok()
-            .and_then(|stats| stats.analysis.clone())
+            .and_then(|stats| stats.analysis_cloned())
             .and_then(|analysis| {
                 analysis
                     .get("PlayerData")
@@ -1106,6 +1161,14 @@ impl BackendState {
 }
 
 impl ReplayState {
+    pub fn replays_handle(&self) -> Arc<Mutex<HashMap<String, ReplayInfo>>> {
+        self.replays.clone()
+    }
+
+    pub fn selected_replay_file_handle(&self) -> Arc<Mutex<Option<String>>> {
+        self.selected_replay_file.clone()
+    }
+
     pub fn sync_full_replay_cache_slots(
         &self,
         main_names: &HashSet<String>,

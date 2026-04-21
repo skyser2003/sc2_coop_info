@@ -54,7 +54,7 @@ fn sample_cache_entry(file: &str, hash: &str, date: &str, result: &str) -> Cache
 
 fn test_backend_state() -> BackendState {
     let state = BackendState::new();
-    if let Ok(mut stats) = state.stats.lock() {
+    if let Ok(mut stats) = state.stats_handle().lock() {
         *stats = StatsState::default();
     }
     state
@@ -65,7 +65,7 @@ fn seed_replay_cache(state: &BackendState, entries: &[(&str, ReplayInfo)]) {
     let replays_slot = replay_state
         .lock()
         .expect("replay state mutex should not be poisoned")
-        .replays
+        .replays_handle()
         .clone();
     let mut replays = replays_slot
         .lock()
@@ -78,119 +78,101 @@ fn seed_replay_cache(state: &BackendState, entries: &[(&str, ReplayInfo)]) {
 #[test]
 fn upsert_replay_in_memory_cache_updates_replay_cache_and_current_files() {
     let state = test_backend_state();
-    let existing_replay = ReplayInfo {
-        file: test_replay_path("existing.SC2Replay"),
-        date: 100,
-        result: "Victory".to_string(),
-        ..ReplayInfo::default()
-    };
-    let updated_replay = ReplayInfo {
-        file: test_replay_path("new.SC2Replay"),
-        date: 200,
-        result: "Defeat".to_string(),
-        ..ReplayInfo::default()
-    };
+    let mut existing_replay = ReplayInfo::default();
+    existing_replay.set_file(test_replay_path("existing.SC2Replay"));
+    existing_replay.set_date(100);
+    existing_replay.set_result("Victory");
+    let mut updated_replay = ReplayInfo::default();
+    updated_replay.set_file(test_replay_path("new.SC2Replay"));
+    updated_replay.set_date(200);
+    updated_replay.set_result("Defeat");
 
     seed_replay_cache(
         &state,
         &[
             ("existing-hash", existing_replay.clone()),
-            (
-                "updated-hash",
-                ReplayInfo {
-                    file: updated_replay.file.clone(),
-                    date: 50,
-                    result: "Victory".to_string(),
-                    ..ReplayInfo::default()
-                },
-            ),
+            ({
+                let mut previous_updated_replay = ReplayInfo::default();
+                previous_updated_replay.set_file(updated_replay.file().to_string());
+                previous_updated_replay.set_date(50);
+                previous_updated_replay.set_result("Victory");
+                ("updated-hash", previous_updated_replay)
+            }),
         ],
     );
     {
         let mut current_files = state
-            .stats_current_replay_files
+            .stats_current_replay_files_handle()
             .lock()
             .expect("current replay file mutex should not be poisoned");
-        current_files.insert(existing_replay.file.clone());
+        current_files.insert(existing_replay.file().to_string());
     }
 
     state.upsert_replay_in_memory_cache("updated-hash", &updated_replay);
 
     let replays = state.replay_cache_snapshot();
     let current_files = state
-        .stats_current_replay_files
+        .stats_current_replay_files_handle()
         .lock()
         .expect("current replay file mutex should not be poisoned")
         .clone();
     let selected_file = state.get_current_replay_file();
 
     assert_eq!(replays.len(), 2);
-    assert_eq!(replays[0].file, updated_replay.file);
-    assert_eq!(replays[0].result, updated_replay.result);
-    assert!(current_files.contains(&existing_replay.file));
-    assert!(current_files.contains(&updated_replay.file));
-    assert_eq!(selected_file.as_deref(), Some(updated_replay.file.as_str()));
+    assert_eq!(replays[0].file(), updated_replay.file());
+    assert_eq!(replays[0].result(), updated_replay.result());
+    assert!(current_files.contains(existing_replay.file()));
+    assert!(current_files.contains(updated_replay.file()));
+    assert_eq!(selected_file.as_deref(), Some(updated_replay.file()));
 }
 
 #[test]
 fn upsert_replay_in_memory_cache_refreshes_ready_stats_with_detailed_data() {
     let state = test_backend_state();
-    let existing_replay = ReplayInfo {
-        file: test_replay_path("existing_detailed.SC2Replay"),
-        date: 100,
-        map: canonicalize_map_id("Void Launch").expect("map id should resolve"),
-        result: "Victory".to_string(),
-        ..ReplayInfo::with_players(
-            ReplayPlayerInfo {
-                name: "Existing Main".to_string(),
-                handle: "1-S2-1-111".to_string(),
-                commander: "Raynor".to_string(),
-                units: json!({
-                    "Marine": [3, 1, 9, 0.5]
-                }),
-                ..ReplayPlayerInfo::default()
-            },
-            ReplayPlayerInfo {
-                name: "Existing Ally".to_string(),
-                handle: "1-S2-1-222".to_string(),
-                commander: "Karax".to_string(),
-                ..ReplayPlayerInfo::default()
-            },
-            0,
-        )
-    };
-    let updated_replay = ReplayInfo {
-        file: test_replay_path("new_detailed.SC2Replay"),
-        date: 200,
-        map: canonicalize_map_id("Void Launch").expect("map id should resolve"),
-        result: "Victory".to_string(),
-        ..ReplayInfo::with_players(
-            ReplayPlayerInfo {
-                name: "Updated Main".to_string(),
-                handle: "1-S2-1-333".to_string(),
-                commander: "Fenix".to_string(),
-                units: json!({
-                    "Adept": [6, 1, 23, 0.5]
-                }),
-                ..ReplayPlayerInfo::default()
-            },
-            ReplayPlayerInfo {
-                name: "Updated Ally".to_string(),
-                handle: "1-S2-1-444".to_string(),
-                commander: "Karax".to_string(),
-                ..ReplayPlayerInfo::default()
-            },
-            0,
-        )
-    };
+    let mut existing_replay = ReplayInfo::with_players(
+        ReplayPlayerInfo::default()
+            .with_name("Existing Main")
+            .with_handle("1-S2-1-111")
+            .with_commander("Raynor")
+            .with_units(json!({
+                "Marine": [3, 1, 9, 0.5]
+            })),
+        ReplayPlayerInfo::default()
+            .with_name("Existing Ally")
+            .with_handle("1-S2-1-222")
+            .with_commander("Karax"),
+        0,
+    );
+    existing_replay.set_file(test_replay_path("existing_detailed.SC2Replay"));
+    existing_replay.set_date(100);
+    existing_replay.set_map(canonicalize_map_id("Void Launch").expect("map id should resolve"));
+    existing_replay.set_result("Victory");
+    let mut updated_replay = ReplayInfo::with_players(
+        ReplayPlayerInfo::default()
+            .with_name("Updated Main")
+            .with_handle("1-S2-1-333")
+            .with_commander("Fenix")
+            .with_units(json!({
+                "Adept": [6, 1, 23, 0.5]
+            })),
+        ReplayPlayerInfo::default()
+            .with_name("Updated Ally")
+            .with_handle("1-S2-1-444")
+            .with_commander("Karax"),
+        0,
+    );
+    updated_replay.set_file(test_replay_path("new_detailed.SC2Replay"));
+    updated_replay.set_date(200);
+    updated_replay.set_map(canonicalize_map_id("Void Launch").expect("map id should resolve"));
+    updated_replay.set_result("Victory");
 
     {
         let mut stats = state
-            .stats
+            .stats_handle()
             .lock()
             .expect("stats mutex should not be poisoned");
-        stats.ready = true;
-        stats.analysis = Some(json!({
+        stats.set_ready(true);
+        stats.set_analysis(Some(json!({
             "MapData": {},
             "CommanderData": {},
             "AllyCommanderData": {},
@@ -199,24 +181,23 @@ fn upsert_replay_in_memory_cache_refreshes_ready_stats_with_detailed_data() {
             "UnitData": Value::Null,
             "AmonData": {},
             "PlayerData": {},
-        }));
-        stats.message = "Scanned 1 replay file(s).".to_string();
+        })));
+        stats.set_message("Scanned 1 replay file(s).");
     }
     seed_replay_cache(&state, &[("existing-detailed-hash", existing_replay)]);
 
     state.upsert_replay_in_memory_cache("updated-detailed-hash", &updated_replay);
 
     let stats = state
-        .stats
+        .stats_handle()
         .lock()
         .expect("stats mutex should not be poisoned");
     let analysis = stats
-        .analysis
-        .clone()
+        .analysis_cloned()
         .expect("analysis should be present after refresh");
 
-    assert_eq!(stats.games, 2);
-    assert_eq!(stats.message, "Scanned 2 replay file(s).");
+    assert_eq!(stats.games(), 2);
+    assert_eq!(stats.message(), "Scanned 2 replay file(s).");
     assert!(analysis
         .get("UnitData")
         .is_some_and(|value| !value.is_null()));

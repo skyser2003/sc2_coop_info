@@ -157,17 +157,17 @@ fn load_detailed_analysis_replays_snapshot_from_path_uses_cache_entries() {
     let replays = load_detailed_analysis_replays_snapshot_from_path(&cache_path, 0);
 
     assert_eq!(replays.len(), 1);
-    assert_eq!(replays[0].file, replay_path.display().to_string());
-    assert_eq!(replays[0].map, test_map_id("Void Launch"));
-    assert_eq!(replays[0].difficulty, "Brutal");
-    assert_eq!(replays[0].length, 610);
+    assert_eq!(replays[0].file(), replay_path.display().to_string());
+    assert_eq!(replays[0].map(), test_map_id("Void Launch"));
+    assert_eq!(replays[0].difficulty(), "Brutal");
+    assert_eq!(replays[0].length(), 610);
     assert_eq!(replays[0].main_commander(), "Raynor");
     assert_eq!(replays[0].ally_commander(), "Karax");
     assert_eq!(replays[0].main_units()["Marine"], json!([3, 1, 12, 0.48]));
     assert_eq!(replays[0].ally_units()["Zealot"], json!([2, 0, 7, 0.28]));
-    assert_eq!(replays[0].bonus, vec![1, 1]);
+    assert_eq!(replays[0].bonus(), vec![1, 1]);
     assert_eq!(
-        replays[0].bonus_total,
+        replays[0].bonus_total(),
         bonus_objective_total_for_map_id(&test_map_id("Void Launch"))
     );
 
@@ -210,10 +210,10 @@ fn load_detailed_analysis_replays_snapshot_from_path_recovers_temp_cache_entries
     assert_eq!(replays.len(), 2);
     assert!(replays
         .iter()
-        .any(|replay| replay.file == existing_replay_path.display().to_string()));
+        .any(|replay| replay.file() == existing_replay_path.display().to_string()));
     assert!(replays
         .iter()
-        .any(|replay| replay.file == recovered_replay_path.display().to_string()));
+        .any(|replay| replay.file() == recovered_replay_path.display().to_string()));
     assert!(
         !temp_path.exists(),
         "temp cache should be removed after recovery"
@@ -272,7 +272,10 @@ fn load_detailed_analysis_replays_snapshot_from_path_persists_simple_temp_entry_
     let replays = load_detailed_analysis_replays_snapshot_from_path(&cache_path, 0);
 
     assert_eq!(replays.len(), 1);
-    assert_eq!(replays[0].file, existing_replay_path.display().to_string());
+    assert_eq!(
+        replays[0].file(),
+        existing_replay_path.display().to_string()
+    );
     assert!(
         !temp_path.exists(),
         "temp cache should be removed after recovery"

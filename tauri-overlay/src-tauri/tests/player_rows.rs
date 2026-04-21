@@ -21,27 +21,23 @@ fn replay_for_player_rows_with_handle(
     handle: &str,
 ) -> ReplayInfo {
     let mut replay = ReplayInfo::with_players(
-        ReplayPlayerInfo {
-            name: player_name.to_string(),
-            handle: handle.to_string(),
-            commander: commander.to_string(),
-            apm,
-            kills: 8,
-            ..ReplayPlayerInfo::default()
-        },
-        ReplayPlayerInfo {
-            name: "Teammate".to_string(),
-            handle: "1-S2-1-999".to_string(),
-            commander: "Abathur".to_string(),
-            apm: 50,
-            kills: 2,
-            ..ReplayPlayerInfo::default()
-        },
+        ReplayPlayerInfo::default()
+            .with_name(player_name)
+            .with_handle(handle)
+            .with_commander(commander)
+            .with_apm(apm)
+            .with_kills(8),
+        ReplayPlayerInfo::default()
+            .with_name("Teammate")
+            .with_handle("1-S2-1-999")
+            .with_commander("Abathur")
+            .with_apm(50)
+            .with_kills(2),
         0,
     );
-    replay.result = result.to_string();
-    replay.date = date;
-    replay.map = "Void Launch".to_string();
+    replay.set_result(result);
+    replay.set_date(date);
+    replay.set_map("Void Launch");
     replay
 }
 

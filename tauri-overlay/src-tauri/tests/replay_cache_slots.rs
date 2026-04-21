@@ -9,8 +9,8 @@ use std::{
 fn update_analysis_replay_cache_slots_populates_shared_cache() {
     let replays = Arc::new(Mutex::new(HashMap::<String, ReplayInfo>::new()));
     let mut replay = ReplayInfo::default();
-    replay.file = test_replay_path("cached.SC2Replay");
-    replay.result = "Victory".to_string();
+    replay.set_file(test_replay_path("cached.SC2Replay"));
+    replay.set_result("Victory");
 
     update_analysis_replay_cache_slots(&[replay.clone()], &replays);
 
@@ -24,6 +24,6 @@ fn update_analysis_replay_cache_slots_populates_shared_cache() {
         .values()
         .next()
         .expect("shared replay cache should contain a replay");
-    assert_eq!(shared_replay.file, replay.file);
-    assert_eq!(shared_replay.result, replay.result);
+    assert_eq!(shared_replay.file(), replay.file());
+    assert_eq!(shared_replay.result(), replay.result());
 }

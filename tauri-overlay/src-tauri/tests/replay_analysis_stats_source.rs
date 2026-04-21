@@ -17,12 +17,19 @@ fn test_map_id(raw: &str) -> String {
     canonicalize_map_id(raw).expect("map id should resolve")
 }
 
+fn player(name: &str, handle: &str, commander: &str) -> ReplayPlayerInfo {
+    ReplayPlayerInfo::default()
+        .with_name(name)
+        .with_handle(handle)
+        .with_commander(commander)
+}
+
 fn sample_replay(file: &str, main: ReplayPlayerInfo, ally: ReplayPlayerInfo) -> ReplayInfo {
     let mut replay = ReplayInfo::with_players(main, ally, 0);
-    replay.file = file.to_string();
-    replay.map = test_map_id("Void Launch");
-    replay.result = "Victory".to_string();
-    replay.difficulty = "Brutal".to_string();
+    replay.set_file(file);
+    replay.set_map(test_map_id("Void Launch"));
+    replay.set_result("Victory");
+    replay.set_difficulty("Brutal");
     replay
 }
 
@@ -164,14 +171,14 @@ fn merge_cached_detailed_replays_from_path(
 
     let detailed_by_file: HashMap<String, ReplayInfo> = detailed_replays
         .into_iter()
-        .map(|replay| (replay.file.clone(), replay))
+        .map(|replay| (replay.file().to_string(), replay))
         .collect();
 
     replays
         .iter()
         .map(|replay| {
             detailed_by_file
-                .get(&replay.file)
+                .get(replay.file())
                 .cloned()
                 .unwrap_or_else(|| replay.clone())
         })
@@ -192,22 +199,10 @@ fn stats_response_prefers_detailed_analysis_cache_when_unit_data_is_enabled() {
 
     let stale_replay = sample_replay(
         &replay_path.display().to_string(),
-        ReplayPlayerInfo {
-            name: "Stale Main".to_string(),
-            handle: "1-S2-1-111".to_string(),
-            commander: "Dehaka".to_string(),
-            units: json!({
-                "Primal Hydralisk": [1, 0, 1, 1.0]
-            }),
-            ..ReplayPlayerInfo::default()
-        },
-        ReplayPlayerInfo {
-            name: "Stale Ally".to_string(),
-            handle: "1-S2-1-222".to_string(),
-            commander: "Abathur".to_string(),
-            units: json!({}),
-            ..ReplayPlayerInfo::default()
-        },
+        player("Stale Main", "1-S2-1-111", "Dehaka").with_units(json!({
+            "Primal Hydralisk": [1, 0, 1, 1.0]
+        })),
+        player("Stale Ally", "1-S2-1-222", "Abathur").with_units(json!({})),
     );
 
     let stale_replays = [stale_replay];
@@ -234,22 +229,10 @@ fn stats_response_prefers_detailed_analysis_cache_when_unit_data_is_enabled() {
 fn stats_replays_for_response_prefers_in_memory_stats_cache() {
     let resident_replay = sample_replay(
         "fixtures/replays/resident.SC2Replay",
-        ReplayPlayerInfo {
-            name: "Resident Main".to_string(),
-            handle: "1-S2-1-111".to_string(),
-            commander: "Fenix".to_string(),
-            units: json!({
-                "Adept": [6, 1, 23, 0.5]
-            }),
-            ..ReplayPlayerInfo::default()
-        },
-        ReplayPlayerInfo {
-            name: "Resident Ally".to_string(),
-            handle: "1-S2-1-222".to_string(),
-            commander: "Karax".to_string(),
-            units: json!({}),
-            ..ReplayPlayerInfo::default()
-        },
+        player("Resident Main", "1-S2-1-111", "Fenix").with_units(json!({
+            "Adept": [6, 1, 23, 0.5]
+        })),
+        player("Resident Ally", "1-S2-1-222", "Karax").with_units(json!({})),
     );
 
     let resident_replays = [resident_replay];
@@ -274,18 +257,8 @@ fn merge_cached_detailed_replays_replaces_matching_simple_entries() {
 
     let simple_replay = sample_replay(
         &replay_path.display().to_string(),
-        ReplayPlayerInfo {
-            name: "Simple Main".to_string(),
-            commander: "Artanis".to_string(),
-            units: json!({}),
-            ..ReplayPlayerInfo::default()
-        },
-        ReplayPlayerInfo {
-            name: "Simple Ally".to_string(),
-            commander: "Swann".to_string(),
-            units: json!({}),
-            ..ReplayPlayerInfo::default()
-        },
+        player("Simple Main", "", "Artanis").with_units(json!({})),
+        player("Simple Ally", "", "Swann").with_units(json!({})),
     );
 
     let merged = merge_cached_detailed_replays_from_path(
@@ -308,10 +281,10 @@ fn merge_cached_detailed_replays_replaces_matching_simple_entries() {
 #[test]
 fn stats_source_replays_for_response_matches_wx_show_all_behavior() {
     let mut current_replay = ReplayInfo::default();
-    current_replay.file = "fixtures/replays/current.SC2Replay".to_string();
+    current_replay.set_file("fixtures/replays/current.SC2Replay");
     let mut historic_replay = ReplayInfo::default();
-    historic_replay.file = "fixtures/replays/historic.SC2Replay".to_string();
-    let current_files = HashSet::from([current_replay.file.clone()]);
+    historic_replay.set_file("fixtures/replays/historic.SC2Replay");
+    let current_files = HashSet::from([current_replay.file().to_string()]);
 
     let selected_replays = [current_replay.clone(), historic_replay.clone()];
     let current_only = ReplayAnalysis::stats_source_replays_for_response(
@@ -320,7 +293,7 @@ fn stats_source_replays_for_response_matches_wx_show_all_behavior() {
         &current_files,
     );
     assert_eq!(current_only.len(), 1);
-    assert_eq!(current_only[0].file, current_replay.file);
+    assert_eq!(current_only[0].file(), current_replay.file());
 
     let all_replays = [current_replay, historic_replay];
     let show_all = ReplayAnalysis::stats_source_replays_for_response(
@@ -335,21 +308,18 @@ fn stats_source_replays_for_response_matches_wx_show_all_behavior() {
 fn detailed_stats_counts_only_replays_with_unit_payloads() {
     let detailed_replay = sample_replay(
         "fixtures/replays/detailed.SC2Replay",
-        ReplayPlayerInfo {
-            units: json!({
-                "Marine": [6, 1, 9, 0.5]
-            }),
-            ..ReplayPlayerInfo::default()
-        },
+        ReplayPlayerInfo::default().with_units(json!({
+            "Marine": [6, 1, 9, 0.5]
+        })),
         ReplayPlayerInfo::default(),
     );
     let mut simple_replay = ReplayInfo::default();
-    simple_replay.file = "fixtures/replays/simple.SC2Replay".to_string();
+    simple_replay.set_file("fixtures/replays/simple.SC2Replay");
     let mut amon_only_replay = ReplayInfo::default();
-    amon_only_replay.file = "fixtures/replays/amon.SC2Replay".to_string();
-    amon_only_replay.amon_units = json!({
+    amon_only_replay.set_file("fixtures/replays/amon.SC2Replay");
+    amon_only_replay.set_amon_units(json!({
         "Zergling": [20, 20, 3, 0.1]
-    });
+    }));
 
     let filtered_replays = vec![&detailed_replay, &simple_replay, &amon_only_replay];
     let (detailed_parsed_count, total_valid_files) =

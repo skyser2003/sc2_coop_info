@@ -28,7 +28,7 @@ pub(crate) fn append_line(message: &str) -> Result<(), String> {
 
 fn file_logging_enabled() -> bool {
     let settings = AppSettings::from_saved_file();
-    settings.enable_logging
+    settings.enable_logging()
 }
 
 pub(crate) fn append_line_if_enabled(message: &str) {

@@ -5,11 +5,11 @@ use sco_tauri_overlay::ReplayInfo;
 
 fn weekly_replay(weekly_name: &str, result: &str) -> ReplayInfo {
     let mut replay = ReplayInfo::default();
-    replay.file = format!("fixtures/replays/{weekly_name}.SC2Replay");
-    replay.result = result.to_string();
-    replay.difficulty = "Brutal".to_string();
-    replay.weekly = true;
-    replay.weekly_name = Some(weekly_name.to_string());
+    replay.set_file(format!("fixtures/replays/{weekly_name}.SC2Replay"));
+    replay.set_result(result);
+    replay.set_difficulty("Brutal");
+    replay.set_weekly(true);
+    replay.set_weekly_name(Some(weekly_name.to_string()));
     replay
 }
 

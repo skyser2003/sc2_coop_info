@@ -7,11 +7,18 @@ fn test_map_id(raw: &str) -> String {
     canonicalize_map_id(raw).expect("map id should resolve")
 }
 
+fn player(name: &str, handle: &str, commander: &str) -> ReplayPlayerInfo {
+    ReplayPlayerInfo::default()
+        .with_name(name)
+        .with_handle(handle)
+        .with_commander(commander)
+}
+
 fn replay_with_players(result: &str, main: ReplayPlayerInfo, ally: ReplayPlayerInfo) -> ReplayInfo {
     let mut replay = ReplayInfo::with_players(main, ally, 0);
-    replay.map = test_map_id("Void Launch");
-    replay.result = result.to_string();
-    replay.difficulty = "Brutal".to_string();
+    replay.set_map(test_map_id("Void Launch"));
+    replay.set_result(result);
+    replay.set_difficulty("Brutal");
     replay
 }
 
@@ -20,43 +27,19 @@ fn ally_commander_data_includes_sum_row() {
     let replays = vec![
         replay_with_players(
             "Victory",
-            ReplayPlayerInfo {
-                name: "Main".to_string(),
-                commander: "Raynor".to_string(),
-                apm: 120,
-                kills: 20,
-                ..ReplayPlayerInfo::default()
-            },
-            ReplayPlayerInfo {
-                name: "Ally".to_string(),
-                commander: "Karax".to_string(),
-                apm: 90,
-                kills: 10,
-                ..ReplayPlayerInfo::default()
-            },
+            player("Main", "", "Raynor").with_apm(120).with_kills(20),
+            player("Ally", "", "Karax").with_apm(90).with_kills(10),
         ),
         replay_with_players(
             "Defeat",
-            ReplayPlayerInfo {
-                name: "Main".to_string(),
-                commander: "Raynor".to_string(),
-                apm: 80,
-                kills: 8,
-                ..ReplayPlayerInfo::default()
-            },
-            ReplayPlayerInfo {
-                name: "Ally".to_string(),
-                commander: "Stukov".to_string(),
-                apm: 70,
-                kills: 12,
-                ..ReplayPlayerInfo::default()
-            },
+            player("Main", "", "Raynor").with_apm(80).with_kills(8),
+            player("Ally", "", "Stukov").with_apm(70).with_kills(12),
         ),
     ];
 
     let snapshot = build_rebuild_snapshot(&replays, false);
     let ally_commander_data = snapshot
-        .analysis
+        .analysis()
         .get("AllyCommanderData")
         .and_then(Value::as_object)
         .expect("ally commander data should exist");
@@ -76,54 +59,24 @@ fn ally_commander_frequency_matches_wx_preference_correction_rule() {
     let replays = vec![
         replay_with_players(
             "Victory",
-            ReplayPlayerInfo {
-                name: "Main".to_string(),
-                handle: "1-S2-1-111".to_string(),
-                commander: "Raynor".to_string(),
-                ..ReplayPlayerInfo::default()
-            },
-            ReplayPlayerInfo {
-                name: "Ally".to_string(),
-                handle: "2-S2-1-222".to_string(),
-                commander: "Karax".to_string(),
-                ..ReplayPlayerInfo::default()
-            },
+            player("Main", "1-S2-1-111", "Raynor"),
+            player("Ally", "2-S2-1-222", "Karax"),
         ),
         replay_with_players(
             "Victory",
-            ReplayPlayerInfo {
-                name: "Main".to_string(),
-                handle: "1-S2-1-111".to_string(),
-                commander: "Raynor".to_string(),
-                ..ReplayPlayerInfo::default()
-            },
-            ReplayPlayerInfo {
-                name: "Ally".to_string(),
-                handle: "2-S2-1-223".to_string(),
-                commander: "Stukov".to_string(),
-                ..ReplayPlayerInfo::default()
-            },
+            player("Main", "1-S2-1-111", "Raynor"),
+            player("Ally", "2-S2-1-223", "Stukov"),
         ),
         replay_with_players(
             "Victory",
-            ReplayPlayerInfo {
-                name: "Main".to_string(),
-                handle: "1-S2-1-111".to_string(),
-                commander: "Karax".to_string(),
-                ..ReplayPlayerInfo::default()
-            },
-            ReplayPlayerInfo {
-                name: "Ally".to_string(),
-                handle: "2-S2-1-224".to_string(),
-                commander: "Stukov".to_string(),
-                ..ReplayPlayerInfo::default()
-            },
+            player("Main", "1-S2-1-111", "Karax"),
+            player("Ally", "2-S2-1-224", "Stukov"),
         ),
     ];
 
     let snapshot = build_rebuild_snapshot(&replays, false);
     let ally_commander_data = snapshot
-        .analysis
+        .analysis()
         .get("AllyCommanderData")
         .and_then(Value::as_object)
         .expect("ally commander data should exist");

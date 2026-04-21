@@ -6,7 +6,7 @@ use sco_tauri_overlay::ReplayInfo;
 
 fn sample_replay(file: &str) -> ReplayInfo {
     let mut replay = ReplayInfo::default();
-    replay.file = file.to_string();
+    replay.set_file(file);
     replay
 }
 
@@ -52,12 +52,11 @@ fn replay_for_display_falls_back_to_most_recent_cached_replay() {
     let newest_path = test_replay_path("newest.SC2Replay");
 
     assert_eq!(
-        replay_for_display(&replays, Some("newest.SC2Replay"), &None)
-            .map(|replay| replay.file.as_str()),
+        replay_for_display(&replays, Some("newest.SC2Replay"), &None).map(|replay| replay.file()),
         Some(newest_path.as_str())
     );
     assert_eq!(
-        replay_for_display(&replays, None, &None).map(|replay| replay.file.as_str()),
+        replay_for_display(&replays, None, &None).map(|replay| replay.file()),
         Some(newest_path.as_str())
     );
 }
