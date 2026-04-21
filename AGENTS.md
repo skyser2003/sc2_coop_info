@@ -14,3 +14,4 @@
 - ALWAYS retain parallelization when doing full folder analysis and parsing.
 - Do not use #[path="..."] when importing other file or module in rust.
 - Put all tests under tests/ folder.
+- DO NOT use static/global variables to share states among the process internally, like OnceLock/Mutex/etc.
