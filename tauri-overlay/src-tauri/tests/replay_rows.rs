@@ -1,5 +1,5 @@
 use sco_tauri_overlay::test_helper::test_replay_path;
-use sco_tauri_overlay::{orient_replay_for_main_names, ReplayInfo, ReplayPlayerInfo};
+use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo};
 use serde_json::json;
 use std::collections::HashSet;
 
@@ -24,7 +24,7 @@ fn games_rows_keep_true_slot_order_when_main_player_is_slot_two() {
     let main_names = HashSet::new();
     let main_handles = HashSet::from(["1-s2-1-222".to_string()]);
 
-    let oriented = orient_replay_for_main_names(replay, &main_names, &main_handles);
+    let oriented = replay.oriented_for_main_identity(&main_names, &main_handles);
 
     assert_eq!(oriented.main().name, "Main");
     assert_eq!(oriented.ally().name, "Teammate");

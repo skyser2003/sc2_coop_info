@@ -4,14 +4,14 @@ use std::path::PathBuf;
 
 use crate::path_manager;
 
-use crate::{app_settings::AppSettings, BackendState};
+use crate::app_settings::AppSettings;
 
 fn logs_file_path() -> Option<PathBuf> {
     let path = path_manager::get_log_path();
     Some(path)
 }
 
-fn append_line(message: &str) -> Result<(), String> {
+pub(crate) fn append_line(message: &str) -> Result<(), String> {
     let Some(path) = logs_file_path() else {
         return Ok(());
     };
@@ -33,16 +33,6 @@ fn file_logging_enabled() -> bool {
 
 pub(crate) fn append_line_if_enabled(message: &str) {
     if !file_logging_enabled() {
-        return;
-    }
-
-    if let Err(error) = append_line(message) {
-        eprintln!("[SCO/log] {error}");
-    }
-}
-
-pub(crate) fn append_line_if_enabled_from_state(state: &BackendState, message: &str) {
-    if !state.file_logging_enabled() {
         return;
     }
 

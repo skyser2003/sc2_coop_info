@@ -6,10 +6,7 @@ use sco_tauri_overlay::test_helper::{
     build_rebuild_snapshot, collect_main_identity_lists, filter_replays_for_stats, load_dictionary,
     stats_replays_for_response_from_path_with_identity,
 };
-use sco_tauri_overlay::{
-    configured_main_handles_from_settings, configured_main_names_from_settings, sanitize_unit_map,
-    AppSettings, ReplayInfo, ReplayPlayerInfo,
-};
+use sco_tauri_overlay::{sanitize_unit_map, AppSettings, ReplayInfo, ReplayPlayerInfo};
 use serde_json::json;
 use serde_json::Value;
 use std::collections::HashSet;
@@ -450,8 +447,8 @@ fn miner_evacuation_fastest_payload_matches_reference_fastest_replay() {
         return;
     };
 
-    let main_names = configured_main_names_from_settings(&settings);
-    let main_handles = configured_main_handles_from_settings(&settings);
+    let main_names = settings.configured_main_names();
+    let main_handles = settings.configured_main_handles();
     let replays = stats_replays_for_response_from_path_with_identity(
         true,
         &[],
@@ -528,8 +525,8 @@ fn mastery_sum_filters_partition_existing_cache_replays() {
         return;
     };
 
-    let main_names = configured_main_names_from_settings(&settings);
-    let main_handles = configured_main_handles_from_settings(&settings);
+    let main_names = settings.configured_main_names();
+    let main_handles = settings.configured_main_handles();
     let replays = stats_replays_for_response_from_path_with_identity(
         true,
         &[],

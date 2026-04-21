@@ -1,6 +1,4 @@
-use sco_tauri_overlay::{
-    overlay_info, window_close_action, AppSettings, BackendState, WindowCloseAction,
-};
+use sco_tauri_overlay::{window_close_action, AppSettings, BackendState, WindowCloseAction};
 use serde_json::json;
 
 #[test]
@@ -54,7 +52,7 @@ fn runtime_flags_follow_active_settings_before_save() {
         "start_minimized": true,
         "minimize_to_tray": false,
     })));
-    let disabled_flags = overlay_info::parse_runtime_flags_from_state(&state);
+    let disabled_flags = state.runtime_flags();
     assert!(!disabled_flags.start_minimized);
     assert!(!disabled_flags.minimize_to_tray);
 
@@ -62,7 +60,7 @@ fn runtime_flags_follow_active_settings_before_save() {
         "start_minimized": false,
         "minimize_to_tray": true,
     })));
-    let enabled_flags = overlay_info::parse_runtime_flags_from_state(&state);
+    let enabled_flags = state.runtime_flags();
     assert!(!enabled_flags.start_minimized);
     assert!(enabled_flags.minimize_to_tray);
 

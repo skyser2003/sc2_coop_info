@@ -6,8 +6,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use crate::{
-    build_commander_unit_data_with_dictionary, configured_main_handles_from_settings,
-    configured_main_names_from_settings, replay_analysis::WeeklyRowPayload, AppSettings,
+    build_commander_unit_data_with_dictionary, replay_analysis::WeeklyRowPayload, AppSettings,
     CommanderUnitRollup, ReplayInfo, StatsSnapshot,
 };
 
@@ -36,8 +35,8 @@ pub fn load_dictionary() -> Sc2DictionaryData {
 fn default_main_identity() -> (HashSet<String>, HashSet<String>) {
     let settings = AppSettings::from_saved_file();
     (
-        configured_main_names_from_settings(&settings),
-        configured_main_handles_from_settings(&settings),
+        settings.configured_main_names(),
+        settings.configured_main_handles(),
     )
 }
 

@@ -13,7 +13,6 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::Ordering;
 use std::sync::{mpsc, Arc, Mutex, TryLockError};
 use std::thread;
@@ -22,11 +21,6 @@ use tauri_plugin_updater::UpdaterExt;
 use ts_rs::TS;
 
 use tauri::{tray::TrayIconBuilder, AppHandle, Emitter, Manager, State, Wry};
-
-#[cfg(target_os = "windows")]
-use winreg::enums::HKEY_CURRENT_USER;
-#[cfg(target_os = "windows")]
-use winreg::RegKey;
 
 mod app_settings;
 mod backend_state;
@@ -50,7 +44,6 @@ macro_rules! sco_log {
     }};
 }
 
-use crate::app_settings::PlayerNotes;
 use crate::backend_state::ReplayState;
 use crate::path_manager::{get_cache_path, is_dev_env};
 use crate::replay_analysis::ReplayAnalysis;
@@ -59,8 +52,6 @@ use crate::shared_types::{LocalizedLabels, ReplayScanProgressPayload};
 pub const UNLIMITED_REPLAY_LIMIT: usize = 0;
 const SCO_REPLAY_SCAN_PROGRESS_EVENT: &str = "sco://replay-scan-progress";
 const SCO_ANALYSIS_COMPLETED_EVENT: &str = "sco://analysis-completed";
-const WINDOWS_STARTUP_RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
-const WINDOWS_STARTUP_VALUE_NAME: &str = "SCO Overlay";
 
 #[derive(Default)]
 struct TrayState {
@@ -262,88 +253,8 @@ fn mutator_display_name_en_with_dictionary(
         .unwrap_or_default()
 }
 
-fn get_system_language() -> String {
-    let default = "en";
-    let locale = sys_locale::get_locale();
-
-    let language = if let Some(locale) = locale.as_ref() {
-        locale
-            .split("-")
-            .next()
-            .filter(|language| !language.is_empty())
-            .unwrap_or(default)
-    } else {
-        "en"
-    };
-
-    language.to_string()
-}
-
 pub fn windows_startup_command_value(executable_path: &Path) -> String {
     format!("\"{}\"", executable_path.display())
-}
-
-#[cfg(target_os = "windows")]
-fn sync_windows_startup_registration(enabled: bool) -> Result<(), String> {
-    if enabled {
-        let executable_path = std::env::current_exe()
-            .map_err(|error| format!("Failed to resolve executable path: {error}"))?;
-        let command_value = windows_startup_command_value(&executable_path);
-        let status = Command::new("reg")
-            .args([
-                "add",
-                WINDOWS_STARTUP_RUN_KEY,
-                "/v",
-                WINDOWS_STARTUP_VALUE_NAME,
-                "/t",
-                "REG_SZ",
-                "/d",
-                &command_value,
-                "/f",
-            ])
-            .status()
-            .map_err(|error| format!("Failed to update Windows startup entry: {error}"))?;
-        if status.success() {
-            Ok(())
-        } else {
-            Err(format!(
-                "reg add exited with status {}",
-                status
-                    .code()
-                    .map_or_else(|| "unknown".to_string(), |code| code.to_string())
-            ))
-        }
-    } else {
-        let status = Command::new("reg")
-            .args([
-                "delete",
-                WINDOWS_STARTUP_RUN_KEY,
-                "/v",
-                WINDOWS_STARTUP_VALUE_NAME,
-                "/f",
-            ])
-            .status()
-            .map_err(|error| format!("Failed to remove Windows startup entry: {error}"))?;
-        if status.success() || status.code() == Some(1) {
-            Ok(())
-        } else {
-            Err(format!(
-                "reg delete exited with status {}",
-                status
-                    .code()
-                    .map_or_else(|| "unknown".to_string(), |code| code.to_string())
-            ))
-        }
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn sync_windows_startup_registration(_enabled: bool) -> Result<(), String> {
-    Ok(())
-}
-
-fn sync_start_with_windows_setting(settings: &AppSettings) -> Result<(), String> {
-    sync_windows_startup_registration(settings.start_with_windows)
 }
 
 pub const OVERLAY_RUNTIME_SETTING_KEYS: [&str; 9] = [
@@ -440,34 +351,6 @@ fn apply_runtime_settings(
     }
 }
 
-pub fn update_settings_player_note(
-    settings: &mut AppSettings,
-    handle: &str,
-    note_value: &str,
-) -> Result<(), String> {
-    let normalized_handle = ReplayAnalysis::normalized_handle_key(handle);
-    if normalized_handle.is_empty() {
-        return Err("Handle is empty".to_string());
-    }
-
-    let notes: &mut PlayerNotes = &mut settings.player_notes;
-
-    let existing_key = notes
-        .keys()
-        .find(|key| ReplayAnalysis::normalized_handle_key(key) == normalized_handle)
-        .cloned()
-        .unwrap_or_else(|| sanitize_replay_text(handle).trim().to_string());
-
-    let trimmed_note = note_value.trim();
-    if trimmed_note.is_empty() {
-        notes.remove(&existing_key);
-    } else {
-        notes.insert(existing_key, note_value.to_string());
-    }
-
-    Ok(())
-}
-
 pub fn folder_dialog_start_directory(directory: Option<String>) -> Option<PathBuf> {
     let trimmed = directory
         .as_deref()
@@ -500,37 +383,6 @@ fn units_to_stats_with_dictionary(dictionary: &Sc2DictionaryData) -> HashSet<Str
     dictionary.units_to_stats.clone()
 }
 
-fn extract_account_handles_from_folder(account_root: &str) -> HashSet<String> {
-    let mut handles = HashSet::new();
-    let root = PathBuf::from(account_root);
-    if !root.exists() || !root.is_dir() {
-        return handles;
-    }
-
-    let mut stack = vec![root];
-    while let Some(current) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&current) else {
-            continue;
-        };
-        for entry in entries.filter_map(Result::ok) {
-            let path = entry.path();
-            let Ok(meta) = entry.metadata() else {
-                continue;
-            };
-            if meta.is_dir() {
-                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    let normalized = ReplayAnalysis::normalized_handle_key(name);
-                    if !normalized.is_empty() {
-                        handles.insert(normalized);
-                    }
-                }
-                stack.push(path);
-            }
-        }
-    }
-    handles
-}
-
 fn infer_owner_handle_from_replay_path(path: &str) -> Option<String> {
     let replay_path = Path::new(path);
     for component in replay_path.components() {
@@ -541,113 +393,6 @@ fn infer_owner_handle_from_replay_path(path: &str) -> Option<String> {
         }
     }
     None
-}
-
-fn get_default_accounts_folder() -> String {
-    #[cfg(target_os = "windows")]
-    {
-        // Try to get StarCraft II accounts folder from registry
-        if let Ok(sc2_key) = RegKey::predef(HKEY_CURRENT_USER)
-            .open_subkey(r"Software\Blizzard Entertainment\StarCraft II")
-        {
-            if let Ok(path) = sc2_key.get_value::<String, &str>("InstallPath") {
-                let accounts_folder = Path::new(&path).join("Accounts");
-                if let Some(accounts_str) = accounts_folder.to_str() {
-                    return accounts_str.to_string();
-                }
-            }
-        }
-
-        // Fallback to standard user Documents path
-        if let Ok(shell_folders) = RegKey::predef(HKEY_CURRENT_USER)
-            .open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders")
-        {
-            if let Ok(documents) = shell_folders.get_value::<String, &str>("Personal") {
-                let accounts_folder = Path::new(&documents).join("StarCraft II").join("Accounts");
-                if let Some(accounts_str) = accounts_folder.to_str() {
-                    return accounts_str.to_string();
-                }
-            }
-        }
-
-        String::new()
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        String::new()
-    }
-}
-
-pub fn configured_main_names_from_settings(settings: &AppSettings) -> HashSet<String> {
-    let mut names = settings
-        .main_names
-        .iter()
-        .map(|name| ReplayAnalysis::normalized_player_key(name))
-        .filter(|name| !name.is_empty())
-        .collect::<HashSet<_>>();
-
-    if !names.is_empty() {
-        return names;
-    }
-
-    let account_root = settings.account_folder.trim();
-    if account_root.is_empty() {
-        return names;
-    }
-
-    let root = PathBuf::from(account_root);
-    if !root.exists() || !root.is_dir() {
-        return names;
-    }
-
-    let mut stack = vec![root];
-    while let Some(current) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&current) else {
-            continue;
-        };
-        for entry in entries.filter_map(Result::ok) {
-            let path = entry.path();
-            let Ok(meta) = entry.metadata() else {
-                continue;
-            };
-            if meta.is_dir() {
-                stack.push(path);
-                continue;
-            }
-            if !meta.is_file() {
-                continue;
-            }
-            let is_link = path
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("lnk"));
-            if !is_link {
-                continue;
-            }
-            let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
-                continue;
-            };
-            if !stem.contains('_') || !stem.contains('@') {
-                continue;
-            }
-            let name = stem.split('_').next().unwrap_or_default();
-            let normalized = ReplayAnalysis::normalized_player_key(name);
-            if !normalized.is_empty() {
-                names.insert(normalized);
-            }
-        }
-    }
-
-    names
-}
-
-pub fn configured_main_handles_from_settings(settings: &AppSettings) -> HashSet<String> {
-    let account_root = settings.account_folder.trim();
-    if account_root.is_empty() {
-        return HashSet::new();
-    }
-    extract_account_handles_from_folder(account_root)
 }
 
 fn replay_should_swap_main_and_ally(
@@ -698,20 +443,6 @@ fn swap_player_stats_sides(value: &mut Value) {
     if let Some(v1) = one {
         obj.insert("2".to_string(), v1);
     }
-}
-
-pub fn orient_replay_for_main_names(
-    mut replay: ReplayInfo,
-    main_names: &HashSet<String>,
-    main_handles: &HashSet<String>,
-) -> ReplayInfo {
-    if !replay_should_swap_main_and_ally(&replay, main_names, main_handles) {
-        return replay;
-    }
-
-    replay.main_slot = replay.ally_index();
-    swap_player_stats_sides(&mut replay.player_stats);
-    replay
 }
 
 #[derive(Clone, Serialize, Default, PartialEq, TS)]
@@ -839,6 +570,20 @@ impl ReplayInfo {
         existing_is_detailed || !incoming_is_detailed
     }
 
+    pub fn oriented_for_main_identity(
+        mut self,
+        main_names: &HashSet<String>,
+        main_handles: &HashSet<String>,
+    ) -> Self {
+        if !replay_should_swap_main_and_ally(&self, main_names, main_handles) {
+            return self;
+        }
+
+        self.main_slot = self.ally_index();
+        swap_player_stats_sides(&mut self.player_stats);
+        self
+    }
+
     pub(crate) fn sort_replays(replays: &mut [Self]) {
         replays.sort_by(|left, right| {
             right
@@ -963,6 +708,28 @@ impl ReplayInfo {
 
     pub fn ally_icons(&self) -> &Value {
         &self.ally().icons
+    }
+
+    pub(crate) fn date_seconds_for_filter(&self) -> u64 {
+        if self.date > 0 {
+            return self.date;
+        }
+
+        ReplayAnalysis::modified_seconds(Path::new(&self.file))
+    }
+
+    pub(crate) fn has_detailed_unit_stats(&self) -> bool {
+        self.main_units()
+            .as_object()
+            .is_some_and(|units| !units.is_empty())
+            || self
+                .ally_units()
+                .as_object()
+                .is_some_and(|units| !units.is_empty())
+            || self
+                .amon_units
+                .as_object()
+                .is_some_and(|units| !units.is_empty())
     }
 
     pub fn as_games_row_payload_with_dictionary(
@@ -1901,73 +1668,6 @@ fn format_date_from_system_time(time: SystemTime) -> u64 {
         .map_or(0, |duration| duration.as_secs())
 }
 
-fn build_replay_root_candidates(raw: &str) -> Vec<PathBuf> {
-    let trimmed = raw.trim().trim_matches(&['"', '\''][..]).to_string();
-    if trimmed.is_empty() {
-        return Vec::new();
-    }
-
-    let mut candidates = Vec::with_capacity(3);
-    let primary = PathBuf::from(&trimmed);
-    candidates.push(primary.clone());
-
-    let swapped = if trimmed.contains('\\') {
-        trimmed.replace('\\', "/")
-    } else {
-        trimmed.replace('/', "\\")
-    };
-    if !swapped.is_empty() {
-        let swapped_path = PathBuf::from(&swapped);
-        if swapped_path != primary {
-            candidates.push(swapped_path);
-        }
-    }
-
-    let drive_prefix = trimmed.chars().nth(1) == Some(':');
-    if drive_prefix {
-        let windows_drive = trimmed
-            .chars()
-            .next()
-            .unwrap_or('C')
-            .to_ascii_lowercase()
-            .to_string();
-        let rest = trimmed[2..].trim_start_matches(['\\', '/'].as_ref());
-        let wsl = format!(
-            "/mnt/{}/{}",
-            windows_drive,
-            rest.replace('\\', "/").trim_start_matches('/')
-        );
-        let wsl_path = PathBuf::from(&wsl);
-        if wsl_path != primary {
-            candidates.push(wsl_path);
-        }
-    }
-    candidates
-}
-
-fn resolve_replay_root(settings: &AppSettings) -> Option<PathBuf> {
-    let account_folder = settings.account_folder.trim();
-    if !account_folder.is_empty() {
-        let candidates = build_replay_root_candidates(account_folder);
-        if let Some(path) = candidates.iter().find(|path| path.is_dir()) {
-            return Some(path.clone());
-        }
-    }
-
-    None
-}
-
-fn replay_watch_root_from_settings(settings: &AppSettings) -> Option<PathBuf> {
-    let account_folder = settings.account_folder.trim();
-    if account_folder.is_empty() {
-        return None;
-    }
-
-    build_replay_root_candidates(account_folder)
-        .into_iter()
-        .find(|candidate| candidate.is_dir())
-}
-
 fn clear_analysis_cache_files() {
     let cache_path = get_cache_path();
     let temp_path = PathBuf::from(format!("{}_temp", cache_path.display()));
@@ -1993,7 +1693,7 @@ fn generate_detailed_analysis_cache(
     let state = app.state::<BackendState>();
     let settings = state.read_settings_memory();
     let replay_scan_progress = state.replay_scan_progress();
-    let Some(account_dir) = resolve_replay_root(&settings) else {
+    let Some(account_dir) = settings.resolve_replay_root() else {
         return Err("Replay root is not configured for detailed analysis.".to_string());
     };
     let output_file = get_cache_path();
@@ -2235,23 +1935,25 @@ pub fn parse_detailed_analysis_progress_counts(message: &str) -> Option<(u64, u6
     None
 }
 
-fn set_analysis_running_status(stats: &mut StatsState, mode: AnalysisMode, phase: &str) {
-    let status = analysis_status_text(mode, phase);
-    match mode {
-        AnalysisMode::Simple => stats.simple_analysis_status = status,
-        AnalysisMode::Detailed => stats.detailed_analysis_status = status,
-    }
-}
-
-fn set_analysis_terminal_status(stats: &mut StatsState, mode: AnalysisMode, phase: &str) {
-    stats.analysis_running = false;
-    stats.analysis_running_mode = None;
-    match mode {
-        AnalysisMode::Simple => {
-            stats.simple_analysis_status = analysis_status_text(mode, phase);
+impl StatsState {
+    fn set_analysis_running_status(&mut self, mode: AnalysisMode, phase: &str) {
+        let status = analysis_status_text(mode, phase);
+        match mode {
+            AnalysisMode::Simple => self.simple_analysis_status = status,
+            AnalysisMode::Detailed => self.detailed_analysis_status = status,
         }
-        AnalysisMode::Detailed => {
-            stats.detailed_analysis_status = analysis_status_text(mode, phase);
+    }
+
+    fn set_analysis_terminal_status(&mut self, mode: AnalysisMode, phase: &str) {
+        self.analysis_running = false;
+        self.analysis_running_mode = None;
+        match mode {
+            AnalysisMode::Simple => {
+                self.simple_analysis_status = analysis_status_text(mode, phase);
+            }
+            AnalysisMode::Detailed => {
+                self.detailed_analysis_status = analysis_status_text(mode, phase);
+            }
         }
     }
 }
@@ -2560,8 +2262,7 @@ fn spawn_analysis_task(
         }
         guard.analysis_running = true;
         guard.analysis_running_mode = Some(mode);
-        set_analysis_running_status(
-            &mut guard,
+        guard.set_analysis_running_status(
             mode,
             if include_detailed {
                 "generating cache"
@@ -2633,7 +2334,7 @@ fn spawn_analysis_task(
                 let elapsed = started_at.elapsed();
                 crate::sco_log!("[SCO/stats] {} failed: {message}", mode.display());
                 if let Ok(mut guard) = analysis_state.lock() {
-                    set_analysis_terminal_status(&mut guard, mode, "failed");
+                    guard.set_analysis_terminal_status(mode, "failed");
                     guard.detailed_analysis_status = analysis_error_status_text(mode, &message);
                     guard.message = analysis_failed_message(mode, &message, elapsed);
                 }
@@ -2654,7 +2355,7 @@ fn spawn_analysis_task(
             if include_detailed {
                 let replay_count = analysis_outcome.reported_replay_count;
                 if analysis_outcome.analysis_completed {
-                    set_analysis_running_status(&mut guard, mode, "refreshing replay summaries");
+                    guard.set_analysis_running_status(mode, "refreshing replay summaries");
                     guard.message = format!(
                         "Generated '{}' with {} replay entr{}.",
                         get_cache_path().display(),
@@ -2700,7 +2401,7 @@ fn spawn_analysis_task(
             .collect::<Vec<_>>();
 
         let current_replay_files =
-            current_replay_files_snapshot(UNLIMITED_REPLAY_LIMIT, &settings_for_thread);
+            settings_for_thread.current_replay_files_snapshot(UNLIMITED_REPLAY_LIMIT);
         if include_detailed && !detailed_completed {
             replay_scan_progress_for_thread
                 .total
@@ -2769,7 +2470,7 @@ fn spawn_analysis_task(
             guard.analysis_running = false;
             guard.analysis_running_mode = None;
         } else {
-            set_analysis_running_status(&mut guard, mode, "building statistics");
+            guard.set_analysis_running_status(mode, "building statistics");
         }
 
         apply_rebuild_snapshot(&mut guard, snapshot, mode);
@@ -2787,13 +2488,12 @@ fn spawn_analysis_task(
         }
         if !include_detailed {
             if let Some(dictionary) = dictionary.as_deref() {
-                sync_detailed_analysis_status_from_replays_with_dictionary(
-                    &mut guard,
+                guard.sync_detailed_analysis_status_from_replays_with_dictionary(
                     &all_replays,
                     dictionary,
                 );
             } else {
-                sync_detailed_analysis_status_from_replays(&mut guard, &all_replays);
+                guard.sync_detailed_analysis_status_from_replays(&all_replays);
             }
         }
         replay_scan_progress_for_thread.set_stage("analysis_ready");
@@ -3028,17 +2728,6 @@ fn replay_chat_payload_from_slots(
         .as_deref()
         .map(|dictionary| replay.chat_payload_with_dictionary(dictionary))
         .unwrap_or_else(|| replay.chat_payload_with_dictionary(resources.dictionary_data())))
-}
-
-fn current_replay_files_snapshot(limit: usize, settings: &AppSettings) -> HashSet<String> {
-    let Some(root) = resolve_replay_root(settings) else {
-        return HashSet::new();
-    };
-
-    ReplayAnalysis::collect_replay_paths(&root, limit)
-        .into_iter()
-        .map(|path| path.to_string_lossy().to_string())
-        .collect()
 }
 
 fn path_is_sc2_replay(path: &Path) -> bool {
@@ -3364,61 +3053,63 @@ fn collect_sc2_replay_files(root: &Path) -> Vec<PathBuf> {
     out
 }
 
-pub fn sync_detailed_analysis_status_from_replays(stats: &mut StatsState, replays: &[ReplayInfo]) {
-    let total_valid_files = replays
-        .iter()
-        .filter(|replay| replay.result != "Unparsed" && replay.map.trim().starts_with("AC_"))
-        .count();
-    let detailed_parsed_count = replays
-        .iter()
-        .filter(|replay| {
-            replay.result != "Unparsed"
-                && replay.map.trim().starts_with("AC_")
-                && ReplayAnalysis::replay_has_detailed_unit_stats(replay)
-        })
-        .count();
+impl StatsState {
+    pub fn sync_detailed_analysis_status_from_replays(&mut self, replays: &[ReplayInfo]) {
+        let total_valid_files = replays
+            .iter()
+            .filter(|replay| replay.result != "Unparsed" && replay.map.trim().starts_with("AC_"))
+            .count();
+        let detailed_parsed_count = replays
+            .iter()
+            .filter(|replay| {
+                replay.result != "Unparsed"
+                    && replay.map.trim().starts_with("AC_")
+                    && replay.has_detailed_unit_stats()
+            })
+            .count();
 
-    stats.analysis_running = false;
-    stats.analysis_running_mode = None;
-    stats.detailed_analysis_status = if detailed_parsed_count == 0 {
-        analysis_status_text(AnalysisMode::Detailed, "not started")
-    } else {
-        format!(
-            "Detailed analysis: loaded from cache ({detailed_parsed_count}/{total_valid_files})."
-        )
-    };
-}
+        self.analysis_running = false;
+        self.analysis_running_mode = None;
+        self.detailed_analysis_status = if detailed_parsed_count == 0 {
+            analysis_status_text(AnalysisMode::Detailed, "not started")
+        } else {
+            format!(
+                "Detailed analysis: loaded from cache ({detailed_parsed_count}/{total_valid_files})."
+            )
+        };
+    }
 
-pub fn sync_detailed_analysis_status_from_replays_with_dictionary(
-    stats: &mut StatsState,
-    replays: &[ReplayInfo],
-    dictionary: &Sc2DictionaryData,
-) {
-    let total_valid_files = replays
-        .iter()
-        .filter(|replay| {
-            replay.result != "Unparsed"
-                && dictionary.canonicalize_coop_map_id(&replay.map).is_some()
-        })
-        .count();
-    let detailed_parsed_count = replays
-        .iter()
-        .filter(|replay| {
-            replay.result != "Unparsed"
-                && dictionary.canonicalize_coop_map_id(&replay.map).is_some()
-                && ReplayAnalysis::replay_has_detailed_unit_stats(replay)
-        })
-        .count();
+    pub fn sync_detailed_analysis_status_from_replays_with_dictionary(
+        &mut self,
+        replays: &[ReplayInfo],
+        dictionary: &Sc2DictionaryData,
+    ) {
+        let total_valid_files = replays
+            .iter()
+            .filter(|replay| {
+                replay.result != "Unparsed"
+                    && dictionary.canonicalize_coop_map_id(&replay.map).is_some()
+            })
+            .count();
+        let detailed_parsed_count = replays
+            .iter()
+            .filter(|replay| {
+                replay.result != "Unparsed"
+                    && dictionary.canonicalize_coop_map_id(&replay.map).is_some()
+                    && replay.has_detailed_unit_stats()
+            })
+            .count();
 
-    stats.analysis_running = false;
-    stats.analysis_running_mode = None;
-    stats.detailed_analysis_status = if detailed_parsed_count == 0 {
-        analysis_status_text(AnalysisMode::Detailed, "not started")
-    } else {
-        format!(
-            "Detailed analysis: loaded from cache ({detailed_parsed_count}/{total_valid_files})."
-        )
-    };
+        self.analysis_running = false;
+        self.analysis_running_mode = None;
+        self.detailed_analysis_status = if detailed_parsed_count == 0 {
+            analysis_status_text(AnalysisMode::Detailed, "not started")
+        } else {
+            format!(
+                "Detailed analysis: loaded from cache ({detailed_parsed_count}/{total_valid_files})."
+            )
+        };
+    }
 }
 
 fn process_new_replay_path(
@@ -3457,7 +3148,7 @@ fn process_new_replay_path(
 
     let main_names = state.configured_main_names();
     let main_handles = state.configured_main_handles();
-    let replay = orient_replay_for_main_names(parsed, &main_names, &main_handles);
+    let replay = parsed.oriented_for_main_identity(&main_names, &main_handles);
     let replay_hash = cache_entry
         .as_ref()
         .map(|entry| entry.hash.clone())
@@ -3561,7 +3252,7 @@ fn process_replay_detailed(
 
     let main_names = state.configured_main_names();
     let main_handles = state.configured_main_handles();
-    let replay = orient_replay_for_main_names(parsed, &main_names, &main_handles);
+    let replay = parsed.oriented_for_main_identity(&main_names, &main_handles);
 
     crate::sco_log!(
         "[SCO/show] replay accepted file='{}' date={} result='{}' main='{}' ally='{}' main_comm='{}' ally_comm='{}'",
@@ -3630,7 +3321,7 @@ fn spawn_replay_creation_watcher(app: tauri::AppHandle<Wry>) {
     thread::spawn(move || {
         let replay_root = loop {
             let settings = app.state::<BackendState>().read_settings_memory();
-            if let Some(root) = replay_watch_root_from_settings(&settings) {
+            if let Some(root) = settings.replay_watch_root() {
                 break root;
             }
             crate::sco_log!("[SCO/watch] account_folder replay root unavailable, retrying in 5s");
@@ -4097,7 +3788,7 @@ pub(crate) fn apply_rebuild_snapshot(
     stats.prestige_names = snapshot.prestige_names;
     stats.message = snapshot.message;
 
-    set_analysis_terminal_status(stats, mode, "completed");
+    stats.set_analysis_terminal_status(mode, "completed");
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -4205,6 +3896,14 @@ impl StatsState {
         }
     }
 
+    pub(crate) fn include_detailed_stats_for_cache(&self, replays: &[ReplayInfo]) -> bool {
+        self.analysis
+            .as_ref()
+            .and_then(|analysis| analysis.get("UnitData"))
+            .is_some_and(|value| !value.is_null())
+            || replays.iter().any(ReplayInfo::has_detailed_unit_stats)
+    }
+
     fn as_payload(&self, scan_progress: ReplayScanProgressPayload) -> Value {
         let (analysis, main_players, main_handles, prestige_names, games, message) = if self.ready {
             (
@@ -4257,26 +3956,6 @@ impl StatsState {
     }
 }
 
-fn log_request(state: &BackendState, method: &str, path: &str, body: &Option<Value>) {
-    let serialized_body = body
-        .as_ref()
-        .map(|payload| serde_json::to_string(payload).unwrap_or_else(|_| "<invalid-json>".into()));
-    if let Some(serialized_body) = serialized_body {
-        logging::append_line_if_enabled_from_state(
-            state,
-            &format!(
-                "[SCO/request] method={} path={} body={}",
-                method, path, serialized_body
-            ),
-        );
-    } else {
-        logging::append_line_if_enabled_from_state(
-            state,
-            &format!("[SCO/request] method={} path={}", method, path),
-        );
-    }
-}
-
 #[tauri::command]
 fn performance_start_drag(app: tauri::AppHandle<Wry>) -> Result<(), String> {
     performance_overlay::start_drag(&app)
@@ -4319,7 +3998,7 @@ async fn config_get(
     app: tauri::AppHandle<Wry>,
     state: State<'_, BackendState>,
 ) -> Result<ConfigPayload, String> {
-    log_request(&state, "get", "/config", &None);
+    state.log_request("get", "/config", &None);
     Ok(ConfigPayload {
         status: "ok",
         settings: AppSettings::from_saved_file(),
@@ -4343,7 +4022,7 @@ async fn config_update(
         "settings": settings,
         "persist": persist.unwrap_or(true),
     })));
-    log_request(&state, "post", "/config", &body);
+    state.log_request("post", "/config", &body);
 
     let settings_value = body
         .as_ref()
@@ -4385,7 +4064,7 @@ async fn config_replays_get(
     state: State<'_, BackendState>,
 ) -> Result<ConfigReplaysPayload, String> {
     let path = format!("/config/replays?limit={}", limit.unwrap_or(300));
-    log_request(&state, "get", &path, &None);
+    state.log_request("get", &path, &None);
     let limit = parse_query_usize(&path, "limit", 300);
     let replay_state = state.get_replay_state();
     let main_names = state.configured_main_names();
@@ -4445,7 +4124,7 @@ async fn config_players_get(
     state: State<'_, BackendState>,
 ) -> Result<ConfigPlayersPayload, String> {
     let path = format!("/config/players?limit={}", limit.unwrap_or(500));
-    log_request(&state, "get", &path, &None);
+    state.log_request("get", &path, &None);
     let limit = parse_query_usize(&path, "limit", 500);
     let replay_state = state.get_replay_state();
     let replays = match replay_state.try_lock() {
@@ -4500,7 +4179,7 @@ async fn config_weeklies_get(
     _app: tauri::AppHandle<Wry>,
     state: State<'_, BackendState>,
 ) -> Result<ConfigWeekliesPayload, String> {
-    log_request(&state, "get", "/config/weeklies", &None);
+    state.log_request("get", "/config/weeklies", &None);
     let replay_state = state.get_replay_state();
     let main_names = state.configured_main_names();
     let main_handles = state.configured_main_handles();
@@ -4550,7 +4229,7 @@ async fn config_stats_get(
     } else {
         "/config/stats".to_string()
     };
-    log_request(&state, "get", &path, &None);
+    state.log_request("get", &path, &None);
     let stats = state.stats.clone();
     let replays = state
         .get_replay_state()
@@ -4604,7 +4283,7 @@ async fn config_replay_show(
     state: State<'_, BackendState>,
 ) -> Result<OverlayActionResponse, String> {
     let body = Some(to_json_value(serde_json::json!({ "file": file })));
-    log_request(&state, "post", "/config/replays/show", &body);
+    state.log_request("post", "/config/replays/show", &body);
     let requested = body
         .as_ref()
         .and_then(|payload| payload.get("file"))
@@ -4621,7 +4300,7 @@ async fn config_replay_chat(
     state: State<'_, BackendState>,
 ) -> Result<ConfigChatPayload, String> {
     let body = Some(to_json_value(serde_json::json!({ "file": file })));
-    log_request(&state, "post", "/config/replays/chat", &body);
+    state.log_request("post", "/config/replays/chat", &body);
     let requested_file = body
         .as_ref()
         .and_then(|payload| payload.get("file"))
@@ -4657,7 +4336,7 @@ async fn config_replay_move(
     state: State<'_, BackendState>,
 ) -> Result<OverlayActionResponse, String> {
     let body = Some(to_json_value(serde_json::json!({ "delta": delta })));
-    log_request(&state, "post", "/config/replays/move", &body);
+    state.log_request("post", "/config/replays/move", &body);
     let delta = body
         .as_ref()
         .and_then(|payload| payload.get("delta"))
@@ -4679,7 +4358,7 @@ async fn config_action(
     } else {
         Some(to_json_value(serde_json::json!({ "action": action })))
     };
-    log_request(&state, "post", "/config/action", &body);
+    state.log_request("post", "/config/action", &body);
     let action = body
         .as_ref()
         .and_then(|payload| payload.get("action"))
@@ -4700,11 +4379,11 @@ async fn config_action(
                 .unwrap_or("");
 
             let mut saved_settings = AppSettings::from_saved_file();
-            update_settings_player_note(&mut saved_settings, player_name, note_value)?;
+            saved_settings.update_player_note(player_name, note_value)?;
             saved_settings.write_saved_settings_file()?;
 
             let mut active_settings = state.read_settings_memory();
-            update_settings_player_note(&mut active_settings, player_name, note_value)?;
+            active_settings.update_player_note(player_name, note_value)?;
             state.replace_active_settings(&active_settings);
 
             Ok(OverlayActionResponse::success(
@@ -4742,7 +4421,7 @@ async fn config_stats_action(
     } else {
         Some(to_json_value(serde_json::json!({ "action": action })))
     };
-    log_request(&state, "post", "/config/stats/action", &body);
+    state.log_request("post", "/config/stats/action", &body);
     let action = body
         .as_ref()
         .and_then(|payload| payload.get("action"))
@@ -4917,8 +4596,8 @@ async fn config_stats_action(
             stats.startup_analysis_requested = false;
             stats.analysis = Some(empty_stats_payload());
             stats.prestige_names = Default::default();
-            set_analysis_terminal_status(&mut stats, AnalysisMode::Simple, "not started");
-            set_analysis_terminal_status(&mut stats, AnalysisMode::Detailed, "not started");
+            stats.set_analysis_terminal_status(AnalysisMode::Simple, "not started");
+            stats.set_analysis_terminal_status(AnalysisMode::Detailed, "not started");
             state.set_detailed_analysis_stop_controller(None);
             stats.message = "No parsed statistics available yet.".to_string();
             state.clear_replay_cache_slots();
@@ -5067,7 +4746,7 @@ pub fn run() {
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
                 let state = window.app_handle().state::<BackendState>();
-                let flags = overlay_info::parse_runtime_flags_from_state(&state);
+                let flags = state.runtime_flags();
                 match window_close_action(
                     window.label(),
                     flags.minimize_to_tray,
@@ -5104,7 +4783,7 @@ pub fn run() {
             spawn_replay_analysis_resource_warmup(app.handle().clone());
 
             let state = app.state::<BackendState>();
-            let flags = overlay_info::parse_runtime_flags_from_state(&state);
+            let flags = state.runtime_flags();
 
             if flags.auto_update {
                 let handle = app.handle().clone();
@@ -5182,7 +4861,7 @@ pub fn run() {
             }
 
             let startup_settings = state.read_settings_memory();
-            if let Err(error) = sync_start_with_windows_setting(&startup_settings) {
+            if let Err(error) = startup_settings.sync_start_with_windows_registration() {
                 crate::sco_log!("[SCO/settings] Failed to initialize start_with_windows: {error}");
             }
 

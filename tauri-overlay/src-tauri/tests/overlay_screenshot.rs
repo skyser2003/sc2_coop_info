@@ -20,12 +20,10 @@ fn unique_temp_dir(name: &str) -> PathBuf {
 #[test]
 fn overlay_screenshot_output_path_uses_configured_folder_and_timestamp() {
     let captured_at = UNIX_EPOCH + Duration::from_secs(1_234_567);
-    let path = overlay_info::overlay_screenshot_output_path_from_settings(
-        &AppSettings::merge_settings_with_defaults(json!({
-            "screenshot_folder": "shots",
-        })),
-        captured_at,
-    )
+    let path = AppSettings::merge_settings_with_defaults(json!({
+        "screenshot_folder": "shots",
+    }))
+    .overlay_screenshot_output_path(captured_at)
     .expect("screenshot path should be generated");
 
     assert_eq!(path, PathBuf::from("shots").join("overlay-1234567.png"));

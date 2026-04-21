@@ -14,16 +14,17 @@ use s2coop_analyzer::detailed_replay_analysis::{
 };
 use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{Map, Value};
 
-use crate::shared_types::ReplayScanProgressPayload;
+use crate::shared_types::{
+    OverlayPlayerStatsPayload, OverlayPlayerStatsRow, ReplayScanProgressPayload,
+};
 use crate::{
-    apply_rebuild_snapshot, configured_main_handles_from_settings,
-    configured_main_names_from_settings, overlay_info::ResolvedHotkeyBinding,
-    replay_analysis::ReplayAnalysis, session_counter_delta,
-    sync_detailed_analysis_status_from_replays,
-    sync_detailed_analysis_status_from_replays_with_dictionary, AnalysisMode, AppSettings,
-    ReplayInfo, StatsState, UNLIMITED_REPLAY_LIMIT,
+    apply_rebuild_snapshot,
+    overlay_info::{ResolvedHotkeyBinding, RuntimeFlags},
+    replay_analysis::ReplayAnalysis,
+    sanitize_replay_text, session_counter_delta, AnalysisMode, AppSettings, ReplayInfo, StatsState,
+    UNLIMITED_REPLAY_LIMIT,
 };
 
 #[derive(Default)]
@@ -264,15 +265,105 @@ fn upsert_replay_map(
     }
 }
 
-fn include_detailed_stats_for_cache(stats: &StatsState, replays: &[ReplayInfo]) -> bool {
-    stats
-        .analysis
-        .as_ref()
-        .and_then(|analysis| analysis.get("UnitData"))
-        .is_some_and(|value| !value.is_null())
-        || replays
-            .iter()
-            .any(ReplayAnalysis::replay_has_detailed_unit_stats)
+fn as_u32(value: u64) -> u32 {
+    u32::try_from(value).unwrap_or(u32::MAX)
+}
+
+fn select_other_player_for_stats(
+    replay: &ReplayInfo,
+    main_names: &HashSet<String>,
+    main_handles: &HashSet<String>,
+) -> Option<(String, String)> {
+    let p1 = replay.main().name.trim();
+    let p2 = replay.ally().name.trim();
+
+    if p1.is_empty() && p2.is_empty() {
+        return None;
+    }
+
+    let p1_handle = replay.main().handle.clone();
+    let p2_handle = replay.ally().handle.clone();
+
+    let p1_is_main = ReplayAnalysis::is_main_player_identity(
+        &replay.main().name,
+        &replay.main().handle,
+        main_names,
+        main_handles,
+    );
+    let p2_is_main = ReplayAnalysis::is_main_player_identity(
+        &replay.ally().name,
+        &replay.ally().handle,
+        main_names,
+        main_handles,
+    );
+
+    match (p1_is_main, p2_is_main) {
+        (true, false) => (!p2.is_empty()).then_some((p2_handle, p2.to_string())),
+        (false, true) => (!p1.is_empty()).then_some((p1_handle, p1.to_string())),
+        _ => {
+            if !p2.is_empty() {
+                Some((p2_handle, p2.to_string()))
+            } else if !p1.is_empty() {
+                Some((p1_handle, p1.to_string()))
+            } else {
+                None
+            }
+        }
+    }
+}
+
+fn lookup_player_stats_row(
+    player_data: &Map<String, Value>,
+    player_name: &str,
+) -> Option<(String, Map<String, Value>)> {
+    if let Some(value) = player_data.get(player_name).and_then(Value::as_object) {
+        return Some((player_name.to_string(), value.clone()));
+    }
+
+    let player_key = ReplayAnalysis::normalized_player_key(player_name);
+    player_data.iter().find_map(|(name, value)| {
+        if ReplayAnalysis::normalized_player_key(name) != player_key {
+            return None;
+        }
+        value
+            .as_object()
+            .map(|entry| (name.to_string(), entry.clone()))
+    })
+}
+
+fn relative_last_seen_text(last_seen: u64) -> String {
+    if last_seen == 0 {
+        return String::new();
+    }
+
+    let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(delta) => delta.as_secs(),
+        Err(_) => return String::new(),
+    };
+    let mut delta = now.saturating_sub(last_seen);
+
+    let years = delta / 31_557_600;
+    delta %= 31_557_600;
+    let days = delta / 86_400;
+    delta %= 86_400;
+    let hours = delta / 3_600;
+    delta %= 3_600;
+    let minutes = delta / 60;
+
+    let mut parts = Vec::<String>::new();
+    if years > 0 {
+        parts.push(format!("{years} years"));
+    }
+    if days > 0 {
+        parts.push(format!("{days} days"));
+    }
+    if hours > 0 {
+        parts.push(format!("{hours} hours"));
+    }
+    if minutes > 0 || parts.is_empty() {
+        parts.push(format!("{minutes} minutes"));
+    }
+    format!("{} ago", parts.join(" "))
 }
 
 impl Default for BackendState {
@@ -355,6 +446,37 @@ impl BackendState {
             .unwrap_or_else(|_| AppSettings::from_saved_file())
     }
 
+    pub fn runtime_flags(&self) -> RuntimeFlags {
+        self.read_settings_memory().runtime_flags()
+    }
+
+    pub(crate) fn append_log_line_if_enabled(&self, message: &str) {
+        if !self.file_logging_enabled() {
+            return;
+        }
+
+        if let Err(error) = crate::logging::append_line(message) {
+            eprintln!("[SCO/log] {error}");
+        }
+    }
+
+    pub(crate) fn log_request(&self, method: &str, path: &str, body: &Option<Value>) {
+        let serialized_body = body.as_ref().map(|payload| {
+            serde_json::to_string(payload).unwrap_or_else(|_| "<invalid-json>".into())
+        });
+        if let Some(serialized_body) = serialized_body {
+            self.append_log_line_if_enabled(&format!(
+                "[SCO/request] method={} path={} body={}",
+                method, path, serialized_body
+            ));
+        } else {
+            self.append_log_line_if_enabled(&format!(
+                "[SCO/request] method={} path={}",
+                method, path
+            ));
+        }
+    }
+
     pub fn replace_active_settings(&self, value: &AppSettings) -> AppSettings {
         let sanitized = AppSettings::merge_settings_with_defaults(value.to_value());
 
@@ -375,7 +497,7 @@ impl BackendState {
         self.replace_active_settings(&sanitized);
 
         if previous_start_with_windows != sanitized.start_with_windows {
-            if let Err(error) = crate::sync_start_with_windows_setting(&sanitized) {
+            if let Err(error) = sanitized.sync_start_with_windows_registration() {
                 crate::sco_log!("[SCO/settings] Failed to sync start_with_windows: {error}");
             }
         }
@@ -434,6 +556,11 @@ impl BackendState {
 
     pub fn file_logging_enabled(&self) -> bool {
         self.file_logging_enabled.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn resolved_overlay_hotkey_bindings(&self) -> Vec<ResolvedHotkeyBinding> {
+        self.read_settings_memory()
+            .resolved_overlay_hotkey_bindings()
     }
 
     pub fn performance_edit_mode(&self) -> bool {
@@ -522,7 +649,7 @@ impl BackendState {
             }
         }
 
-        let names = configured_main_names_from_settings(&settings);
+        let names = settings.configured_main_names();
 
         if !account_root.is_empty() {
             if let Ok(mut cache) = self.discovered_main_names.lock() {
@@ -545,7 +672,7 @@ impl BackendState {
             }
         }
 
-        let handles = configured_main_handles_from_settings(&settings);
+        let handles = settings.configured_main_handles();
 
         if !account_root.is_empty() {
             if let Ok(mut cache) = self.discovered_main_handles.lock() {
@@ -554,6 +681,117 @@ impl BackendState {
         }
 
         handles
+    }
+
+    pub(crate) fn overlay_player_stats_payload(&self) -> OverlayPlayerStatsPayload {
+        let replays = self.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT);
+        let selected_file = self.get_current_replay_file();
+
+        let selected = selected_file
+            .and_then(|file| replays.iter().find(|replay| replay.file == file).cloned())
+            .or_else(|| replays.first().cloned());
+
+        let Some(selected) = selected else {
+            return OverlayPlayerStatsPayload::default();
+        };
+
+        let main_names = self.configured_main_names();
+        let main_handles = self.configured_main_handles();
+        let player_stats_target =
+            select_other_player_for_stats(&selected, &main_names, &main_handles)
+                .or_else(|| {
+                    let ally = selected.ally().name.trim();
+                    if !ally.is_empty() {
+                        Some((selected.ally().handle.clone(), ally.to_string()))
+                    } else {
+                        None
+                    }
+                })
+                .or_else(|| {
+                    let main = selected.main().name.trim();
+                    if !main.is_empty() {
+                        Some((selected.main().handle.clone(), main.to_string()))
+                    } else {
+                        None
+                    }
+                });
+
+        let Some((player_handle, player_name)) = player_stats_target else {
+            return OverlayPlayerStatsPayload::default();
+        };
+
+        self.overlay_player_stats_payload_for_player(&player_handle, &player_name)
+    }
+
+    pub(crate) fn overlay_player_stats_payload_for_player(
+        &self,
+        player_handle: &str,
+        player_name: &str,
+    ) -> OverlayPlayerStatsPayload {
+        let settings = self.read_settings_memory();
+        let player_data = self
+            .stats
+            .lock()
+            .ok()
+            .and_then(|stats| stats.analysis.clone())
+            .and_then(|analysis| {
+                analysis
+                    .get("PlayerData")
+                    .and_then(Value::as_object)
+                    .cloned()
+            });
+
+        let input_name = sanitize_replay_text(player_name);
+        let fallback_name = if input_name.trim().is_empty() {
+            "Unknown".to_string()
+        } else {
+            input_name.trim().to_string()
+        };
+
+        let mut data = std::collections::BTreeMap::new();
+        let resolved = player_data
+            .as_ref()
+            .and_then(|rows| lookup_player_stats_row(rows, &fallback_name));
+
+        let (display_name, value) = if let Some((resolved_name, row)) = resolved {
+            let wins = row.get("wins").and_then(Value::as_u64).unwrap_or(0);
+            let losses = row.get("losses").and_then(Value::as_u64).unwrap_or(0);
+            let apm = row
+                .get("apm")
+                .and_then(Value::as_f64)
+                .unwrap_or(0.0)
+                .round();
+            let commander = row
+                .get("commander")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let frequency = row.get("frequency").and_then(Value::as_f64).unwrap_or(0.0);
+            let kills = row.get("kills").and_then(Value::as_f64).unwrap_or(0.0);
+            let last_seen = row.get("last_seen").and_then(Value::as_u64).unwrap_or(0);
+            let relative_last_seen = relative_last_seen_text(last_seen);
+
+            let note = settings.player_note(player_handle);
+            (
+                sanitize_replay_text(&resolved_name),
+                OverlayPlayerStatsRow::Stats {
+                    wins: as_u32(wins),
+                    losses: as_u32(losses),
+                    apm: as_u32(apm as u64),
+                    commander: sanitize_replay_text(commander),
+                    frequency,
+                    kills,
+                    last_seen_relative: relative_last_seen,
+                    note,
+                },
+            )
+        } else {
+            let note = settings.player_note(&fallback_name);
+            (fallback_name, OverlayPlayerStatsRow::NoGames { note })
+        };
+
+        data.insert(display_name, value);
+
+        OverlayPlayerStatsPayload { data }
     }
 
     pub fn get_replay_state(&self) -> Arc<Mutex<ReplayState>> {
@@ -758,7 +996,7 @@ impl BackendState {
             return;
         }
 
-        let include_detailed = include_detailed_stats_for_cache(&stats, &stats_replays);
+        let include_detailed = stats.include_detailed_stats_for_cache(&stats_replays);
         let mode = AnalysisMode::from_include_detailed(include_detailed);
         let main_names = self.configured_main_names();
         let main_handles = self.configured_main_handles();
@@ -783,13 +1021,12 @@ impl BackendState {
         apply_rebuild_snapshot(&mut stats, snapshot, mode);
         if !include_detailed {
             if let Some(dictionary) = dictionary.as_deref() {
-                sync_detailed_analysis_status_from_replays_with_dictionary(
-                    &mut stats,
+                stats.sync_detailed_analysis_status_from_replays_with_dictionary(
                     &stats_replays,
                     dictionary,
                 );
             } else {
-                sync_detailed_analysis_status_from_replays(&mut stats, &stats_replays);
+                stats.sync_detailed_analysis_status_from_replays(&stats_replays);
             }
         }
     }

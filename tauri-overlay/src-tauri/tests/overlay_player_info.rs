@@ -1,6 +1,4 @@
-use sco_tauri_overlay::overlay_info::{
-    overlay_payload_from_replay, player_note_from_settings_value,
-};
+use sco_tauri_overlay::overlay_info::overlay_payload_from_replay;
 use sco_tauri_overlay::test_helper::{localized_prestige_text, test_replay_path};
 use sco_tauri_overlay::{AppSettings, BackendState, ReplayInfo, ReplayPlayerInfo};
 use serde_json::json;
@@ -48,14 +46,12 @@ fn overlay_payload_includes_session_counts_when_enabled() {
 
 #[test]
 fn player_note_lookup_matches_case_insensitive_names() {
-    let note = player_note_from_settings_value(
-        &AppSettings::merge_settings_with_defaults(json!({
-            "player_notes": {
-                "allyplayer": "  Expand early.  "
-            }
-        })),
-        "allyplayer",
-    );
+    let note = AppSettings::merge_settings_with_defaults(json!({
+        "player_notes": {
+            "allyplayer": "  Expand early.  "
+        }
+    }))
+    .player_note("allyplayer");
 
     assert_eq!(note.as_deref(), Some("Expand early."));
 }

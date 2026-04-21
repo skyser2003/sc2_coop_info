@@ -1,12 +1,29 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::{
-    collections::{BTreeMap, BTreeSet},
-    path::Path,
+    collections::{BTreeMap, BTreeSet, HashSet},
+    path::{Path, PathBuf},
+    str::FromStr,
 };
 use ts_rs::TS;
 
-use crate::{get_default_accounts_folder, get_system_language, path_manager};
+#[cfg(target_os = "windows")]
+use winreg::enums::HKEY_CURRENT_USER;
+#[cfg(target_os = "windows")]
+use winreg::RegKey;
+
+use crate::{
+    overlay_info::{
+        normalize_hotkey, OverlayPlacement, ResolvedHotkeyBinding, RuntimeFlags,
+        OVERLAY_HOTKEY_BINDINGS, OVERLAY_HOTKEY_DEFAULTS,
+    },
+    path_manager,
+    performance_overlay::PerformanceGeometry,
+    replay_analysis::ReplayAnalysis,
+    sanitize_replay_text,
+    shared_types::OverlayInitColorsDurationPayload,
+    windows_startup_command_value,
+};
 
 pub type RandomizerChoices = BTreeMap<String, bool>;
 pub type PlayerNotes = BTreeMap<String, String>;
@@ -198,6 +215,573 @@ impl AppSettings {
 
     pub fn normalized_analysis_worker_threads(&self) -> usize {
         Self::clamp_analysis_worker_threads(self.analysis_worker_threads)
+    }
+}
+
+fn get_system_language() -> String {
+    let default = "en";
+    let locale = sys_locale::get_locale();
+
+    let language = if let Some(locale) = locale.as_ref() {
+        locale
+            .split("-")
+            .next()
+            .filter(|language| !language.is_empty())
+            .unwrap_or(default)
+    } else {
+        "en"
+    };
+
+    language.to_string()
+}
+
+#[cfg(target_os = "windows")]
+fn get_default_accounts_folder() -> String {
+    if let Ok(sc2_key) = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey(r"Software\Blizzard Entertainment\StarCraft II")
+    {
+        if let Ok(path) = sc2_key.get_value::<String, &str>("InstallPath") {
+            let accounts_folder = Path::new(&path).join("Accounts");
+            if let Some(accounts_str) = accounts_folder.to_str() {
+                return accounts_str.to_string();
+            }
+        }
+    }
+
+    if let Ok(shell_folders) = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders")
+    {
+        if let Ok(documents) = shell_folders.get_value::<String, &str>("Personal") {
+            let accounts_folder = Path::new(&documents).join("StarCraft II").join("Accounts");
+            if let Some(accounts_str) = accounts_folder.to_str() {
+                return accounts_str.to_string();
+            }
+        }
+    }
+
+    String::new()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn get_default_accounts_folder() -> String {
+    String::new()
+}
+
+#[cfg(target_os = "windows")]
+fn sync_windows_startup_registration(enabled: bool) -> Result<(), String> {
+    if enabled {
+        let executable_path = std::env::current_exe()
+            .map_err(|error| format!("Failed to resolve executable path: {error}"))?;
+        let command_value = windows_startup_command_value(&executable_path);
+        let status = std::process::Command::new("reg")
+            .args([
+                "add",
+                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+                "/v",
+                "SCO Overlay",
+                "/t",
+                "REG_SZ",
+                "/d",
+                &command_value,
+                "/f",
+            ])
+            .status()
+            .map_err(|error| format!("Failed to update Windows startup entry: {error}"))?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(format!(
+                "reg add exited with status {}",
+                status
+                    .code()
+                    .map_or_else(|| "unknown".to_string(), |code| code.to_string())
+            ))
+        }
+    } else {
+        let status = std::process::Command::new("reg")
+            .args([
+                "delete",
+                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+                "/v",
+                "SCO Overlay",
+                "/f",
+            ])
+            .status()
+            .map_err(|error| format!("Failed to remove Windows startup entry: {error}"))?;
+        if status.success() || status.code() == Some(1) {
+            Ok(())
+        } else {
+            Err(format!(
+                "reg delete exited with status {}",
+                status
+                    .code()
+                    .map_or_else(|| "unknown".to_string(), |code| code.to_string())
+            ))
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn sync_windows_startup_registration(_enabled: bool) -> Result<(), String> {
+    Ok(())
+}
+
+fn extract_account_handles_from_folder(account_root: &str) -> HashSet<String> {
+    let mut handles = HashSet::new();
+    let root = PathBuf::from(account_root);
+    if !root.exists() || !root.is_dir() {
+        return handles;
+    }
+
+    let mut stack = vec![root];
+    while let Some(current) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&current) else {
+            continue;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            let Ok(meta) = entry.metadata() else {
+                continue;
+            };
+            if meta.is_dir() {
+                if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+                    let normalized = ReplayAnalysis::normalized_handle_key(name);
+                    if !normalized.is_empty() {
+                        handles.insert(normalized);
+                    }
+                }
+                stack.push(path);
+            }
+        }
+    }
+    handles
+}
+
+fn build_replay_root_candidates(raw: &str) -> Vec<PathBuf> {
+    let trimmed = raw.trim().trim_matches(&['"', '\''][..]).to_string();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+
+    let mut candidates = Vec::with_capacity(3);
+    let primary = PathBuf::from(&trimmed);
+    candidates.push(primary.clone());
+
+    let swapped = if trimmed.contains('\\') {
+        trimmed.replace('\\', "/")
+    } else {
+        trimmed.replace('/', "\\")
+    };
+    if !swapped.is_empty() {
+        let swapped_path = PathBuf::from(&swapped);
+        if swapped_path != primary {
+            candidates.push(swapped_path);
+        }
+    }
+
+    let drive_prefix = trimmed.chars().nth(1) == Some(':');
+    if drive_prefix {
+        let windows_drive = trimmed
+            .chars()
+            .next()
+            .unwrap_or('C')
+            .to_ascii_lowercase()
+            .to_string();
+        let rest = trimmed[2..].trim_start_matches(['\\', '/'].as_ref());
+        let wsl = format!(
+            "/mnt/{}/{}",
+            windows_drive,
+            rest.replace('\\', "/").trim_start_matches('/')
+        );
+        let wsl_path = PathBuf::from(&wsl);
+        if wsl_path != primary {
+            candidates.push(wsl_path);
+        }
+    }
+    candidates
+}
+
+fn as_u32(value: u64) -> u32 {
+    u32::try_from(value).unwrap_or(u32::MAX)
+}
+
+impl AppSettings {
+    pub(crate) fn sync_start_with_windows_registration(&self) -> Result<(), String> {
+        sync_windows_startup_registration(self.start_with_windows)
+    }
+
+    pub fn update_player_note(&mut self, handle: &str, note_value: &str) -> Result<(), String> {
+        let normalized_handle = ReplayAnalysis::normalized_handle_key(handle);
+        if normalized_handle.is_empty() {
+            return Err("Handle is empty".to_string());
+        }
+
+        let existing_key = self
+            .player_notes
+            .keys()
+            .find(|key| ReplayAnalysis::normalized_handle_key(key) == normalized_handle)
+            .cloned()
+            .unwrap_or_else(|| sanitize_replay_text(handle).trim().to_string());
+
+        let trimmed_note = note_value.trim();
+        if trimmed_note.is_empty() {
+            self.player_notes.remove(&existing_key);
+        } else {
+            self.player_notes
+                .insert(existing_key, note_value.to_string());
+        }
+
+        Ok(())
+    }
+
+    pub fn configured_main_names(&self) -> HashSet<String> {
+        let mut names = self
+            .main_names
+            .iter()
+            .map(|name| ReplayAnalysis::normalized_player_key(name))
+            .filter(|name| !name.is_empty())
+            .collect::<HashSet<_>>();
+
+        if !names.is_empty() {
+            return names;
+        }
+
+        let account_root = self.account_folder.trim();
+        if account_root.is_empty() {
+            return names;
+        }
+
+        let root = PathBuf::from(account_root);
+        if !root.exists() || !root.is_dir() {
+            return names;
+        }
+
+        let mut stack = vec![root];
+        while let Some(current) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&current) else {
+                continue;
+            };
+            for entry in entries.filter_map(Result::ok) {
+                let path = entry.path();
+                let Ok(meta) = entry.metadata() else {
+                    continue;
+                };
+                if meta.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+                if !meta.is_file() {
+                    continue;
+                }
+                let is_link = path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("lnk"));
+                if !is_link {
+                    continue;
+                }
+                let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+                    continue;
+                };
+                if !stem.contains('_') || !stem.contains('@') {
+                    continue;
+                }
+                let name = stem.split('_').next().unwrap_or_default();
+                let normalized = ReplayAnalysis::normalized_player_key(name);
+                if !normalized.is_empty() {
+                    names.insert(normalized);
+                }
+            }
+        }
+
+        names
+    }
+
+    pub fn configured_main_handles(&self) -> HashSet<String> {
+        let account_root = self.account_folder.trim();
+        if account_root.is_empty() {
+            return HashSet::new();
+        }
+        extract_account_handles_from_folder(account_root)
+    }
+
+    pub(crate) fn resolve_replay_root(&self) -> Option<PathBuf> {
+        let account_folder = self.account_folder.trim();
+        if !account_folder.is_empty() {
+            let candidates = build_replay_root_candidates(account_folder);
+            if let Some(path) = candidates.iter().find(|path| path.is_dir()) {
+                return Some(path.clone());
+            }
+        }
+
+        None
+    }
+
+    pub(crate) fn replay_watch_root(&self) -> Option<PathBuf> {
+        let account_folder = self.account_folder.trim();
+        if account_folder.is_empty() {
+            return None;
+        }
+
+        build_replay_root_candidates(account_folder)
+            .into_iter()
+            .find(|candidate| candidate.is_dir())
+    }
+
+    pub(crate) fn current_replay_files_snapshot(&self, limit: usize) -> HashSet<String> {
+        let Some(root) = self.resolve_replay_root() else {
+            return HashSet::new();
+        };
+
+        ReplayAnalysis::collect_replay_paths(&root, limit)
+            .into_iter()
+            .map(|path| path.to_string_lossy().to_string())
+            .collect()
+    }
+
+    pub(crate) fn overlay_placement(&self) -> OverlayPlacement {
+        OverlayPlacement {
+            monitor: self.monitor.max(1),
+            width: 0.7,
+            height: 1.0,
+            top_offset: 0,
+            right_offset: 0,
+            subtract_height: 1,
+        }
+    }
+
+    pub(crate) fn runtime_flags(&self) -> RuntimeFlags {
+        let minimize_to_tray = self.minimize_to_tray;
+        let start_minimized = if minimize_to_tray {
+            self.start_minimized
+        } else {
+            false
+        };
+
+        RuntimeFlags {
+            start_minimized,
+            minimize_to_tray,
+            auto_update: self.auto_update,
+        }
+    }
+
+    pub(crate) fn resolved_overlay_hotkey_bindings(&self) -> Vec<ResolvedHotkeyBinding> {
+        let mut bindings = Vec::new();
+
+        for (path, action) in OVERLAY_HOTKEY_BINDINGS {
+            let configured = self.settings_field_value(path);
+            let using_default =
+                configured.is_none() || matches!(configured.as_ref(), Some(Value::Null));
+            let shortcut = match configured.as_ref() {
+                None => OVERLAY_HOTKEY_DEFAULTS
+                    .iter()
+                    .find(|(default_path, _)| *default_path == path)
+                    .and_then(|(_, default_value)| normalize_hotkey(default_value)),
+                Some(Value::Null) => OVERLAY_HOTKEY_DEFAULTS
+                    .iter()
+                    .find(|(default_path, _)| *default_path == path)
+                    .and_then(|(_, default_value)| normalize_hotkey(default_value)),
+                Some(Value::Bool(false)) => {
+                    crate::sco_log!("[SCO/hotkey] '{path}' disabled by settings.");
+                    None
+                }
+                Some(Value::Bool(true)) => {
+                    crate::sco_log!(
+                        "[SCO/hotkey] '{path}' has invalid non-string binding, skipping."
+                    );
+                    None
+                }
+                Some(Value::String(raw)) => {
+                    let raw = raw.trim();
+                    if raw.is_empty() {
+                        crate::sco_log!("[SCO/hotkey] '{path}' is empty, disabled by settings.");
+                        None
+                    } else {
+                        normalize_hotkey(raw)
+                    }
+                }
+                Some(_) => {
+                    crate::sco_log!("[SCO/hotkey] '{path}' has invalid binding type, skipping.");
+                    None
+                }
+            };
+
+            let Some(shortcut) = shortcut else {
+                if using_default {
+                    crate::sco_log!("[SCO/hotkey] Missing binding for '{path}', skipping.");
+                }
+                continue;
+            };
+
+            let parsed = match tauri_plugin_global_shortcut::Shortcut::from_str(&shortcut) {
+                Ok(parsed) => parsed,
+                Err(error) => {
+                    crate::sco_log!(
+                        "[SCO/hotkey] Failed to parse hotkey '{shortcut}' for '{path}': {error}"
+                    );
+                    continue;
+                }
+            };
+
+            if using_default {
+                crate::sco_log!("[SCO/hotkey] Falling back to default for '{path}'.");
+            }
+
+            bindings.push(ResolvedHotkeyBinding {
+                path,
+                action,
+                shortcut,
+                canonical: parsed.to_string().to_ascii_lowercase(),
+            });
+        }
+
+        bindings
+    }
+
+    pub fn hotkey_binding_for_reassign_end(
+        &self,
+        path: &str,
+        fallback_binding: Option<&ResolvedHotkeyBinding>,
+    ) -> Option<ResolvedHotkeyBinding> {
+        let bindings = self.resolved_overlay_hotkey_bindings();
+        if let Some(binding) = bindings.into_iter().find(|binding| binding.path == path) {
+            return Some(binding);
+        }
+
+        let configured_value = self.settings_field_value(path);
+        let explicitly_disabled = if !self.has(path) {
+            false
+        } else {
+            match configured_value.as_ref() {
+                Some(Value::Null) => false,
+                Some(Value::Bool(false)) => true,
+                Some(Value::String(raw)) => raw.trim().is_empty(),
+                _ => false,
+            }
+        };
+        if explicitly_disabled {
+            return None;
+        }
+
+        fallback_binding
+            .filter(|binding| binding.path == path)
+            .cloned()
+    }
+
+    pub fn player_note(&self, player_handle: &str) -> Option<String> {
+        self.player_notes
+            .get(player_handle)
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    }
+
+    fn overlay_screenshot_directory(&self) -> Result<PathBuf, String> {
+        let folder = self.screenshot_folder.trim();
+        if folder.is_empty() {
+            return Err("Screenshot folder is not configured".to_string());
+        }
+        Ok(PathBuf::from(folder))
+    }
+
+    pub fn overlay_screenshot_output_path(
+        &self,
+        captured_at: std::time::SystemTime,
+    ) -> Result<PathBuf, String> {
+        let directory = self.overlay_screenshot_directory()?;
+        let timestamp = captured_at
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|error| format!("Failed to build screenshot timestamp: {error}"))?
+            .as_secs();
+        Ok(directory.join(format!("overlay-{timestamp}.png")))
+    }
+
+    fn overlay_setting_string(&self, key: &str) -> Option<String> {
+        self.settings_field_value(key)
+            .and_then(|value| value.as_str().map(ToString::to_string))
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    }
+
+    fn overlay_duration(&self) -> u32 {
+        self.duration.max(1)
+    }
+
+    fn overlay_show_charts(&self) -> bool {
+        self.show_charts
+    }
+
+    fn overlay_show_session(&self) -> bool {
+        self.show_session
+    }
+
+    fn overlay_hide_nicknames(&self) -> bool {
+        self.hide_nicknames_in_overlay
+    }
+
+    pub(crate) fn overlay_language(&self) -> &'static str {
+        match self.language.as_str() {
+            "ko" => "ko",
+            _ => "en",
+        }
+    }
+
+    pub fn overlay_runtime_settings_payload(
+        &self,
+        session_victories: u64,
+        session_defeats: u64,
+    ) -> Value {
+        serde_json::to_value(OverlayInitColorsDurationPayload {
+            colors: [
+                self.overlay_setting_string("color_player1"),
+                self.overlay_setting_string("color_player2"),
+                self.overlay_setting_string("color_amon"),
+                self.overlay_setting_string("color_mastery"),
+            ],
+            duration: self.overlay_duration(),
+            show_charts: self.overlay_show_charts(),
+            show_session: self.overlay_show_session(),
+            hide_nicknames_in_overlay: self.overlay_hide_nicknames(),
+            session_victory: as_u32(session_victories),
+            session_defeat: as_u32(session_defeats),
+            language: self.overlay_language().to_string(),
+        })
+        .unwrap_or_else(|_| Value::Object(Default::default()))
+    }
+
+    pub(crate) fn performance_show_enabled(&self) -> bool {
+        self.performance_show
+    }
+
+    pub(crate) fn performance_process_names(&self) -> Vec<String> {
+        let names = self
+            .performance_processes
+            .iter()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .collect::<Vec<String>>();
+        if names.is_empty() {
+            vec!["SC2_x64.exe".to_string(), "SC2.exe".to_string()]
+        } else {
+            names
+        }
+    }
+
+    pub(crate) fn saved_performance_geometry(&self) -> Option<PerformanceGeometry> {
+        let geometry = self.performance_geometry?;
+        let x = geometry[0];
+        let y = geometry[1];
+        let width = u32::try_from(geometry[2]).ok()?;
+        let height = u32::try_from(geometry[3]).ok()?;
+
+        Some(
+            PerformanceGeometry {
+                x,
+                y,
+                width,
+                height,
+            }
+            .normalized(),
+        )
     }
 }
 

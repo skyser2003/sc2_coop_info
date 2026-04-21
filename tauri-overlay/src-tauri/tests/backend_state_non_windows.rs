@@ -2,9 +2,7 @@
 
 use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
 use sco_tauri_overlay::test_helper::{canonicalize_map_id, test_replay_path};
-use sco_tauri_overlay::{
-    sync_detailed_analysis_status_from_replays, BackendState, ReplayInfo, StatsState,
-};
+use sco_tauri_overlay::{BackendState, ReplayInfo, StatsState};
 use serde_json::json;
 use serde_json::Value;
 use std::sync::Arc;
@@ -62,7 +60,7 @@ fn sync_detailed_analysis_status_from_replays_reports_cached_progress() {
         ..ReplayInfo::default()
     };
 
-    sync_detailed_analysis_status_from_replays(&mut stats, &[detailed_replay, simple_replay]);
+    stats.sync_detailed_analysis_status_from_replays(&[detailed_replay, simple_replay]);
 
     assert_eq!(
         stats.detailed_analysis_status,

@@ -1,14 +1,11 @@
-use sco_tauri_overlay::{overlay_info, AppSettings};
+use sco_tauri_overlay::AppSettings;
 use serde_json::json;
 use serde_json::Value;
 
 #[test]
 fn overlay_runtime_settings_defaults_to_visible_charts() {
-    let payload = overlay_info::overlay_runtime_settings_payload(
-        &AppSettings::merge_settings_with_defaults(json!({})),
-        0,
-        0,
-    );
+    let payload =
+        AppSettings::merge_settings_with_defaults(json!({})).overlay_runtime_settings_payload(0, 0);
     let colors = payload
         .get("colors")
         .and_then(Value::as_array)
@@ -41,20 +38,17 @@ fn overlay_runtime_settings_defaults_to_visible_charts() {
 
 #[test]
 fn overlay_runtime_settings_preserve_saved_chart_visibility_and_colors() {
-    let payload = overlay_info::overlay_runtime_settings_payload(
-        &AppSettings::merge_settings_with_defaults(json!({
-            "duration": 90,
-            "show_session": true,
-            "show_charts": false,
-            "language": "ko",
-            "color_player1": "#0080F8",
-            "color_player2": "#00D532",
-            "color_amon": "#FF0000",
-            "color_mastery": "#FFDC87",
-        })),
-        4,
-        1,
-    );
+    let payload = AppSettings::merge_settings_with_defaults(json!({
+        "duration": 90,
+        "show_session": true,
+        "show_charts": false,
+        "language": "ko",
+        "color_player1": "#0080F8",
+        "color_player2": "#00D532",
+        "color_amon": "#FF0000",
+        "color_mastery": "#FFDC87",
+    }))
+    .overlay_runtime_settings_payload(4, 1);
     let colors = payload
         .get("colors")
         .and_then(Value::as_array)

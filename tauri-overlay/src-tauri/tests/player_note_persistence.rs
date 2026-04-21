@@ -1,4 +1,4 @@
-use sco_tauri_overlay::{update_settings_player_note, AppSettings};
+use sco_tauri_overlay::AppSettings;
 use serde_json::json;
 
 #[test]
@@ -10,7 +10,8 @@ fn update_settings_player_note_only_changes_player_notes_branch() {
         },
     }));
 
-    update_settings_player_note(&mut settings, "1-S2-1-111", "new note")
+    settings
+        .update_player_note("1-S2-1-111", "new note")
         .expect("player note update should succeed");
 
     assert!(settings.show_charts);
@@ -29,7 +30,8 @@ fn update_settings_player_note_removes_case_insensitive_match_when_cleared() {
         }
     }));
 
-    update_settings_player_note(&mut settings, "1-s2-1-111", "")
+    settings
+        .update_player_note("1-s2-1-111", "")
         .expect("clearing player note should succeed");
 
     let notes = &settings.player_notes;

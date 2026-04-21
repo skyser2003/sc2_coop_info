@@ -28,15 +28,14 @@ use crate::shared_types::{
     LocalizedLabels, LocalizedText, ReplayScanProgressPayload, UiMutatorRow,
 };
 use crate::{
-    build_amon_unit_data, build_commander_unit_data_with_dictionary,
-    configured_main_handles_from_settings, configured_main_names_from_settings,
-    empty_stats_payload, format_date_from_system_time, infer_region_from_handle, kill_fraction,
-    map_display_name, median_f64, median_u64, normalize_mastery_values, normalized_commander_name,
-    orient_replay_for_main_names, parse_query_bool, parse_query_csv, parse_query_i64,
-    parse_query_value, ratio, resolve_replay_root, result_is_victory, sanitize_replay_text,
-    ymd_from_unix_seconds, Aggregate, AppSettings, CommanderAggregate, CommanderUnitRollup,
-    MapAggregate, PlayerAggregate, RegionAggregate, ReplayChatMessage, ReplayInfo,
-    ReplayPlayerInfo, StatsSnapshot, StatsState, UnitStatsRollup, UNLIMITED_REPLAY_LIMIT,
+    build_amon_unit_data, build_commander_unit_data_with_dictionary, empty_stats_payload,
+    format_date_from_system_time, infer_region_from_handle, kill_fraction, map_display_name,
+    median_f64, median_u64, normalize_mastery_values, normalized_commander_name, parse_query_bool,
+    parse_query_csv, parse_query_i64, parse_query_value, ratio, result_is_victory,
+    sanitize_replay_text, ymd_from_unix_seconds, Aggregate, AppSettings, CommanderAggregate,
+    CommanderUnitRollup, MapAggregate, PlayerAggregate, RegionAggregate, ReplayChatMessage,
+    ReplayInfo, ReplayPlayerInfo, StatsSnapshot, StatsState, UnitStatsRollup,
+    UNLIMITED_REPLAY_LIMIT,
 };
 
 const PRESTIGE_TRACKING_START_YMD: u32 = 20200726;
@@ -54,8 +53,8 @@ impl Drop for ScanInFlightGuard<'_> {
 fn default_main_identity() -> (HashSet<String>, HashSet<String>) {
     let settings = AppSettings::from_saved_file();
     (
-        configured_main_names_from_settings(&settings),
-        configured_main_handles_from_settings(&settings),
+        settings.configured_main_names(),
+        settings.configured_main_handles(),
     )
 }
 
@@ -3114,11 +3113,8 @@ impl ReplayAnalysis {
             .into_iter()
             .filter(|entry| entry.detailed_analysis && Path::new(&entry.file).exists())
             .map(|entry| {
-                orient_replay_for_main_names(
-                    replay_info_from_cache_entry_with_dictionary(&entry, dictionary),
-                    main_names,
-                    main_handles,
-                )
+                replay_info_from_cache_entry_with_dictionary(&entry, dictionary)
+                    .oriented_for_main_identity(main_names, main_handles)
             })
             .collect::<Vec<_>>();
 
@@ -3188,11 +3184,8 @@ impl ReplayAnalysis {
             .into_iter()
             .filter(|entry| Path::new(&entry.file).exists())
             .map(|entry| {
-                orient_replay_for_main_names(
-                    replay_info_from_cache_entry_with_dictionary(&entry, dictionary),
-                    main_names,
-                    main_handles,
-                )
+                replay_info_from_cache_entry_with_dictionary(&entry, dictionary)
+                    .oriented_for_main_identity(main_names, main_handles)
             })
             .collect::<Vec<_>>();
 
@@ -3343,8 +3336,8 @@ impl ReplayAnalysis {
 
     pub fn analyze_replays(limit: usize) -> Vec<ReplayInfo> {
         let settings = AppSettings::from_saved_file();
-        let main_names = configured_main_names_from_settings(&settings);
-        let main_handles = configured_main_handles_from_settings(&settings);
+        let main_names = settings.configured_main_names();
+        let main_handles = settings.configured_main_handles();
         Self::load_all_analysis_replays_snapshot(limit, &main_names, &main_handles)
     }
 
@@ -3394,7 +3387,7 @@ impl ReplayAnalysis {
         crate::sco_log!("[SCO/replay] analyze_replays start limit={limit}");
         scan_progress.set_stage("resolving_replay_root");
 
-        let Some(root) = resolve_replay_root(settings) else {
+        let Some(root) = settings.resolve_replay_root() else {
             crate::sco_log!("[SCO/replay] Replay root not configured");
             scan_progress.set_status("Completed");
             scan_progress.set_stage("no_replay_root");
@@ -3501,8 +3494,7 @@ impl ReplayAnalysis {
                                 return Err(path.to_string_lossy().to_string());
                             }
                         };
-                        let oriented =
-                            orient_replay_for_main_names(replay, main_names, main_handles);
+                        let oriented = replay.oriented_for_main_identity(main_names, main_handles);
                         progress.completed.fetch_add(1, Ordering::AcqRel);
                         progress.newly_parsed.fetch_add(1, Ordering::AcqRel);
                         Ok(ParseResult {
@@ -3643,14 +3635,6 @@ impl ReplayAnalysis {
         all_replays
     }
 
-    pub fn replay_date_seconds_for_filter(replay: &ReplayInfo) -> u64 {
-        if replay.date > 0 {
-            return replay.date;
-        }
-
-        Self::modified_seconds(Path::new(&replay.file))
-    }
-
     fn replay_matches_stats_filters(
         path: &str,
         replay: &ReplayInfo,
@@ -3736,7 +3720,7 @@ impl ReplayAnalysis {
             return false;
         }
 
-        let replay_date_seconds = Self::replay_date_seconds_for_filter(replay);
+        let replay_date_seconds = replay.date_seconds_for_filter();
         if let Some(min_date) = min_date_seconds {
             if replay_date_seconds <= min_date {
                 return false;
@@ -3857,26 +3841,11 @@ impl ReplayAnalysis {
             .collect()
     }
 
-    pub(crate) fn replay_has_detailed_unit_stats(replay: &ReplayInfo) -> bool {
-        replay
-            .main_units()
-            .as_object()
-            .is_some_and(|units| !units.is_empty())
-            || replay
-                .ally_units()
-                .as_object()
-                .is_some_and(|units| !units.is_empty())
-            || replay
-                .amon_units
-                .as_object()
-                .is_some_and(|units| !units.is_empty())
-    }
-
     pub fn detailed_stats_counts(filtered_replays: &[&ReplayInfo]) -> (u64, u64) {
         let total_valid_files = filtered_replays.len() as u64;
         let detailed_parsed_count = filtered_replays
             .iter()
-            .filter(|replay| Self::replay_has_detailed_unit_stats(replay))
+            .filter(|replay| replay.has_detailed_unit_stats())
             .count() as u64;
         (detailed_parsed_count, total_valid_files)
     }
@@ -3891,7 +3860,7 @@ impl ReplayAnalysis {
             .is_some_and(|value| !value.is_null())
             || cached_replays
                 .iter()
-                .any(Self::replay_has_detailed_unit_stats)
+                .any(ReplayInfo::has_detailed_unit_stats)
     }
 
     pub fn build_stats_response(

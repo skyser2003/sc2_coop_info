@@ -9,7 +9,6 @@ use crate::{shared_types::PerformanceVisibilityPayload, AppSettings, BackendStat
 
 pub(crate) const PERFORMANCE_VISIBILITY_EVENT: &str = "sco://performance-visibility";
 
-const DEFAULT_PERFORMANCE_PROCESSES: [&str; 2] = ["SC2_x64.exe", "SC2.exe"];
 const DEFAULT_WINDOW_WIDTH: u32 = 780;
 const MIN_WINDOW_WIDTH: u32 = 760;
 const MIN_WINDOW_HEIGHT: u32 = 860;
@@ -60,11 +59,11 @@ struct PerformancePayload {
 }
 
 #[derive(Clone, Copy)]
-struct PerformanceGeometry {
-    x: i32,
-    y: i32,
-    width: u32,
-    height: u32,
+pub(crate) struct PerformanceGeometry {
+    pub(crate) x: i32,
+    pub(crate) y: i32,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
 }
 
 fn required_window_height() -> u32 {
@@ -75,46 +74,12 @@ fn required_window_height() -> u32 {
     dynamic_height.max(MIN_WINDOW_HEIGHT)
 }
 
-fn normalized_geometry(mut geometry: PerformanceGeometry) -> PerformanceGeometry {
-    geometry.width = geometry.width.max(MIN_WINDOW_WIDTH);
-    geometry.height = geometry.height.max(required_window_height());
-    geometry
-}
-
-fn performance_show_enabled(settings: &AppSettings) -> bool {
-    settings.performance_show
-}
-
-fn performance_process_names(settings: &AppSettings) -> Vec<String> {
-    let names = settings
-        .performance_processes
-        .iter()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .collect::<Vec<String>>();
-    if names.is_empty() {
-        DEFAULT_PERFORMANCE_PROCESSES
-            .iter()
-            .map(|value| (*value).to_string())
-            .collect()
-    } else {
-        names
+impl PerformanceGeometry {
+    pub(crate) fn normalized(mut self) -> Self {
+        self.width = self.width.max(MIN_WINDOW_WIDTH);
+        self.height = self.height.max(required_window_height());
+        self
     }
-}
-
-fn parse_saved_geometry(settings: &AppSettings) -> Option<PerformanceGeometry> {
-    let geometry = settings.performance_geometry?;
-    let x = geometry[0];
-    let y = geometry[1];
-    let width = u32::try_from(geometry[2]).ok()?;
-    let height = u32::try_from(geometry[3]).ok()?;
-
-    Some(normalized_geometry(PerformanceGeometry {
-        x,
-        y,
-        width,
-        height,
-    }))
 }
 
 fn default_geometry(
@@ -141,12 +106,13 @@ fn default_geometry(
     let x = position.x + i32::try_from(size.width.saturating_sub(width)).unwrap_or(0) - 24;
     let y = position.y + 180;
 
-    Ok(normalized_geometry(PerformanceGeometry {
+    Ok(PerformanceGeometry {
         x,
         y,
         width,
         height,
-    }))
+    }
+    .normalized())
 }
 
 fn current_geometry(window: &tauri::WebviewWindow<Wry>) -> Option<PerformanceGeometry> {
@@ -164,7 +130,7 @@ fn apply_geometry(
     window: &tauri::WebviewWindow<Wry>,
     geometry: PerformanceGeometry,
 ) -> Result<(), String> {
-    let geometry = normalized_geometry(geometry);
+    let geometry = geometry.normalized();
     window
         .set_size(tauri::PhysicalSize {
             width: geometry.width,
@@ -264,7 +230,7 @@ fn build_payload(
     settings: &AppSettings,
 ) -> PerformancePayload {
     let mut payload = default_payload(system, networks);
-    let process_names = performance_process_names(settings);
+    let process_names = settings.performance_process_names();
     let process = system.processes().values().find(|candidate| {
         let process_name = candidate.name().to_string_lossy();
         process_names
@@ -309,7 +275,8 @@ pub(crate) fn emit_performance_script<R: Runtime>(app: &tauri::AppHandle<R>, scr
 
 pub(crate) fn apply_saved_geometry(window: &tauri::WebviewWindow<Wry>) -> Result<(), String> {
     let settings = window.state::<BackendState>().read_settings_memory();
-    let geometry = parse_saved_geometry(&settings)
+    let geometry = settings
+        .saved_performance_geometry()
         .map(Ok)
         .unwrap_or_else(|| default_geometry(window, &settings))?;
     apply_geometry(window, geometry)
@@ -320,7 +287,7 @@ pub(crate) fn persist_geometry(window: &tauri::WebviewWindow<Wry>) {
     let Some(geometry) = current_geometry(window) else {
         return;
     };
-    let geometry = normalized_geometry(geometry);
+    let geometry = geometry.normalized();
     let width = i32::try_from(geometry.width).unwrap_or(i32::MAX);
     let height = i32::try_from(geometry.height).unwrap_or(i32::MAX);
     let value = [geometry.x, geometry.y, width, height];
@@ -361,8 +328,10 @@ pub(crate) fn set_edit_mode<R: Runtime>(app: &tauri::AppHandle<R>, enabled: bool
     app.state::<BackendState>()
         .set_performance_edit_mode(enabled);
 
-    let performance_visible =
-        performance_show_enabled(&app.state::<BackendState>().read_settings_memory());
+    let performance_visible = app
+        .state::<BackendState>()
+        .read_settings_memory()
+        .performance_show_enabled();
     if let Some(window) = app.get_webview_window("performance") {
         if enabled {
             let _ = window.show();
@@ -430,7 +399,7 @@ pub(crate) fn apply_settings(app: &tauri::AppHandle<Wry>) {
         }
     }
 
-    if performance_show_enabled(&settings) {
+    if settings.performance_show_enabled() {
         show_window(app);
     } else {
         hide_window(app);
@@ -449,7 +418,7 @@ pub(crate) fn spawn_monitor(app: tauri::AppHandle<Wry>) {
             networks.refresh(true);
 
             let settings = app.state::<BackendState>().read_settings_memory();
-            let should_emit = performance_show_enabled(&settings)
+            let should_emit = settings.performance_show_enabled()
                 || app.state::<BackendState>().performance_edit_mode();
             if should_emit {
                 let payload = build_payload(&system, &networks, &settings);

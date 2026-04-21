@@ -26,11 +26,10 @@ fn reassign_end_uses_cached_binding_when_current_settings_do_not_resolve_path() 
         canonical: "control+shift+p".to_string(),
     };
 
-    let resolved = overlay_info::resolve_hotkey_binding_for_reassign_end(
-        &AppSettings::merge_settings_with_defaults(json!({ "hotkey_show/hide": "Ctrl+Shift+*" })),
-        "performance_hotkey",
-        Some(&fallback),
-    )
+    let resolved = AppSettings::merge_settings_with_defaults(json!({
+        "hotkey_show/hide": "Ctrl+Shift+*"
+    }))
+    .hotkey_binding_for_reassign_end("performance_hotkey", Some(&fallback))
     .expect("cached binding should be reused when the path cannot be resolved");
 
     assert_eq!(resolved.path, "performance_hotkey");
@@ -48,11 +47,10 @@ fn reassign_end_reuses_cached_binding_when_hotkey_is_null() {
         canonical: "control+shift+p".to_string(),
     };
 
-    let resolved = overlay_info::resolve_hotkey_binding_for_reassign_end(
-        &AppSettings::merge_settings_with_defaults(json!({ "performance_hotkey": null })),
-        "performance_hotkey",
-        Some(&fallback),
-    );
+    let resolved = AppSettings::merge_settings_with_defaults(json!({
+        "performance_hotkey": null
+    }))
+    .hotkey_binding_for_reassign_end("performance_hotkey", Some(&fallback));
 
     let resolved = resolved.expect("null hotkey should be treated as not set");
     assert_eq!(resolved.path, "performance_hotkey");
@@ -68,22 +66,20 @@ fn reassign_end_does_not_restore_explicitly_cleared_hotkey() {
         canonical: "control+shift+p".to_string(),
     };
 
-    let resolved = overlay_info::resolve_hotkey_binding_for_reassign_end(
-        &AppSettings::merge_settings_with_defaults(json!({ "performance_hotkey": "" })),
-        "performance_hotkey",
-        Some(&fallback),
-    );
+    let resolved = AppSettings::merge_settings_with_defaults(json!({
+        "performance_hotkey": ""
+    }))
+    .hotkey_binding_for_reassign_end("performance_hotkey", Some(&fallback));
 
     assert!(resolved.is_none());
 }
 
 #[test]
 fn reassign_end_uses_builtin_default_when_overlay_hotkey_is_null() {
-    let resolved = overlay_info::resolve_hotkey_binding_for_reassign_end(
-        &AppSettings::merge_settings_with_defaults(json!({ "hotkey_show/hide": null })),
-        "hotkey_show/hide",
-        None,
-    )
+    let resolved = AppSettings::merge_settings_with_defaults(json!({
+        "hotkey_show/hide": null
+    }))
+    .hotkey_binding_for_reassign_end("hotkey_show/hide", None)
     .expect("null overlay hotkey should use builtin default");
 
     assert_eq!(resolved.path, "hotkey_show/hide");

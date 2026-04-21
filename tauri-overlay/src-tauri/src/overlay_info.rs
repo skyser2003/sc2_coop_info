@@ -1,14 +1,14 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::FromStr;
 use std::sync::atomic::Ordering;
 use std::thread;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 
 use display_info::DisplayInfo;
 use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
-use serde_json::{Map, Value};
+use serde_json::Value;
 use tauri::{
     menu::{MenuBuilder, MenuItem},
     Emitter, Manager, Runtime, Wry,
@@ -18,11 +18,9 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use crate::app_settings::AppSettings;
 use crate::process_replay_detailed;
 use crate::randomizer;
-use crate::replay_analysis::ReplayAnalysis;
 use crate::shared_types::{
     overlay_icon_payload_from_value, replay_data_record_from_value, swap_replay_data_record_sides,
-    unit_stats_map_from_value, EmptyPayload, MonitorOption, OverlayInitColorsDurationPayload,
-    OverlayPlayerStatsPayload, OverlayPlayerStatsRow, OverlayReplayPayload,
+    unit_stats_map_from_value, EmptyPayload, MonitorOption, OverlayReplayPayload,
     OverlayScreenshotRequestPayload,
 };
 use crate::{
@@ -46,7 +44,7 @@ pub(crate) const OVERLAY_SET_SHOW_CHARTS_FROM_CONFIG_EVENT: &str =
     "sco://overlay-set-show-charts-from-config";
 pub(crate) const OVERLAY_SCREENSHOT_REQUEST_EVENT: &str = "sco://overlay-screenshot-request";
 
-const OVERLAY_HOTKEY_DEFAULTS: [(&str, &str); 6] = [
+pub(crate) const OVERLAY_HOTKEY_DEFAULTS: [(&str, &str); 6] = [
     ("hotkey_show/hide", "Ctrl+Shift+*"),
     ("hotkey_show", ""),
     ("hotkey_hide", ""),
@@ -55,7 +53,7 @@ const OVERLAY_HOTKEY_DEFAULTS: [(&str, &str); 6] = [
     ("hotkey_winrates", "Ctrl+Alt+-"),
 ];
 
-const OVERLAY_HOTKEY_BINDINGS: [(&str, &str); 7] = [
+pub(crate) const OVERLAY_HOTKEY_BINDINGS: [(&str, &str); 7] = [
     ("hotkey_show/hide", "overlay_show_hide"),
     ("hotkey_show", "overlay_show"),
     ("hotkey_hide", "overlay_hide"),
@@ -100,12 +98,12 @@ fn overlay_mutator_name_with_dictionary(
 }
 
 pub(crate) struct OverlayPlacement {
-    monitor: usize,
-    width: f64,
-    height: f64,
-    top_offset: i32,
-    right_offset: i32,
-    subtract_height: i32,
+    pub(crate) monitor: usize,
+    pub(crate) width: f64,
+    pub(crate) height: f64,
+    pub(crate) top_offset: i32,
+    pub(crate) right_offset: i32,
+    pub(crate) subtract_height: i32,
 }
 
 #[derive(Clone, Copy)]
@@ -304,31 +302,6 @@ impl OverlayReplayPayload {
     }
 }
 
-fn default_overlay_placement() -> OverlayPlacement {
-    OverlayPlacement {
-        monitor: 1,
-        width: 0.7,
-        height: 1.0,
-        top_offset: 0,
-        right_offset: 0,
-        subtract_height: 1,
-    }
-}
-
-fn overlay_placement_from_settings(settings: &AppSettings) -> OverlayPlacement {
-    let defaults = default_overlay_placement();
-    let monitor = settings.monitor.max(1);
-
-    OverlayPlacement {
-        monitor,
-        width: defaults.width,
-        height: defaults.height,
-        top_offset: defaults.top_offset,
-        right_offset: defaults.right_offset,
-        subtract_height: defaults.subtract_height,
-    }
-}
-
 pub fn overlay_window_bounds_for_monitor(
     monitor_x: i32,
     monitor_y: i32,
@@ -366,28 +339,8 @@ pub fn overlay_window_bounds_for_monitor(
     (size, position)
 }
 
-fn runtime_flags_from_settings(settings: &AppSettings) -> RuntimeFlags {
-    let minimize_to_tray = settings.minimize_to_tray;
-    let start_minimized = if minimize_to_tray {
-        settings.start_minimized
-    } else {
-        false
-    };
-    let auto_update = settings.auto_update;
-
-    RuntimeFlags {
-        start_minimized,
-        minimize_to_tray,
-        auto_update,
-    }
-}
-
 pub fn parse_runtime_flags() -> RuntimeFlags {
-    runtime_flags_from_settings(&AppSettings::from_saved_file())
-}
-
-pub fn parse_runtime_flags_from_state(state: &BackendState) -> RuntimeFlags {
-    runtime_flags_from_settings(&state.read_settings_memory())
+    AppSettings::from_saved_file().runtime_flags()
 }
 
 pub(crate) fn apply_overlay_placement(window: &tauri::WebviewWindow) -> Result<(), String> {
@@ -399,7 +352,7 @@ pub(crate) fn apply_overlay_placement_from_settings(
     window: &tauri::WebviewWindow,
     settings_value: &AppSettings,
 ) -> Result<(), String> {
-    let settings = overlay_placement_from_settings(settings_value);
+    let settings = settings_value.overlay_placement();
     let monitor_index = if settings.monitor == 0 {
         0
     } else {
@@ -626,113 +579,6 @@ pub fn normalize_hotkey(raw: &str) -> Option<String> {
     None
 }
 
-fn resolved_overlay_hotkey_bindings_from_settings(
-    settings_value: &AppSettings,
-) -> Vec<ResolvedHotkeyBinding> {
-    let mut bindings = Vec::new();
-
-    for (path, action) in OVERLAY_HOTKEY_BINDINGS {
-        let configured = AppSettings::settings_field_value(settings_value, path);
-        let using_default =
-            configured.is_none() || matches!(configured.as_ref(), Some(Value::Null));
-        let shortcut = match configured.as_ref() {
-            None => OVERLAY_HOTKEY_DEFAULTS
-                .iter()
-                .find(|(default_path, _)| *default_path == path)
-                .and_then(|(_, default_value)| normalize_hotkey(default_value)),
-            Some(Value::Null) => OVERLAY_HOTKEY_DEFAULTS
-                .iter()
-                .find(|(default_path, _)| *default_path == path)
-                .and_then(|(_, default_value)| normalize_hotkey(default_value)),
-            Some(Value::Bool(false)) => {
-                crate::sco_log!("[SCO/hotkey] '{path}' disabled by settings.");
-                None
-            }
-            Some(Value::Bool(true)) => {
-                crate::sco_log!("[SCO/hotkey] '{path}' has invalid non-string binding, skipping.");
-                None
-            }
-            Some(Value::String(raw)) => {
-                let raw = raw.trim();
-                if raw.is_empty() {
-                    crate::sco_log!("[SCO/hotkey] '{path}' is empty, disabled by settings.");
-                    None
-                } else {
-                    normalize_hotkey(raw)
-                }
-            }
-            Some(_) => {
-                crate::sco_log!("[SCO/hotkey] '{path}' has invalid binding type, skipping.");
-                None
-            }
-        };
-
-        let Some(shortcut) = shortcut else {
-            if using_default {
-                crate::sco_log!("[SCO/hotkey] Missing binding for '{path}', skipping.");
-            }
-            continue;
-        };
-
-        let parsed = match Shortcut::from_str(&shortcut) {
-            Ok(parsed) => parsed,
-            Err(error) => {
-                crate::sco_log!(
-                    "[SCO/hotkey] Failed to parse hotkey '{shortcut}' for '{path}': {error}"
-                );
-                continue;
-            }
-        };
-
-        if using_default {
-            crate::sco_log!("[SCO/hotkey] Falling back to default for '{path}'.");
-        }
-
-        bindings.push(ResolvedHotkeyBinding {
-            path,
-            action,
-            shortcut,
-            canonical: parsed.to_string().to_ascii_lowercase(),
-        });
-    }
-
-    bindings
-}
-
-fn resolved_overlay_hotkey_bindings(state: &BackendState) -> Vec<ResolvedHotkeyBinding> {
-    resolved_overlay_hotkey_bindings_from_settings(&state.read_settings_memory())
-}
-
-pub fn resolve_hotkey_binding_for_reassign_end(
-    settings_value: &AppSettings,
-    path: &str,
-    fallback_binding: Option<&ResolvedHotkeyBinding>,
-) -> Option<ResolvedHotkeyBinding> {
-    let bindings = resolved_overlay_hotkey_bindings_from_settings(settings_value);
-    if let Some(binding) = bindings.into_iter().find(|binding| binding.path == path) {
-        return Some(binding);
-    }
-
-    let configured_value = AppSettings::settings_field_value(settings_value, path);
-    let explicitly_disabled = if !settings_value.has(path) {
-        false
-    } else {
-        match configured_value.as_ref() {
-            Some(Value::Null) => false,
-            Some(Value::Bool(false)) => true,
-            Some(Value::String(raw)) => raw.trim().is_empty(),
-            _ => false,
-        }
-    };
-    if explicitly_disabled {
-        return None;
-    }
-
-    fallback_binding
-        .filter(|binding| binding.path == path)
-        .cloned()
-}
-
 fn register_shortcut_action(
     app_handle: &tauri::AppHandle<Wry>,
     shortcut: &Shortcut,
@@ -809,7 +655,7 @@ pub(crate) fn register_overlay_hotkeys(app: &tauri::AppHandle<Wry>) -> Result<()
     let mut registered: HashMap<String, &'static str> = HashMap::new();
     let mut registered_count = 0usize;
 
-    for binding in resolved_overlay_hotkey_bindings(&state) {
+    for binding in state.resolved_overlay_hotkey_bindings() {
         if active_reassign_path.as_deref() == Some(binding.path) {
             crate::sco_log!(
                 "[SCO/hotkey] Skipping '{}' because it is currently being reassigned",
@@ -860,7 +706,8 @@ pub(crate) fn begin_hotkey_reassign(app: &tauri::AppHandle<Wry>, path: &str) -> 
     }
 
     state.set_active_hotkey_reassign_path(Some(path.to_string()));
-    let binding = resolved_overlay_hotkey_bindings(&state)
+    let binding = state
+        .resolved_overlay_hotkey_bindings()
         .into_iter()
         .find(|binding| binding.path == path);
     state.set_active_hotkey_reassign_binding(binding.clone());
@@ -885,14 +732,14 @@ pub(crate) fn end_hotkey_reassign(app: &tauri::AppHandle<Wry>, path: &str) -> Re
     let settings_value = state.read_settings_memory();
     let fallback_binding = state.active_hotkey_reassign_binding();
     let Some(binding) =
-        resolve_hotkey_binding_for_reassign_end(&settings_value, path, fallback_binding.as_ref())
+        settings_value.hotkey_binding_for_reassign_end(path, fallback_binding.as_ref())
     else {
         state.set_active_hotkey_reassign_binding(None);
         crate::sco_log!("[SCO/hotkey] '{path}' has no active binding after reassignment");
         return Ok(());
     };
 
-    let bindings = resolved_overlay_hotkey_bindings_from_settings(&settings_value);
+    let bindings = settings_value.resolved_overlay_hotkey_bindings();
     if bindings
         .iter()
         .any(|other| other.path != binding.path && other.canonical == binding.canonical)
@@ -927,7 +774,7 @@ pub fn overlay_payload_from_replay(
     let main_names = state.configured_main_names();
     let main_handles = state.configured_main_handles();
     let settings = state.read_settings_memory();
-    let language = overlay_language_from_settings(&settings);
+    let language = settings.overlay_language();
     let dictionary = state.dictionary_data().ok();
     let mut payload = dictionary
         .as_deref()
@@ -1144,7 +991,7 @@ pub(crate) fn perform_overlay_action(
         "overlay_newer" => Some(replay_move_window(app, state, 1)),
         "overlay_older" => Some(replay_move_window(app, state, -1)),
         "overlay_player_stats" => {
-            let payload = build_overlay_player_stats_payload(state);
+            let payload = state.overlay_player_stats_payload();
             let _ = app.emit(OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT, payload);
             show_overlay_window(app);
 
@@ -1252,230 +1099,6 @@ pub(crate) fn perform_overlay_action(
     }
 }
 
-fn build_overlay_player_stats_payload(state: &BackendState) -> OverlayPlayerStatsPayload {
-    let replays = state.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT);
-    let selected_file = state.get_current_replay_file();
-
-    let selected = selected_file
-        .and_then(|file| replays.iter().find(|replay| replay.file == file).cloned())
-        .or_else(|| replays.first().cloned());
-
-    let Some(selected) = selected else {
-        return OverlayPlayerStatsPayload::default();
-    };
-
-    let main_names = state.configured_main_names();
-    let main_handles = state.configured_main_handles();
-    let player_stats_target = select_other_player_for_stats(&selected, &main_names, &main_handles)
-        .or_else(|| {
-            let ally = selected.ally().name.trim();
-            if !ally.is_empty() {
-                Some((selected.ally().handle.clone(), ally.to_string()))
-            } else {
-                None
-            }
-        })
-        .or_else(|| {
-            let main = selected.main().name.trim();
-            if !main.is_empty() {
-                Some((selected.main().handle.clone(), main.to_string()))
-            } else {
-                None
-            }
-        });
-
-    let Some((player_handle, player_name)) = player_stats_target else {
-        return OverlayPlayerStatsPayload::default();
-    };
-
-    build_overlay_player_stats_payload_for_player(state, &player_handle, &player_name)
-}
-
-fn select_other_player_for_stats(
-    replay: &crate::ReplayInfo,
-    main_names: &HashSet<String>,
-    main_handles: &HashSet<String>,
-) -> Option<(String, String)> {
-    let p1 = replay.main().name.trim();
-    let p2 = replay.ally().name.trim();
-
-    if p1.is_empty() && p2.is_empty() {
-        return None;
-    }
-
-    let p1_handle = replay.main().handle.clone();
-    let p2_handle = replay.ally().handle.clone();
-
-    let p1_is_main = ReplayAnalysis::is_main_player_identity(
-        &replay.main().name,
-        &replay.main().handle,
-        main_names,
-        main_handles,
-    );
-    let p2_is_main = ReplayAnalysis::is_main_player_identity(
-        &replay.ally().name,
-        &replay.ally().handle,
-        main_names,
-        main_handles,
-    );
-
-    match (p1_is_main, p2_is_main) {
-        (true, false) => (!p2.is_empty()).then_some((p2_handle, p2.to_string())),
-        (false, true) => (!p1.is_empty()).then_some((p1_handle, p1.to_string())),
-        _ => {
-            if !p2.is_empty() {
-                Some((p2_handle, p2.to_string()))
-            } else if !p1.is_empty() {
-                Some((p1_handle, p1.to_string()))
-            } else {
-                None
-            }
-        }
-    }
-}
-
-fn lookup_player_stats_row(
-    player_data: &Map<String, Value>,
-    player_name: &str,
-) -> Option<(String, Map<String, Value>)> {
-    if let Some(value) = player_data.get(player_name).and_then(Value::as_object) {
-        return Some((player_name.to_string(), value.clone()));
-    }
-
-    let player_key = ReplayAnalysis::normalized_player_key(player_name);
-    player_data.iter().find_map(|(name, value)| {
-        if ReplayAnalysis::normalized_player_key(name) != player_key {
-            return None;
-        }
-        value
-            .as_object()
-            .map(|entry| (name.to_string(), entry.clone()))
-    })
-}
-
-pub fn player_note_from_settings_value(
-    settings: &AppSettings,
-    player_handle: &str,
-) -> Option<String> {
-    let direct = settings
-        .player_notes
-        .get(player_handle)
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
-
-    direct
-}
-
-fn player_note_from_settings(settings: &AppSettings, player_handle: &str) -> Option<String> {
-    player_note_from_settings_value(settings, player_handle)
-}
-
-fn relative_last_seen_text(last_seen: u64) -> String {
-    if last_seen == 0 {
-        return String::new();
-    }
-
-    let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(delta) => delta.as_secs(),
-        Err(_) => return String::new(),
-    };
-    let mut delta = now.saturating_sub(last_seen);
-
-    let years = delta / 31_557_600;
-    delta %= 31_557_600;
-    let days = delta / 86_400;
-    delta %= 86_400;
-    let hours = delta / 3_600;
-    delta %= 3_600;
-    let minutes = delta / 60;
-
-    let mut parts = Vec::<String>::new();
-    if years > 0 {
-        parts.push(format!("{years} years"));
-    }
-    if days > 0 {
-        parts.push(format!("{days} days"));
-    }
-    if hours > 0 {
-        parts.push(format!("{hours} hours"));
-    }
-    if minutes > 0 || parts.is_empty() {
-        parts.push(format!("{minutes} minutes"));
-    }
-    format!("{} ago", parts.join(" "))
-}
-
-fn build_overlay_player_stats_payload_for_player(
-    state: &BackendState,
-    player_handle: &str,
-    player_name: &str,
-) -> OverlayPlayerStatsPayload {
-    let settings = state.read_settings_memory();
-    let player_data = state
-        .stats
-        .lock()
-        .ok()
-        .and_then(|stats| stats.analysis.clone())
-        .and_then(|analysis| {
-            analysis
-                .get("PlayerData")
-                .and_then(Value::as_object)
-                .cloned()
-        });
-
-    let input_name = sanitize_replay_text(player_name);
-    let fallback_name = if input_name.trim().is_empty() {
-        "Unknown".to_string()
-    } else {
-        input_name.trim().to_string()
-    };
-
-    let mut data = std::collections::BTreeMap::new();
-    let resolved = player_data
-        .as_ref()
-        .and_then(|rows| lookup_player_stats_row(rows, &fallback_name));
-
-    let (display_name, value) = if let Some((resolved_name, row)) = resolved {
-        let wins = row.get("wins").and_then(Value::as_u64).unwrap_or(0);
-        let losses = row.get("losses").and_then(Value::as_u64).unwrap_or(0);
-        let apm = row
-            .get("apm")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0)
-            .round();
-        let commander = row
-            .get("commander")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let frequency = row.get("frequency").and_then(Value::as_f64).unwrap_or(0.0);
-        let kills = row.get("kills").and_then(Value::as_f64).unwrap_or(0.0);
-        let last_seen = row.get("last_seen").and_then(Value::as_u64).unwrap_or(0);
-        let relative_last_seen = relative_last_seen_text(last_seen);
-
-        let note = player_note_from_settings(&settings, player_handle);
-        (
-            sanitize_replay_text(&resolved_name),
-            OverlayPlayerStatsRow::Stats {
-                wins: as_u32(wins),
-                losses: as_u32(losses),
-                apm: as_u32(apm as u64),
-                commander: sanitize_replay_text(commander),
-                frequency,
-                kills,
-                last_seen_relative: relative_last_seen,
-                note,
-            },
-        )
-    } else {
-        let note = player_note_from_settings(&settings, &fallback_name);
-        (fallback_name, OverlayPlayerStatsRow::NoGames { note })
-    };
-
-    data.insert(display_name, value);
-
-    OverlayPlayerStatsPayload { data }
-}
-
 pub(crate) fn show_player_stats_for_name(
     app: &tauri::AppHandle<Wry>,
     state: &BackendState,
@@ -1486,31 +1109,11 @@ pub(crate) fn show_player_stats_for_name(
         return false;
     }
 
-    let payload = build_overlay_player_stats_payload_for_player(state, player_handle, player_name);
+    let payload = state.overlay_player_stats_payload_for_player(player_handle, player_name);
     let _ = app.emit(OVERLAY_HIDESTATS_EVENT, EmptyPayload::default());
     let _ = app.emit(OVERLAY_PLAYER_STATS_EVENT, payload);
     show_overlay_window(app);
     true
-}
-
-fn overlay_screenshot_directory_from_settings(settings: &AppSettings) -> Result<PathBuf, String> {
-    let folder = settings.screenshot_folder.trim();
-    if folder.is_empty() {
-        return Err("Screenshot folder is not configured".to_string());
-    }
-    Ok(PathBuf::from(folder))
-}
-
-pub fn overlay_screenshot_output_path_from_settings(
-    settings: &AppSettings,
-    captured_at: SystemTime,
-) -> Result<PathBuf, String> {
-    let directory = overlay_screenshot_directory_from_settings(settings)?;
-    let timestamp = captured_at
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| format!("Failed to build screenshot timestamp: {error}"))?
-        .as_secs();
-    Ok(directory.join(format!("overlay-{timestamp}.png")))
 }
 
 fn request_overlay_screenshot(app: &tauri::AppHandle<Wry>) -> Result<String, String> {
@@ -1519,7 +1122,7 @@ fn request_overlay_screenshot(app: &tauri::AppHandle<Wry>) -> Result<String, Str
     }
 
     let settings = app.state::<BackendState>().read_settings_memory();
-    let path = overlay_screenshot_output_path_from_settings(&settings, SystemTime::now())?;
+    let path = settings.overlay_screenshot_output_path(SystemTime::now())?;
     let parent = path
         .parent()
         .ok_or_else(|| "Screenshot folder path is invalid".to_string())?;
@@ -1679,64 +1282,11 @@ pub fn open_folder_in_explorer(folder: &str) -> Result<(), String> {
     Err("Folder opening is not supported on this platform".to_string())
 }
 
-fn overlay_setting_string(settings: &AppSettings, key: &str) -> Option<String> {
-    AppSettings::settings_field_value(settings, key)
-        .and_then(|value| value.as_str().map(ToString::to_string))
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-}
-
-fn overlay_duration_from_settings(settings: &AppSettings) -> u32 {
-    settings.duration.max(1)
-}
-
-fn overlay_show_charts_from_settings(settings: &AppSettings) -> bool {
-    settings.show_charts
-}
-
-fn overlay_show_session_from_settings(settings: &AppSettings) -> bool {
-    settings.show_session
-}
-
-fn overlay_hide_nicknames_from_settings(settings: &AppSettings) -> bool {
-    settings.hide_nicknames_in_overlay
-}
-
-fn overlay_language_from_settings(settings: &AppSettings) -> &'static str {
-    match settings.language.as_str() {
-        "ko" => "ko",
-        _ => "en",
-    }
-}
-
-pub fn overlay_runtime_settings_payload(
-    settings: &AppSettings,
-    session_victories: u64,
-    session_defeats: u64,
-) -> Value {
-    serde_json::to_value(OverlayInitColorsDurationPayload {
-        colors: [
-            overlay_setting_string(settings, "color_player1"),
-            overlay_setting_string(settings, "color_player2"),
-            overlay_setting_string(settings, "color_amon"),
-            overlay_setting_string(settings, "color_mastery"),
-        ],
-        duration: overlay_duration_from_settings(settings),
-        show_charts: overlay_show_charts_from_settings(settings),
-        show_session: overlay_show_session_from_settings(settings),
-        hide_nicknames_in_overlay: overlay_hide_nicknames_from_settings(settings),
-        session_victory: as_u32(session_victories),
-        session_defeat: as_u32(session_defeats),
-        language: overlay_language_from_settings(settings).to_string(),
-    })
-    .unwrap_or_else(|_| Value::Object(Default::default()))
-}
-
 pub(crate) fn sync_overlay_runtime_settings<R: Runtime>(app: &tauri::AppHandle<R>) {
     let state = app.state::<crate::BackendState>();
     let settings = state.read_settings_memory();
     let (session_victories, session_defeats) = state.session_counts();
-    let payload = overlay_runtime_settings_payload(&settings, session_victories, session_defeats);
+    let payload = settings.overlay_runtime_settings_payload(session_victories, session_defeats);
     let _ = app.emit(OVERLAY_INIT_COLORS_DURATION_EVENT, payload);
 }
 
