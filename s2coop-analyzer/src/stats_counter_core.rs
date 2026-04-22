@@ -1,4 +1,4 @@
-use crate::cache_overall_stats_generator::PlayerStatsSeries;
+use crate::cache_overall_stats_generator::AnalysisPlayerStatsSeries;
 use crate::dictionary_data::UnitBaseCostsJson;
 use s2protocol_port::{GameEvent, SnapshotPoint, SnapshotPointValue, TrackerEvent};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -774,7 +774,7 @@ impl ReplayStatsCounterCore {
             .push(collection_rate + drone_counter.get_bonus_vespene());
     }
 
-    pub fn get_stats(&mut self, player_name: &str) -> PlayerStatsSeries {
+    pub fn get_stats(&mut self, player_name: &str) -> AnalysisPlayerStatsSeries {
         let mut dehaka_changed_indices = BTreeSet::new();
         if self.commander == "Dehaka" {
             dehaka_changed_indices = upward_spike_indices(&self.army_value).into_iter().collect();
@@ -796,7 +796,7 @@ impl ReplayStatsCounterCore {
             })
             .collect::<Vec<f64>>();
 
-        PlayerStatsSeries {
+        AnalysisPlayerStatsSeries {
             name: player_name.to_string(),
             killed: self.kills.iter().map(|value| *value as f64).collect(),
             army,

@@ -1,5 +1,6 @@
 use s2coop_analyzer::cache_overall_stats_generator::{
-    CacheNumericValue, CacheReplayEntry, PlayerStatsSeries, ProtocolBuildValue, ReplayBuildInfo,
+    AnalysisPlayerStatsSeries, CacheNumericValue, CacheReplayEntry, ProtocolBuildValue,
+    ReplayBuildInfo,
 };
 use s2coop_analyzer::tauri_replay_analysis_impl::{
     ParsedReplayInput, ParsedReplayMessage, ParsedReplayPlayer, PlayerPositions, ReplayReport,
@@ -89,7 +90,7 @@ fn detailed_cache_entry_preserves_shared_base_fields() {
         player_stats: BTreeMap::from([
             (
                 1,
-                PlayerStatsSeries {
+                AnalysisPlayerStatsSeries {
                     name: "SlotTwo".to_string(),
                     supply: vec![12.0, 20.5],
                     mining: vec![0.0, 75.0],
@@ -100,7 +101,7 @@ fn detailed_cache_entry_preserves_shared_base_fields() {
             ),
             (
                 2,
-                PlayerStatsSeries {
+                AnalysisPlayerStatsSeries {
                     name: "SlotOne".to_string(),
                     supply: vec![10.0, 16.0],
                     mining: vec![0.0, 50.0],

@@ -3598,7 +3598,7 @@ impl ReplayAnalysis {
             simple_cache_entries.len()
         );
         if let Err(error) =
-            CacheReplayEntry::persist_simple_analysis(&simple_cache_entries, &get_cache_path())
+            CacheReplayEntry::persist_simple_cache_entries(&simple_cache_entries, &get_cache_path())
         {
             crate::sco_log!("[SCO/cache] failed to persist simple analysis cache batch: {error}");
         }

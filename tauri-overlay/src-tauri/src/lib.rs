@@ -2712,7 +2712,7 @@ fn spawn_analysis_task(
         if include_detailed {
             let cache_path = get_cache_path();
             if let Err(error) =
-                CacheReplayEntry::persist_simple_analysis(&final_cache_entries, &cache_path)
+                CacheReplayEntry::persist_simple_cache_entries(&final_cache_entries, &cache_path)
             {
                 crate::sco_log!("[SCO/stats] failed to persist final merged cache: {error}");
             }

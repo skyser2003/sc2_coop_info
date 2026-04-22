@@ -82,7 +82,7 @@ fn unique_temp_path(file_name: &str) -> PathBuf {
 }
 
 #[test]
-fn load_existing_detailed_analysis_cache_only_keeps_detailed_entries() {
+fn load_existing_detailed_cache_entries_only_keep_detailed_entries() {
     let cache_path = unique_temp_path("cache_overall_stats.json");
     let cache_dir = cache_path
         .parent()
@@ -98,7 +98,7 @@ fn load_existing_detailed_analysis_cache_only_keeps_detailed_entries() {
         serde_json::to_vec(&cache_entries).expect("failed to serialize temp cache entries");
     fs::write(&cache_path, payload).expect("failed to write temp cache file");
 
-    let loaded_cache = CacheReplayEntry::load_existing_detailed_analysis(&cache_path, None);
+    let loaded_cache = CacheReplayEntry::load_existing_detailed_cache_entries(&cache_path, None);
     assert_eq!(loaded_cache.len(), 1);
     assert!(loaded_cache.contains_key("reuse-hash"));
     assert!(!loaded_cache.contains_key("pending-hash"));
@@ -108,7 +108,7 @@ fn load_existing_detailed_analysis_cache_only_keeps_detailed_entries() {
 }
 
 #[test]
-fn persist_simple_analysis_cache_preserves_existing_simple_entries() {
+fn persist_simple_cache_entries_preserve_existing_simple_entries() {
     let cache_path = unique_temp_path("cache_overall_stats.json");
     let cache_dir = cache_path
         .parent()
@@ -123,7 +123,7 @@ fn persist_simple_analysis_cache_preserves_existing_simple_entries() {
     fs::write(&cache_path, payload).expect("failed to write cache file");
 
     let new_simple = sample_cached_entry("simple-new", "new.SC2Replay", false);
-    CacheReplayEntry::persist_simple_analysis(std::slice::from_ref(&new_simple), &cache_path)
+    CacheReplayEntry::persist_simple_cache_entries(std::slice::from_ref(&new_simple), &cache_path)
         .expect("simple cache persistence should succeed");
 
     let persisted_payload = fs::read(&cache_path).expect("cache file should exist");

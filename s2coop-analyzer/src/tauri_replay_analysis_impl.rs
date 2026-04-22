@@ -1,4 +1,4 @@
-use crate::cache_overall_stats_generator::{PlayerStatsSeries, ReplayBuildInfo};
+use crate::cache_overall_stats_generator::{AnalysisPlayerStatsSeries, ReplayBuildInfo};
 use indexmap::IndexMap;
 use s2protocol_port::MessageEvent;
 use serde::{Deserialize, Serialize};
@@ -278,7 +278,7 @@ pub struct ReplayReport {
     pub main_icons: BTreeMap<String, u64>,
     #[serde(rename = "allyIcons")]
     pub ally_icons: BTreeMap<String, u64>,
-    pub player_stats: BTreeMap<u8, PlayerStatsSeries>,
+    pub player_stats: BTreeMap<u8, AnalysisPlayerStatsSeries>,
     pub bonus: Vec<String>,
     pub comp: String,
     pub length: f64,
@@ -335,7 +335,7 @@ pub struct ReplayReportDetailData {
     pub main_units: BTreeMap<String, UnitStats>,
     pub ally_units: BTreeMap<String, UnitStats>,
     pub amon_units: BTreeMap<String, UnitStats>,
-    pub player_stats: BTreeMap<u8, PlayerStatsSeries>,
+    pub player_stats: BTreeMap<u8, AnalysisPlayerStatsSeries>,
     #[serde(skip)]
     pub outlaw_order: Vec<String>,
 }
@@ -377,18 +377,18 @@ impl ReplayReport {
     }
 
     fn player_stats_with_names(
-        incoming: Option<BTreeMap<u8, PlayerStatsSeries>>,
+        incoming: Option<BTreeMap<u8, AnalysisPlayerStatsSeries>>,
         main_name: &str,
         ally_name: &str,
-    ) -> BTreeMap<u8, PlayerStatsSeries> {
+    ) -> BTreeMap<u8, AnalysisPlayerStatsSeries> {
         let mut player_stats = incoming.unwrap_or_default();
         player_stats
             .entry(1)
-            .or_insert_with(|| PlayerStatsSeries::empty_named(main_name.to_string()))
+            .or_insert_with(|| AnalysisPlayerStatsSeries::empty_named(main_name.to_string()))
             .name = main_name.to_string();
         player_stats
             .entry(2)
-            .or_insert_with(|| PlayerStatsSeries::empty_named(ally_name.to_string()))
+            .or_insert_with(|| AnalysisPlayerStatsSeries::empty_named(ally_name.to_string()))
             .name = ally_name.to_string();
         player_stats
     }
