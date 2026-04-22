@@ -78,3 +78,37 @@ fn overlay_window_bounds_clamp_to_monitor_dimensions() {
     assert_eq!(position.x, -1920);
     assert_eq!(position.y, 0);
 }
+
+#[test]
+fn overlay_window_position_uses_actual_applied_width_for_right_alignment() {
+    let requested =
+        overlay_info::overlay_window_bounds_for_monitor(-1080, 0, 1080, 1920, 0.7, 1.0, 0, 0, 1);
+    let actual_position =
+        overlay_info::overlay_window_position_for_monitor(-1080, 0, 1080, 492, 0, 0);
+
+    assert_eq!(requested.0.width, 756);
+    assert_eq!(requested.1.x, -756);
+    assert_eq!(actual_position.x, -492);
+    assert_eq!(actual_position.y, 0);
+}
+
+#[test]
+fn overlay_window_size_match_detects_runtime_monitor_switch_shrink() {
+    let requested =
+        overlay_info::overlay_window_bounds_for_monitor(-1080, 0, 1080, 1920, 0.7, 1.0, 0, 0, 1);
+
+    assert!(!overlay_info::overlay_window_size_matches_target(
+        tauri::PhysicalSize {
+            width: 492,
+            height: 1919,
+        },
+        requested.0,
+    ));
+    assert!(overlay_info::overlay_window_size_matches_target(
+        tauri::PhysicalSize {
+            width: 756,
+            height: 1919,
+        },
+        requested.0,
+    ));
+}

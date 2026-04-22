@@ -111,25 +111,15 @@ fn default_geometry(
     window: &tauri::WebviewWindow<Wry>,
     settings: &AppSettings,
 ) -> Result<PerformanceGeometry, String> {
-    let monitor_setting = settings.monitor().max(1);
-    let monitor_index = monitor_setting.saturating_sub(1);
-    let monitors = window.available_monitors().unwrap_or_default();
-    if monitors.is_empty() {
-        return Err("No monitors detected".to_string());
-    }
+    let selected =
+        crate::monitor_settings::selected_monitor_for_window(window, settings.monitor())?;
 
-    let selected = if monitor_index < monitors.len() {
-        &monitors[monitor_index]
-    } else {
-        &monitors[monitors.len().saturating_sub(1)]
-    };
-    let size = selected.size();
-    let position = selected.position();
-
-    let width = DEFAULT_WINDOW_WIDTH.min(size.width.max(MIN_WINDOW_WIDTH));
-    let height = required_window_height().min(size.height.max(MIN_WINDOW_HEIGHT));
-    let x = position.x + i32::try_from(size.width.saturating_sub(width)).unwrap_or(0) - 24;
-    let y = position.y + 180;
+    let width = DEFAULT_WINDOW_WIDTH.min(selected.width().max(MIN_WINDOW_WIDTH));
+    let height = required_window_height().min(selected.height().max(MIN_WINDOW_HEIGHT));
+    let x = selected.position_x()
+        + i32::try_from(selected.width().saturating_sub(width)).unwrap_or(0)
+        - 24;
+    let y = selected.position_y() + 180;
 
     Ok(PerformanceGeometry::new(x, y, width, height).normalized())
 }

@@ -25,6 +25,7 @@ mod app_settings;
 mod backend_state;
 mod game_launch_detector;
 pub mod logging;
+pub mod monitor_settings;
 pub mod overlay_info;
 pub mod path_manager;
 mod performance_overlay;
@@ -4389,7 +4390,7 @@ async fn config_get(
             .dictionary_data()
             .map(|dictionary| randomizer::catalog_payload_with_dictionary(&dictionary))
             .unwrap_or_default(),
-        monitor_catalog: overlay_info::available_monitor_catalog(&app),
+        monitor_catalog: monitor_settings::available_monitor_catalog(&app),
     })
 }
 
@@ -4435,7 +4436,7 @@ async fn config_update(
             .dictionary_data()
             .map(|dictionary| randomizer::catalog_payload_with_dictionary(&dictionary))
             .unwrap_or_default(),
-        monitor_catalog: overlay_info::available_monitor_catalog(&app),
+        monitor_catalog: monitor_settings::available_monitor_catalog(&app),
     })
 }
 
@@ -5145,12 +5146,45 @@ pub fn run() {
                     }
                 }
             }
-            tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
+            tauri::WindowEvent::Moved(_) => {
                 if window.label() == "performance" {
                     if let Some(performance_window) =
                         window.app_handle().get_webview_window("performance")
                     {
                         performance_overlay::persist_geometry(&performance_window);
+                    }
+                }
+            }
+            tauri::WindowEvent::Resized(_) => {
+                if window.label() == "overlay" {
+                    if let Some(overlay_window) = window.app_handle().get_webview_window("overlay")
+                    {
+                        if let Err(error) = overlay_info::stabilize_overlay_bounds(&overlay_window)
+                        {
+                            crate::sco_log!(
+                                "[SCO/overlay] Failed to stabilize overlay bounds after resize: {error}"
+                            );
+                        }
+                    }
+                }
+                if window.label() == "performance" {
+                    if let Some(performance_window) =
+                        window.app_handle().get_webview_window("performance")
+                    {
+                        performance_overlay::persist_geometry(&performance_window);
+                    }
+                }
+            }
+            tauri::WindowEvent::ScaleFactorChanged { .. } => {
+                if window.label() == "overlay" {
+                    if let Some(overlay_window) = window.app_handle().get_webview_window("overlay")
+                    {
+                        if let Err(error) = overlay_info::stabilize_overlay_bounds(&overlay_window)
+                        {
+                            crate::sco_log!(
+                                "[SCO/overlay] Failed to stabilize overlay bounds after scale change: {error}"
+                            );
+                        }
                     }
                 }
             }

@@ -5,7 +5,6 @@ use std::str::FromStr;
 use std::thread;
 use std::time::SystemTime;
 
-use display_info::DisplayInfo;
 use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use serde_json::Value;
 use tauri::{
@@ -15,12 +14,12 @@ use tauri::{
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 use crate::app_settings::AppSettings;
+use crate::monitor_settings;
 use crate::process_replay_detailed;
 use crate::randomizer;
 use crate::shared_types::{
     overlay_icon_payload_from_value, replay_data_record_from_value, swap_replay_data_record_sides,
-    unit_stats_map_from_value, EmptyPayload, MonitorOption, OverlayReplayPayload,
-    OverlayScreenshotRequestPayload,
+    unit_stats_map_from_value, EmptyPayload, OverlayReplayPayload, OverlayScreenshotRequestPayload,
 };
 use crate::{
     replay_index_by_file, replay_should_swap_main_and_ally, sanitize_replay_text, BackendState,
@@ -110,15 +109,6 @@ pub struct RuntimeFlags {
     start_minimized: bool,
     minimize_to_tray: bool,
     auto_update: bool,
-}
-
-#[derive(Clone)]
-struct MonitorDescriptor {
-    name: String,
-    position_x: i32,
-    position_y: i32,
-    width: u32,
-    height: u32,
 }
 
 #[derive(Clone)]
@@ -225,6 +215,16 @@ impl ResolvedHotkeyBinding {
     pub fn canonical(&self) -> &str {
         &self.canonical
     }
+}
+
+fn selected_monitor_from_settings<R: Runtime>(
+    window: &tauri::WebviewWindow<R>,
+    settings_value: &AppSettings,
+) -> Result<monitor_settings::MonitorDescriptor, String> {
+    monitor_settings::selected_monitor_for_window(
+        window,
+        settings_value.overlay_placement().monitor(),
+    )
 }
 
 impl OverlayReplayPayload {
@@ -427,13 +427,41 @@ pub fn overlay_window_bounds_for_monitor(
         width: u32::try_from(target_width).unwrap_or(1),
         height: u32::try_from(target_height).unwrap_or(1),
     };
-    let position = tauri::PhysicalPosition {
+    let position = overlay_window_position_for_monitor(
+        monitor_x,
+        monitor_y,
+        monitor_width,
+        size.width,
+        top_offset,
+        right_offset,
+    );
+    (size, position)
+}
+
+pub fn overlay_window_position_for_monitor(
+    monitor_x: i32,
+    monitor_y: i32,
+    monitor_width: u32,
+    window_width: u32,
+    top_offset: i32,
+    right_offset: i32,
+) -> tauri::PhysicalPosition<i32> {
+    tauri::PhysicalPosition {
         x: monitor_x
-            + i32::try_from(monitor_width.saturating_sub(size.width)).unwrap_or(0)
+            + i32::try_from(monitor_width.saturating_sub(window_width)).unwrap_or(0)
             + right_offset,
         y: monitor_y + top_offset,
-    };
-    (size, position)
+    }
+}
+
+pub fn overlay_window_size_matches_target(
+    actual_size: tauri::PhysicalSize<u32>,
+    target_size: tauri::PhysicalSize<u32>,
+) -> bool {
+    const SIZE_TOLERANCE_PX: u32 = 1;
+
+    actual_size.width.abs_diff(target_size.width) <= SIZE_TOLERANCE_PX
+        && actual_size.height.abs_diff(target_size.height) <= SIZE_TOLERANCE_PX
 }
 
 pub fn parse_runtime_flags() -> RuntimeFlags {
@@ -450,26 +478,12 @@ pub(crate) fn apply_overlay_placement_from_settings(
     settings_value: &AppSettings,
 ) -> Result<(), String> {
     let settings = settings_value.overlay_placement();
-    let monitor_index = if settings.monitor() == 0 {
-        0
-    } else {
-        settings.monitor() - 1
-    };
-    let monitors = monitor_descriptors(window);
-    if monitors.is_empty() {
-        return Err("No monitors detected".into());
-    }
-
-    let selected = if monitor_index < monitors.len() {
-        &monitors[monitor_index]
-    } else {
-        &monitors[monitors.len().saturating_sub(1)]
-    };
-    let (size, final_position) = overlay_window_bounds_for_monitor(
-        selected.position_x,
-        selected.position_y,
-        selected.width,
-        selected.height,
+    let selected = selected_monitor_from_settings(window, settings_value)?;
+    let (size, _) = overlay_window_bounds_for_monitor(
+        selected.position_x(),
+        selected.position_y(),
+        selected.width(),
+        selected.height(),
         settings.width(),
         settings.height(),
         settings.top_offset(),
@@ -477,8 +491,8 @@ pub(crate) fn apply_overlay_placement_from_settings(
         settings.subtract_height(),
     );
     let provisional_position = tauri::PhysicalPosition {
-        x: selected.position_x,
-        y: selected.position_y,
+        x: selected.position_x(),
+        y: selected.position_y(),
     };
 
     window
@@ -488,104 +502,54 @@ pub(crate) fn apply_overlay_placement_from_settings(
         .set_size(size)
         .map_err(|error| format!("Failed to set overlay size: {error}"))?;
 
-    window
-        .set_position(final_position)
-        .map_err(|error| format!("Failed to set overlay position: {error}"))?;
-    Ok(())
+    stabilize_overlay_bounds_from_settings(window, settings_value)
 }
 
-pub(crate) fn available_monitor_catalog<R: Runtime>(
-    app: &tauri::AppHandle<R>,
-) -> Vec<MonitorOption> {
-    let window = app
-        .get_webview_window("config")
-        .or_else(|| app.get_webview_window("overlay"))
-        .or_else(|| app.get_webview_window("performance"));
-    let Some(window) = window else {
-        return Vec::new();
-    };
-
-    monitor_descriptors(&window)
-        .into_iter()
-        .enumerate()
-        .map(|(idx, monitor)| {
-            let index = idx + 1;
-            MonitorOption {
-                index,
-                label: format!("{index} - {}", monitor.name),
-            }
-        })
-        .collect()
+pub(crate) fn stabilize_overlay_bounds(window: &tauri::WebviewWindow) -> Result<(), String> {
+    let state = window.state::<BackendState>();
+    stabilize_overlay_bounds_from_settings(window, &state.read_settings_memory())
 }
 
-fn monitor_descriptors<R: Runtime>(window: &tauri::WebviewWindow<R>) -> Vec<MonitorDescriptor> {
-    let display_info_monitors = display_info_monitors();
-    if !display_info_monitors.is_empty() {
-        return display_info_monitors;
+fn stabilize_overlay_bounds_from_settings(
+    window: &tauri::WebviewWindow,
+    settings_value: &AppSettings,
+) -> Result<(), String> {
+    let settings = settings_value.overlay_placement();
+    let selected = selected_monitor_from_settings(window, settings_value)?;
+    let (target_size, _) = overlay_window_bounds_for_monitor(
+        selected.position_x(),
+        selected.position_y(),
+        selected.width(),
+        selected.height(),
+        settings.width(),
+        settings.height(),
+        settings.top_offset(),
+        settings.right_offset(),
+        settings.subtract_height(),
+    );
+    let current_size = window
+        .outer_size()
+        .map_err(|error| format!("Failed to read overlay size: {error}"))?;
+
+    if !overlay_window_size_matches_target(current_size, target_size) {
+        window
+            .set_size(target_size)
+            .map_err(|error| format!("Failed to stabilize overlay size: {error}"))?;
+        return Ok(());
     }
 
-    let mut monitors = window.available_monitors().unwrap_or_default();
-    monitors.sort_by(|left, right| {
-        let left_pos = left.position();
-        let right_pos = right.position();
-        left_pos
-            .x
-            .cmp(&right_pos.x)
-            .then(left_pos.y.cmp(&right_pos.y))
-    });
-    monitors
-        .into_iter()
-        .enumerate()
-        .map(|(idx, monitor)| {
-            let name = monitor
-                .name()
-                .map(|value| value.to_string())
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| format!("Monitor {}", idx + 1));
-            MonitorDescriptor {
-                name,
-                position_x: monitor.position().x,
-                position_y: monitor.position().y,
-                width: monitor.size().width,
-                height: monitor.size().height,
-            }
-        })
-        .collect()
-}
+    let final_position = overlay_window_position_for_monitor(
+        selected.position_x(),
+        selected.position_y(),
+        selected.width(),
+        current_size.width,
+        settings.top_offset(),
+        settings.right_offset(),
+    );
 
-fn display_info_monitors() -> Vec<MonitorDescriptor> {
-    let mut monitors = DisplayInfo::all()
-        .unwrap_or_default()
-        .into_iter()
-        .enumerate()
-        .map(|(idx, display)| {
-            let friendly_name = display.friendly_name.trim();
-            let technical_name = display.name.trim();
-            let name = if !friendly_name.is_empty() {
-                friendly_name.to_string()
-            } else if !technical_name.is_empty() {
-                technical_name.to_string()
-            } else {
-                format!("Monitor {}", idx + 1)
-            };
-
-            MonitorDescriptor {
-                name,
-                position_x: display.x,
-                position_y: display.y,
-                width: display.width.max(1),
-                height: display.height.max(1),
-            }
-        })
-        .collect::<Vec<_>>();
-
-    monitors.sort_by(|left, right| {
-        left.position_x
-            .cmp(&right.position_x)
-            .then(left.position_y.cmp(&right.position_y))
-            .then(left.name.cmp(&right.name))
-    });
-    monitors
+    window
+        .set_position(final_position)
+        .map_err(|error| format!("Failed to set overlay position: {error}"))
 }
 
 fn is_valid_hotkey(shortcut: &str) -> bool {

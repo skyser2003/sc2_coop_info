@@ -9,6 +9,10 @@
     --overlay-font-family:
         "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR",
         "Noto Sans CJK KR", "Segoe UI", sans-serif;
+    --overlay-panel-width: min(100vh, 100vw);
+    --overlay-stats-width: min(48vh, calc(100vw - 2vh));
+    --overlay-otherstats-width: min(50vh, calc(100vw - 4vh));
+    --overlay-playerstats-width: min(100vh, calc(100vw - 4vh));
 }
 
 html,
@@ -32,7 +36,7 @@ body {
     position: absolute;
     display: block;
     height: 100%;
-    width: 100vh;
+    width: var(--overlay-panel-width);
     top: 0px;
     right: 0px;
     background-color: rgba(0, 0, 0, 0.8);
@@ -68,7 +72,7 @@ body {
     position: absolute;
     top: 4vh;
     right: 1vh;
-    width: 48vh;
+    width: var(--overlay-stats-width);
     transition:
         right 1.5s,
         opacity 1s;
@@ -345,13 +349,13 @@ body {
 #mutatorinfo {
     margin: auto;
     margin-top: 8.33vh;
-    width: 65vh;
+    width: min(65vh, calc(100vw - 4vh));
     height: 65vh;
     text-align: center;
 }
 
 #mutatorinfo div {
-    width: 60vh;
+    width: min(60vh, calc(100vw - 5vh));
     height: 10vh;
     border: 2px solid #444;
     margin: 0px 4px 10px 4px;
@@ -402,7 +406,7 @@ body {
     position: absolute;
     bottom: 7vh;
     right: 2vh;
-    width: 50vh;
+    width: var(--overlay-otherstats-width);
     font-size: 1.5vh;
     text-align: center;
     color: white;
@@ -478,8 +482,8 @@ body {
 #playerstats {
     position: absolute;
     top: 5vh;
-    right: -60vh;
-    width: 100vh;
+    right: calc(-1 * var(--overlay-playerstats-width));
+    width: var(--overlay-playerstats-width);
     height: 8vh;
     text-align: right;
     transition: all 1.5s;
