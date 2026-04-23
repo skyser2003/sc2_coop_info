@@ -426,7 +426,13 @@ pub fn overlay_window_bounds_for_monitor(
         return (size, position);
     }
 
-    let mut target_width = (monitor_width as f64 * width_ratio).max(1.0) as i64;
+    let effective_width_ratio = if monitor_height > monitor_width {
+        1.0
+    } else {
+        width_ratio
+    };
+
+    let mut target_width = (monitor_width as f64 * effective_width_ratio).max(1.0) as i64;
     let mut target_height =
         (monitor_height as f64 * height_ratio) as i64 - i64::from(subtract_height);
 
