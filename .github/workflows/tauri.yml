@@ -51,7 +51,7 @@ jobs:
               with:
                   tagName: v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
                   releaseName: "SC2_Coop_Info v__VERSION__"
-                  releaseBody: "Bug fix: Player stats showing after game ends fixed\nBug fix: Kill ratio bar animation speed fixed"
+                  releaseBody: "Feature: Portrait mode support added\nBug fix: Commander color wrongly displaying issue fixed"
                   releaseDraft: false
                   prerelease: false
                   projectPath: "./tauri-overlay"
