@@ -13,6 +13,18 @@
     --overlay-stats-width: min(48vh, calc(100vw - 2vh));
     --overlay-otherstats-width: min(50vh, calc(100vw - 4vh));
     --overlay-playerstats-width: min(100vh, calc(100vw - 4vh));
+    --overlay-unit-name-width: 21.8vh;
+    --overlay-unit-kill-percent-width: 6.2vh;
+    --overlay-unit-kill-count-width: 8.2vh;
+    --overlay-unit-created-width: 4.6vh;
+    --overlay-unit-lost-width: 3.6vh;
+    --overlay-unit-table-width: calc(
+        var(--overlay-unit-name-width) +
+            var(--overlay-unit-kill-percent-width) +
+            var(--overlay-unit-kill-count-width) +
+            var(--overlay-unit-created-width) + var(--overlay-unit-lost-width)
+    );
+    --overlay-unit-kill-separator-color: rgba(255, 255, 255, 0.75);
 }
 
 html,
@@ -98,9 +110,6 @@ body {
 #com2,
 #apm1,
 #apm2,
-.unitkills,
-.unitcreated,
-.unitdied,
 .icontext {
     height: 1em;
     line-height: 1;
@@ -122,8 +131,7 @@ body {
 }
 
 #map,
-.mastery,
-.unitline {
+.mastery {
     line-height: 1;
 }
 
@@ -338,14 +346,6 @@ body {
     margin-top: -2vh;
 }
 
-.killpadding {
-    margin-left: 0.9vh;
-}
-
-.nokillpadding {
-    margin-left: -0.9vh;
-}
-
 #mutatorinfo {
     margin: auto;
     margin-top: 8.33vh;
@@ -515,25 +515,6 @@ body {
     transform: scaleX(-1);
 }
 
-.unitname {
-    position: relative;
-    z-index: 1;
-}
-
-.unitkillbg {
-    height: 1.5vh;
-    position: absolute;
-    top: 0;
-    margin-top: 0.09vh;
-    margin-left: -0.13vh;
-    opacity: 0.6;
-    z-index: 0;
-}
-
-.unitline {
-    position: relative;
-}
-
 .units {
     font-size: 1.5vh;
     text-shadow: 0.1vh 0.1vh 0.1vh black;
@@ -542,32 +523,159 @@ body {
     padding-left: 0px;
 }
 
-.unitkills {
+.units-table {
+    width: var(--overlay-unit-table-width);
+    min-width: var(--overlay-unit-table-width);
+    max-width: var(--overlay-unit-table-width);
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.units-table th,
+.units-table td {
+    padding: 0.05vh 0;
+    line-height: 1.05;
+}
+
+.units-table tbody td {
+    padding-top: 0;
+    padding-bottom: 0;
+    line-height: 1;
+}
+
+.units-table thead th {
+    color: #d8d8d8;
+    font-size: 1.5vh;
+    font-weight: normal;
+    opacity: 0.9;
+    white-space: nowrap;
+}
+
+.units-table-col-name {
+    width: var(--overlay-unit-name-width);
+}
+
+.units-table-col-kill-percent {
+    width: var(--overlay-unit-kill-percent-width);
+}
+
+.units-table-col-kill-count {
+    width: var(--overlay-unit-kill-count-width);
+}
+
+.units-table-col-created,
+.units-table-col-lost {
+    width: var(--overlay-unit-created-width);
+}
+
+.units-table-col-lost {
+    width: var(--overlay-unit-lost-width);
+}
+
+.units-table-col-number {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.units-table-header-spacer {
+    padding: 0;
+}
+
+.units-table-name {
+    padding-right: 0.6vh;
+}
+
+.units-table-name-cell {
+    position: relative;
+    display: block;
+    overflow: hidden;
+}
+
+.units-table-name-bg {
     position: absolute;
-    left: 22vh;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    height: auto;
+    opacity: 0.6;
+    border-radius: 0;
+    z-index: 0;
+}
+
+.units-table-name-value {
+    position: relative;
+    z-index: 1;
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0 0.8vh 0 0.2vh;
+}
+
+.units-table td.units-table-kill-percent {
     opacity: 0.9;
 }
 
-.unitcreated {
+.units-table-kills-header {
+    text-align: center;
+}
+
+.units-table td.units-table-kill-count {
+    border-left: 0.12vh solid var(--overlay-unit-kill-separator-color);
+    text-align: left;
+    padding-right: 0.2vh;
+    opacity: 0.9;
+}
+
+.units-table-kill-percent-value,
+.units-table-kill-count-value {
+    display: block;
+}
+
+.units-table-kill-percent-value {
+    padding-right: 0.8vh;
+}
+
+.units-table-kill-count-value {
+    padding-left: 0.8vh;
+}
+
+.units-table-created,
+.units-table-created-header {
     color: #2fff00;
-    position: absolute;
-    right: 7vh;
+}
+
+.units-table-created {
     opacity: 0.6;
 }
 
-.unitcreated.header {
-    right: 8vh;
+.units-table-created-header {
+    opacity: 0.6;
 }
 
-.unitdied {
+.units-table-lost,
+.units-table-lost-header {
     color: #ff0000;
-    position: absolute;
-    right: -1vh;
+}
+
+.units-table-lost {
     opacity: 0.9;
 }
 
-.unitdied.header {
-    right: -0.02vh;
+.units-table-lost-header {
+    opacity: 0.9;
+}
+
+.overlay-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 #charts {

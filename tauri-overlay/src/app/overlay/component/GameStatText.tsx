@@ -40,13 +40,12 @@ type IconPayload = OverlayReplayPayload["mainIcons"];
 type UnitStatsMap = OverlayReplayPayload["mainUnits"];
 
 type UnitRow = {
-    key: string;
+    name: string;
     percent: number;
     kills: number;
     created: number;
     died: number;
     backgroundWidth: number;
-    spacerClassName: string;
 };
 
 type MasteryRow = {
@@ -190,23 +189,16 @@ function buildUnitRows(
         }
 
         const percent = Math.round(100 * killShare);
-        const spacerClassName =
-            percent < 10
-                ? "killpadding"
-                : percent === 100
-                  ? "nokillpadding"
-                  : "";
         const backgroundWidth =
             totalKills > 0 ? (50 * kills) / totalKills : (35 * percent) / 100;
 
         nextRows.push({
-            key: localizeUnitName(displayName),
+            name: localizeUnitName(displayName),
             percent,
             kills,
             created,
             died,
             backgroundWidth,
-            spacerClassName,
         });
     }
 
@@ -282,43 +274,85 @@ function renderUnitRows(
     overlayText: (id: string) => string,
 ): ReactNode {
     if (unitRows.length === 0) {
-        return <span className="unitkills" />;
+        return null;
     }
 
     return (
-        <>
-            <span className="unitkills">
-                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{killsLabel}
-            </span>
-            <span className="unitcreated header">
-                {overlayText("ui_stats_created")}
-            </span>
-            <span className="unitdied header">
-                {overlayText("ui_stats_lost")}
-            </span>
-            <br />
-            {unitRows.map((row) => (
-                <Fragment key={row.key}>
-                    <div className="unitline">
-                        <span className="unitname">{row.key}</span>
-                        <div
-                            className="unitkillbg"
-                            style={{
-                                width: `${row.backgroundWidth}vh`,
-                                backgroundColor: color,
-                            }}
-                        />
-                        <span
-                            className={`unitkills ${row.spacerClassName}`.trim()}
-                        >
-                            {row.percent}% | {row.kills}
+        <table className="units-table">
+            <colgroup>
+                <col className="units-table-col-name" />
+                <col className="units-table-col-kill-percent" />
+                <col className="units-table-col-kill-count" />
+                <col className="units-table-col-created" />
+                <col className="units-table-col-lost" />
+            </colgroup>
+            <thead>
+                <tr>
+                    <th scope="col" className="units-table-header-spacer">
+                        <span className="overlay-sr-only">
+                            {overlayText("ui_stats_unit")}
                         </span>
-                        <span className="unitcreated">{row.created}</span>
-                        <span className="unitdied">{row.died}</span>
-                    </div>
-                </Fragment>
-            ))}
-        </>
+                    </th>
+                    <th
+                        scope="colgroup"
+                        colSpan={2}
+                        className="units-table-col-number units-table-kills-header"
+                    >
+                        {killsLabel}
+                    </th>
+                    <th
+                        scope="col"
+                        className="units-table-col-number units-table-created-header"
+                    >
+                        {overlayText("ui_stats_created")}
+                    </th>
+                    <th
+                        scope="col"
+                        className="units-table-col-number units-table-lost-header"
+                    >
+                        {overlayText("ui_stats_lost")}
+                    </th>
+                </tr>
+            </thead>
+            <tbody>
+                {unitRows.map((row) => (
+                    <tr
+                        key={`${row.name}-${row.kills}-${row.created}-${row.died}`}
+                    >
+                        <td className="units-table-name">
+                            <div className="units-table-name-cell">
+                                <div
+                                    className="units-table-name-bg"
+                                    style={{
+                                        width: `min(${row.backgroundWidth}vh, 100%)`,
+                                        backgroundColor: color,
+                                    }}
+                                />
+                                <span className="units-table-name-value">
+                                    {row.name}
+                                </span>
+                            </div>
+                        </td>
+                        <td className="units-table-col-number units-table-kill-percent">
+                            <span className="units-table-kill-percent-value">
+                                {row.percent}%
+                            </span>
+                        </td>
+                        <td className="units-table-col-number units-table-kill-count">
+                            <span className="units-table-kill-count-value">
+                                {row.kills}
+                            </span>
+                        </td>
+                        <td className="units-table-col-number units-table-created">
+                            {row.created}
+                        </td>
+                        <td className="units-table-col-number units-table-lost">
+                            {row.died}
+                        </td>
+                    </tr>
+                ))}
+            </tbody>
+        </table>
     );
 }
 
