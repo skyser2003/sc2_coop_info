@@ -114,7 +114,7 @@ test("overlay layout stays within portrait viewport width", async ({
         runtime.__emitMockEvent?.("sco://overlay-init-colors-duration", {
             colors: [null, null, null, null],
             duration: 60,
-            show_charts: false,
+            show_charts: true,
             show_session: true,
             session_victory: 0,
             session_defeat: 0,
@@ -126,7 +126,22 @@ test("overlay layout stays within portrait viewport width", async ({
             mainPrestige: "Renegade Commander",
             allyPrestige: "Queen of Blades",
             comp: "Terran",
-            player_stats: null,
+            player_stats: {
+                1: {
+                    name: "Player One",
+                    army: [1, 2, 3],
+                    supply: [12, 20, 30],
+                    killed: [0, 5, 9],
+                    mining: [200, 325, 410],
+                },
+                2: {
+                    name: "Player Two",
+                    army: [2, 3, 4],
+                    supply: [11, 18, 28],
+                    killed: [0, 4, 8],
+                    mining: [180, 300, 390],
+                },
+            },
             mutators: [],
             result: "Victory",
             mainCommander: "Raynor",
@@ -166,17 +181,26 @@ test("overlay layout stays within portrait viewport width", async ({
     });
 
     await expect(page.locator("#stats")).toBeVisible();
+    await expect
+        .poll(() =>
+            page.locator("#charts").evaluate((element) => {
+                return (element as HTMLElement).style.display;
+            }),
+        )
+        .toBe("block");
 
     const metrics = await page.evaluate(() => {
         const bg = document.querySelector("#bgdiv");
         const stats = document.querySelector("#stats");
         const otherstats = document.querySelector("#otherstats");
         const playerstats = document.querySelector("#playerstats");
+        const charts = document.querySelector("#charts");
         if (
             !(bg instanceof HTMLElement) ||
             !(stats instanceof HTMLElement) ||
             !(otherstats instanceof HTMLElement) ||
-            !(playerstats instanceof HTMLElement)
+            !(playerstats instanceof HTMLElement) ||
+            !(charts instanceof HTMLElement)
         ) {
             throw new Error("Overlay layout nodes are missing");
         }
@@ -185,6 +209,7 @@ test("overlay layout stays within portrait viewport width", async ({
         const statsRect = stats.getBoundingClientRect();
         const otherstatsRect = otherstats.getBoundingClientRect();
         const playerstatsRect = playerstats.getBoundingClientRect();
+        const chartsRect = charts.getBoundingClientRect();
 
         return {
             innerWidth: window.innerWidth,
@@ -203,6 +228,11 @@ test("overlay layout stays within portrait viewport width", async ({
                 right: otherstatsRect.right,
                 width: otherstatsRect.width,
             },
+            chartsRect: {
+                left: chartsRect.left,
+                right: chartsRect.right,
+                width: chartsRect.width,
+            },
             playerstatsWidth: playerstatsRect.width,
         };
     });
@@ -214,6 +244,10 @@ test("overlay layout stays within portrait viewport width", async ({
     expect(metrics.statsRect.right).toBeLessThanOrEqual(metrics.innerWidth + 1);
     expect(metrics.otherstatsRect.left).toBeGreaterThanOrEqual(-1);
     expect(metrics.otherstatsRect.right).toBeLessThanOrEqual(
+        metrics.innerWidth + 1,
+    );
+    expect(metrics.chartsRect.left).toBeGreaterThanOrEqual(-1);
+    expect(metrics.chartsRect.right).toBeLessThanOrEqual(
         metrics.innerWidth + 1,
     );
     expect(metrics.playerstatsWidth).toBeLessThanOrEqual(

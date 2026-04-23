@@ -87,6 +87,7 @@ fn overlay_window_position_uses_actual_applied_width_for_right_alignment() {
         overlay_info::overlay_window_position_for_monitor(-1080, 0, 1080, 492, 0, 0);
 
     assert_eq!(requested.0.width, 756);
+    assert_eq!(requested.0.height, 1919);
     assert_eq!(requested.1.x, -756);
     assert_eq!(actual_position.x, -492);
     assert_eq!(actual_position.y, 0);

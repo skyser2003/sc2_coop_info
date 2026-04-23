@@ -410,6 +410,22 @@ pub fn overlay_window_bounds_for_monitor(
     right_offset: i32,
     subtract_height: i32,
 ) -> (tauri::PhysicalSize<u32>, tauri::PhysicalPosition<i32>) {
+    if monitor_width == 0 || monitor_height == 0 {
+        let size = tauri::PhysicalSize {
+            width: 1,
+            height: 1,
+        };
+        let position = overlay_window_position_for_monitor(
+            monitor_x,
+            monitor_y,
+            monitor_width,
+            size.width,
+            top_offset,
+            right_offset,
+        );
+        return (size, position);
+    }
+
     let mut target_width = (monitor_width as f64 * width_ratio).max(1.0) as i64;
     let mut target_height =
         (monitor_height as f64 * height_ratio) as i64 - i64::from(subtract_height);

@@ -9,15 +9,27 @@
     --overlay-font-family:
         "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR",
         "Noto Sans CJK KR", "Segoe UI", sans-serif;
+    --overlay-horizontal-unit: min(1vh, calc(100vw / 88));
     --overlay-panel-width: min(100vh, 100vw);
-    --overlay-stats-width: min(48vh, calc(100vw - 2vh));
-    --overlay-otherstats-width: min(50vh, calc(100vw - 4vh));
-    --overlay-playerstats-width: min(100vh, calc(100vw - 4vh));
-    --overlay-unit-name-width: 21.8vh;
-    --overlay-unit-kill-percent-width: 6.2vh;
-    --overlay-unit-kill-count-width: 8.2vh;
-    --overlay-unit-created-width: 4.6vh;
-    --overlay-unit-lost-width: 3.6vh;
+    --overlay-stats-width: min(
+        calc(48 * var(--overlay-horizontal-unit)),
+        calc(100vw - 2vh)
+    );
+    --overlay-otherstats-width: min(
+        calc(50 * var(--overlay-horizontal-unit)),
+        calc(100vw - 4vh)
+    );
+    --overlay-playerstats-width: min(
+        calc(100 * var(--overlay-horizontal-unit)),
+        calc(100vw - 4vh)
+    );
+    --overlay-unit-name-width: calc(21.8 * var(--overlay-horizontal-unit));
+    --overlay-unit-kill-percent-width: calc(
+        6.2 * var(--overlay-horizontal-unit)
+    );
+    --overlay-unit-kill-count-width: calc(8.2 * var(--overlay-horizontal-unit));
+    --overlay-unit-created-width: calc(4.6 * var(--overlay-horizontal-unit));
+    --overlay-unit-lost-width: calc(3.6 * var(--overlay-horizontal-unit));
     --overlay-unit-table-width: calc(
         var(--overlay-unit-name-width) +
             var(--overlay-unit-kill-percent-width) +
@@ -681,9 +693,9 @@ body {
 #charts {
     position: absolute;
     display: none;
-    width: 38vh;
+    width: calc(38 * var(--overlay-horizontal-unit));
     top: 4.2vh;
-    right: 50vh;
+    right: calc(50 * var(--overlay-horizontal-unit));
     opacity: 0;
     transition: opacity 2s;
 }
