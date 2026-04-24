@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { JsonObject, JsonValue } from "../config/types";
 
-import "./page.css";
+import styles from "./page.module.css";
 
 type CpuUsageLevel = "low" | "normal" | "high";
 
@@ -69,12 +69,22 @@ const DEFAULT_STATS: PerformanceOverlayPayload = {
 
 function levelClass(level: CpuUsageLevel): string {
     if (level === "high") {
-        return "is-high";
+        return styles.isHigh;
     }
     if (level === "low") {
-        return "is-low";
+        return styles.isLow;
     }
     return "";
+}
+
+function optionalClassName(
+    baseClassName: string,
+    optionalClassName: string,
+): string {
+    if (optionalClassName.length === 0) {
+        return baseClassName;
+    }
+    return `${baseClassName} ${optionalClassName}`;
 }
 
 async function startPerformanceDrag(): Promise<void> {
@@ -119,9 +129,12 @@ export default function PerformancePage() {
     }, []);
 
     return (
-        <main className="performance-overlay-root">
+        <main className={styles.performanceOverlayRoot}>
             <div
-                className={`performance-dragbar${editMode ? " is-visible" : ""}`}
+                className={optionalClassName(
+                    `${styles.performanceDragbar} performance-dragbar`,
+                    editMode ? styles.isVisible : "",
+                )}
                 data-tauri-drag-region
                 onMouseDown={() => {
                     void startPerformanceDrag();
@@ -129,93 +142,117 @@ export default function PerformancePage() {
             >
                 Drag performance overlay
             </div>
-            <section className="performance-card">
-                <div className="performance-columns">
-                    <section className="performance-column">
+            <section className={styles.performanceCard}>
+                <div className={styles.performanceColumns}>
+                    <section className={styles.performanceColumn}>
                         <h1>{stats.processTitle}</h1>
-                        <div className="performance-stat-grid">
-                            <span className="performance-label">RAM</span>
-                            <span className="performance-value">
+                        <div className={styles.performanceStatGrid}>
+                            <span className={styles.performanceLabel}>RAM</span>
+                            <span className={styles.performanceValue}>
                                 {stats.sc2Ram}
                             </span>
-                            <span className="performance-label">Read</span>
-                            <span className="performance-value">
+                            <span className={styles.performanceLabel}>
+                                Read
+                            </span>
+                            <span className={styles.performanceValue}>
                                 {stats.sc2Read}
                             </span>
-                            <span className="performance-spacer" />
-                            <span className="performance-value">
+                            <span className={styles.performanceSpacer} />
+                            <span className={styles.performanceValue}>
                                 {stats.sc2ReadTotal}
                             </span>
-                            <span className="performance-label">Write</span>
-                            <span className="performance-value">
+                            <span className={styles.performanceLabel}>
+                                Write
+                            </span>
+                            <span className={styles.performanceValue}>
                                 {stats.sc2Write}
                             </span>
-                            <span className="performance-spacer" />
-                            <span className="performance-value">
+                            <span className={styles.performanceSpacer} />
+                            <span className={styles.performanceValue}>
                                 {stats.sc2WriteTotal}
                             </span>
                         </div>
-                        <div className="performance-process-cpu">
-                            <span className="performance-section-title">
+                        <div className={styles.performanceProcessCpu}>
+                            <span className={styles.performanceSectionTitle}>
                                 CPUc
                             </span>
                             <span
-                                className={`performance-value ${levelClass(stats.sc2CpuLevel)}`}
+                                className={optionalClassName(
+                                    styles.performanceValue,
+                                    levelClass(stats.sc2CpuLevel),
+                                )}
                             >
                                 {stats.sc2Cpu}
                             </span>
                         </div>
                     </section>
 
-                    <section className="performance-column">
+                    <section className={styles.performanceColumn}>
                         <h1>System</h1>
-                        <div className="performance-stat-grid">
-                            <span className="performance-label">RAM</span>
+                        <div className={styles.performanceStatGrid}>
+                            <span className={styles.performanceLabel}>RAM</span>
                             <span
-                                className={`performance-value ${levelClass(stats.systemRamLevel)}`}
+                                className={optionalClassName(
+                                    styles.performanceValue,
+                                    levelClass(stats.systemRamLevel),
+                                )}
                             >
                                 {stats.systemRam}
                             </span>
-                            <span className="performance-label">Down</span>
-                            <span className="performance-value">
+                            <span className={styles.performanceLabel}>
+                                Down
+                            </span>
+                            <span className={styles.performanceValue}>
                                 {stats.systemDown}
                             </span>
-                            <span className="performance-spacer" />
-                            <span className="performance-value">
+                            <span className={styles.performanceSpacer} />
+                            <span className={styles.performanceValue}>
                                 {stats.systemDownTotal}
                             </span>
-                            <span className="performance-label">Upload</span>
-                            <span className="performance-value">
+                            <span className={styles.performanceLabel}>
+                                Upload
+                            </span>
+                            <span className={styles.performanceValue}>
                                 {stats.systemUp}
                             </span>
-                            <span className="performance-spacer" />
-                            <span className="performance-value">
+                            <span className={styles.performanceSpacer} />
+                            <span className={styles.performanceValue}>
                                 {stats.systemUpTotal}
                             </span>
                         </div>
-                        <div className="performance-cpu-list">
+                        <div className={styles.performanceCpuList}>
                             <h2>CPU utilization</h2>
                             {stats.cpuCores.map((entry) => (
                                 <div
-                                    className="performance-cpu-row"
+                                    className={styles.performanceCpuRow}
                                     key={entry.label}
                                 >
-                                    <span className="performance-cpu-label">
+                                    <span
+                                        className={styles.performanceCpuLabel}
+                                    >
                                         {entry.label}
                                     </span>
                                     <span
-                                        className={`performance-cpu-value ${levelClass(entry.level)}`}
+                                        className={optionalClassName(
+                                            styles.performanceCpuValue,
+                                            levelClass(entry.level),
+                                        )}
                                     >
                                         {entry.value}
                                     </span>
                                 </div>
                             ))}
-                            <div className="performance-cpu-row performance-cpu-total">
-                                <span className="performance-cpu-label">
+                            <div
+                                className={`${styles.performanceCpuRow} ${styles.performanceCpuTotal}`}
+                            >
+                                <span className={styles.performanceCpuLabel}>
                                     total
                                 </span>
                                 <span
-                                    className={`performance-cpu-value ${levelClass(stats.cpuTotalLevel)}`}
+                                    className={optionalClassName(
+                                        styles.performanceCpuValue,
+                                        levelClass(stats.cpuTotalLevel),
+                                    )}
                                 >
                                     {stats.cpuTotal}
                                 </span>

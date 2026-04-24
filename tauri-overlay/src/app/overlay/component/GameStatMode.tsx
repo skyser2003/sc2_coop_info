@@ -2,6 +2,7 @@ import {
     type CommanderMasteryData,
     LanguageManager,
 } from "../../i18n/languageManager";
+import type { CSSProperties } from "react";
 import GameStatChart, { ReplayChartVisible } from "./GameStatChart";
 import GameStatText from "./GameStatText";
 import type { OverlayReplayPayload } from "../../../bindings/overlay";
@@ -10,11 +11,21 @@ type OverlayPrestigeNameCatalog = Record<
     string,
     { en: string[]; ko: string[] }
 >;
+type StatsPanelStyle = Pick<
+    CSSProperties,
+    "display" | "opacity" | "right" | "transition"
+>;
+type AuxiliaryOverlayState = {
+    visible: boolean;
+    renderContent: boolean;
+};
 
 export default function GameStatMode({
     payload,
     chartVisibility,
     replayModeVisible,
+    statsPanelStyle,
+    auxiliaryOverlayState,
     showSessionStats,
     sessionVictoryCount,
     sessionDefeatCount,
@@ -33,6 +44,8 @@ export default function GameStatMode({
     payload: OverlayReplayPayload | null;
     chartVisibility: ReplayChartVisible;
     replayModeVisible: boolean;
+    statsPanelStyle: StatsPanelStyle;
+    auxiliaryOverlayState: AuxiliaryOverlayState;
     showSessionStats: boolean;
     sessionVictoryCount: number;
     sessionDefeatCount: number;
@@ -61,6 +74,8 @@ export default function GameStatMode({
             <GameStatText
                 payload={payload}
                 replayModeVisible={replayModeVisible}
+                statsPanelStyle={statsPanelStyle}
+                auxiliaryOverlayState={auxiliaryOverlayState}
                 showSessionStats={showSessionStats}
                 sessionVictoryCount={sessionVictoryCount}
                 sessionDefeatCount={sessionDefeatCount}

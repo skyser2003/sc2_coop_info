@@ -22,10 +22,62 @@ async function installTauriMock(
             };
         }
         let activeSettings = cloneJson(settings);
+        type ConfigPayload = {
+            status: "ok";
+            settings: typeof settings;
+            active_settings: typeof settings;
+            randomizer_catalog: {
+                commander_mastery: Record<string, never>;
+                prestige_names: Record<string, never>;
+            };
+            monitor_catalog: Array<{ index: number; label: string }>;
+        };
+        type ConfigCommandRequest = {
+            path?: string;
+            method?: string;
+            settings?: typeof settings;
+            action?: string;
+            persist?: boolean;
+            body?: {
+                settings?: typeof settings;
+                action?: string;
+                persist?: boolean;
+            };
+        };
         const listeners = new Map<
             string,
             Array<(event: { payload: unknown }) => void>
         >();
+        const createConfigPayload = (): ConfigPayload => ({
+            status: "ok",
+            settings,
+            active_settings: activeSettings,
+            randomizer_catalog: {
+                commander_mastery: {},
+                prestige_names: {},
+            },
+            monitor_catalog: [{ index: 1, label: "1 - Primary Monitor" }],
+        });
+        const updateSettings = (
+            nextSettings: typeof settings,
+            persist: boolean,
+        ): void => {
+            activeSettings = cloneJson(nextSettings);
+            if (persist) {
+                settings = cloneJson(nextSettings);
+                activeSettings = cloneJson(nextSettings);
+            } else {
+                (
+                    window as typeof window & {
+                        __SCO_CONFIG_APPLY_REQUESTS__?: Array<
+                            Record<string, unknown>
+                        >;
+                    }
+                ).__SCO_CONFIG_APPLY_REQUESTS__?.push(
+                    cloneJson(activeSettings) as Record<string, unknown>,
+                );
+            }
+        };
         (
             window as typeof window & {
                 __SCO_CONFIG_APPLY_REQUESTS__?: Array<Record<string, unknown>>;
@@ -35,60 +87,48 @@ async function installTauriMock(
         window.__TAURI_INTERNALS__ = {
             invoke: async (
                 command: string,
-                request: {
-                    path: string;
-                    method: string;
-                    body?: {
-                        settings?: typeof settings;
-                        action?: string;
-                        persist?: boolean;
-                    };
-                },
+                request: ConfigCommandRequest = {},
             ) => {
+                if (command === "config_get") {
+                    return createConfigPayload();
+                }
+                if (command === "config_update") {
+                    updateSettings(
+                        request.settings ?? activeSettings,
+                        request.persist !== false,
+                    );
+                    return createConfigPayload();
+                }
+                if (command === "config_action") {
+                    return {
+                        status: "ok",
+                        result: { ok: true, path: null },
+                        message: request.action || "ok",
+                        randomizer: null,
+                    };
+                }
+                if (command === "config_stats_action") {
+                    return {
+                        status: "ok",
+                        result: { ok: true, path: null },
+                        message: request.action || "ok",
+                        stats: null,
+                    };
+                }
                 if (command !== "config_request") {
                     throw new Error(`Unexpected command: ${command}`);
                 }
                 if (request.method === "GET" && request.path === "/config") {
-                    return {
-                        status: "ok",
-                        settings,
-                        active_settings: activeSettings,
-                        randomizer_catalog: {
-                            commander_mastery: {},
-                            prestige_names: {},
-                        },
-                    };
+                    return createConfigPayload();
                 }
                 if (request.method === "POST" && request.path === "/config") {
                     const nextSettings =
                         request.body?.settings || activeSettings;
-                    activeSettings = cloneJson(nextSettings);
-                    if (request.body?.persist !== false) {
-                        settings = cloneJson(nextSettings);
-                        activeSettings = cloneJson(nextSettings);
-                    } else {
-                        (
-                            window as typeof window & {
-                                __SCO_CONFIG_APPLY_REQUESTS__?: Array<
-                                    Record<string, unknown>
-                                >;
-                            }
-                        ).__SCO_CONFIG_APPLY_REQUESTS__?.push(
-                            cloneJson(activeSettings) as Record<
-                                string,
-                                unknown
-                            >,
-                        );
-                    }
-                    return {
-                        status: "ok",
-                        settings,
-                        active_settings: activeSettings,
-                        randomizer_catalog: {
-                            commander_mastery: {},
-                            prestige_names: {},
-                        },
-                    };
+                    updateSettings(
+                        nextSettings,
+                        request.body?.persist !== false,
+                    );
+                    return createConfigPayload();
                 }
                 if (
                     request.method === "POST" &&
@@ -163,7 +203,7 @@ test("performance config tab matches the legacy control layout", async ({
     await installTauriMock(page);
     await page.goto("/", { waitUntil: "domcontentloaded" });
 
-    await page.getByRole("button", { name: "Performance" }).click();
+    await page.getByRole("tab", { name: "Performance" }).click();
 
     await expect(page.getByText("Performance overlay:")).toBeVisible();
     await expect(
@@ -225,7 +265,7 @@ test("performance checkbox follows display state during reposition mode", async 
     await installTauriMock(page, { performanceShow: false });
     await page.goto("/", { waitUntil: "domcontentloaded" });
 
-    await page.getByRole("button", { name: "Performance" }).click();
+    await page.getByRole("tab", { name: "Performance" }).click();
 
     const checkbox = page.getByRole("checkbox", {
         name: "Show performance overlay",

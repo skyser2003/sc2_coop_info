@@ -1,4 +1,11 @@
-import { useInsertionEffect, useEffect, useState } from "react";
+import {
+    useCallback,
+    useEffect,
+    useRef,
+    useState,
+    type CSSProperties,
+    type MutableRefObject,
+} from "react";
 
 import { ReplayChartVisible } from "./component/GameStatChart";
 import GameStatMode from "./component/GameStatMode";
@@ -7,6 +14,7 @@ import { createLanguageManager } from "../i18n/languageManager";
 import { emit, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { snapdom } from "@zumer/snapdom";
+import styles from "./main.module.css";
 
 import {
     destroy_overlay_charts,
@@ -25,10 +33,9 @@ import type {
     OverlayScreenshotResultPayload,
 } from "../../bindings/overlay";
 
-const OVERLAY_STYLE_PATHS = ["/overlay/main.css"];
 const overlayHideFadeMs = 1000;
 const playerStatsHideMs = 12000;
-const gameStatsHideMs = 60000;
+const defaultGameStatsVisibleMs = 60000;
 
 enum DisplayMode {
     None,
@@ -49,11 +56,72 @@ type OverlayEventName =
     | typeof OVERLAY_SET_SHOW_CHARTS_FROM_CONFIG_EVENT
     | typeof OVERLAY_SCREENSHOT_REQUEST_EVENT;
 
-type LocalizableValue = string | number | boolean | null | undefined;
 type OverlayPrestigeNameCatalog = Record<
     string,
     { en: string[]; ko: string[] }
 >;
+type TimeoutHandle = number;
+type StatsPanelStyle = Pick<
+    CSSProperties,
+    "display" | "opacity" | "right" | "transition"
+>;
+type BackgroundPanelStyle = Pick<
+    CSSProperties,
+    "display" | "opacity" | "transition"
+>;
+type AuxiliaryOverlayState = {
+    visible: boolean;
+    renderContent: boolean;
+};
+type OverlayInitColorsDurationInput = {
+    colors?: OverlayInitColorsDurationPayload["colors"];
+    duration?: number;
+    show_charts?: boolean;
+    show_session?: boolean;
+    hide_nicknames_in_overlay?: boolean;
+    session_victory?: number;
+    session_defeat?: number;
+    language?: string;
+};
+type OverlayWindowBridge = Window & {
+    initColorsDuration?: (data: OverlayInitColorsDurationInput) => void;
+    postGameStats?: (data: OverlayReplayPayload) => void;
+    showstats?: () => void;
+    hidestats?: () => void;
+    showhide?: () => void;
+    setShowChartsFromConfig?: (show: boolean) => void;
+};
+type ConfigRequestPayload = {
+    method: "GET";
+    path: "/config";
+};
+
+const hiddenStatsPanelStyle: StatsPanelStyle = {
+    display: "none",
+    opacity: 0,
+    right: "-50.5vh",
+};
+
+const visibleStatsPanelStyle: StatsPanelStyle = {
+    display: "block",
+    opacity: 1,
+    right: "1vh",
+};
+
+const hiddenBackgroundStyle: BackgroundPanelStyle = {
+    display: "none",
+    opacity: 0,
+};
+
+const visibleBackgroundStyle: BackgroundPanelStyle = {
+    display: "block",
+    opacity: 1,
+};
+
+const hiddenAuxiliaryOverlayState: AuxiliaryOverlayState = {
+    visible: false,
+    renderContent: false,
+};
 
 function formatOverlayScreenshotError(error: DisplayValue | Error): string {
     if (error instanceof Error) {
@@ -71,47 +139,6 @@ function waitForAnimationFrame(): Promise<void> {
     });
 }
 
-function ensureStyleLoaded(href: string): void {
-    const selector = `link[data-overlay-style="${href}"]`;
-    const existing = document.querySelector(selector) as HTMLLinkElement | null;
-    if (existing) {
-        return;
-    }
-
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = href;
-    link.dataset.overlayStyle = href;
-    document.head.appendChild(link);
-}
-
-function ensureOverlayAssetsLoaded(): void {
-    for (const href of OVERLAY_STYLE_PATHS) {
-        ensureStyleLoaded(href);
-    }
-}
-
-function setOverlayBackgroundVisible(
-    visible: boolean,
-    immediate = false,
-): void {
-    const bg = document.getElementById("bgdiv");
-    const ibg = document.getElementById("ibgdiv");
-
-    if (bg == null) {
-        return;
-    }
-
-    bg.style.transition = immediate ? "opacity 0s" : "";
-    bg.style.display = visible ? "block" : "none";
-    bg.style.opacity = visible ? "1" : "0";
-
-    if (ibg != null) {
-        ibg.style.display = visible ? "block" : "none";
-        ibg.style.opacity = visible ? "1" : "0";
-    }
-}
-
 function reportOverlayReplayDataState(active: boolean): void {
     void (async function () {
         try {
@@ -125,6 +152,50 @@ function reportOverlayReplayDataState(active: boolean): void {
             console.warn("Failed to report overlay replay data state", error);
         }
     })();
+}
+
+function clearTimerRef(timerRef: MutableRefObject<TimeoutHandle | null>): void {
+    if (timerRef.current == null) {
+        return;
+    }
+
+    window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+}
+
+function overlayDurationToMilliseconds(durationSeconds?: number): number {
+    if (durationSeconds == null || !Number.isFinite(durationSeconds)) {
+        return defaultGameStatsVisibleMs;
+    }
+
+    return Math.max(durationSeconds * 1000, overlayHideFadeMs);
+}
+
+function normalizeInitPayload(
+    payload: OverlayInitColorsDurationInput,
+): OverlayInitColorsDurationPayload {
+    return {
+        colors: payload.colors ?? [null, null, null, null],
+        duration: payload.duration ?? defaultGameStatsVisibleMs / 1000,
+        show_charts: payload.show_charts ?? true,
+        show_session: payload.show_session ?? false,
+        hide_nicknames_in_overlay: payload.hide_nicknames_in_overlay ?? false,
+        session_victory: payload.session_victory ?? 0,
+        session_defeat: payload.session_defeat ?? 0,
+        language: payload.language ?? "en",
+    };
+}
+
+async function loadOverlayConfig(): Promise<ConfigPayload> {
+    try {
+        return await invoke<ConfigPayload>("config_get");
+    } catch {
+        const request: ConfigRequestPayload = {
+            method: "GET",
+            path: "/config",
+        };
+        return await invoke<ConfigPayload>("config_request", request);
+    }
 }
 
 const OVERLAY_COLOR_PREVIEW_EVENT = "sco://overlay-color-preview";
@@ -167,28 +238,36 @@ interface DisplayTransitionOptions {
 }
 
 export default function OverlayPage() {
+    const overlayHideTimerRef = useRef<TimeoutHandle | null>(null);
+    const auxiliaryVisibilityTimerRef = useRef<TimeoutHandle | null>(null);
+    const replayDisplayClearTimerRef = useRef<TimeoutHandle | null>(null);
+    const replayExpiryTimerRef = useRef<TimeoutHandle | null>(null);
     const [overlayRuntimeStarted, setOverlayRuntimeStarted] =
         useState<boolean>(false);
     const [displayMode, setDisplayMode] = useState<DisplayStatus>({
         mode: DisplayMode.None,
         immediate: true,
     });
+    const [statsPanelStyle, setStatsPanelStyle] = useState<StatsPanelStyle>(
+        hiddenStatsPanelStyle,
+    );
+    const [backgroundPanelStyle, setBackgroundPanelStyle] =
+        useState<BackgroundPanelStyle>(hiddenBackgroundStyle);
+    const [auxiliaryOverlayState, setAuxiliaryOverlayState] =
+        useState<AuxiliaryOverlayState>(hiddenAuxiliaryOverlayState);
     const [language, setLanguage] = useState<string>("en");
     const [overlayLanguageManager] = useState(() =>
         createLanguageManager(language),
     );
-    const [overlayHideTimer, setOverlayHideTimer] =
-        useState<NodeJS.Timeout | null>(null);
     const [p1Color, setP1Color] = useState<string>("#0080F8");
     const [p2Color, setP2Color] = useState<string>("#00D532");
     const [amonColor, setAmonColor] = useState<string>("red");
     const [masteryColor, setMasteryColor] = useState<string>("#FFDC87");
     const [gameStatPayload, setGameStatPayload] =
         useState<OverlayReplayPayload | null>(null);
-    const [replayDisplayClearTimer, setReplayDisplayClearTimer] =
-        useState<NodeJS.Timeout | null>(null);
-    const [replayExpiryTimer, setReplayExpiryTimer] =
-        useState<NodeJS.Timeout | null>(null);
+    const [gameStatsVisibleMs, setGameStatsVisibleMs] = useState<number>(
+        defaultGameStatsVisibleMs,
+    );
     const [overlayPrestigeNameCatalog, setOverlayPrestigeNameCatalog] =
         useState<OverlayPrestigeNameCatalog>({});
     const [chartVisibility, setChartVisibility] = useState<ReplayChartVisible>({
@@ -205,21 +284,9 @@ export default function OverlayPage() {
     const [playerStatPayload, setPlayerStatPayload] =
         useState<OverlayPlayerStatsPayload | null>(null);
 
-    function overlayText(id: string): string {
-        return overlayLanguageManager.translate(id);
-    }
-
-    function overlayLocalize(value: LocalizableValue): string {
-        return overlayLanguageManager.localize(value);
-    }
-
-    function overlayEnglish(value: LocalizableValue): string {
-        return overlayLanguageManager.englishLabel(value);
-    }
-
     async function loadOverlayPrestigeNameCatalog(): Promise<void> {
         try {
-            const response = await invoke<ConfigPayload>("config_get");
+            const response = await loadOverlayConfig();
             setOverlayPrestigeNameCatalog(
                 response.randomizer_catalog.prestige_names,
             );
@@ -232,16 +299,6 @@ export default function OverlayPage() {
         setLanguage(nextLanguage);
         overlayLanguageManager.setLanguage(nextLanguage);
         void loadOverlayPrestigeNameCatalog();
-
-        const noData = document.getElementById("nodata");
-        if (noData != null) {
-            noData.textContent = overlayText("ui_overlay_no_data");
-        }
-
-        const bestTime = document.getElementById("record");
-        if (bestTime != null) {
-            bestTime.textContent = overlayText("ui_overlay_best_time");
-        }
     }
 
     function setColors(
@@ -264,26 +321,21 @@ export default function OverlayPage() {
         }
     }
 
-    function cancelOverlayHideTimer(): void {
-        if (overlayHideTimer != null) {
-            clearTimeout(overlayHideTimer);
-            setOverlayHideTimer(null);
-        }
-    }
+    const cancelOverlayHideTimer = useCallback((): void => {
+        clearTimerRef(overlayHideTimerRef);
+    }, []);
 
-    function cancelReplayDisplayClearTimer(): void {
-        if (replayDisplayClearTimer != null) {
-            clearTimeout(replayDisplayClearTimer);
-            setReplayDisplayClearTimer(null);
-        }
-    }
+    const cancelAuxiliaryVisibilityTimer = useCallback((): void => {
+        clearTimerRef(auxiliaryVisibilityTimerRef);
+    }, []);
 
-    function cancelReplayExpiryTimer(): void {
-        if (replayExpiryTimer != null) {
-            clearTimeout(replayExpiryTimer);
-            setReplayExpiryTimer(null);
-        }
-    }
+    const cancelReplayDisplayClearTimer = useCallback((): void => {
+        clearTimerRef(replayDisplayClearTimerRef);
+    }, []);
+
+    const cancelReplayExpiryTimer = useCallback((): void => {
+        clearTimerRef(replayExpiryTimerRef);
+    }, []);
 
     function requestDisplayTransition(
         mode: DisplayMode,
@@ -332,90 +384,70 @@ export default function OverlayPage() {
     }
 
     function hideStatsPanel(immediate = false): void {
-        const stats = document.getElementById("stats");
-        if (stats == null) {
-            return;
-        }
-
         cancelOverlayHideTimer();
 
         if (immediate) {
-            stats.style.opacity = "0";
-            stats.style.right = "-50.5vh";
-            stats.style.display = "none";
+            setStatsPanelStyle({
+                ...hiddenStatsPanelStyle,
+                transition: "right 0s, opacity 0s",
+            });
             return;
         }
 
-        stats.style.opacity = "0";
+        setStatsPanelStyle((previousStyle) => ({
+            ...previousStyle,
+            display: "block",
+            opacity: 0,
+            transition: undefined,
+        }));
 
-        const hideTimer = setTimeout(() => {
-            const statsElement = document.getElementById("stats");
-
-            if (statsElement != null) {
-                statsElement.style.right = "-50.5vh";
-                statsElement.style.display = "none";
-            }
-
-            setOverlayHideTimer(null);
+        overlayHideTimerRef.current = window.setTimeout(() => {
+            setStatsPanelStyle(hiddenStatsPanelStyle);
+            overlayHideTimerRef.current = null;
         }, overlayHideFadeMs);
-
-        setOverlayHideTimer(hideTimer);
     }
 
     function setAuxiliaryOverlayVisible(visible: boolean, clear = false): void {
-        const loader = document.getElementById("loader");
-        const session = document.getElementById("session");
-        const rng = document.getElementById("rng");
-
-        if (loader != null) {
-            loader.style.opacity = "0";
-        }
-        if (session != null) {
-            session.style.opacity = visible ? "0.6" : "0";
-        }
-        if (rng != null) {
-            rng.style.opacity = visible ? "1" : "0";
-        }
+        cancelAuxiliaryVisibilityTimer();
+        setAuxiliaryOverlayState((previousState) => ({
+            visible,
+            renderContent: clear ? previousState.renderContent : true,
+        }));
 
         if (!clear) {
             return;
         }
 
-        setTimeout(() => {
-            const nextSession = document.getElementById("session");
-            const nextRng = document.getElementById("rng");
-            const nextLoader = document.getElementById("loader");
-
-            if (nextSession != null) {
-                nextSession.innerHTML = "";
-            }
-            if (nextRng != null) {
-                nextRng.innerHTML = "";
-            }
-            if (nextLoader != null) {
-                nextLoader.style.opacity = "0";
-                nextLoader.innerHTML = "";
-            }
+        auxiliaryVisibilityTimerRef.current = window.setTimeout(() => {
+            setAuxiliaryOverlayState({
+                visible: false,
+                renderContent: false,
+            });
+            auxiliaryVisibilityTimerRef.current = null;
         }, overlayHideFadeMs);
     }
 
     function hideOverlay(immediate = false): void {
         hideStatsPanel(immediate);
-        setOverlayBackgroundVisible(false, immediate);
+        setBackgroundPanelStyle({
+            ...hiddenBackgroundStyle,
+            transition: immediate ? "opacity 0s" : undefined,
+        });
         setChartVisibility({ visible: false, immediate });
         setAuxiliaryOverlayVisible(false, true);
     }
 
     function showOverlay(immediate = false): void {
         cancelReplayDisplayClearTimer();
-        const stats = document.getElementById("stats");
-        if (stats != null) {
-            cancelOverlayHideTimer();
-            stats.style.display = "block";
-            stats.style.right = "1vh";
-            stats.style.opacity = "1";
-        }
-        setOverlayBackgroundVisible(true, immediate);
+        cancelOverlayHideTimer();
+        setStatsPanelStyle({
+            ...visibleStatsPanelStyle,
+            transition: immediate ? "right 0s, opacity 0s" : undefined,
+        });
+        setBackgroundPanelStyle({
+            ...visibleBackgroundStyle,
+            transition: immediate ? "opacity 0s" : undefined,
+        });
 
         setChartVisibility({
             visible: chartVisibleFromConfig && gameStatPayload !== null,
@@ -427,14 +459,23 @@ export default function OverlayPage() {
             return;
         }
 
-        setTimeout(() => {
+        cancelAuxiliaryVisibilityTimer();
+        setAuxiliaryOverlayState({
+            visible: false,
+            renderContent: true,
+        });
+        auxiliaryVisibilityTimerRef.current = window.setTimeout(() => {
             setAuxiliaryOverlayVisible(true);
+            auxiliaryVisibilityTimerRef.current = null;
         }, 1000);
     }
 
     function showPlayerStats(immediate = false): void {
         hideStatsPanel(immediate);
-        setOverlayBackgroundVisible(false, true);
+        setBackgroundPanelStyle({
+            ...hiddenBackgroundStyle,
+            transition: "opacity 0s",
+        });
         setChartVisibility({
             visible: false,
             immediate: true,
@@ -499,17 +540,22 @@ export default function OverlayPage() {
     }: {
         payload: OverlayInitColorsDurationPayload;
     }): void {
-        applyOverlayLanguage(payload.language);
-        setChartVisibleFromConfig(payload.show_charts);
-        setShowSessionStats(payload.show_session);
-        setHideNicknamesInOverlay(payload.hide_nicknames_in_overlay);
-        setSessionVictoryCount(payload.session_victory);
-        setSessionDefeatCount(payload.session_defeat);
+        const normalizedPayload = normalizeInitPayload(payload);
+
+        applyOverlayLanguage(normalizedPayload.language);
+        setGameStatsVisibleMs(
+            overlayDurationToMilliseconds(normalizedPayload.duration),
+        );
+        setChartVisibleFromConfig(normalizedPayload.show_charts);
+        setShowSessionStats(normalizedPayload.show_session);
+        setHideNicknamesInOverlay(normalizedPayload.hide_nicknames_in_overlay);
+        setSessionVictoryCount(normalizedPayload.session_victory);
+        setSessionDefeatCount(normalizedPayload.session_defeat);
         setColors(
-            payload.colors[0],
-            payload.colors[1],
-            payload.colors[2],
-            payload.colors[3],
+            normalizedPayload.colors[0],
+            normalizedPayload.colors[1],
+            normalizedPayload.colors[2],
+            normalizedPayload.colors[3],
         );
     }
 
@@ -542,8 +588,6 @@ export default function OverlayPage() {
         if (target == null) {
             throw new Error("Overlay screenshot root was not found");
         }
-        const width = Math.max(window.innerWidth, 1);
-        const height = Math.max(window.innerHeight, 1);
 
         const captureScale = Math.min(
             Math.max(window.devicePixelRatio || 1, 2),
@@ -603,104 +647,140 @@ export default function OverlayPage() {
         })();
     }
 
+    function installOverlayWindowBridge(): void {
+        const runtime = window as OverlayWindowBridge;
+
+        runtime.initColorsDuration = (data) => {
+            initColorsDurationEventHandler({
+                payload: normalizeInitPayload(data),
+            });
+        };
+        runtime.postGameStats = (data) => {
+            replayPayloadEventHandler({ payload: data });
+        };
+        runtime.showstats = () => showGameStatsEventHandler();
+        runtime.hidestats = () => hideGameStatsEventHandler();
+        runtime.showhide = () => toggleOverlayEventHandler();
+        runtime.setShowChartsFromConfig = (show) => {
+            setShowChartsFromConfigEventHandler({ payload: show });
+        };
+    }
+
+    function removeOverlayWindowBridge(): void {
+        const runtime = window as OverlayWindowBridge;
+
+        delete runtime.initColorsDuration;
+        delete runtime.postGameStats;
+        delete runtime.showstats;
+        delete runtime.hidestats;
+        delete runtime.showhide;
+        delete runtime.setShowChartsFromConfig;
+    }
+
     async function initializeOverlay(): Promise<void> {
         if (overlayRuntimeStarted) {
             return;
         }
 
         setOverlayRuntimeStarted(true);
+        installOverlayWindowBridge();
 
-        await Promise.all([
-            listen<OverlayColorPreviewPayload>(
-                OVERLAY_COLOR_PREVIEW_EVENT,
-                colorPreviewEventHandler,
-            ).then((unlisten) => {
-                tauriUnlistens[OVERLAY_COLOR_PREVIEW_EVENT]?.();
-                tauriUnlistens[OVERLAY_COLOR_PREVIEW_EVENT] = unlisten;
-            }),
-            listen<OverlayLanguagePreviewPayload>(
-                OVERLAY_LANGUAGE_PREVIEW_EVENT,
-                languagePreviewEventHandler,
-            ).then((unlisten) => {
-                tauriUnlistens[OVERLAY_LANGUAGE_PREVIEW_EVENT]?.();
-                tauriUnlistens[OVERLAY_LANGUAGE_PREVIEW_EVENT] = unlisten;
-            }),
-            listen<OverlayReplayPayload>(
-                OVERLAY_REPLAY_PAYLOAD_EVENT,
-                replayPayloadEventHandler,
-            ).then((unlisten) => {
-                tauriUnlistens[OVERLAY_REPLAY_PAYLOAD_EVENT]?.();
-                tauriUnlistens[OVERLAY_REPLAY_PAYLOAD_EVENT] = unlisten;
-            }),
-            listen<OverlayPlayerStatsPayload>(
-                OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT,
-                togglePlayerStatsEventHandler,
-            ).then((unlisten) => {
-                tauriUnlistens[OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT]?.();
-                tauriUnlistens[OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT] = unlisten;
-            }),
-            listen<OverlayPlayerStatsPayload>(
-                OVERLAY_PLAYER_STATS_EVENT,
-                playerStatsOnGameStartEventHandler,
-            ).then((unlisten) => {
-                tauriUnlistens[OVERLAY_PLAYER_STATS_EVENT]?.();
-                tauriUnlistens[OVERLAY_PLAYER_STATS_EVENT] = unlisten;
-            }),
-            listen<OverlayInitColorsDurationPayload>(
-                OVERLAY_INIT_COLORS_DURATION_EVENT,
-                initColorsDurationEventHandler,
-            ).then((unlisten) => {
-                tauriUnlistens[OVERLAY_INIT_COLORS_DURATION_EVENT]?.();
-                tauriUnlistens[OVERLAY_INIT_COLORS_DURATION_EVENT] = unlisten;
-            }),
-            listen(OVERLAY_SHOWSTATS_EVENT, showGameStatsEventHandler).then(
-                (unlisten) => {
-                    tauriUnlistens[OVERLAY_SHOWSTATS_EVENT]?.();
-                    tauriUnlistens[OVERLAY_SHOWSTATS_EVENT] = unlisten;
-                },
-            ),
-            listen(OVERLAY_HIDESTATS_EVENT, hideGameStatsEventHandler).then(
-                (unlisten) => {
-                    tauriUnlistens[OVERLAY_HIDESTATS_EVENT]?.();
-                    tauriUnlistens[OVERLAY_HIDESTATS_EVENT] = unlisten;
-                },
-            ),
-            listen(OVERLAY_SHOWHIDE_EVENT, toggleOverlayEventHandler).then(
-                (unlisten) => {
-                    tauriUnlistens[OVERLAY_SHOWHIDE_EVENT]?.();
-                    tauriUnlistens[OVERLAY_SHOWHIDE_EVENT] = unlisten;
-                },
-            ),
-            listen<boolean>(
-                OVERLAY_SET_SHOW_CHARTS_FROM_CONFIG_EVENT,
-                setShowChartsFromConfigEventHandler,
-            ).then((unlisten) => {
-                tauriUnlistens[OVERLAY_SET_SHOW_CHARTS_FROM_CONFIG_EVENT]?.();
-                tauriUnlistens[OVERLAY_SET_SHOW_CHARTS_FROM_CONFIG_EVENT] =
-                    unlisten;
-            }),
-            listen<OverlayScreenshotRequestPayload>(
-                OVERLAY_SCREENSHOT_REQUEST_EVENT,
-                overlayScreenshotRequestEventHandler,
-            ).then((unlisten) => {
-                tauriUnlistens[OVERLAY_SCREENSHOT_REQUEST_EVENT]?.();
-                tauriUnlistens[OVERLAY_SCREENSHOT_REQUEST_EVENT] = unlisten;
-            }),
-        ]);
-
-        const stats = document.getElementById("stats");
-        if (stats != null) {
-            stats.style.display = "none";
-            stats.style.right = "-50.5vh";
-            stats.style.opacity = "0";
+        try {
+            await Promise.all([
+                listen<OverlayColorPreviewPayload>(
+                    OVERLAY_COLOR_PREVIEW_EVENT,
+                    colorPreviewEventHandler,
+                ).then((unlisten) => {
+                    tauriUnlistens[OVERLAY_COLOR_PREVIEW_EVENT]?.();
+                    tauriUnlistens[OVERLAY_COLOR_PREVIEW_EVENT] = unlisten;
+                }),
+                listen<OverlayLanguagePreviewPayload>(
+                    OVERLAY_LANGUAGE_PREVIEW_EVENT,
+                    languagePreviewEventHandler,
+                ).then((unlisten) => {
+                    tauriUnlistens[OVERLAY_LANGUAGE_PREVIEW_EVENT]?.();
+                    tauriUnlistens[OVERLAY_LANGUAGE_PREVIEW_EVENT] = unlisten;
+                }),
+                listen<OverlayReplayPayload>(
+                    OVERLAY_REPLAY_PAYLOAD_EVENT,
+                    replayPayloadEventHandler,
+                ).then((unlisten) => {
+                    tauriUnlistens[OVERLAY_REPLAY_PAYLOAD_EVENT]?.();
+                    tauriUnlistens[OVERLAY_REPLAY_PAYLOAD_EVENT] = unlisten;
+                }),
+                listen<OverlayPlayerStatsPayload>(
+                    OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT,
+                    togglePlayerStatsEventHandler,
+                ).then((unlisten) => {
+                    tauriUnlistens[OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT]?.();
+                    tauriUnlistens[OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT] =
+                        unlisten;
+                }),
+                listen<OverlayPlayerStatsPayload>(
+                    OVERLAY_PLAYER_STATS_EVENT,
+                    playerStatsOnGameStartEventHandler,
+                ).then((unlisten) => {
+                    tauriUnlistens[OVERLAY_PLAYER_STATS_EVENT]?.();
+                    tauriUnlistens[OVERLAY_PLAYER_STATS_EVENT] = unlisten;
+                }),
+                listen<OverlayInitColorsDurationPayload>(
+                    OVERLAY_INIT_COLORS_DURATION_EVENT,
+                    initColorsDurationEventHandler,
+                ).then((unlisten) => {
+                    tauriUnlistens[OVERLAY_INIT_COLORS_DURATION_EVENT]?.();
+                    tauriUnlistens[OVERLAY_INIT_COLORS_DURATION_EVENT] =
+                        unlisten;
+                }),
+                listen(OVERLAY_SHOWSTATS_EVENT, showGameStatsEventHandler).then(
+                    (unlisten) => {
+                        tauriUnlistens[OVERLAY_SHOWSTATS_EVENT]?.();
+                        tauriUnlistens[OVERLAY_SHOWSTATS_EVENT] = unlisten;
+                    },
+                ),
+                listen(OVERLAY_HIDESTATS_EVENT, hideGameStatsEventHandler).then(
+                    (unlisten) => {
+                        tauriUnlistens[OVERLAY_HIDESTATS_EVENT]?.();
+                        tauriUnlistens[OVERLAY_HIDESTATS_EVENT] = unlisten;
+                    },
+                ),
+                listen(OVERLAY_SHOWHIDE_EVENT, toggleOverlayEventHandler).then(
+                    (unlisten) => {
+                        tauriUnlistens[OVERLAY_SHOWHIDE_EVENT]?.();
+                        tauriUnlistens[OVERLAY_SHOWHIDE_EVENT] = unlisten;
+                    },
+                ),
+                listen<boolean>(
+                    OVERLAY_SET_SHOW_CHARTS_FROM_CONFIG_EVENT,
+                    setShowChartsFromConfigEventHandler,
+                ).then((unlisten) => {
+                    tauriUnlistens[
+                        OVERLAY_SET_SHOW_CHARTS_FROM_CONFIG_EVENT
+                    ]?.();
+                    tauriUnlistens[OVERLAY_SET_SHOW_CHARTS_FROM_CONFIG_EVENT] =
+                        unlisten;
+                }),
+                listen<OverlayScreenshotRequestPayload>(
+                    OVERLAY_SCREENSHOT_REQUEST_EVENT,
+                    overlayScreenshotRequestEventHandler,
+                ).then((unlisten) => {
+                    tauriUnlistens[OVERLAY_SCREENSHOT_REQUEST_EVENT]?.();
+                    tauriUnlistens[OVERLAY_SCREENSHOT_REQUEST_EVENT] = unlisten;
+                }),
+            ]);
+        } catch {
+            console.warn(
+                "Tauri overlay events are unavailable; using the browser overlay bridge.",
+            );
         }
 
+        setStatsPanelStyle(hiddenStatsPanelStyle);
         setGameStatPayload(null);
         requestDisplayTransition(DisplayMode.None, { immediate: true });
     }
 
     function destroyOverlayRuntime(): void {
         setOverlayRuntimeStarted(false);
+        removeOverlayWindowBridge();
 
         for (const eventName of Object.keys(
             tauriUnlistens,
@@ -710,6 +790,8 @@ export default function OverlayPage() {
             tauriUnlistens[eventName] = null;
         }
 
+        cancelOverlayHideTimer();
+        cancelAuxiliaryVisibilityTimer();
         cancelReplayExpiryTimer();
         cancelReplayDisplayClearTimer();
         destroy_overlay_charts();
@@ -717,29 +799,49 @@ export default function OverlayPage() {
     }
 
     async function ensureOverlayRuntimeInitialized(): Promise<void> {
-        ensureOverlayAssetsLoaded();
         await initializeOverlay();
     }
 
-    useInsertionEffect(() => {
-        ensureOverlayAssetsLoaded();
-    }, []);
-
     useEffect(() => {
-        void (async () => {
-            ensureOverlayAssetsLoaded();
-            const root = document.documentElement;
-            const body = document.body;
-            root.style.background = "transparent";
-            body.style.background = "transparent";
-            body.style.margin = "0";
-            body.style.overflow = "hidden";
+        const root = document.documentElement;
+        const body = document.body;
+        const previousRootStyle = {
+            background: root.style.background,
+            height: root.style.height,
+            width: root.style.width,
+        };
+        const previousBodyStyle = {
+            background: body.style.background,
+            height: body.style.height,
+            margin: body.style.margin,
+            overflow: body.style.overflow,
+            padding: body.style.padding,
+            width: body.style.width,
+        };
 
-            await ensureOverlayRuntimeInitialized();
-        })();
+        root.style.background = "transparent";
+        root.style.height = "100%";
+        root.style.width = "100%";
+        body.style.background = "transparent";
+        body.style.height = "100%";
+        body.style.margin = "0";
+        body.style.overflow = "hidden";
+        body.style.padding = "0";
+        body.style.width = "100%";
+
+        void ensureOverlayRuntimeInitialized();
 
         return () => {
             destroyOverlayRuntime();
+            root.style.background = previousRootStyle.background;
+            root.style.height = previousRootStyle.height;
+            root.style.width = previousRootStyle.width;
+            body.style.background = previousBodyStyle.background;
+            body.style.height = previousBodyStyle.height;
+            body.style.margin = previousBodyStyle.margin;
+            body.style.overflow = previousBodyStyle.overflow;
+            body.style.padding = previousBodyStyle.padding;
+            body.style.width = previousBodyStyle.width;
         };
     }, []);
 
@@ -763,39 +865,35 @@ export default function OverlayPage() {
             return;
         }
 
-        const showTimer = setTimeout(() => {
+        const showTimer = window.setTimeout(() => {
             requestDisplayTransition(DisplayMode.GameStats);
         }, 10);
 
         if (gameStatPayload.newReplay == null) {
             return () => {
-                clearTimeout(showTimer);
+                window.clearTimeout(showTimer);
                 cancelReplayExpiryTimer();
             };
         }
 
-        const expireTimer = setTimeout(
+        replayExpiryTimerRef.current = window.setTimeout(
             () => {
                 requestDisplayTransition(DisplayMode.None);
 
-                const clearTimer = setTimeout(() => {
-                    cancelReplayDisplayClearTimer();
+                replayDisplayClearTimerRef.current = window.setTimeout(() => {
+                    replayDisplayClearTimerRef.current = null;
                     setGameStatPayload(null);
                 }, overlayHideFadeMs);
-
-                setReplayDisplayClearTimer(clearTimer);
+                replayExpiryTimerRef.current = null;
             },
-            Math.max(gameStatsHideMs - overlayHideFadeMs, 0),
+            Math.max(gameStatsVisibleMs - overlayHideFadeMs, 0),
         );
 
-        setReplayExpiryTimer(expireTimer);
-
         return () => {
-            clearTimeout(showTimer);
-            clearTimeout(expireTimer);
-            setReplayExpiryTimer(null);
+            window.clearTimeout(showTimer);
+            cancelReplayExpiryTimer();
         };
-    }, [gameStatPayload]);
+    }, [gameStatPayload, gameStatsVisibleMs]);
 
     useEffect(() => {
         if (
@@ -805,7 +903,7 @@ export default function OverlayPage() {
             return;
         }
 
-        const hideTimer = setTimeout(() => {
+        const hideTimer = window.setTimeout(() => {
             requestDisplayTransition(DisplayMode.None, {
                 immediate: true,
             });
@@ -814,19 +912,29 @@ export default function OverlayPage() {
         }, playerStatsHideMs);
 
         return () => {
-            clearTimeout(hideTimer);
+            window.clearTimeout(hideTimer);
         };
     }, [displayMode.mode, playerStatPayload]);
 
     return (
-        <div id="overlay-screenshot-root">
-            <div id="bgdiv" style={{ display: "none", opacity: 0 }}>
-                <div id="ibgdiv" style={{ display: "none" }} />
+        <div id="overlay-screenshot-root" className={styles.overlayPageRoot}>
+            <div
+                id="bgdiv"
+                className="overlay-background"
+                style={backgroundPanelStyle}
+            >
+                <div
+                    id="ibgdiv"
+                    className="overlay-background-inner"
+                    style={backgroundPanelStyle}
+                />
             </div>
             <GameStatMode
                 payload={gameStatPayload}
                 chartVisibility={chartVisibility}
                 replayModeVisible={displayMode.mode === DisplayMode.GameStats}
+                statsPanelStyle={statsPanelStyle}
+                auxiliaryOverlayState={auxiliaryOverlayState}
                 showSessionStats={showSessionStats}
                 sessionVictoryCount={sessionVictoryCount}
                 sessionDefeatCount={sessionDefeatCount}

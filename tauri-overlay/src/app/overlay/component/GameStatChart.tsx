@@ -30,6 +30,16 @@ const hiddenChartStyle: ChartStyleState = {
     transition: "",
 };
 
+function isReplayPlayerSeries(series: ReplayPlayerSeries): boolean {
+    return (
+        typeof series.name === "string" &&
+        Array.isArray(series.army) &&
+        Array.isArray(series.supply) &&
+        Array.isArray(series.killed) &&
+        Array.isArray(series.mining)
+    );
+}
+
 function resolvePlayerSeriesByName(
     playerStats: OverlayReplayPayload["player_stats"],
     targetName: string,
@@ -42,14 +52,19 @@ function resolvePlayerSeriesByName(
     const trimmedTarget = targetName.trim();
     if (trimmedTarget !== "") {
         const matchedSeries = Object.values(playerStats).find(
-            (series) => series.name.trim() === trimmedTarget,
+            (series) =>
+                isReplayPlayerSeries(series) &&
+                series.name.trim() === trimmedTarget,
         );
         if (matchedSeries != null) {
             return matchedSeries;
         }
     }
 
-    return playerStats[fallbackKey] ?? null;
+    const fallbackSeries = playerStats[fallbackKey] ?? null;
+    return fallbackSeries != null && isReplayPlayerSeries(fallbackSeries)
+        ? fallbackSeries
+        : null;
 }
 
 export default function GameStatChart({

@@ -1,4 +1,11 @@
-import { Fragment, ReactNode, useEffect, useMemo, useState } from "react";
+import {
+    Fragment,
+    ReactNode,
+    useEffect,
+    useMemo,
+    useState,
+    type CSSProperties,
+} from "react";
 import {
     type CommanderMasteryData,
     LanguageManager,
@@ -69,6 +76,14 @@ type CommanderSection = {
 type KillBarState = {
     mainWidth: string;
     allyWidth: string;
+};
+type StatsPanelStyle = Pick<
+    CSSProperties,
+    "display" | "opacity" | "right" | "transition"
+>;
+type AuxiliaryOverlayState = {
+    visible: boolean;
+    renderContent: boolean;
 };
 
 const DEFAULT_KILL_BAR_STATE: KillBarState = {
@@ -385,6 +400,8 @@ function formatPrestigeDisplay(
 export default function GameStatText({
     payload,
     replayModeVisible,
+    statsPanelStyle,
+    auxiliaryOverlayState,
     showSessionStats,
     sessionVictoryCount,
     sessionDefeatCount,
@@ -402,6 +419,8 @@ export default function GameStatText({
 }: {
     payload: OverlayReplayPayload | null;
     replayModeVisible: boolean;
+    statsPanelStyle: StatsPanelStyle;
+    auxiliaryOverlayState: AuxiliaryOverlayState;
     showSessionStats: boolean;
     sessionVictoryCount: number;
     sessionDefeatCount: number;
@@ -754,10 +773,22 @@ export default function GameStatText({
     const fallbackSessionText = showSessionStats
         ? `${overlayText("ui_overlay_session")}: ${sessionVictoryCount} ${overlayText("ui_overlay_wins")}/${sessionVictoryCount + sessionDefeatCount} ${overlayText("ui_overlay_games")}`
         : "";
+    const randomizerText = auxiliaryOverlayState.renderContent
+        ? (viewModel?.randomizerText ?? "")
+        : "";
+    const sessionText = auxiliaryOverlayState.renderContent
+        ? showSessionStats
+            ? (viewModel?.sessionText ?? fallbackSessionText)
+            : ""
+        : "";
 
     return (
         <>
-            <div id="stats">
+            <div
+                id="stats"
+                className="overlay-stats-panel"
+                style={statsPanelStyle}
+            >
                 <div id="topstats">
                     <div id="mutators">
                         {viewModel?.hasMutators ? (
@@ -953,8 +984,15 @@ export default function GameStatText({
                     </div>
                 ))}
             </div>
-            <div id="otherstats">
-                <div id="rng">{viewModel?.randomizerText ?? ""}</div>
+            <div id="otherstats" className="overlay-auxiliary-panel">
+                <div
+                    id="rng"
+                    style={{
+                        opacity: auxiliaryOverlayState.visible ? 1 : 0,
+                    }}
+                >
+                    {randomizerText}
+                </div>
                 <div
                     id="session"
                     style={{
@@ -962,16 +1000,16 @@ export default function GameStatText({
                             replayModeVisible && showSessionStats
                                 ? "block"
                                 : "none",
+                        opacity: auxiliaryOverlayState.visible ? 0.6 : 0,
                     }}
                 >
-                    {showSessionStats
-                        ? (viewModel?.sessionText ?? fallbackSessionText)
-                        : ""}
+                    {sessionText}
                 </div>
                 <div id="loader" />
             </div>
             <div
                 id="mutatorinfo"
+                className="overlay-mutator-info"
                 style={{ width: showmutators ? undefined : "0" }}
             >
                 {Array.from({ length: 13 }, (_, index) => (

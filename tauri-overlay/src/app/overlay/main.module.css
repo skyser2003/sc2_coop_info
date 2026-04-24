@@ -1,11 +1,11 @@
 @font-face {
     font-family: "Eurostile";
-    src: url("Eurostile-Reg.otf") format("opentype");
+    src: url("/overlay/Eurostile-Reg.otf") format("opentype");
     font-weight: normal;
     font-style: normal;
 }
 
-:root {
+.overlayPageRoot {
     --overlay-font-family:
         "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR",
         "Noto Sans CJK KR", "Segoe UI", sans-serif;
@@ -37,10 +37,6 @@
             var(--overlay-unit-created-width) + var(--overlay-unit-lost-width)
     );
     --overlay-unit-kill-separator-color: rgba(255, 255, 255, 0.75);
-}
-
-html,
-body {
     width: 100%;
     height: 100%;
     margin: 0;
@@ -51,12 +47,8 @@ body {
     background: transparent !important;
 }
 
-body {
-    font-family: var(--overlay-font-family);
-    overflow: hidden;
-}
-
-#bgdiv {
+.overlayPageRoot :global(#bgdiv),
+.overlayPageRoot :global(.overlay-background) {
     position: absolute;
     display: block;
     height: 100%;
@@ -82,7 +74,8 @@ body {
     );
 }
 
-#ibgdiv {
+.overlayPageRoot :global(#ibgdiv),
+.overlayPageRoot :global(.overlay-background-inner) {
     position: absolute;
     display: block;
     width: 100%;
@@ -91,7 +84,8 @@ body {
     box-shadow: 3vh 3vh 3vh black;
 }
 
-#stats {
+.overlayPageRoot :global(#stats),
+.overlayPageRoot :global(.overlay-stats-panel) {
     color: white;
     position: absolute;
     top: 4vh;
@@ -102,52 +96,54 @@ body {
         opacity 1s;
 }
 
-#topstats,
-.commstats,
-#otherstats,
-#playerstats,
-#mutatorinfo {
+.overlayPageRoot :global(#topstats),
+.overlayPageRoot :global(.commstats),
+.overlayPageRoot :global(#otherstats),
+.overlayPageRoot :global(.overlay-auxiliary-panel),
+.overlayPageRoot :global(#playerstats),
+.overlayPageRoot :global(#mutatorinfo),
+.overlayPageRoot :global(.overlay-mutator-info) {
     line-height: 1;
 }
 
-#resultsp,
-#name1,
-#name2,
-#CMname1,
-#CMname2,
-#CMname3,
-#percent1,
-#percent2,
-#com1,
-#com2,
-#apm1,
-#apm2,
-.icontext {
+.overlayPageRoot :global(#resultsp),
+.overlayPageRoot :global(#name1),
+.overlayPageRoot :global(#name2),
+.overlayPageRoot :global(#CMname1),
+.overlayPageRoot :global(#CMname2),
+.overlayPageRoot :global(#CMname3),
+.overlayPageRoot :global(#percent1),
+.overlayPageRoot :global(#percent2),
+.overlayPageRoot :global(#com1),
+.overlayPageRoot :global(#com2),
+.overlayPageRoot :global(#apm1),
+.overlayPageRoot :global(#apm2),
+.overlayPageRoot :global(.icontext) {
     height: 1em;
     line-height: 1;
     overflow: visible;
     white-space: nowrap;
 }
 
-#result,
-#record,
-#brutal,
-.prestige,
-#comp,
-#rng,
-#session {
+.overlayPageRoot :global(#result),
+.overlayPageRoot :global(#record),
+.overlayPageRoot :global(#brutal),
+.overlayPageRoot :global(.prestige),
+.overlayPageRoot :global(#comp),
+.overlayPageRoot :global(#rng),
+.overlayPageRoot :global(#session) {
     height: 1em;
     line-height: 1;
     overflow: visible;
     white-space: nowrap;
 }
 
-#map,
-.mastery {
+.overlayPageRoot :global(#map),
+.overlayPageRoot :global(.mastery) {
     line-height: 1;
 }
 
-#mutators {
+.overlayPageRoot :global(#mutators) {
     top: -0.7vh;
     position: absolute;
     height: 3.6vh;
@@ -155,25 +151,25 @@ body {
     text-align: center;
 }
 
-#mutators img {
+.overlayPageRoot :global(#mutators img) {
     margin-right: 0.2vh;
     height: 100%;
     outline: 0.2vh solid rgba(0, 0, 0, 0.5);
     outline-offset: -0.2vh;
 }
 
-#resultsp {
+.overlayPageRoot :global(#resultsp) {
     font-size: 2.5vh;
     position: relative;
     top: 0.7vh;
     color: #b8b8b8;
 }
 
-#topstats {
+.overlayPageRoot :global(#topstats) {
     margin-bottom: 0.35vh;
 }
 
-#nodata {
+.overlayPageRoot :global(#nodata) {
     color: red;
     font-size: 3vh;
     position: absolute;
@@ -182,8 +178,8 @@ body {
     font-weight: bold;
 }
 
-#name1,
-#CMname1 {
+.overlayPageRoot :global(#name1),
+.overlayPageRoot :global(#CMname1) {
     font-size: 2.5vh;
     text-shadow: 0.1vh 0.1vh 0.1vh black;
     font-weight: bold;
@@ -191,25 +187,25 @@ body {
     z-index: 100;
 }
 
-#name2,
-#CMname2 {
+.overlayPageRoot :global(#name2),
+.overlayPageRoot :global(#CMname2) {
     font-size: 2.5vh;
     text-shadow: 0.1vh 0.1vh 0.1vh black;
     font-weight: bold;
 }
 
-#CMname3 {
+.overlayPageRoot :global(#CMname3) {
     font-size: 2.5vh;
     text-shadow: 0.1vh 0.1vh 0.1vh black;
     font-weight: bold;
 }
 
-#name2 {
+.overlayPageRoot :global(#name2) {
     position: absolute;
     right: 0vh;
 }
 
-#killbar {
+.overlayPageRoot :global(#killbar) {
     margin-top: 0.4vh;
     margin-bottom: 0.4vh;
     width: 100%;
@@ -220,7 +216,7 @@ body {
     display: none;
 }
 
-#killbar1 {
+.overlayPageRoot :global(#killbar1) {
     height: 100%;
     width: 50%;
     position: absolute;
@@ -228,11 +224,11 @@ body {
     transition: width 1s;
 }
 
-#percent1 {
+.overlayPageRoot :global(#percent1) {
     z-index: 1;
 }
 
-#killbar2 {
+.overlayPageRoot :global(#killbar2) {
     height: 100%;
     width: 50%;
     position: absolute;
@@ -241,19 +237,19 @@ body {
     transition: width 1s;
 }
 
-#killbar2 span {
+.overlayPageRoot :global(#killbar2 span) {
     position: absolute;
     top: 1vh;
     right: 1.2vh;
 }
 
-#killbar1 span {
+.overlayPageRoot :global(#killbar1 span) {
     position: absolute;
     top: 1vh;
     left: 1.2vh;
 }
 
-#result {
+.overlayPageRoot :global(#result) {
     position: absolute;
     top: 1vh;
     width: 100%;
@@ -261,14 +257,14 @@ body {
     color: #e1e1e1;
 }
 
-#morestats {
+.overlayPageRoot :global(#morestats) {
     opacity: 0.7;
     font-size: 1.7vh;
     padding-top: 0.42px;
     text-shadow: 0.1vh 0.1vh 0.1vh #060606;
 }
 
-#map {
+.overlayPageRoot :global(#map) {
     position: absolute;
     top: 7.8vh;
     width: 100%;
@@ -276,7 +272,7 @@ body {
     font-size: 1.7vh;
 }
 
-#record {
+.overlayPageRoot :global(#record) {
     position: absolute;
     top: 9.5vh;
     left: 63%;
@@ -287,7 +283,7 @@ body {
     display: none;
 }
 
-#brutal {
+.overlayPageRoot :global(#brutal) {
     position: absolute;
     top: 9.8vh;
     width: 100%;
@@ -295,38 +291,38 @@ body {
     text-align: center;
 }
 
-#com2 {
+.overlayPageRoot :global(#com2) {
     position: absolute;
     right: 0px;
 }
 
-#apm1 {
+.overlayPageRoot :global(#apm1) {
     position: absolute;
     top: 9.8vh;
     left: 0px;
 }
 
-#apm2 {
+.overlayPageRoot :global(#apm2) {
     position: absolute;
     top: 9.8vh;
     right: 0px;
 }
 
-.commstats {
+.overlayPageRoot :global(.commstats) {
     margin-top: 4vh;
     color: white;
     right: 0px;
 }
 
-#commstats2 {
+.overlayPageRoot :global(#commstats2) {
     margin-top: 1.5vh;
 }
 
-#amon {
+.overlayPageRoot :global(#amon) {
     margin-top: 1.5vh;
 }
 
-.prestige {
+.overlayPageRoot :global(.prestige) {
     display: block;
     opacity: 1;
     font-size: 1.5vh;
@@ -334,31 +330,32 @@ body {
     margin-top: 0.2vh;
 }
 
-#comp {
+.overlayPageRoot :global(#comp) {
     font-size: 1.5vh;
     text-shadow: 0.1vh 0.1vh 0.1vh black;
 }
 
-.mastery {
+.overlayPageRoot :global(.mastery) {
     font-size: 1.5vh;
     text-shadow: 0.1vh 0.1vh 0.1vh black;
     margin-top: 0.8vh;
 }
 
-.nomastery {
+.overlayPageRoot :global(.nomastery) {
     opacity: 0.4;
     margin-left: 0.9vh;
 }
 
-.singlemastery {
+.overlayPageRoot :global(.singlemastery) {
     margin-left: 0.9vh;
 }
 
-#CMunits3 {
+.overlayPageRoot :global(#CMunits3) {
     margin-top: -2vh;
 }
 
-#mutatorinfo {
+.overlayPageRoot :global(#mutatorinfo),
+.overlayPageRoot :global(.overlay-mutator-info) {
     margin: auto;
     margin-top: 8.33vh;
     width: min(65vh, calc(100vw - 4vh));
@@ -366,7 +363,7 @@ body {
     text-align: center;
 }
 
-#mutatorinfo div {
+.overlayPageRoot :global(#mutatorinfo div) {
     width: min(60vh, calc(100vw - 5vh));
     height: 10vh;
     border: 2px solid #444;
@@ -383,38 +380,39 @@ body {
     transition: opacity 2s;
 }
 
-#mutatorinfo div img {
+.overlayPageRoot :global(#mutatorinfo div img) {
     height: 100%;
     border-right: 2px solid #222;
 }
 
-#mutatorinfo div p {
+.overlayPageRoot :global(#mutatorinfo div p) {
     margin-left: 11vh;
     margin-top: -10vh;
     margin-right: 0.52vh;
     height: 2vh;
 }
 
-.muttop {
+.overlayPageRoot :global(.muttop) {
     color: orange;
     text-transform: uppercase;
     font-size: 2vh;
 }
 
-.mutvalue {
+.overlayPageRoot :global(.mutvalue) {
     font-size: 1.04vh;
     color: #777;
     font-size: 2vh;
 }
 
-.mutdesc {
+.overlayPageRoot :global(.mutdesc) {
     display: block;
     height: 7vh;
     overflow: hidden;
     font-size: 1.7vh;
 }
 
-#otherstats {
+.overlayPageRoot :global(#otherstats),
+.overlayPageRoot :global(.overlay-auxiliary-panel) {
     position: absolute;
     bottom: 7vh;
     right: 2vh;
@@ -424,7 +422,7 @@ body {
     color: white;
 }
 
-#rng {
+.overlayPageRoot :global(#rng) {
     font-size: 1.6vh;
     height: 2vh;
     color: white;
@@ -432,20 +430,20 @@ body {
     transition: opacity 1s;
 }
 
-#session {
+.overlayPageRoot :global(#session) {
     height: 2vh;
     color: white;
     opacity: 0;
     transition: opacity 1s;
 }
 
-#loader {
+.overlayPageRoot :global(#loader) {
     height: 2vh;
     opacity: 0;
     transition: opacity 1s;
 }
 
-#update {
+.overlayPageRoot :global(#update) {
     margin-top: 0.1vh;
     margin-bottom: 0.1vh;
     text-align: center;
@@ -454,26 +452,26 @@ body {
     font-weight: bold;
 }
 
-.commander-header {
+.overlayPageRoot :global(.commander-header) {
     display: flex;
     align-items: center;
     gap: 1.2vh;
     min-height: 4vh;
 }
 
-.icons {
+.overlayPageRoot :global(.icons) {
     display: inline-flex;
     align-items: center;
     color: #ccc;
     overflow: visible;
 }
 
-.icons img {
+.overlayPageRoot :global(.icons img) {
     display: block;
     height: 4vh;
 }
 
-.icontext {
+.overlayPageRoot :global(.icontext) {
     position: relative;
     left: -1.5vh;
     top: 0.9vh;
@@ -481,17 +479,17 @@ body {
     text-shadow: 0.1vh 0.1vh 0.1vh black;
 }
 
-.killbotkills {
+.overlayPageRoot :global(.killbotkills) {
     color: #ff3333;
     font-weight: bold;
 }
 
-.iconcreated {
+.overlayPageRoot :global(.iconcreated) {
     color: #21d84d;
     font-weight: bold;
 }
 
-#playerstats {
+.overlayPageRoot :global(#playerstats) {
     position: absolute;
     top: 5vh;
     right: calc(-1 * var(--overlay-playerstats-width));
@@ -506,28 +504,28 @@ body {
     opacity: 0;
 }
 
-.player_stat {
+.overlayPageRoot :global(.player_stat) {
     color: #f4f489;
 }
 
-#killbar > div > img {
+.overlayPageRoot :global(#killbar > div > img) {
     position: absolute;
     top: 0vh;
     opacity: 0.5;
     height: 4.2vh;
 }
 
-#killbar1img {
+.overlayPageRoot :global(#killbar1img) {
     left: 0vh;
 }
 
-#killbar2img {
+.overlayPageRoot :global(#killbar2img) {
     right: 0vh;
     -webkit-transform: scaleX(-1);
     transform: scaleX(-1);
 }
 
-.units {
+.overlayPageRoot :global(.units) {
     font-size: 1.5vh;
     text-shadow: 0.1vh 0.1vh 0.1vh black;
     margin-top: -1vh;
@@ -535,7 +533,7 @@ body {
     padding-left: 0px;
 }
 
-.units-table {
+.overlayPageRoot :global(.units-table) {
     width: var(--overlay-unit-table-width);
     min-width: var(--overlay-unit-table-width);
     max-width: var(--overlay-unit-table-width);
@@ -543,19 +541,19 @@ body {
     table-layout: fixed;
 }
 
-.units-table th,
-.units-table td {
+.overlayPageRoot :global(.units-table th),
+.overlayPageRoot :global(.units-table td) {
     padding: 0.05vh 0;
     line-height: 1.05;
 }
 
-.units-table tbody td {
+.overlayPageRoot :global(.units-table tbody td) {
     padding-top: 0;
     padding-bottom: 0;
     line-height: 1;
 }
 
-.units-table thead th {
+.overlayPageRoot :global(.units-table thead th) {
     color: #d8d8d8;
     font-size: 1.5vh;
     font-weight: normal;
@@ -563,47 +561,47 @@ body {
     white-space: nowrap;
 }
 
-.units-table-col-name {
+.overlayPageRoot :global(.units-table-col-name) {
     width: var(--overlay-unit-name-width);
 }
 
-.units-table-col-kill-percent {
+.overlayPageRoot :global(.units-table-col-kill-percent) {
     width: var(--overlay-unit-kill-percent-width);
 }
 
-.units-table-col-kill-count {
+.overlayPageRoot :global(.units-table-col-kill-count) {
     width: var(--overlay-unit-kill-count-width);
 }
 
-.units-table-col-created,
-.units-table-col-lost {
+.overlayPageRoot :global(.units-table-col-created),
+.overlayPageRoot :global(.units-table-col-lost) {
     width: var(--overlay-unit-created-width);
 }
 
-.units-table-col-lost {
+.overlayPageRoot :global(.units-table-col-lost) {
     width: var(--overlay-unit-lost-width);
 }
 
-.units-table-col-number {
+.overlayPageRoot :global(.units-table-col-number) {
     text-align: right;
     white-space: nowrap;
 }
 
-.units-table-header-spacer {
+.overlayPageRoot :global(.units-table-header-spacer) {
     padding: 0;
 }
 
-.units-table-name {
+.overlayPageRoot :global(.units-table-name) {
     padding-right: 0.6vh;
 }
 
-.units-table-name-cell {
+.overlayPageRoot :global(.units-table-name-cell) {
     position: relative;
     display: block;
     overflow: hidden;
 }
 
-.units-table-name-bg {
+.overlayPageRoot :global(.units-table-name-bg) {
     position: absolute;
     top: 0;
     bottom: 0;
@@ -614,7 +612,7 @@ body {
     z-index: 0;
 }
 
-.units-table-name-value {
+.overlayPageRoot :global(.units-table-name-value) {
     position: relative;
     z-index: 1;
     display: block;
@@ -624,61 +622,61 @@ body {
     padding: 0 0.8vh 0 0.2vh;
 }
 
-.units-table td.units-table-kill-percent {
+.overlayPageRoot :global(.units-table td.units-table-kill-percent) {
     opacity: 0.9;
 }
 
-.units-table-kills-header {
+.overlayPageRoot :global(.units-table-kills-header) {
     text-align: center;
 }
 
-.units-table td.units-table-kill-count {
+.overlayPageRoot :global(.units-table td.units-table-kill-count) {
     border-left: 0.12vh solid var(--overlay-unit-kill-separator-color);
     text-align: left;
     padding-right: 0.2vh;
     opacity: 0.9;
 }
 
-.units-table-kill-percent-value,
-.units-table-kill-count-value {
+.overlayPageRoot :global(.units-table-kill-percent-value),
+.overlayPageRoot :global(.units-table-kill-count-value) {
     display: block;
 }
 
-.units-table-kill-percent-value {
+.overlayPageRoot :global(.units-table-kill-percent-value) {
     padding-right: 0.8vh;
 }
 
-.units-table-kill-count-value {
+.overlayPageRoot :global(.units-table-kill-count-value) {
     padding-left: 0.8vh;
 }
 
-.units-table-created,
-.units-table-created-header {
+.overlayPageRoot :global(.units-table-created),
+.overlayPageRoot :global(.units-table-created-header) {
     color: #2fff00;
 }
 
-.units-table-created {
+.overlayPageRoot :global(.units-table-created) {
     opacity: 0.6;
 }
 
-.units-table-created-header {
+.overlayPageRoot :global(.units-table-created-header) {
     opacity: 0.6;
 }
 
-.units-table-lost,
-.units-table-lost-header {
+.overlayPageRoot :global(.units-table-lost),
+.overlayPageRoot :global(.units-table-lost-header) {
     color: #ff0000;
 }
 
-.units-table-lost {
+.overlayPageRoot :global(.units-table-lost) {
     opacity: 0.9;
 }
 
-.units-table-lost-header {
+.overlayPageRoot :global(.units-table-lost-header) {
     opacity: 0.9;
 }
 
-.overlay-sr-only {
+.overlayPageRoot :global(.overlay-sr-only) {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -690,7 +688,7 @@ body {
     border: 0;
 }
 
-#charts {
+.overlayPageRoot :global(#charts) {
     position: absolute;
     display: none;
     width: calc(38 * var(--overlay-horizontal-unit));
@@ -700,6 +698,6 @@ body {
     transition: opacity 2s;
 }
 
-#charts canvas {
+.overlayPageRoot :global(#charts canvas) {
     display: none;
 }
