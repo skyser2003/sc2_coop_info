@@ -12,8 +12,9 @@ use crate::tauri_replay_analysis_impl::{
 use chrono::{DateTime, Local};
 use indexmap::IndexMap;
 use s2protocol_port::{
-    build_protocol_store, parse_file_with_store, ProtocolStore, ReplayDetails, ReplayEvent,
-    ReplayInitData, ReplayMetadata, ReplayParseMode, TrackerEvent,
+    build_protocol_store, parse_file_with_store, parse_file_with_store_ordered_events,
+    ProtocolStore, ReplayDetails, ReplayEvent, ReplayInitData, ReplayMetadata, ReplayParseMode,
+    TrackerEvent,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -361,26 +362,28 @@ fn parse_replay_base(
         return Ok(None);
     }
 
-    let parse_mode = if options.include_events {
-        ReplayParseMode::Detailed
-    } else {
-        ReplayParseMode::Simple
-    };
-    let mut parsed =
-        parse_file_with_store(replay_path, protocol_store, parse_mode).map_err(|error| {
-            ReplayBaseParseError::ReplayParse {
+    let (mut parsed, events) = if options.include_events {
+        let mut parsed = parse_file_with_store_ordered_events(replay_path, protocol_store)
+            .map_err(|error| ReplayBaseParseError::ReplayParse {
                 path: replay_path.display().to_string(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
+        let events = parsed.take_events();
+        (parsed.take_replay(), events)
+    } else {
+        let parsed = parse_file_with_store(replay_path, protocol_store, ReplayParseMode::Simple)
+            .map_err(|error| ReplayBaseParseError::ReplayParse {
+                path: replay_path.display().to_string(),
+                message: error.to_string(),
+            })?;
+        (parsed, Vec::new())
+    };
 
     let base_build = parsed.base_build();
     let details = parsed.take_details();
     let init_data = parsed.take_init_data();
     let metadata = parsed.take_metadata();
-    let game_events = parsed.take_game_events();
     let message_events = parsed.take_message_events();
-    let tracker_events = parsed.take_tracker_events();
 
     let details = details.ok_or_else(|| {
         ReplayBaseParseError::InvalidReplayData("missing replay.details".to_string())
@@ -399,13 +402,6 @@ fn parse_replay_base(
     let disable_recover = details.m_disableRecoverGame.unwrap_or(false);
     if options.filters.require_recover_disabled && !disable_recover {
         return Ok(None);
-    }
-
-    let mut events = Vec::new();
-    if options.include_events {
-        events.extend(game_events.into_iter().map(ReplayEvent::Game));
-        events.extend(tracker_events.into_iter().map(ReplayEvent::Tracker));
-        events.sort_by_key(event_gameloop);
     }
 
     let replay_build = i64::from(base_build);
