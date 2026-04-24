@@ -55,7 +55,7 @@
             }
         ],
         "security": {
-            "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' 'nonce-sco-overlay-mui'; style-src-elem 'self' 'unsafe-inline' 'nonce-sco-overlay-mui'; style-src-attr 'unsafe-inline'; connect-src 'self' data:;",
+            "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' 'nonce-sco-overlay-mui'; style-src-elem 'self' 'unsafe-inline' 'nonce-sco-overlay-mui'; style-src-attr 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' data:;",
             "capabilities": [
                 {
                     "identifier": "event-handler",
