@@ -637,7 +637,7 @@ impl ProtocolDefinition {
             let namespace = buffer.read_bits(32)?;
             let attrid = buffer.read_bits(32)?;
             let scope = buffer.read_bits(8)?;
-            let raw = buffer.read_aligned_bytes(4)?;
+            let raw = buffer.read_aligned_array::<4>()?;
 
             let mut value_bytes = raw.into_iter().rev().collect::<Vec<u8>>();
             while let Some(0) = value_bytes.last().copied() {
@@ -745,8 +745,8 @@ pub trait TypeDecoder {
         F: FnMut(&mut Self, K, &TypeInfo) -> Result<(), DecodeError>;
 }
 
-pub struct BitPackedDecoder {
-    buffer: BitPackedBuffer,
+pub struct BitPackedDecoder<'a> {
+    buffer: BitPackedBuffer<'a>,
     typeinfos: Arc<[TypeInfo]>,
 }
 
@@ -1325,8 +1325,8 @@ pub(crate) fn decode_player_stats_from_typeinfo<D: TypeDecoder>(
     Ok(found.then_some(stats))
 }
 
-impl BitPackedDecoder {
-    pub fn new(contents: &[u8], typeinfos: Arc<[TypeInfo]>) -> Self {
+impl<'a> BitPackedDecoder<'a> {
+    pub fn new(contents: &'a [u8], typeinfos: Arc<[TypeInfo]>) -> Self {
         Self {
             buffer: BitPackedBuffer::new(contents, true),
             typeinfos,
@@ -1340,16 +1340,6 @@ impl BitPackedDecoder {
 
     fn optional_exists(&mut self) -> Result<bool, DecodeError> {
         Ok(self.buffer.read_bits(1)? != 0)
-    }
-
-    fn skip_bits(&mut self, bits: usize) -> Result<(), DecodeError> {
-        let mut remaining = bits;
-        while remaining > 0 {
-            let chunk = remaining.min(64);
-            self.buffer.read_bits(chunk)?;
-            remaining -= chunk;
-        }
-        Ok(())
     }
 
     fn array(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
@@ -1567,11 +1557,11 @@ impl BitPackedDecoder {
             }
             TypeOp::BitArray => {
                 let length = self.int(typeinfo.length_bounds()?)? as usize;
-                self.skip_bits(length)
+                self.buffer.skip_bits(length)
             }
             TypeOp::Blob => {
                 let length = self.int(typeinfo.length_bounds()?)? as usize;
-                self.buffer.read_aligned_bytes(length)?;
+                self.buffer.skip_aligned_bytes(length)?;
                 Ok(())
             }
             TypeOp::Bool => {
@@ -1589,7 +1579,7 @@ impl BitPackedDecoder {
                 self.skip_from_typeinfo(child_typeinfo)
             }
             TypeOp::Fourcc => {
-                self.buffer.read_aligned_bytes(4)?;
+                self.buffer.skip_aligned_bytes(4)?;
                 Ok(())
             }
             TypeOp::Int => {
@@ -1609,11 +1599,11 @@ impl BitPackedDecoder {
                 self.skip_from_typeinfo(child_typeinfo)
             }
             TypeOp::Real32 => {
-                self.buffer.read_unaligned_bytes(4)?;
+                self.buffer.skip_unaligned_bytes(4)?;
                 Ok(())
             }
             TypeOp::Real64 => {
-                self.buffer.read_unaligned_bytes(8)?;
+                self.buffer.skip_unaligned_bytes(8)?;
                 Ok(())
             }
             TypeOp::Struct => {
@@ -1644,8 +1634,8 @@ impl BitPackedDecoder {
     }
 
     fn fourcc(&mut self) -> Result<Value, DecodeError> {
-        let bytes = self.buffer.read_aligned_bytes(4)?;
-        Ok(Value::String(String::from_utf8_lossy(&bytes).to_string()))
+        let bytes = self.buffer.read_aligned_slice(4)?;
+        Ok(Value::String(String::from_utf8_lossy(bytes).to_string()))
     }
 
     fn optional(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
@@ -1660,16 +1650,12 @@ impl BitPackedDecoder {
     }
 
     fn real32(&mut self) -> Result<Value, DecodeError> {
-        let bytes = self.buffer.read_unaligned_bytes(4)?;
-        let bits = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        let bits = u32::from_be_bytes(self.buffer.read_unaligned_array::<4>()?);
         Ok(Value::Float(f32::from_bits(bits) as f64))
     }
 
     fn real64(&mut self) -> Result<Value, DecodeError> {
-        let bytes = self.buffer.read_unaligned_bytes(8)?;
-        let bits = u64::from_be_bytes([
-            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-        ]);
+        let bits = u64::from_be_bytes(self.buffer.read_unaligned_array::<8>()?);
         Ok(Value::Float(f64::from_bits(bits)))
     }
 
@@ -1750,7 +1736,7 @@ impl BitPackedDecoder {
     }
 }
 
-impl TypeDecoder for BitPackedDecoder {
+impl TypeDecoder for BitPackedDecoder<'_> {
     fn done(&self) -> bool {
         self.buffer.done()
     }
@@ -1861,12 +1847,12 @@ impl TypeDecoder for BitPackedDecoder {
             }
             TypeOp::Blob => {
                 let length = self.int(typeinfo.length_bounds()?)? as usize;
-                let bytes = self.buffer.read_aligned_bytes(length)?;
-                Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
+                let bytes = self.buffer.read_aligned_slice(length)?;
+                Ok(Some(String::from_utf8_lossy(bytes).into_owned()))
             }
             TypeOp::Fourcc => {
-                let bytes = self.buffer.read_aligned_bytes(4)?;
-                Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
+                let bytes = self.buffer.read_aligned_slice(4)?;
+                Ok(Some(String::from_utf8_lossy(bytes).into_owned()))
             }
             TypeOp::Bool => Ok(Some((self.buffer.read_bits(1)? != 0).to_string())),
             TypeOp::Real32 => Ok(self.real32()?.as_f64().map(|value| value.to_string())),
@@ -1954,13 +1940,13 @@ impl TypeDecoder for BitPackedDecoder {
     }
 }
 
-pub struct VersionedDecoder {
-    buffer: BitPackedBuffer,
+pub struct VersionedDecoder<'a> {
+    buffer: BitPackedBuffer<'a>,
     typeinfos: Arc<[TypeInfo]>,
 }
 
-impl VersionedDecoder {
-    pub fn new(contents: &[u8], typeinfos: Arc<[TypeInfo]>) -> Self {
+impl<'a> VersionedDecoder<'a> {
+    pub fn new(contents: &'a [u8], typeinfos: Arc<[TypeInfo]>) -> Self {
         Self {
             buffer: BitPackedBuffer::new(contents, true),
             typeinfos,
@@ -2009,11 +1995,11 @@ impl VersionedDecoder {
             1 => {
                 let bits = self.vint()? as usize;
                 let bytes = (bits + 7) / 8;
-                self.buffer.read_aligned_bytes(bytes)?;
+                self.buffer.skip_aligned_bytes(bytes)?;
             }
             2 => {
                 let bytes = self.vint()? as usize;
-                self.buffer.read_aligned_bytes(bytes)?;
+                self.buffer.skip_aligned_bytes(bytes)?;
             }
             3 => {
                 let _ = self.vint()?;
@@ -2033,13 +2019,13 @@ impl VersionedDecoder {
                 }
             }
             6 => {
-                self.buffer.read_aligned_bytes(1)?;
+                self.buffer.skip_aligned_bytes(1)?;
             }
             7 => {
-                self.buffer.read_aligned_bytes(4)?;
+                self.buffer.skip_aligned_bytes(4)?;
             }
             8 => {
-                self.buffer.read_aligned_bytes(8)?;
+                self.buffer.skip_aligned_bytes(8)?;
             }
             9 => {
                 let _ = self.vint()?;
@@ -2071,18 +2057,19 @@ impl VersionedDecoder {
         let _ = typeinfo;
         let length = self.vint()? as usize;
         let bytes = (length + 7) / 8;
-        let raw = self.buffer.read_aligned_bytes(bytes)?;
 
         if length > 127 {
+            let raw = self.buffer.read_aligned_bytes(bytes)?;
             return Ok(Value::Array(vec![
                 Value::Int(length as i128),
                 Value::Bytes(raw),
             ]));
         }
 
+        let raw = self.buffer.read_aligned_slice(bytes)?;
         let mut value: i128 = 0;
-        for b in raw {
-            value = (value << 8) | b as i128;
+        for byte in raw {
+            value = (value << 8) | i128::from(*byte);
         }
         Ok(Value::Array(vec![
             Value::Int(length as i128),
@@ -2141,17 +2128,13 @@ impl VersionedDecoder {
 
     fn real32(&mut self) -> Result<Value, DecodeError> {
         self.expect_skip(7)?;
-        let bytes = self.buffer.read_aligned_bytes(4)?;
-        let bits = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        let bits = u32::from_be_bytes(self.buffer.read_aligned_array::<4>()?);
         Ok(Value::Float(f32::from_bits(bits) as f64))
     }
 
     fn real64(&mut self) -> Result<Value, DecodeError> {
         self.expect_skip(8)?;
-        let bytes = self.buffer.read_aligned_bytes(8)?;
-        let bits = u64::from_be_bytes([
-            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-        ]);
+        let bits = u64::from_be_bytes(self.buffer.read_aligned_array::<8>()?);
         Ok(Value::Float(f64::from_bits(bits)))
     }
 
@@ -2437,7 +2420,7 @@ impl VersionedDecoder {
     }
 }
 
-impl BitPackedDecoder {
+impl BitPackedDecoder<'_> {
     fn read_bits_as_bytes(&mut self, bits: usize) -> Result<Vec<u8>, DecodeError> {
         let mut remaining = bits;
         let mut out = Vec::with_capacity((bits + 7) / 8);
@@ -2466,7 +2449,7 @@ impl BitPackedDecoder {
     }
 }
 
-impl TypeDecoder for VersionedDecoder {
+impl TypeDecoder for VersionedDecoder<'_> {
     fn done(&self) -> bool {
         self.buffer.done()
     }
@@ -2594,13 +2577,13 @@ impl TypeDecoder for VersionedDecoder {
             TypeOp::Blob => {
                 self.expect_skip(2)?;
                 let length = self.vint()? as usize;
-                let bytes = self.buffer.read_aligned_bytes(length)?;
-                Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
+                let bytes = self.buffer.read_aligned_slice(length)?;
+                Ok(Some(String::from_utf8_lossy(bytes).into_owned()))
             }
             TypeOp::Fourcc => {
                 self.expect_skip(7)?;
-                let bytes = self.buffer.read_aligned_bytes(4)?;
-                Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
+                let bytes = self.buffer.read_aligned_slice(4)?;
+                Ok(Some(String::from_utf8_lossy(bytes).into_owned()))
             }
             TypeOp::Bool => {
                 self.expect_skip(6)?;

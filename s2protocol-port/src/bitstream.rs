@@ -1,17 +1,18 @@
 use crate::error::DecodeError;
+use std::convert::TryInto;
 
-pub struct BitPackedBuffer {
-    data: Vec<u8>,
+pub struct BitPackedBuffer<'a> {
+    data: &'a [u8],
     used: usize,
     next: u8,
     next_bits: u8,
     big_endian: bool,
 }
 
-impl BitPackedBuffer {
-    pub fn new(contents: &[u8], big_endian: bool) -> Self {
+impl<'a> BitPackedBuffer<'a> {
+    pub fn new(contents: &'a [u8], big_endian: bool) -> Self {
         BitPackedBuffer {
-            data: contents.to_vec(),
+            data: contents,
             used: 0,
             next: 0,
             next_bits: 0,
@@ -31,16 +32,29 @@ impl BitPackedBuffer {
         self.next_bits = 0;
     }
 
-    pub fn read_aligned_bytes(&mut self, bytes: usize) -> Result<Vec<u8>, DecodeError> {
+    pub fn read_aligned_slice(&mut self, bytes: usize) -> Result<&'a [u8], DecodeError> {
         self.byte_align();
-        let end = self.used + bytes;
+        let end = self.used.checked_add(bytes).ok_or(DecodeError::Truncated)?;
         if end > self.data.len() {
             return Err(DecodeError::Truncated);
         }
 
-        let out = self.data[self.used..end].to_vec();
+        let out = &self.data[self.used..end];
         self.used = end;
         Ok(out)
+    }
+
+    pub fn read_aligned_bytes(&mut self, bytes: usize) -> Result<Vec<u8>, DecodeError> {
+        Ok(self.read_aligned_slice(bytes)?.to_vec())
+    }
+
+    pub fn read_aligned_array<const N: usize>(&mut self) -> Result<[u8; N], DecodeError> {
+        let slice = self.read_aligned_slice(N)?;
+        slice.try_into().map_err(|_| DecodeError::Truncated)
+    }
+
+    pub fn skip_aligned_bytes(&mut self, bytes: usize) -> Result<(), DecodeError> {
+        self.read_aligned_slice(bytes).map(|_| ())
     }
 
     pub fn read_bits(&mut self, bits: usize) -> Result<u64, DecodeError> {
@@ -52,6 +66,22 @@ impl BitPackedBuffer {
             return Err(DecodeError::Corrupted(
                 "bit read request exceeds supported width".into(),
             ));
+        }
+
+        if self.next_bits == 0 && bits % 8 == 0 {
+            let bytes = bits / 8;
+            let raw = self.read_aligned_slice(bytes)?;
+            let mut result = 0u64;
+            if self.big_endian {
+                for byte in raw {
+                    result = (result << 8) | u64::from(*byte);
+                }
+            } else {
+                for (index, byte) in raw.iter().enumerate() {
+                    result |= u64::from(*byte) << (index * 8);
+                }
+            }
+            return Ok(result);
         }
 
         let mut result: u64 = 0;
@@ -96,11 +126,50 @@ impl BitPackedBuffer {
         Ok(result)
     }
 
-    pub fn read_unaligned_bytes(&mut self, bytes: usize) -> Result<Vec<u8>, DecodeError> {
-        let mut out = Vec::with_capacity(bytes);
-        for _ in 0..bytes {
-            out.push(self.read_bits(8)? as u8);
+    pub fn skip_bits(&mut self, bits: usize) -> Result<(), DecodeError> {
+        let mut remaining = bits;
+
+        if self.next_bits > 0 {
+            let copybits = remaining.min(self.next_bits as usize) as u8;
+            if copybits == self.next_bits {
+                self.next = 0;
+                self.next_bits = 0;
+            } else {
+                self.next >>= copybits;
+                self.next_bits -= copybits;
+            }
+            remaining -= copybits as usize;
+        }
+
+        let aligned_bytes = remaining / 8;
+        if aligned_bytes > 0 {
+            self.skip_aligned_bytes(aligned_bytes)?;
+            remaining -= aligned_bytes * 8;
+        }
+
+        if remaining > 0 {
+            self.read_bits(remaining)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn read_unaligned_array<const N: usize>(&mut self) -> Result<[u8; N], DecodeError> {
+        if self.next_bits == 0 {
+            return self.read_aligned_array();
+        }
+
+        let mut out = [0u8; N];
+        for byte in &mut out {
+            *byte = self.read_bits(8)? as u8;
         }
         Ok(out)
+    }
+
+    pub fn skip_unaligned_bytes(&mut self, bytes: usize) -> Result<(), DecodeError> {
+        let bits = bytes
+            .checked_mul(8)
+            .ok_or_else(|| DecodeError::Corrupted("byte skip width overflows usize".into()))?;
+        self.skip_bits(bits)
     }
 }
