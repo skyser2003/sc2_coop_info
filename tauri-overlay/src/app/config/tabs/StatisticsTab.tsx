@@ -20,6 +20,7 @@ import {
     type SortState,
 } from "./tableSort";
 import SelectionPreview from "./SelectionPreview";
+import styles from "../page.module.css";
 
 const STATS_SUBTABS = [
     { id: "maps", titleId: "ui_statistics_subtab_maps" },
@@ -414,11 +415,11 @@ function tableHeader(
         <thead>
             <tr>
                 {columns.map((column) => (
-                    <th key={column.key} className={column.className || ""}>
+                    <th key={column.key} className={column.className}>
                         {onSort ? (
                             <button
                                 type="button"
-                                className="table-sort-btn"
+                                className={styles.tableSortBtn}
                                 onClick={() => onSort(column.key)}
                             >
                                 {`${column.label}${sortIndicator(sortState, column.key)}`}
@@ -441,7 +442,7 @@ function renderCommanderDetails(
 ) {
     if (!commander || !entry) {
         return (
-            <div className="stats-detail-empty">
+            <div className={styles.statsDetailEmpty}>
                 {languageManager.translate("ui_stats_select_commander")}
             </div>
         );
@@ -477,15 +478,15 @@ function renderCommanderDetails(
     };
 
     return (
-        <div className="stats-commander-detail">
+        <div className={styles.statsCommanderDetail}>
             <SelectionPreview
                 assetUrl={commanderPreview.url}
                 title={displayCommander}
                 kind="commander"
-                className="stats-commander-hero"
-                titleClassName="stats-commander-title"
+                className={styles.statsCommanderHero}
+                titleClassName={styles.statsCommanderTitle}
             />
-            <div className="stats-commander-meta">
+            <div className={styles.statsCommanderMeta}>
                 <span>
                     {`${languageManager.translate("ui_stats_frequency")}: `}
                     <strong>{formatPercent1(entry.Frequency)}</strong>
@@ -495,17 +496,25 @@ function renderCommanderDetails(
                     <strong>{Math.round(Number(entry.MedianAPM || 0))}</strong>
                 </span>
             </div>
-            <div className="stats-commander-bottom">
-                <div className="stats-commander-bottom-col">
-                    <h4 className="stats-commander-subheading">
+            <div className={styles.statsCommanderBottom}>
+                <div className={styles.statsCommanderBottomCol}>
+                    <h4 className={styles.statsCommanderSubheading}>
                         {languageManager.translate("ui_stats_mastery")} /{" "}
                         {languageManager.translate("ui_stats_prestige_label")}{" "}
                         {languageManager.translate(
                             "ui_stats_statistics_postfix",
                         )}
                     </h4>
-                    <div className="table-wrap">
-                        <table className="data-table stats-dense stats-commander-table">
+                    <div className={styles.tableWrap}>
+                        <table
+                            className={[
+                                styles.dataTable,
+                                styles.statsDense,
+                                styles.statsCommanderTable,
+                            ]
+                                .filter(Boolean)
+                                .join(" ")}
+                        >
                             <thead>
                                 <tr>
                                     <th>
@@ -545,7 +554,9 @@ function renderCommanderDetails(
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr className="stats-commander-prestige-row">
+                                <tr
+                                    className={styles.statsCommanderPrestigeRow}
+                                >
                                     <td>
                                         {languageManager.translate(
                                             "ui_stats_prestige_selection",
@@ -554,7 +565,9 @@ function renderCommanderDetails(
                                     {masteryByPrestigeKeys.map(
                                         (prestigeKey) => (
                                             <td
-                                                className="stats-commander-table-pct"
+                                                className={
+                                                    styles.statsCommanderTablePct
+                                                }
                                                 key={`preset-${prestigeKey}`}
                                             >
                                                 {formatPercent0(
@@ -565,21 +578,30 @@ function renderCommanderDetails(
                                             </td>
                                         ),
                                     )}
-                                    <td className="stats-commander-table-pct">
+                                    <td
+                                        className={
+                                            styles.statsCommanderTablePct
+                                        }
+                                    >
                                         {formatPercent0(prestigeSelectionTotal)}
                                     </td>
                                 </tr>
-                                <tr className="stats-commander-empty-row">
+                                <tr className={styles.statsCommanderEmptyRow}>
                                     <td
                                         colSpan={6}
-                                        className="stats-commander-empty-row-cell"
+                                        className={
+                                            styles.statsCommanderEmptyRowCell
+                                        }
                                     >
                                         {" "}
                                     </td>
                                 </tr>
                                 {masteryKeys.length === 0 ? (
                                     <tr>
-                                        <td colSpan={6} className="empty-cell">
+                                        <td
+                                            colSpan={6}
+                                            className={styles.emptyCell}
+                                        >
                                             {languageManager.translate(
                                                 "ui_stats_no_mastery_data",
                                             )}
@@ -589,11 +611,14 @@ function renderCommanderDetails(
                                     masteryKeys.map((idx) => (
                                         <tr
                                             key={`m-${idx}`}
-                                            className={`stats-commander-mastery-row ${
+                                            className={[
+                                                styles.statsCommanderMasteryRow,
                                                 idx === 2 || idx === 4
-                                                    ? "stats-commander-category-gap"
-                                                    : ""
-                                            }`}
+                                                    ? styles.statsCommanderCategoryGap
+                                                    : "",
+                                            ]
+                                                .filter(Boolean)
+                                                .join(" ")}
                                         >
                                             <td>
                                                 {languageManager.localize(
@@ -613,7 +638,9 @@ function renderCommanderDetails(
                                             {masteryByPrestigeKeys.map(
                                                 (prestigeKey) => (
                                                     <td
-                                                        className="stats-commander-table-pct"
+                                                        className={
+                                                            styles.statsCommanderTablePct
+                                                        }
                                                         key={`m-${idx}-${prestigeKey}`}
                                                     >
                                                         {formatPercent0(
@@ -625,7 +652,11 @@ function renderCommanderDetails(
                                                     </td>
                                                 ),
                                             )}
-                                            <td className="stats-commander-table-pct">
+                                            <td
+                                                className={
+                                                    styles.statsCommanderTablePct
+                                                }
+                                            >
                                                 {formatPercent0(
                                                     getMasteryTotalPercent(idx),
                                                 )}
@@ -714,20 +745,20 @@ function renderFastestMapPlayer(
             : "-";
 
     return (
-        <div className="stats-map-player" key={key}>
-            <div className="stats-map-player-head">
+        <div className={styles.statsMapPlayer} key={key}>
+            <div className={styles.statsMapPlayerHead}>
                 <h4>{asTableValue(player.name)}</h4>
-                <span className="stats-map-player-apm">
+                <span className={styles.statsMapPlayerApm}>
                     {`${Math.round(player.apm || 0)} APM`}
                 </span>
             </div>
-            <p className="stats-map-player-line">
+            <p className={styles.statsMapPlayerLine}>
                 <strong>
                     {languageManager.translate("ui_stats_commander_label")}
                 </strong>
                 <span>{languageManager.localize(player.commander) || "-"}</span>
             </p>
-            <p className="stats-map-player-line">
+            <p className={styles.statsMapPlayerLine}>
                 <strong>
                     {languageManager.translate("ui_stats_prestige_label")}
                 </strong>
@@ -739,24 +770,24 @@ function renderFastestMapPlayer(
                     )}
                 </span>
             </p>
-            <p className="stats-map-player-line">
+            <p className={styles.statsMapPlayerLine}>
                 <strong>
                     {languageManager.translate("ui_stats_mastery_level")}
                 </strong>
                 <span>{masteryLevel}</span>
             </p>
-            <div className="stats-map-masteries">
+            <div className={styles.statsMapMasteries}>
                 <strong>
                     {languageManager.translate("ui_stats_masteries")}
                 </strong>
                 {masteryRows.length === 0 ? (
-                    <span className="stats-map-player-empty">
+                    <span className={styles.statsMapPlayerEmpty}>
                         {languageManager.translate("ui_stats_no_mastery_data")}
                     </span>
                 ) : (
                     masteryRows.map((row, index) => (
                         <span
-                            className="stats-map-mastery-row"
+                            className={styles.statsMapMasteryRow}
                             key={`${key}-mastery-${index}`}
                         >
                             {row}
@@ -824,10 +855,22 @@ function renderStatsMaps(
     }
 
     return (
-        <div className="stats-sub-content stats-split">
-            <div className="stats-pane stats-pane-left">
-                <div className="table-wrap">
-                    <table className="data-table stats-dense">
+        <div
+            className={[styles.statsSubContent, styles.statsSplit]
+                .filter(Boolean)
+                .join(" ")}
+        >
+            <div
+                className={[styles.statsPane, styles.statsPaneLeft]
+                    .filter(Boolean)
+                    .join(" ")}
+            >
+                <div className={styles.tableWrap}>
+                    <table
+                        className={[styles.dataTable, styles.statsDense]
+                            .filter(Boolean)
+                            .join(" ")}
+                    >
                         {tableHeader(
                             [
                                 {
@@ -885,7 +928,10 @@ function renderStatsMaps(
                         <tbody>
                             {mapEntries.length === 0 ? (
                                 <tr>
-                                    <td colSpan={8} className="empty-cell">
+                                    <td
+                                        colSpan={8}
+                                        className={styles.emptyCell}
+                                    >
                                         {languageManager.translate(
                                             "ui_stats_no_map_data",
                                         )}
@@ -897,7 +943,7 @@ function renderStatsMaps(
                                         key={`map-${name}`}
                                         className={
                                             name === selectedMap
-                                                ? "selected-row"
+                                                ? styles.selectedRow
                                                 : ""
                                         }
                                         onClick={() =>
@@ -944,24 +990,28 @@ function renderStatsMaps(
                     </table>
                 </div>
             </div>
-            <div className="stats-pane stats-pane-right">
+            <div
+                className={[styles.statsPane, styles.statsPaneRight]
+                    .filter(Boolean)
+                    .join(" ")}
+            >
                 {!selectedMapData ? (
-                    <div className="stats-detail-empty">
+                    <div className={styles.statsDetailEmpty}>
                         {languageManager.translate("ui_stats_select_map")}
                     </div>
                 ) : (
-                    <div className="stats-map-detail">
+                    <div className={styles.statsMapDetail}>
                         <SelectionPreview
                             assetUrl={selectedMapPreview.url}
                             title={languageManager.localize(selectedMap)}
                             subtitle={`${formatDurationSeconds(fastest.length)} | ${languageManager.localize(fastest.enemyRace || "Unknown")}`}
                             kind="map"
-                            className="stats-map-hero"
-                            titleClassName="stats-map-name"
-                            subtitleClassName="stats-map-sub"
+                            className={styles.statsMapHero}
+                            titleClassName={styles.statsMapName}
+                            subtitleClassName={styles.statsMapSub}
                         />
                         {p1 && p2 ? (
-                            <div className="stats-map-players">
+                            <div className={styles.statsMapPlayers}>
                                 {renderFastestMapPlayer(
                                     p1,
                                     prestigeNames,
@@ -976,10 +1026,10 @@ function renderStatsMaps(
                                 )}
                             </div>
                         ) : null}
-                        <div className="toolbar">
+                        <div className={styles.toolbar}>
                             <button
                                 type="button"
-                                className="button-normal"
+                                className={styles.buttonNormal}
                                 onClick={() =>
                                     actions.revealReplay(fastest.file || "")
                                 }
@@ -991,7 +1041,7 @@ function renderStatsMaps(
                             </button>
                             <button
                                 type="button"
-                                className="button-normal"
+                                className={styles.buttonNormal}
                                 onClick={() =>
                                     actions.showReplay(fastest.file || "")
                                 }
@@ -1002,7 +1052,11 @@ function renderStatsMaps(
                                 )}
                             </button>
                         </div>
-                        <p className="note stats-map-foot">{`${languageManager.localize(fastest.difficulty || "-")} | ${formatReplayTime(fastest.date)}`}</p>
+                        <p
+                            className={[styles.note, styles.statsMapFoot]
+                                .filter(Boolean)
+                                .join(" ")}
+                        >{`${languageManager.localize(fastest.difficulty || "-")} | ${formatReplayTime(fastest.date)}`}</p>
                     </div>
                 )}
             </div>
@@ -1049,10 +1103,22 @@ function renderStatsCommanders(
     const sum = asStatsRow(entries.any);
 
     return (
-        <div className="stats-sub-content stats-commanders-split">
-            <div className="stats-pane stats-pane-left">
-                <div className="table-wrap">
-                    <table className="data-table stats-dense">
+        <div
+            className={[styles.statsSubContent, styles.statsCommandersSplit]
+                .filter(Boolean)
+                .join(" ")}
+        >
+            <div
+                className={[styles.statsPane, styles.statsPaneLeft]
+                    .filter(Boolean)
+                    .join(" ")}
+            >
+                <div className={styles.tableWrap}>
+                    <table
+                        className={[styles.dataTable, styles.statsDense]
+                            .filter(Boolean)
+                            .join(" ")}
+                    >
                         {tableHeader(
                             [
                                 {
@@ -1111,7 +1177,7 @@ function renderStatsCommanders(
                                     key={`${key}-${name}`}
                                     className={
                                         name === selectedCommander
-                                            ? "selected-row"
+                                            ? styles.selectedRow
                                             : ""
                                     }
                                     onClick={() =>
@@ -1139,7 +1205,7 @@ function renderStatsCommanders(
                                 </tr>
                             ))}
                             {Object.keys(sum).length > 0 ? (
-                                <tr className="stats-sum-row">
+                                <tr className={styles.statsSumRow}>
                                     <td>
                                         {languageManager.translate(
                                             "ui_common_sum",
@@ -1165,14 +1231,26 @@ function renderStatsCommanders(
                     </table>
                 </div>
                 {allied ? (
-                    <p className="note stats-right-note">
+                    <p
+                        className={[styles.note, styles.statsRightNote]
+                            .filter(Boolean)
+                            .join(" ")}
+                    >
                         {languageManager.translate(
                             "ui_stats_frequency_corrected_note",
                         )}
                     </p>
                 ) : null}
             </div>
-            <div className="stats-pane stats-pane-right stats-commander-pane">
+            <div
+                className={[
+                    styles.statsPane,
+                    styles.statsPaneRight,
+                    styles.statsCommanderPane,
+                ]
+                    .filter(Boolean)
+                    .join(" ")}
+            >
                 {renderCommanderDetails(
                     selectedCommander,
                     selectedEntry,
@@ -1245,9 +1323,13 @@ function renderStatsDiffRegion(
     const diffTotalGames = diffTotals.wins + diffTotals.losses;
 
     return (
-        <div className="stats-sub-content">
-            <div className="table-wrap">
-                <table className="data-table stats-dense">
+        <div className={styles.statsSubContent}>
+            <div className={styles.tableWrap}>
+                <table
+                    className={[styles.dataTable, styles.statsDense]
+                        .filter(Boolean)
+                        .join(" ")}
+                >
                     {tableHeader(
                         [
                             {
@@ -1344,8 +1426,20 @@ function renderStatsDiffRegion(
                     </tbody>
                 </table>
             </div>
-            <div className="stats-diff-wrap table-wrap">
-                <table className="data-table stats-dense stats-narrow">
+            <div
+                className={[styles.statsDiffWrap, styles.tableWrap]
+                    .filter(Boolean)
+                    .join(" ")}
+            >
+                <table
+                    className={[
+                        styles.dataTable,
+                        styles.statsDense,
+                        styles.statsNarrow,
+                    ]
+                        .filter(Boolean)
+                        .join(" ")}
+                >
                     {tableHeader(
                         [
                             {
@@ -1385,7 +1479,7 @@ function renderStatsDiffRegion(
                                 <td>{formatPercent0(row.Winrate)}</td>
                             </tr>
                         ))}
-                        <tr className="stats-sum-row">
+                        <tr className={styles.statsSumRow}>
                             <td>
                                 {languageManager.translate("ui_common_sum")}
                             </td>
@@ -1422,7 +1516,7 @@ function renderStatsUnits(
     );
     if (!unitData) {
         return (
-            <div className="stats-detail-empty">
+            <div className={styles.statsDetailEmpty}>
                 <p>{detailNote}</p>
                 {languageManager.translate("ui_stats_units_requires_full")}
             </div>
@@ -1583,12 +1677,31 @@ function renderStatsUnits(
     };
 
     return (
-        <div className="stats-sub-content stats-units-layout">
-            <div className="stats-unit-selectors stats-unit-commanders">
-                <div className="stats-unit-column">
+        <div
+            className={[styles.statsSubContent, styles.statsUnitsLayout]
+                .filter(Boolean)
+                .join(" ")}
+        >
+            <div
+                className={[
+                    styles.statsUnitSelectors,
+                    styles.statsUnitCommanders,
+                ]
+                    .filter(Boolean)
+                    .join(" ")}
+            >
+                <div className={styles.statsUnitColumn}>
                     <h4>{languageManager.translate("ui_stats_side_main")}</h4>
-                    <div className="table-wrap">
-                        <table className="data-table stats-dense stats-unit-picker-table">
+                    <div className={styles.tableWrap}>
+                        <table
+                            className={[
+                                styles.dataTable,
+                                styles.statsDense,
+                                styles.statsUnitPickerTable,
+                            ]
+                                .filter(Boolean)
+                                .join(" ")}
+                        >
                             <tbody>
                                 {mainCommanders.map((name) => (
                                     <tr
@@ -1596,7 +1709,7 @@ function renderStatsUnits(
                                         className={
                                             side === "main" &&
                                             mainCommander === name
-                                                ? "selected-row"
+                                                ? styles.selectedRow
                                                 : ""
                                         }
                                         onClick={() =>
@@ -1619,10 +1732,18 @@ function renderStatsUnits(
                         </table>
                     </div>
                 </div>
-                <div className="stats-unit-column">
+                <div className={styles.statsUnitColumn}>
                     <h4>{languageManager.translate("ui_stats_side_ally")}</h4>
-                    <div className="table-wrap">
-                        <table className="data-table stats-dense stats-unit-picker-table">
+                    <div className={styles.tableWrap}>
+                        <table
+                            className={[
+                                styles.dataTable,
+                                styles.statsDense,
+                                styles.statsUnitPickerTable,
+                            ]
+                                .filter(Boolean)
+                                .join(" ")}
+                        >
                             <tbody>
                                 {allyCommanders.map((name) => (
                                     <tr
@@ -1630,7 +1751,7 @@ function renderStatsUnits(
                                         className={
                                             side === "ally" &&
                                             allyCommander === name
-                                                ? "selected-row"
+                                                ? styles.selectedRow
                                                 : ""
                                         }
                                         onClick={() =>
@@ -1654,7 +1775,7 @@ function renderStatsUnits(
                     </div>
                 </div>
             </div>
-            <div className="stats-unit-table">
+            <div className={styles.statsUnitTable}>
                 <h3>
                     {translate(languageManager, "ui_stats_unit_stats_title", {
                         side: languageManager.translate(
@@ -1665,9 +1786,17 @@ function renderStatsUnits(
                         commander: languageManager.localize(commander),
                     })}
                 </h3>
-                <p className="note">{detailNote}</p>
-                <div className="table-wrap">
-                    <table className="data-table stats-dense stats-unit-table-grid">
+                <p className={styles.note}>{detailNote}</p>
+                <div className={styles.tableWrap}>
+                    <table
+                        className={[
+                            styles.dataTable,
+                            styles.statsDense,
+                            styles.statsUnitTableGrid,
+                        ]
+                            .filter(Boolean)
+                            .join(" ")}
+                    >
                         <colgroup>
                             <col key="unit-col-1" />
                             <col key="unit-col-2" />
@@ -1683,7 +1812,7 @@ function renderStatsUnits(
                                 <th>
                                     <button
                                         type="button"
-                                        className="stats-sort-btn"
+                                        className={styles.statsSortBtn}
                                         onClick={() =>
                                             applyUnitSort(defaultUnitSort)
                                         }
@@ -1709,7 +1838,12 @@ function renderStatsUnits(
                                     <th key={`unit-header-${field}`}>
                                         <button
                                             type="button"
-                                            className="stats-sort-btn stats-sort-btn-right"
+                                            className={[
+                                                styles.statsSortBtn,
+                                                styles.statsSortBtnRight,
+                                            ]
+                                                .filter(Boolean)
+                                                .join(" ")}
                                             onClick={() => applyUnitSort(field)}
                                         >
                                             {sortHeaderText(field)}
@@ -1723,40 +1857,40 @@ function renderStatsUnits(
                                 <tr
                                     key={`unit-${side}-${commander}-${name}`}
                                     className={
-                                        name === "sum" ? "stats-sum-row" : ""
+                                        name === "sum" ? styles.statsSumRow : ""
                                     }
                                 >
-                                    <td className="stats-unit-col-name">
+                                    <td className={styles.statsUnitColName}>
                                         {name === "sum"
                                             ? `Σ (${formatNumber(games)} ${languageManager.translate("ui_stats_games_suffix")})`
                                             : languageManager.localizeUnitName(
                                                   name,
                                               )}
                                     </td>
-                                    <td className="stats-unit-col-num">
+                                    <td className={styles.statsUnitColNum}>
                                         {formatNumber(row.created || 0)}
                                     </td>
-                                    <td className="stats-unit-col-num">
+                                    <td className={styles.statsUnitColNum}>
                                         {formatPercent0(row.made || 0)}
                                     </td>
-                                    <td className="stats-unit-col-num">
+                                    <td className={styles.statsUnitColNum}>
                                         {formatNumber(row.lost || 0)}
                                     </td>
-                                    <td className="stats-unit-col-num">
+                                    <td className={styles.statsUnitColNum}>
                                         {row.lost_percent === null ||
                                         row.lost_percent === undefined
                                             ? "-"
                                             : formatPercent0(row.lost_percent)}
                                     </td>
-                                    <td className="stats-unit-col-num">
+                                    <td className={styles.statsUnitColNum}>
                                         {formatNumber(row.kills || 0)}
                                     </td>
-                                    <td className="stats-unit-col-num">
+                                    <td className={styles.statsUnitColNum}>
                                         {row.KD === null || row.KD === undefined
                                             ? "-"
                                             : Number(row.KD).toFixed(1)}
                                     </td>
-                                    <td className="stats-unit-col-num">
+                                    <td className={styles.statsUnitColNum}>
                                         {formatPercent1(
                                             row.kill_percentage || 0,
                                         )}
@@ -1766,7 +1900,11 @@ function renderStatsUnits(
                         </tbody>
                     </table>
                 </div>
-                <p className="note stats-right-note">
+                <p
+                    className={[styles.note, styles.statsRightNote]
+                        .filter(Boolean)
+                        .join(" ")}
+                >
                     {languageManager.translate("ui_stats_mind_control_note")}
                 </p>
             </div>
@@ -1792,7 +1930,7 @@ function renderStatsAmon(
     );
     if (!unitData || !unitData.amon) {
         return (
-            <div className="stats-detail-empty">
+            <div className={styles.statsDetailEmpty}>
                 <p>{detailNote}</p>
                 {languageManager.translate("ui_stats_amon_requires_full")}
             </div>
@@ -1838,10 +1976,14 @@ function renderStatsAmon(
     const rows = sumRow ? [sumRow, ...detailRows] : detailRows;
 
     return (
-        <div className="stats-sub-content">
-            <p className="note">{detailNote}</p>
-            <div className="table-wrap">
-                <table className="data-table stats-dense">
+        <div className={styles.statsSubContent}>
+            <p className={styles.note}>{detailNote}</p>
+            <div className={styles.tableWrap}>
+                <table
+                    className={[styles.dataTable, styles.statsDense]
+                        .filter(Boolean)
+                        .join(" ")}
+                >
                     {tableHeader(
                         [
                             {
@@ -1878,7 +2020,7 @@ function renderStatsAmon(
                             <tr
                                 key={`amon-${name}`}
                                 className={
-                                    name === "sum" ? "stats-sum-row" : ""
+                                    name === "sum" ? styles.statsSumRow : ""
                                 }
                             >
                                 <td>
@@ -1950,7 +2092,7 @@ export default function StatisticsTab({
         checked: boolean,
         onChange: () => void,
     ) => (
-        <label className="stats-checkbox-line" key={label}>
+        <label className={styles.statsCheckboxLine} key={label}>
             <input type="checkbox" checked={checked} onChange={onChange} />
             <span>{label}</span>
         </label>
@@ -1975,14 +2117,14 @@ export default function StatisticsTab({
     );
 
     let subtabContent = (
-        <div className="stats-detail-empty">
+        <div className={styles.statsDetailEmpty}>
             {payload.message || t("ui_stats_no_statistics")}
         </div>
     );
 
     if (!payload.ready) {
         subtabContent = (
-            <div className="stats-detail-empty">
+            <div className={styles.statsDetailEmpty}>
                 {t("ui_stats_no_statistics")}
             </div>
         );
@@ -2050,17 +2192,21 @@ export default function StatisticsTab({
     }
 
     return (
-        <div className="tab-content">
-            <section className="card group stats-root">
+        <div className={styles.tabContent}>
+            <section
+                className={[styles.card, styles.group, styles.statsRoot]
+                    .filter(Boolean)
+                    .join(" ")}
+            >
                 <Grid
                     container
                     spacing={2.25}
                     alignItems="flex-start"
-                    className="stats-top-grid"
+                    className={styles.statsTopGrid}
                 >
                     <Grid size={8}>
-                        <div className="stats-check-cols">
-                            <div className="stats-filter-group">
+                        <div className={styles.statsCheckCols}>
+                            <div className={styles.statsFilterGroup}>
                                 <h4>{t("ui_stats_group_difficulty")}</h4>
                                 {filterCheckbox(
                                     languageManager.localize("Casual"),
@@ -2119,7 +2265,7 @@ export default function StatisticsTab({
                                         actions.toggleDifficulty("BrutalPlus6"),
                                 )}
                             </div>
-                            <div className="stats-filter-group">
+                            <div className={styles.statsFilterGroup}>
                                 <h4>{t("ui_stats_group_region")}</h4>
                                 {filterCheckbox(
                                     t("ui_stats_region_americas"),
@@ -2142,8 +2288,8 @@ export default function StatisticsTab({
                                     () => actions.toggleRegion("CN"),
                                 )}
                             </div>
-                            <div className="stats-filter-stack">
-                                <div className="stats-filter-group">
+                            <div className={styles.statsFilterStack}>
+                                <div className={styles.statsFilterGroup}>
                                     <h4>{t("ui_stats_group_game_type")}</h4>
                                     {filterCheckbox(
                                         t("ui_stats_normal_games"),
@@ -2162,7 +2308,7 @@ export default function StatisticsTab({
                                             ),
                                     )}
                                 </div>
-                                <div className="stats-filter-group">
+                                <div className={styles.statsFilterGroup}>
                                     <h4>{t("ui_stats_group_game_result")}</h4>
                                     {filterCheckbox(
                                         t("ui_stats_include_wins"),
@@ -2180,8 +2326,8 @@ export default function StatisticsTab({
                                     )}
                                 </div>
                             </div>
-                            <div className="stats-filter-stack">
-                                <div className="stats-filter-group">
+                            <div className={styles.statsFilterStack}>
+                                <div className={styles.statsFilterGroup}>
                                     <h4>{t("ui_stats_group_main_level")}</h4>
                                     {filterCheckbox(
                                         t("ui_stats_include_levels_1_14"),
@@ -2200,7 +2346,7 @@ export default function StatisticsTab({
                                             ),
                                     )}
                                 </div>
-                                <div className="stats-filter-group">
+                                <div className={styles.statsFilterGroup}>
                                     <h4>{t("ui_stats_group_main_mastery")}</h4>
                                     {filterCheckbox(
                                         t(
@@ -2226,8 +2372,8 @@ export default function StatisticsTab({
                                     )}
                                 </div>
                             </div>
-                            <div className="stats-filter-stack">
-                                <div className="stats-filter-group">
+                            <div className={styles.statsFilterStack}>
+                                <div className={styles.statsFilterGroup}>
                                     <h4>{t("ui_stats_group_ally_level")}</h4>
                                     {filterCheckbox(
                                         t("ui_stats_include_levels_1_14"),
@@ -2246,7 +2392,7 @@ export default function StatisticsTab({
                                             ),
                                     )}
                                 </div>
-                                <div className="stats-filter-group">
+                                <div className={styles.statsFilterGroup}>
                                     <h4>{t("ui_stats_group_ally_mastery")}</h4>
                                     {filterCheckbox(
                                         t(
@@ -2272,7 +2418,7 @@ export default function StatisticsTab({
                                     )}
                                 </div>
                             </div>
-                            <div className="stats-filter-group">
+                            <div className={styles.statsFilterGroup}>
                                 <h4>{t("ui_stats_group_etc")}</h4>
                                 {filterCheckbox(
                                     t("ui_stats_override_folder"),
@@ -2292,8 +2438,8 @@ export default function StatisticsTab({
                         </div>
                     </Grid>
                     <Grid size={4}>
-                        <div className="stats-filters-side">
-                            <div className="stats-minmax">
+                        <div className={styles.statsFiltersSide}>
+                            <div className={styles.statsMinmax}>
                                 <h4>{t("ui_stats_game_length_minutes")}</h4>
                                 <Grid container spacing={1}>
                                     <Grid size={4}>
@@ -2301,7 +2447,7 @@ export default function StatisticsTab({
                                     </Grid>
                                     <Grid size={8}>
                                         <input
-                                            className="input"
+                                            className={styles.input}
                                             type="number"
                                             min={0}
                                             max={1000}
@@ -2321,7 +2467,7 @@ export default function StatisticsTab({
                                     </Grid>
                                     <Grid size={8}>
                                         <input
-                                            className="input"
+                                            className={styles.input}
                                             type="number"
                                             min={0}
                                             max={1000}
@@ -2336,7 +2482,7 @@ export default function StatisticsTab({
                                     </Grid>
                                 </Grid>
                             </div>
-                            <div className="stats-dates">
+                            <div className={styles.statsDates}>
                                 <h4>{t("ui_stats_replay_date")}</h4>
                                 <Grid container>
                                     <Grid size={4}>
@@ -2344,7 +2490,7 @@ export default function StatisticsTab({
                                     </Grid>
                                     <Grid size={8}>
                                         <input
-                                            className="input"
+                                            className={styles.input}
                                             type="date"
                                             value={statsState.filters.fromDate}
                                             onChange={(event) =>
@@ -2362,7 +2508,7 @@ export default function StatisticsTab({
                                     </Grid>
                                     <Grid size={8}>
                                         <input
-                                            className="input"
+                                            className={styles.input}
                                             type="date"
                                             value={statsState.filters.toDate}
                                             onChange={(event) =>
@@ -2375,7 +2521,7 @@ export default function StatisticsTab({
                                     </Grid>
                                 </Grid>
                                 <input
-                                    className="input"
+                                    className={styles.input}
                                     type="text"
                                     value={statsState.filters.player}
                                     placeholder={t(
@@ -2389,10 +2535,10 @@ export default function StatisticsTab({
                                     }
                                 />
                             </div>
-                            <div className="stats-side-actions">
+                            <div className={styles.statsSideActions}>
                                 <button
                                     type="button"
-                                    className="button-normal"
+                                    className={styles.buttonNormal}
                                     onClick={actions.startSimpleAnalysis}
                                     disabled={
                                         actions.isBusy ||
@@ -2407,7 +2553,7 @@ export default function StatisticsTab({
                                 </button>
                                 <button
                                     type="button"
-                                    className="button-normal"
+                                    className={styles.buttonNormal}
                                     onClick={actions.dumpData}
                                     disabled={actions.isBusy || !payload.ready}
                                 >
@@ -2415,7 +2561,7 @@ export default function StatisticsTab({
                                 </button>
                                 <button
                                     type="button"
-                                    className="button-normal"
+                                    className={styles.buttonNormal}
                                     onClick={actions.refreshStats}
                                     disabled={actions.isBusy}
                                 >
@@ -2432,12 +2578,18 @@ export default function StatisticsTab({
                         </div>
                     </Grid>
                 </Grid>
-                <nav className="stats-subtabs">
+                <nav className={styles.statsSubtabs}>
                     {STATS_SUBTABS.map((item) => (
                         <button
                             key={item.id}
                             type="button"
-                            className={`stats-subtab-btn button-tab ${item.id === subtab ? "is-active" : ""}`}
+                            className={[
+                                styles.statsSubtabBtn,
+                                styles.buttonTab,
+                                item.id === subtab ? styles.isActive : "",
+                            ]
+                                .filter(Boolean)
+                                .join(" ")}
                             onClick={() =>
                                 actions.setStatsState((current) => ({
                                     ...current,

@@ -1,5 +1,6 @@
 import * as React from "react";
 import { createLanguageManager } from "../../i18n/languageManager";
+import styles from "../page.module.css";
 
 export const TABLE_ROWS_PER_PAGE = 20;
 
@@ -74,24 +75,26 @@ export function TablePagination({
     const endRow = Math.min(totalRows, safePage * rowsPerPage);
 
     return (
-        <div className="table-pagination">
-            <p className="table-pagination-summary">
+        <div className={styles.tablePagination}>
+            <p className={styles.tablePaginationSummary}>
                 {formatText("ui_table_rows_summary", {
                     start: startRow,
                     end: endRow,
                     total: totalRows,
                 })}
             </p>
-            <div className="table-pagination-controls">
+            <div className={styles.tablePaginationControls}>
                 <button
                     type="button"
-                    className="table-pagination-btn button-normal"
+                    className={[styles.tablePaginationBtn, styles.buttonNormal]
+                        .filter(Boolean)
+                        .join(" ")}
                     disabled={safePage <= 1}
                     onClick={() => onPageChange(safePage - 1)}
                 >
                     {t("ui_common_previous")}
                 </button>
-                <span className="table-pagination-page">
+                <span className={styles.tablePaginationPage}>
                     {formatText("ui_table_page_summary", {
                         page: safePage,
                         total: totalPages,
@@ -99,7 +102,9 @@ export function TablePagination({
                 </span>
                 <button
                     type="button"
-                    className="table-pagination-btn button-normal"
+                    className={[styles.tablePaginationBtn, styles.buttonNormal]
+                        .filter(Boolean)
+                        .join(" ")}
                     disabled={safePage >= totalPages}
                     onClick={() => onPageChange(safePage + 1)}
                 >

@@ -3,6 +3,7 @@ import type { LanguageManager } from "../../i18n/languageManager";
 import type { AppSettings } from "../../../bindings/overlay";
 import type { JsonValue } from "../types";
 import { Grid } from "@mui/material";
+import styles from "../page.module.css";
 
 type PerformanceActions = {
     isBusy: boolean;
@@ -53,15 +54,23 @@ export default function PerformanceTab({
 
     return (
         <Grid container>
-            <Grid size={4} className="tab-content">
-                <section className="card group performance-tab-card">
-                    <div className="performance-tab-copy">
+            <Grid size={4} className={styles.tabContent}>
+                <section
+                    className={[
+                        styles.card,
+                        styles.group,
+                        styles.performanceTabCard,
+                    ]
+                        .filter(Boolean)
+                        .join(" ")}
+                >
+                    <div className={styles.performanceTabCopy}>
                         <h3>{t("ui_performance_overlay_title")}</h3>
                         <p>{t("ui_performance_overlay_description")}</p>
                         <p>{t("ui_performance_overlay_details")}</p>
                     </div>
 
-                    <label className="performance-tab-check">
+                    <label className={styles.performanceTabCheck}>
                         <input
                             type="checkbox"
                             checked={displayVisibility}
@@ -78,7 +87,12 @@ export default function PerformanceTab({
 
                     <button
                         type="button"
-                        className="performance-tab-position-btn button-normal"
+                        className={[
+                            styles.performanceTabPositionBtn,
+                            styles.buttonNormal,
+                        ]
+                            .filter(Boolean)
+                            .join(" ")}
                         disabled={actions.isBusy}
                         onClick={() =>
                             actions.triggerOverlayAction(
@@ -89,12 +103,20 @@ export default function PerformanceTab({
                         {t("ui_performance_change_position")}
                     </button>
 
-                    <div className="performance-tab-hotkey-block">
+                    <div className={styles.performanceTabHotkeyBlock}>
                         <h3>{t("ui_performance_hotkey_title")}</h3>
-                        <div className="performance-tab-hotkey-row">
+                        <div className={styles.performanceTabHotkeyRow}>
                             <input
                                 type="text"
-                                className={`input hotkey-input ${actions.activeHotkeyPath === hotkeyPath ? "is-recording" : ""}`}
+                                className={[
+                                    styles.input,
+                                    styles.hotkeyInput,
+                                    actions.activeHotkeyPath === hotkeyPath
+                                        ? styles.isRecording
+                                        : "",
+                                ]
+                                    .filter(Boolean)
+                                    .join(" ")}
                                 readOnly
                                 value={String(
                                     read(["performance_hotkey"], "") || "",
@@ -166,14 +188,19 @@ export default function PerformanceTab({
                         </div>
                     </div>
 
-                    <div className="performance-tab-process-block">
+                    <div className={styles.performanceTabProcessBlock}>
                         <h3>{t("ui_performance_targets_title")}</h3>
-                        <p className="performance-tab-process-copy">
+                        <p className={styles.performanceTabProcessCopy}>
                             {t("ui_performance_targets_description")}
                         </p>
-                        <div className="performance-tab-process-row">
+                        <div className={styles.performanceTabProcessRow}>
                             <textarea
-                                className="input performance-tab-process-input"
+                                className={[
+                                    styles.input,
+                                    styles.performanceTabProcessInput,
+                                ]
+                                    .filter(Boolean)
+                                    .join(" ")}
                                 rows={3}
                                 value={processText}
                                 placeholder={"SC2_x64.exe\nSC2.exe"}

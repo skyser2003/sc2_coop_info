@@ -1,7 +1,3 @@
-:global(body) {
-    overflow-y: scroll;
-}
-
 .configPage {
     color: var(--config-page-text);
 }
@@ -10,16 +6,16 @@
     margin: 0 0 10px;
 }
 
-.configPage :global(.config-header) {
+.configPage .configHeader {
     position: relative;
     padding-right: 25rem;
 }
 
-.configPage :global(.config-header h1) {
+.configPage .configHeader h1 {
     margin: 0;
 }
 
-.configPage :global(.tabs) {
+.configPage .tabs {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -30,7 +26,7 @@
     scrollbar-width: thin;
 }
 
-.configPage :global(.tab-btn) {
+.configPage .tabBtn {
     border: 1px solid #1f2a3d;
     border-bottom: 0;
     border-radius: 8px 8px 0 0;
@@ -39,23 +35,23 @@
     color: #9fb2c7;
 }
 
-.configPage :global(.tab-btn:hover) {
+.configPage .tabBtn:hover {
     background: #273451;
     color: #e5e7eb;
 }
 
-.configPage :global(.tab-btn.is-active) {
+.configPage .tabBtn.isActive {
     color: #dbeafe;
     background: #111827;
     box-shadow: inset 0 1px 0 #60a5fa;
 }
 
-.configPage :global(.subtle) {
+.configPage .subtle {
     color: #93a4b8;
     margin-top: 0;
 }
 
-.configPage :global(.status) {
+.configPage .status {
     margin: 0;
     color: #f1f5f9;
     min-height: 2.75rem;
@@ -77,29 +73,29 @@
     z-index: 1;
 }
 
-.configPage :global(.note) {
+.configPage .note {
     margin: 0 0 8px;
     color: #98a9bf;
 }
 
-.configPage :global(.link-list) {
+.configPage .linkList {
     margin: 6px 0 0;
     padding-left: 20px;
 }
 
-.configPage :global(.link-list li) {
+.configPage .linkList li {
     margin: 6px 0;
 }
 
-.configPage :global(.link-list a) {
+.configPage .linkList a {
     color: #93c5fd;
 }
 
-.configPage :global(.link-list a:hover) {
+.configPage .linkList a:hover {
     color: #bfdbfe;
 }
 
-.configPage :global(.card) {
+.configPage .card {
     background: rgba(17, 24, 39, 0.95);
     border-radius: 10px;
     padding: 14px;
@@ -108,21 +104,40 @@
     box-shadow: 0 6px 18px rgb(0 0 0 / 18%);
 }
 
-.configPage :global(.tab-content .card:first-child) {
+.configPage .fieldTextarea,
+.configPage .group,
+.configPage .mainRangeRow,
+.configPage .mainSettingsInlineNumbers,
+.configPage .mono,
+.configPage .player,
+.configPage .randomizerMainGrid,
+.configPage .randomizerPaneLeft,
+.configPage .selectionPreviewTitle,
+.configPage .selectionPreviewSubtitle,
+.configPage .statsCommanderMasteryRow,
+.configPage .statsDiffWrap,
+.configPage .statsMapDetail,
+.configPage .statsNarrow,
+.configPage .statsPaneLeft,
+.configPage .submit {
+    --config-module-hook: initial;
+}
+
+.configPage .tabContent .card:first-child {
     margin-top: 10px;
 }
 
-.configPage :global(.section-title) {
+.configPage .sectionTitle {
     color: #8cb4ff;
     margin-bottom: 8px;
 }
 
-.configPage :global(.node-depth-0 summary) {
+.configPage .nodeDepth0 summary {
     font-weight: 700;
     margin-top: 4px;
 }
 
-.configPage :global(.field) {
+.configPage .field {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -130,18 +145,18 @@
     border-bottom: 1px solid #1f2a3d;
 }
 
-.configPage :global(.field:last-child) {
+.configPage .field:last-child {
     border-bottom: 0;
 }
 
-.configPage :global(.field-label) {
+.configPage .fieldLabel {
     flex: 0 1 18rem;
     font-size: 14px;
     color: #e2e8f0;
 }
 
-.configPage :global(.input),
-.configPage :global(textarea.input) {
+.configPage .input,
+.configPage textarea.input {
     background: #0a1020;
     border: 1px solid #334155;
     color: #e2e8f0;
@@ -152,54 +167,54 @@
     inline-size: 100%;
 }
 
-.configPage :global(textarea.input) {
+.configPage textarea.input {
     min-height: 84px;
     font-family: "Courier New", monospace;
 }
 
-.configPage :global(details.card) {
+.configPage details.card {
     margin-top: 8px;
 }
 
-.configPage :global(details.card > .field) {
+.configPage details.card > .field {
     padding-left: 8px;
 }
 
-.configPage :global(.node-depth-1) {
+.configPage .nodeDepth1 {
     margin-left: 12px;
 }
 
-.configPage :global(.node-depth-2) {
+.configPage .nodeDepth2 {
     margin-left: 24px;
 }
 
-.configPage :global(.node-depth-3) {
+.configPage .nodeDepth3 {
     margin-left: 36px;
 }
 
-.configPage :global(.footer) {
+.configPage .footer {
     display: flex;
     gap: 10px;
     margin-top: 14px;
     flex-wrap: wrap;
 }
 
-.configPage :global(.is-hidden) {
+.configPage .isHidden {
     display: none !important;
 }
 
-.configPage :global(.toolbar) {
+.configPage .toolbar {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
     margin-bottom: 10px;
 }
 
-.configPage :global(.table-wrap) {
+.configPage .tableWrap {
     overflow-x: auto;
 }
 
-.configPage :global(.table-pagination) {
+.configPage .tablePagination {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -208,13 +223,13 @@
     margin-top: 12px;
 }
 
-.configPage :global(.table-pagination-summary) {
+.configPage .tablePaginationSummary {
     margin: 0;
     color: #cbd5e1;
     font-size: 13px;
 }
 
-.configPage :global(.table-pagination-controls) {
+.configPage .tablePaginationControls {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -222,26 +237,26 @@
     gap: 8px;
 }
 
-.configPage :global(.table-pagination-page) {
+.configPage .tablePaginationPage {
     min-inline-size: 7em;
     color: #e5e7eb;
     text-align: center;
     font-size: 13px;
 }
 
-.configPage :global(.table-pagination-btn) {
+.configPage .tablePaginationBtn {
     min-inline-size: 8em;
     padding: 8px 12px;
 }
 
-.configPage :global(.data-table) {
+.configPage .dataTable {
     width: 100%;
     border-collapse: collapse;
     border: 1px solid #27364f;
 }
 
-.configPage :global(.data-table th),
-.configPage :global(.data-table td) {
+.configPage .dataTable th,
+.configPage .dataTable td {
     border-bottom: 1px solid #27364f;
     text-align: left;
     padding: 8px 10px;
@@ -249,13 +264,13 @@
     vertical-align: top;
 }
 
-.configPage :global(.data-table th) {
+.configPage .dataTable th {
     background: rgba(15, 23, 42, 0.85);
     position: sticky;
     top: 0;
 }
 
-.configPage :global(.table-sort-btn) {
+.configPage .tableSortBtn {
     width: 100%;
     border: 0;
     border-radius: 0;
@@ -268,34 +283,34 @@
     cursor: pointer;
 }
 
-.configPage :global(.table-sort-btn:focus-visible) {
+.configPage .tableSortBtn:focus-visible {
     outline: 1px solid #60a5fa;
     outline-offset: 2px;
 }
 
-.configPage :global(.data-table tbody tr) {
+.configPage .dataTable tbody tr {
     cursor: default;
 }
 
-.configPage :global(.data-table tbody tr:hover) {
+.configPage .dataTable tbody tr:hover {
     background: rgba(37, 99, 235, 0.18);
 }
 
-.configPage :global(.data-table tr.selected-row) {
+.configPage .dataTable tr.selectedRow {
     background: rgba(37, 99, 235, 0.3);
 }
 
-.configPage :global(.data-table .empty-cell) {
+.configPage .dataTable .emptyCell {
     text-align: center;
     color: #93a4b8;
 }
 
-.configPage :global(.games-panel) {
+.configPage .gamesPanel {
     background: #4a4a4a;
     border-color: #5f5f5f;
 }
 
-.configPage :global(.games-toolbar) {
+.configPage .gamesToolbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -303,29 +318,29 @@
     margin-bottom: 10px;
 }
 
-.configPage :global(.games-toolbar h3) {
+.configPage .gamesToolbar h3 {
     margin: 0;
 }
 
-.configPage :global(.games-toolbar-actions) {
+.configPage .gamesToolbarActions {
     display: flex;
     align-items: center;
     gap: 8px;
 }
 
-.configPage :global(.games-search) {
+.configPage .gamesSearch {
     flex: 1 1 18rem;
     inline-size: 100%;
 }
 
-.configPage :global(.games-filters) {
+.configPage .gamesFilters {
     display: flex;
     flex-wrap: wrap;
     gap: 10px 16px;
     margin-bottom: 12px;
 }
 
-.configPage :global(.games-filter-group) {
+.configPage .gamesFilterGroup {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -336,13 +351,13 @@
     background: rgba(15, 23, 42, 0.22);
 }
 
-.configPage :global(.games-filter-label) {
+.configPage .gamesFilterLabel {
     color: #cbd5e1;
     font-size: 13px;
     font-weight: 700;
 }
 
-.configPage :global(.games-filter-check) {
+.configPage .gamesFilterCheck {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -350,37 +365,37 @@
     font-size: 13px;
 }
 
-.configPage :global(.games-icon-btn) {
+.configPage .gamesIconBtn {
     min-inline-size: 3em;
     padding: 8px 10px;
 }
 
-.configPage :global(.games-table th),
-.configPage :global(.games-table td) {
+.configPage .gamesTable th,
+.configPage .gamesTable td {
     font-size: 15px;
     padding: 12px 14px;
     white-space: nowrap;
     vertical-align: middle;
 }
 
-.configPage :global(.games-table th:nth-child(1)),
-.configPage :global(.games-table td:nth-child(1)) {
+.configPage .gamesTable th:nth-child(1),
+.configPage .gamesTable td:nth-child(1) {
     inline-size: auto;
 }
 
-.configPage :global(.games-player-cell) {
+.configPage .gamesPlayerCell {
     max-inline-size: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.configPage :global(.games-actions-cell) {
+.configPage .gamesActionsCell {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
 }
 
-.configPage :global(.games-mutator-list) {
+.configPage .gamesMutatorList {
     display: flex;
     flex-wrap: nowrap;
     align-items: center;
@@ -388,7 +403,7 @@
     min-inline-size: 3em;
 }
 
-.configPage :global(.games-mutator-icon) {
+.configPage .gamesMutatorIcon {
     inline-size: 1.75rem;
     block-size: 1.75rem;
     object-fit: contain;
@@ -398,33 +413,33 @@
     padding: 2px;
 }
 
-.configPage :global(.games-mutator-empty) {
+.configPage .gamesMutatorEmpty {
     color: #93a4b8;
 }
 
-.configPage :global(.weeklies-layout) {
+.configPage .weekliesLayout {
     display: grid;
     grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
     gap: 14px;
     align-items: start;
 }
 
-.configPage :global(.weeklies-table-pane) {
+.configPage .weekliesTablePane {
     min-width: 0;
 }
 
-.configPage :global(.weeklies-row-clickable) {
+.configPage .weekliesRowClickable {
     cursor: pointer;
 }
 
-.configPage :global(.weeklies-name-cell) {
+.configPage .weekliesNameCell {
     display: flex;
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
 }
 
-.configPage :global(.weeklies-current-pill) {
+.configPage .weekliesCurrentPill {
     display: inline-flex;
     align-items: center;
     padding: 2px 8px;
@@ -437,14 +452,14 @@
     white-space: nowrap;
 }
 
-.configPage :global(.weeklies-detail-pane) {
+.configPage .weekliesDetailPane {
     min-width: 0;
     position: sticky;
     top: 12px;
     align-self: start;
 }
 
-.configPage :global(.weeklies-detail-card) {
+.configPage .weekliesDetailCard {
     display: grid;
     gap: 12px;
     padding: 14px;
@@ -465,34 +480,34 @@
     overflow: auto;
 }
 
-.configPage :global(.weeklies-detail-head) {
+.configPage .weekliesDetailHead {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
 }
 
-.configPage :global(.weeklies-detail-title) {
+.configPage .weekliesDetailTitle {
     margin: 0;
     color: #f8fafc;
     font-size: 24px;
     line-height: 1.1;
 }
 
-.configPage :global(.weeklies-map) {
+.configPage .weekliesMap {
     margin: 4px 0 0;
     color: #93c5fd;
     font-size: 14px;
     font-weight: 600;
 }
 
-.configPage :global(.weeklies-meta-row) {
+.configPage .weekliesMetaRow {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
 }
 
-.configPage :global(.weeklies-stat-chip) {
+.configPage .weekliesStatChip {
     display: inline-flex;
     align-items: center;
     min-height: 32px;
@@ -504,12 +519,12 @@
     font-size: 12px;
 }
 
-.configPage :global(.weeklies-mutator-grid) {
+.configPage .weekliesMutatorGrid {
     display: grid;
     gap: 10px;
 }
 
-.configPage :global(.weeklies-mutator-card) {
+.configPage .weekliesMutatorCard {
     display: grid;
     grid-template-columns: 4.25rem minmax(0, 1fr);
     gap: 12px;
@@ -520,7 +535,7 @@
     background: rgba(15, 23, 42, 0.72);
 }
 
-.configPage :global(.weeklies-mutator-icon) {
+.configPage .weekliesMutatorIcon {
     inline-size: 4.25rem;
     block-size: 4.25rem;
     object-fit: contain;
@@ -530,44 +545,44 @@
     padding: 6px;
 }
 
-.configPage :global(.weeklies-mutator-copy) {
+.configPage .weekliesMutatorCopy {
     min-width: 0;
 }
 
-.configPage :global(.weeklies-mutator-name) {
+.configPage .weekliesMutatorName {
     margin: 0 0 6px;
     color: #f8fafc;
     font-size: 16px;
     line-height: 1.2;
 }
 
-.configPage :global(.weeklies-mutator-description) {
+.configPage .weekliesMutatorDescription {
     margin: 0;
     color: #cbd5e1;
     font-size: 13px;
     line-height: 1.45;
 }
 
-.configPage :global(.players-summary-row.is-expanded) {
+.configPage .playersSummaryRow.isExpanded {
     background: rgba(37, 99, 235, 0.24);
 }
 
-.configPage :global(.players-row-clickable) {
+.configPage .playersRowClickable {
     cursor: pointer;
 }
 
-.configPage :global(.players-player-cell) {
+.configPage .playersPlayerCell {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
 }
 
-.configPage :global(.players-player-name) {
+.configPage .playersPlayerName {
     min-width: 0;
 }
 
-.configPage :global(.players-expander-btn) {
+.configPage .playersExpanderBtn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -585,58 +600,58 @@
     flex: 0 0 1.5rem;
 }
 
-.configPage :global(.players-expander-btn:hover) {
+.configPage .playersExpanderBtn:hover {
     background: rgba(51, 65, 85, 0.9);
     border-color: rgba(96, 165, 250, 0.6);
 }
 
-.configPage :global(.players-expander-btn:focus-visible) {
+.configPage .playersExpanderBtn:focus-visible {
     outline: 2px solid rgba(96, 165, 250, 0.8);
     outline-offset: 2px;
 }
 
-.configPage :global(.players-expander-btn:active) {
+.configPage .playersExpanderBtn:active {
     transform: translateY(1px);
 }
 
-.configPage :global(.players-expander-btn:disabled) {
+.configPage .playersExpanderBtn:disabled {
     opacity: 0.6;
     color: #93a4b8;
 }
 
-.configPage :global(.players-handle-count) {
+.configPage .playersHandleCount {
     color: #93a4b8;
     font-size: 12px;
 }
 
-.configPage :global(.players-detail-row:hover) {
+.configPage .playersDetailRow:hover {
     background: transparent;
 }
 
-.configPage :global(.players-detail-cell) {
+.configPage .playersDetailCell {
     background: rgba(15, 23, 42, 0.55);
     white-space: normal;
 }
 
-.configPage :global(.players-detail-block) {
+.configPage .playersDetailBlock {
     display: flex;
     align-items: flex-start;
     gap: 12px;
     flex-wrap: wrap;
 }
 
-.configPage :global(.players-detail-label) {
+.configPage .playersDetailLabel {
     color: #cbd5e1;
     font-weight: 700;
 }
 
-.configPage :global(.players-handle-list) {
+.configPage .playersHandleList {
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
 }
 
-.configPage :global(.players-handle-chip) {
+.configPage .playersHandleChip {
     padding: 4px 8px;
     border-radius: 999px;
     border: 1px solid #334155;
@@ -645,13 +660,13 @@
     font-size: 12px;
 }
 
-.configPage :global(.games-row-btn) {
+.configPage .gamesRowBtn {
     padding: 6px 12px;
     border-radius: 6px;
     min-inline-size: 7em;
 }
 
-.configPage :global(.chat-modal-backdrop) {
+.configPage .chatModalBackdrop {
     position: fixed;
     inset: 0;
     z-index: 1400;
@@ -663,7 +678,7 @@
     backdrop-filter: blur(4px);
 }
 
-.configPage :global(.chat-modal) {
+.configPage .chatModal {
     inline-size: 100%;
     max-height: min(78vh, 860px);
     display: grid;
@@ -679,7 +694,7 @@
     overflow: hidden;
 }
 
-.configPage :global(.chat-modal-header) {
+.configPage .chatModalHeader {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
@@ -688,33 +703,33 @@
     border-bottom: 1px solid #334155;
 }
 
-.configPage :global(.chat-modal-heading h3) {
+.configPage .chatModalHeading h3 {
     margin: 0;
     color: #f8fafc;
 }
 
-.configPage :global(.chat-modal-meta) {
+.configPage .chatModalMeta {
     margin: 6px 0 0;
     color: #93a4b8;
     font-size: 13px;
 }
 
-.configPage :global(.chat-modal-close) {
+.configPage .chatModalClose {
     min-width: auto;
 }
 
-.configPage :global(.chat-modal-body) {
+.configPage .chatModalBody {
     min-height: 0;
     padding: 18px 20px 20px;
     overflow: auto;
 }
 
-.configPage :global(.chat-log) {
+.configPage .chatLog {
     display: grid;
     gap: 8px;
 }
 
-.configPage :global(.chat-row) {
+.configPage .chatRow {
     display: grid;
     grid-template-columns: 5.5em minmax(10em, 0.9fr) minmax(0, 2.1fr);
     gap: 14px;
@@ -725,31 +740,31 @@
     background: rgba(15, 23, 42, 0.7);
 }
 
-.configPage :global(.chat-time) {
+.configPage .chatTime {
     color: #93c5fd;
     font-family: "Courier New", monospace;
     font-size: 13px;
 }
 
-.configPage :global(.chat-player) {
+.configPage .chatPlayer {
     color: #e2e8f0;
     font-weight: 700;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.configPage :global(.chat-text) {
+.configPage .chatText {
     color: #f8fafc;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
 
-.configPage :global(.chat-empty) {
+.configPage .chatEmpty {
     margin: 0;
     color: #cbd5e1;
 }
 
-.configPage :global(.stats-block) {
+.configPage .statsBlock {
     margin-top: 2px;
     background: #0a1020;
     border: 1px solid #334155;
@@ -762,7 +777,7 @@
     font-size: 13px;
 }
 
-.configPage :global(.button-normal) {
+.configPage .buttonNormal {
     border: 0;
     border-radius: 8px;
     display: inline-flex;
@@ -778,12 +793,12 @@
     white-space: nowrap;
 }
 
-.configPage :global(.button-normal:disabled) {
+.configPage .buttonNormal:disabled {
     background: #475569;
     cursor: not-allowed;
 }
 
-.configPage :global(.button-tab) {
+.configPage .buttonTab {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -791,7 +806,7 @@
     white-space: nowrap;
 }
 
-.configPage :global(.button-randomizer-table) {
+.configPage .buttonRandomizerTable {
     width: 100%;
     border: 0;
     border-radius: 0;
@@ -804,7 +819,7 @@
     cursor: pointer;
 }
 
-.configPage :global(.mini-btn) {
+.configPage .miniBtn {
     min-block-size: auto;
     padding: 6px 10px;
     border-radius: 6px;
@@ -812,20 +827,20 @@
     background: #334155;
 }
 
-.configPage :global(.mini-btn.is-active) {
+.configPage .miniBtn.isActive {
     background: #2563eb;
 }
 
-.configPage :global(.stats-root) {
+.configPage .statsRoot {
     background: #4a4a4a;
     border-color: #5f5f5f;
 }
 
-.configPage :global(.stats-top-grid) {
+.configPage .statsTopGrid {
     width: 100%;
 }
 
-.configPage :global(.stats-check-cols) {
+.configPage .statsCheckCols {
     display: grid;
     grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 12px;
@@ -833,7 +848,7 @@
     align-items: start;
 }
 
-.configPage :global(.stats-filter-group) {
+.configPage .statsFilterGroup {
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -844,40 +859,40 @@
     width: 100%;
 }
 
-.configPage :global(.stats-filter-stack) {
+.configPage .statsFilterStack {
     display: flex;
     flex-direction: column;
     gap: 12px;
     width: 100%;
 }
 
-.configPage :global(.stats-filter-group h4) {
+.configPage .statsFilterGroup h4 {
     margin: 0 0 4px;
     color: #cbd5e1;
     font-size: 13px;
     font-weight: 700;
 }
 
-.configPage :global(.stats-checkbox-line) {
+.configPage .statsCheckboxLine {
     display: flex;
     align-items: center;
     gap: 8px;
     font-size: 14px;
 }
 
-.configPage :global(.stats-filters-side) {
+.configPage .statsFiltersSide {
     flex: 1 1 24rem;
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 12px;
 }
 
-.configPage :global(.stats-filters-side h4) {
+.configPage .statsFiltersSide h4 {
     margin: 0 0 6px;
 }
 
-.configPage :global(.stats-minmax label),
-.configPage :global(.stats-dates label) {
+.configPage .statsMinmax label,
+.configPage .statsDates label {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -885,13 +900,13 @@
     white-space: nowrap;
 }
 
-.configPage :global(.stats-minmax .input),
-.configPage :global(.stats-dates .input) {
+.configPage .statsMinmax .input,
+.configPage .statsDates .input {
     min-width: 0;
     width: 100%;
 }
 
-.configPage :global(.stats-side-actions) {
+.configPage .statsSideActions {
     grid-column: span 2;
     display: flex;
     flex-wrap: wrap;
@@ -900,14 +915,14 @@
     justify-content: flex-end;
 }
 
-.configPage :global(.stats-side-actions p) {
+.configPage .statsSideActions p {
     width: 100%;
     margin: 0;
     text-align: right;
     font-size: 15px;
 }
 
-.configPage :global(.stats-subtabs) {
+.configPage .statsSubtabs {
     margin-top: 10px;
     display: flex;
     gap: 6px;
@@ -916,52 +931,52 @@
     padding-bottom: 4px;
 }
 
-.configPage :global(.stats-subtab-btn) {
+.configPage .statsSubtabBtn {
     background: #505050;
     border: 1px solid #6f6f6f;
     border-radius: 6px 6px 0 0;
     padding: 8px 12px;
 }
 
-.configPage :global(.stats-subtab-btn.is-active) {
+.configPage .statsSubtabBtn.isActive {
     background: #5e5e5e;
 }
 
-.configPage :global(.stats-sub-content) {
+.configPage .statsSubContent {
     margin-top: 10px;
 }
 
-.configPage :global(.stats-split) {
+.configPage .statsSplit {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 12px;
 }
 
-.configPage :global(.stats-commanders-split) {
+.configPage .statsCommandersSplit {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
     gap: 12px;
     align-items: start;
 }
 
-.configPage :global(.stats-pane) {
+.configPage .statsPane {
     min-width: 0;
 }
 
-.configPage :global(.stats-pane-right) {
+.configPage .statsPaneRight {
     background: rgba(0, 0, 0, 0.12);
     border: 1px solid #666;
     border-radius: 8px;
     padding: 10px;
 }
 
-.configPage :global(.selection-preview) {
+.configPage .selectionPreview {
     position: relative;
     overflow: hidden;
     background: #111827;
 }
 
-.configPage :global(.selection-preview-media) {
+.configPage .selectionPreviewMedia {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -969,13 +984,13 @@
     object-fit: cover;
 }
 
-.configPage :global(.selection-preview-scrim) {
+.configPage .selectionPreviewScrim {
     position: absolute;
     inset: 0;
     pointer-events: none;
 }
 
-.configPage :global(.selection-preview-map .selection-preview-scrim) {
+.configPage .selectionPreviewMap .selectionPreviewScrim {
     background: linear-gradient(
         180deg,
         rgb(15 23 42 / 12%) 0%,
@@ -984,7 +999,7 @@
     );
 }
 
-.configPage :global(.selection-preview-commander .selection-preview-scrim) {
+.configPage .selectionPreviewCommander .selectionPreviewScrim {
     background: linear-gradient(
         90deg,
         rgb(2 6 23 / 54%) 0%,
@@ -993,7 +1008,7 @@
     );
 }
 
-.configPage :global(.selection-preview.is-fallback.selection-preview-map) {
+.configPage .selectionPreview.isFallback.selectionPreviewMap {
     background:
         radial-gradient(
             circle at top left,
@@ -1003,8 +1018,7 @@
         linear-gradient(135deg, #0f172a 0%, #13233e 52%, #0b1220 100%);
 }
 
-.configPage
-    :global(.selection-preview.is-fallback.selection-preview-commander) {
+.configPage .selectionPreview.isFallback.selectionPreviewCommander {
     background:
         radial-gradient(
             circle at top right,
@@ -1014,13 +1028,13 @@
         linear-gradient(120deg, #111827 0%, #18263d 50%, #0f172a 100%);
 }
 
-.configPage :global(.stats-dense th),
-.configPage :global(.stats-dense td) {
+.configPage .statsDense th,
+.configPage .statsDense td {
     padding: 6px 8px;
     font-size: 12px;
 }
 
-.configPage :global(.stats-map-hero) {
+.configPage .statsMapHero {
     height: 120px;
     border-radius: 6px;
     position: relative;
@@ -1028,7 +1042,7 @@
     border: 1px solid #334155;
 }
 
-.configPage :global(.stats-map-name) {
+.configPage .statsMapName {
     position: absolute;
     left: 12px;
     bottom: 28px;
@@ -1038,7 +1052,7 @@
     text-shadow: 1px 1px 2px #000;
 }
 
-.configPage :global(.stats-map-sub) {
+.configPage .statsMapSub {
     position: absolute;
     left: 12px;
     bottom: 8px;
@@ -1046,13 +1060,13 @@
     text-shadow: 1px 1px 2px #000;
 }
 
-.configPage :global(.stats-map-players) {
+.configPage .statsMapPlayers {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px;
 }
 
-.configPage :global(.stats-map-player) {
+.configPage .statsMapPlayer {
     display: grid;
     gap: 8px;
     padding: 12px;
@@ -1061,25 +1075,25 @@
     background: rgba(15, 23, 42, 0.45);
 }
 
-.configPage :global(.stats-map-player-head) {
+.configPage .statsMapPlayerHead {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
     gap: 12px;
 }
 
-.configPage :global(.stats-map-player h4) {
+.configPage .statsMapPlayer h4 {
     margin: 0;
 }
 
-.configPage :global(.stats-map-player-apm) {
+.configPage .statsMapPlayerApm {
     color: #93c5fd;
     font-size: 12px;
     font-weight: 700;
     white-space: nowrap;
 }
 
-.configPage :global(.stats-map-player-line) {
+.configPage .statsMapPlayerLine {
     display: flex;
     justify-content: space-between;
     gap: 12px;
@@ -1087,19 +1101,19 @@
     color: #cbd5e1;
 }
 
-.configPage :global(.stats-map-player-line strong),
-.configPage :global(.stats-map-masteries strong) {
+.configPage .statsMapPlayerLine strong,
+.configPage .statsMapMasteries strong {
     color: #e2e8f0;
     font-size: 11px;
     letter-spacing: 0.06em;
     text-transform: uppercase;
 }
 
-.configPage :global(.analysis-progress-group) {
+.configPage .analysisProgressGroup {
     margin: 10px 0 6px;
 }
 
-.configPage :global(.analysis-progress-bar) {
+.configPage .analysisProgressBar {
     overflow: hidden;
     width: 100%;
     height: 10px;
@@ -1112,43 +1126,43 @@
     );
 }
 
-.configPage :global(.analysis-progress-fill) {
+.configPage .analysisProgressFill {
     height: 100%;
     border-radius: inherit;
     background: linear-gradient(90deg, #38bdf8 0%, #0ea5e9 55%, #0284c7 100%);
     transition: width 180ms ease-out;
 }
 
-.configPage :global(.analysis-progress-count) {
+.configPage .analysisProgressCount {
     font-variant-numeric: tabular-nums;
 }
 
-.configPage :global(.stats-map-player-line span) {
+.configPage .statsMapPlayerLine span {
     text-align: right;
 }
 
-.configPage :global(.stats-map-masteries) {
+.configPage .statsMapMasteries {
     display: grid;
     gap: 6px;
 }
 
-.configPage :global(.stats-map-mastery-row),
-.configPage :global(.stats-map-player-empty) {
+.configPage .statsMapMasteryRow,
+.configPage .statsMapPlayerEmpty {
     color: #cbd5e1;
     font-size: 12px;
     line-height: 1.35;
 }
 
-.configPage :global(.stats-map-player-empty) {
+.configPage .statsMapPlayerEmpty {
     font-style: italic;
 }
 
-.configPage :global(.stats-map-foot) {
+.configPage .statsMapFoot {
     text-align: right;
     margin-top: 8px;
 }
 
-.configPage :global(.stats-detail-empty) {
+.configPage .statsDetailEmpty {
     background: rgba(0, 0, 0, 0.16);
     border: 1px solid #68768c;
     border-radius: 8px;
@@ -1156,51 +1170,51 @@
     color: #cbd5e1;
 }
 
-.configPage :global(.main-setting-check) {
+.configPage .mainSettingCheck {
     display: flex;
     align-items: center;
     gap: 8px;
 }
 
-.configPage :global(.main-setting-check span) {
+.configPage .mainSettingCheck span {
     color: #e5e7eb;
 }
 
-.configPage :global(.main-setting-check.is-disabled) {
+.configPage .mainSettingCheck.isDisabled {
     opacity: 1;
 }
 
-.configPage :global(.main-setting-check.is-disabled span) {
+.configPage .mainSettingCheck.isDisabled span {
     color: #94a3b8;
 }
 
-.configPage :global(.hotkey-entry) {
+.configPage .hotkeyEntry {
     width: 100%;
 }
 
-.configPage :global(.hotkey-action-btn) {
+.configPage .hotkeyActionBtn {
     background: #505050;
     border: 1px solid #6f6f6f;
     min-inline-size: 0;
     inline-size: 100%;
 }
 
-.configPage :global(.hotkey-input) {
+.configPage .hotkeyInput {
     min-inline-size: 0;
     inline-size: 100%;
     max-inline-size: 100%;
 }
 
-.configPage :global(.hotkey-input.is-recording) {
+.configPage .hotkeyInput.isRecording {
     border-color: #60a5fa;
     box-shadow: 0 0 0 1px #60a5fa inset;
 }
 
-.configPage :global(.hotkeys-grid) {
+.configPage .hotkeysGrid {
     width: 100%;
 }
 
-.configPage :global(.color-row) {
+.configPage .colorRow {
     position: relative;
     display: flex;
     align-items: center;
@@ -1208,19 +1222,19 @@
     flex-wrap: wrap;
 }
 
-.configPage :global(.color-row-label) {
+.configPage .colorRowLabel {
     flex: 0 1 7em;
     color: #e5e7eb;
     font-weight: 600;
 }
 
-.configPage :global(.color-row-input) {
+.configPage .colorRowInput {
     inline-size: 4.5rem;
     min-inline-size: 4.5rem;
     flex: 0 0 auto;
 }
 
-.configPage :global(.color-row-text) {
+.configPage .colorRowText {
     width: 100%;
     min-width: 0;
     max-width: none;
@@ -1229,7 +1243,7 @@
     text-transform: uppercase;
 }
 
-.configPage :global(.color-row-input-button) {
+.configPage .colorRowInputButton {
     display: block;
     width: 100%;
     height: 42px;
@@ -1240,16 +1254,16 @@
     border-radius: 8px;
 }
 
-.configPage :global(.color-row-input-button:hover) {
+.configPage .colorRowInputButton:hover {
     background: #101a31;
 }
 
-.configPage :global(.color-row-input-button[aria-expanded="true"]) {
+.configPage .colorRowInputButton[aria-expanded="true"] {
     border-color: #60a5fa;
     box-shadow: 0 0 0 1px #60a5fa inset;
 }
 
-.configPage :global(.color-row-swatch) {
+.configPage .colorRowSwatch {
     display: block;
     width: 100%;
     height: 100%;
@@ -1258,12 +1272,12 @@
     box-shadow: none;
 }
 
-.configPage :global(.color-picker-popup[data-disabled="true"]) {
+.configPage .colorPickerPopup[data-disabled="true"] {
     opacity: 0.55;
     pointer-events: none;
 }
 
-.configPage :global(.color-picker-popup) {
+.configPage .colorPickerPopup {
     position: absolute;
     top: calc(100% + 8px);
     left: 50%;
@@ -1282,14 +1296,14 @@
     box-shadow: 0 24px 64px rgb(0 0 0 / 0.45);
 }
 
-.configPage :global(.color-wheel-picker) {
+.configPage .colorWheelPicker {
     position: relative;
     inline-size: 16rem;
     aspect-ratio: 1;
     touch-action: none;
 }
 
-.configPage :global(.color-wheel-ring) {
+.configPage .colorWheelRing {
     position: absolute;
     inset: 0;
     border-radius: 50%;
@@ -1305,7 +1319,7 @@
     cursor: crosshair;
 }
 
-.configPage :global(.color-wheel-ring::before) {
+.configPage .colorWheelRing::before {
     content: "";
     position: absolute;
     inset: 14%;
@@ -1319,7 +1333,7 @@
     box-shadow: inset 0 0 0 1px rgb(148 163 184 / 0.14);
 }
 
-.configPage :global(.color-wheel-ring-marker) {
+.configPage .colorWheelRingMarker {
     position: absolute;
     inline-size: 1rem;
     block-size: 1rem;
@@ -1332,7 +1346,7 @@
     pointer-events: none;
 }
 
-.configPage :global(.color-wheel-square) {
+.configPage .colorWheelSquare {
     position: absolute;
     inset: 24%;
     border-radius: 18px;
@@ -1344,12 +1358,12 @@
         0 12px 30px rgb(2 6 23 / 0.34);
 }
 
-.configPage :global(.color-row-popup-anchor) {
+.configPage .colorRowPopupAnchor {
     position: relative;
     flex: 0 0 auto;
 }
 
-.configPage :global(.color-wheel-square-marker) {
+.configPage .colorWheelSquareMarker {
     position: absolute;
     inline-size: 1rem;
     block-size: 1rem;
@@ -1362,32 +1376,32 @@
     pointer-events: none;
 }
 
-.configPage :global(.main-settings-content) {
+.configPage .mainSettingsContent {
     display: flex;
     flex-direction: column;
     gap: 12px;
 }
 
-.configPage :global(.main-settings-top) {
+.configPage .mainSettingsTop {
     display: grid;
     grid-template-columns: 1fr auto;
     gap: 12px;
     align-items: start;
 }
 
-.configPage :global(.main-settings-left-cols) {
+.configPage .mainSettingsLeftCols {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
     align-items: start;
 }
 
-.configPage :global(.main-settings-groups) {
+.configPage .mainSettingsGroups {
     display: grid;
     gap: 12px;
 }
 
-.configPage :global(.main-settings-group) {
+.configPage .mainSettingsGroup {
     display: grid;
     gap: 10px;
     padding: 12px;
@@ -1396,18 +1410,18 @@
     background: rgba(8, 15, 30, 0.48);
 }
 
-.configPage :global(.main-settings-group-title) {
+.configPage .mainSettingsGroupTitle {
     margin: 0;
     font-size: 15px;
     color: #93c5fd;
 }
 
-.configPage :global(.main-settings-group-fields) {
+.configPage .mainSettingsGroupFields {
     display: grid;
     gap: 8px;
 }
 
-.configPage :global(.main-settings-box) {
+.configPage .mainSettingsBox {
     display: grid;
     gap: 10px;
     padding: 12px;
@@ -1416,29 +1430,29 @@
     background: rgba(8, 15, 30, 0.48);
 }
 
-.configPage :global(.main-number-row) {
+.configPage .mainNumberRow {
     align-items: center;
 }
 
-.configPage :global(.main-select-row) {
+.configPage .mainSelectRow {
     align-items: center;
 }
 
-.configPage :global(.main-row-label) {
+.configPage .mainRowLabel {
     color: #e5e7eb;
     display: block;
     width: 100%;
 }
 
-.configPage :global(.main-settings-row-grid) {
+.configPage .mainSettingsRowGrid {
     width: 100%;
 }
 
-.configPage :global(.main-number-row input) {
+.configPage .mainNumberRow input {
     inline-size: 8ch;
 }
 
-.configPage :global(.main-range-header) {
+.configPage .mainRangeHeader {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
@@ -1446,104 +1460,104 @@
     flex-wrap: wrap;
 }
 
-.configPage :global(.main-range-value) {
+.configPage .mainRangeValue {
     color: #93c5fd;
     font-size: 13px;
     font-variant-numeric: tabular-nums;
 }
 
-.configPage :global(.main-range-input) {
+.configPage .mainRangeInput {
     inline-size: 100%;
     margin: 0;
     accent-color: #38bdf8;
 }
 
-.configPage :global(.main-range-controls) {
+.configPage .mainRangeControls {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: 10px;
 }
 
-.configPage :global(.main-range-number) {
+.configPage .mainRangeNumber {
     inline-size: 7ch;
     text-align: right;
 }
 
-.configPage :global(.main-range-note) {
+.configPage .mainRangeNote {
     margin-bottom: 0;
 }
 
-.configPage :global(.main-fixed-select) {
+.configPage .mainFixedSelect {
     inline-size: 100%;
     min-inline-size: 0;
     max-inline-size: 100%;
     flex: 1 1 12rem;
 }
 
-.configPage :global(.main-paths-title) {
+.configPage .mainPathsTitle {
     margin: 0 0 10px;
     color: #93c5fd;
 }
 
-.configPage :global(.main-path-btn) {
+.configPage .mainPathBtn {
     min-width: auto;
     width: 100%;
     text-align: left;
     justify-content: flex-start;
 }
 
-.configPage :global(.main-path-value) {
+.configPage .mainPathValue {
     font-family: "Courier New", monospace;
     font-size: 13px;
     color: #a7b5cf;
     margin-top: 4px;
 }
 
-.configPage :global(.main-panel) {
+.configPage .mainPanel {
     display: flex;
     flex-direction: column;
     gap: 10px;
     min-width: 0;
 }
 
-.configPage :global(.main-panel h3) {
+.configPage .mainPanel h3 {
     margin: 0;
 }
 
-.configPage :global(.main-settings-bottom) {
+.configPage .mainSettingsBottom {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 12px;
     align-items: start;
 }
 
-.configPage :global(.main-bottom-left),
-.configPage :global(.main-bottom-right) {
+.configPage .mainBottomLeft,
+.configPage .mainBottomRight {
     display: grid;
     gap: 8px;
 }
 
-.configPage :global(.main-bottom-left .note) {
+.configPage .mainBottomLeft .note {
     margin-bottom: 8px;
 }
 
-.configPage :global(.group-field) {
+.configPage .groupField {
     margin-top: 8px;
 }
 
-.configPage :global(.stats-commander-pane) {
+.configPage .statsCommanderPane {
     background: transparent;
     border: 0;
     padding: 0;
 }
 
-.configPage :global(.stats-commander-detail) {
+.configPage .statsCommanderDetail {
     display: grid;
     gap: 10px;
 }
 
-.configPage :global(.stats-commander-hero) {
+.configPage .statsCommanderHero {
     height: 140px;
     background-position: left center;
     background-size: cover;
@@ -1553,7 +1567,7 @@
     border: 1px solid #334155;
 }
 
-.configPage :global(.stats-commander-title) {
+.configPage .statsCommanderTitle {
     position: absolute;
     right: 16px;
     top: 50%;
@@ -1566,7 +1580,7 @@
     text-shadow: 2px 2px 2px #000;
 }
 
-.configPage :global(.stats-commander-meta) {
+.configPage .statsCommanderMeta {
     display: flex;
     gap: 18px;
     flex-wrap: wrap;
@@ -1575,22 +1589,22 @@
     line-height: 1.2;
 }
 
-.configPage :global(.stats-commander-meta span strong) {
+.configPage .statsCommanderMeta span strong {
     font-weight: 800;
 }
 
-.configPage :global(.stats-commander-bottom) {
+.configPage .statsCommanderBottom {
     display: grid;
     grid-template-columns: 1fr;
     gap: 10px;
     align-items: start;
 }
 
-.configPage :global(.stats-commander-bottom-col) {
+.configPage .statsCommanderBottomCol {
     min-width: 0;
 }
 
-.configPage :global(.stats-commander-subheading) {
+.configPage .statsCommanderSubheading {
     margin: 0 0 6px;
     color: #f8fafc;
     font-size: clamp(18px, 1.35vw, 26px);
@@ -1599,65 +1613,65 @@
     text-decoration: underline;
 }
 
-.configPage :global(.stats-commander-table td) {
+.configPage .statsCommanderTable td {
     font-size: clamp(14px, 0.95vw, 20px);
     line-height: 1.2;
     padding: 5px 8px;
 }
 
-.configPage :global(.stats-commander-table) {
+.configPage .statsCommanderTable {
     width: auto;
     max-width: none;
 }
 
-.configPage :global(.stats-commander-table-pct) {
+.configPage .statsCommanderTablePct {
     inline-size: 6ch;
     text-align: right;
     font-weight: 800;
     white-space: nowrap;
 }
 
-.configPage :global(.stats-commander-prestige-row td) {
+.configPage .statsCommanderPrestigeRow td {
     font-weight: 700;
     color: #dbeafe;
     background: rgba(30, 41, 59, 0.75);
 }
 
-.configPage :global(.stats-commander-empty-row td) {
+.configPage .statsCommanderEmptyRow td {
     padding: 5px 8px;
 }
 
-.configPage :global(.stats-commander-empty-row-cell) {
+.configPage .statsCommanderEmptyRowCell {
     min-height: 1.2em;
 }
 
-.configPage :global(.stats-commander-category-gap td) {
+.configPage .statsCommanderCategoryGap td {
     border-top: 3px solid #3b82f6;
 }
 
-.configPage :global(.stats-units-layout) {
+.configPage .statsUnitsLayout {
     display: grid;
     grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
     gap: 12px;
     align-items: start;
 }
 
-.configPage :global(.stats-unit-selectors) {
+.configPage .statsUnitSelectors {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
     align-self: start;
 }
 
-.configPage :global(.stats-unit-commanders) {
+.configPage .statsUnitCommanders {
     align-items: start;
 }
 
-.configPage :global(.stats-unit-column) {
+.configPage .statsUnitColumn {
     min-width: 0;
 }
 
-.configPage :global(.stats-unit-column h4) {
+.configPage .statsUnitColumn h4 {
     margin: 0 0 6px;
     color: #f1f5f9;
     font-size: 13px;
@@ -1665,26 +1679,26 @@
     line-height: 1.1;
 }
 
-.configPage :global(.stats-unit-picker-table) {
+.configPage .statsUnitPickerTable {
     table-layout: fixed;
 }
 
-.configPage :global(.stats-unit-picker-table tbody tr) {
+.configPage .statsUnitPickerTable tbody tr {
     cursor: pointer;
 }
 
-.configPage :global(.stats-unit-picker-table td) {
+.configPage .statsUnitPickerTable td {
     text-align: left;
     font-size: 12px;
     padding: 6px 8px;
     white-space: nowrap;
 }
 
-.configPage :global(.stats-unit-table) {
+.configPage .statsUnitTable {
     min-width: 0;
 }
 
-.configPage :global(.stats-unit-table h3) {
+.configPage .statsUnitTable h3 {
     margin: 0 0 8px;
     color: #f3f4f6;
     font-size: 40px;
@@ -1692,16 +1706,16 @@
     line-height: 1.15;
 }
 
-.configPage :global(.stats-unit-table-grid) {
+.configPage .statsUnitTableGrid {
     table-layout: fixed;
 }
 
-.configPage :global(.stats-unit-table-grid th),
-.configPage :global(.stats-unit-table-grid td) {
+.configPage .statsUnitTableGrid th,
+.configPage .statsUnitTableGrid td {
     white-space: nowrap;
 }
 
-.configPage :global(.stats-sort-btn) {
+.configPage .statsSortBtn {
     width: 100%;
     border: 0;
     border-radius: 0;
@@ -1714,72 +1728,72 @@
     cursor: pointer;
 }
 
-.configPage :global(.stats-sort-btn-right) {
+.configPage .statsSortBtnRight {
     text-align: inherit;
 }
 
-.configPage :global(.stats-unit-col-name) {
+.configPage .statsUnitColName {
     text-align: left;
 }
 
-.configPage :global(.stats-unit-col-num) {
+.configPage .statsUnitColNum {
     text-align: left;
 }
 
-.configPage :global(.stats-right-note) {
+.configPage .statsRightNote {
     margin-top: 8px;
     color: #94a3b8;
     font-size: 15px;
 }
 
-.configPage :global(.stats-sum-row td) {
+.configPage .statsSumRow td {
     color: #dbe7f8;
 }
 
-.configPage :global(.randomizer-root) {
+.configPage .randomizerRoot {
     background: #4a4a4a;
     border-color: #5f5f5f;
 }
 
-.configPage :global(.randomizer-controls) {
+.configPage .randomizerControls {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 12px 18px;
 }
 
-.configPage :global(.randomizer-range-group) {
+.configPage .randomizerRangeGroup {
     width: 100%;
 }
 
-.configPage :global(.randomizer-inline-field) {
+.configPage .randomizerInlineField {
     align-items: center;
     white-space: nowrap;
     width: 100%;
 }
 
-.configPage :global(.randomizer-select) {
+.configPage .randomizerSelect {
     min-width: 0;
     max-width: 100%;
 }
 
-.configPage :global(.randomizer-toggle) {
+.configPage .randomizerToggle {
     display: inline-flex;
     align-items: center;
     gap: 8px;
     color: #e5e7eb;
 }
 
-.configPage :global(.randomizer-number-input) {
+.configPage .randomizerNumberInput {
     min-inline-size: 6em;
     max-inline-size: 100%;
 }
 
-.configPage :global(.randomizer-choice-box) {
+.configPage .randomizerChoiceBox {
     padding: 5px;
 }
 
-.configPage :global(.randomizer-layout) {
+.configPage .randomizerLayout {
     display: grid;
     grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
     gap: 16px;
@@ -1787,7 +1801,7 @@
     margin-top: 14px;
 }
 
-.configPage :global(.randomizer-pane) {
+.configPage .randomizerPane {
     min-width: 0;
     display: grid;
     gap: 14px;
@@ -1797,16 +1811,16 @@
     background: rgba(15, 23, 42, 0.22);
 }
 
-.configPage :global(.randomizer-pane-right) {
+.configPage .randomizerPaneRight {
     min-height: 100%;
 }
 
-.configPage :global(.randomizer-choice-box h3),
-.configPage :global(.randomizer-result-box h3) {
+.configPage .randomizerChoiceBox h3,
+.configPage .randomizerResultBox h3 {
     margin: 0 0 10px;
 }
 
-.configPage :global(.randomizer-table-shell) {
+.configPage .randomizerTableShell {
     max-width: 100%;
     overflow-x: auto;
     overflow-y: visible;
@@ -1814,59 +1828,59 @@
     background: rgba(15, 23, 42, 0.32);
 }
 
-.configPage :global(.randomizer-choice-table) {
+.configPage .randomizerChoiceTable {
     border: 0;
     width: auto;
     table-layout: fixed;
 }
 
-.configPage :global(.randomizer-choice-table th) {
+.configPage .randomizerChoiceTable th {
     top: 0;
     z-index: 1;
 }
 
-.configPage :global(.randomizer-choice-table td),
-.configPage :global(.randomizer-choice-table th) {
+.configPage .randomizerChoiceTable td,
+.configPage .randomizerChoiceTable th {
     padding: 7px 8px;
 }
 
-.configPage :global(.randomizer-commander-cell) {
+.configPage .randomizerCommanderCell {
     inline-size: 10em;
     min-inline-size: 10em;
     max-inline-size: 10em;
     white-space: nowrap;
 }
 
-.configPage :global(.randomizer-checkbox-cell) {
+.configPage .randomizerCheckboxCell {
     inline-size: 3em;
     min-inline-size: 3em;
     text-align: center;
 }
 
-.configPage :global(.randomizer-checkbox-cell input) {
+.configPage .randomizerCheckboxCell input {
     inline-size: 1rem;
     block-size: 1rem;
 }
 
-.configPage :global(.randomizer-commander-toggle) {
+.configPage .randomizerCommanderToggle {
     text-align: left;
 }
 
-.configPage :global(.randomizer-header-toggle-cell) {
+.configPage .randomizerHeaderToggleCell {
     text-align: center;
 }
 
-.configPage :global(.randomizer-header-toggle) {
+.configPage .randomizerHeaderToggle {
     text-align: center;
 }
 
-.configPage :global(.randomizer-commander-toggle:focus-visible),
-.configPage :global(.randomizer-header-toggle:focus-visible) {
+.configPage .randomizerCommanderToggle:focus-visible,
+.configPage .randomizerHeaderToggle:focus-visible {
     outline: 1px solid #60a5fa;
     outline-offset: 2px;
 }
 
-.configPage :global(.randomizer-actions) {
+.configPage .randomizerActions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -1874,40 +1888,40 @@
     margin-top: 14px;
 }
 
-.configPage :global(.randomizer-actions .note) {
+.configPage .randomizerActions .note {
     margin: 0;
 }
 
-.configPage :global(.randomizer-result-box) {
+.configPage .randomizerResultBox {
     min-width: 0;
     padding: 5px;
 }
 
-.configPage :global(.randomizer-mutator-settings) {
+.configPage .randomizerMutatorSettings {
     display: grid;
     gap: 10px;
 }
 
-.configPage :global(.randomizer-result-head) {
+.configPage .randomizerResultHead {
     margin-bottom: 10px;
     font-size: 20px;
     color: #f8fafc;
 }
 
-.configPage :global(.randomizer-result-previews) {
+.configPage .randomizerResultPreviews {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 12px;
     margin-bottom: 10px;
 }
 
-.configPage :global(.randomizer-result-preview) {
+.configPage .randomizerResultPreview {
     min-height: 148px;
     border: 1px solid #334155;
     border-radius: 8px;
 }
 
-.configPage :global(.randomizer-result-preview-title) {
+.configPage .randomizerResultPreviewTitle {
     position: absolute;
     left: 14px;
     right: 14px;
@@ -1919,7 +1933,7 @@
     text-shadow: 1px 1px 2px #000;
 }
 
-.configPage :global(.randomizer-result-preview-subtitle) {
+.configPage .randomizerResultPreviewSubtitle {
     position: absolute;
     left: 14px;
     right: 14px;
@@ -1930,45 +1944,45 @@
     text-shadow: 1px 1px 2px #000;
 }
 
-.configPage :global(.randomizer-result-body) {
+.configPage .randomizerResultBody {
     min-height: 150px;
     font-family: inherit;
 }
 
-.configPage :global(.randomizer-result-row) {
+.configPage .randomizerResultRow {
     display: flex;
     gap: 12px;
     line-height: 1.5;
 }
 
-.configPage :global(.randomizer-result-row.is-zero) {
+.configPage .randomizerResultRow.isZero {
     color: #9ca3af;
 }
 
-.configPage :global(.randomizer-result-points) {
+.configPage .randomizerResultPoints {
     inline-size: 2ch;
     text-align: right;
     font-variant-numeric: tabular-nums;
 }
 
-.configPage :global(.randomizer-result-empty) {
+.configPage .randomizerResultEmpty {
     color: #94a3b8;
     font-style: italic;
 }
 
-.configPage :global(.randomizer-result-foot) {
+.configPage .randomizerResultFoot {
     margin-top: 10px;
     color: #e5e7eb;
 }
 
-.configPage :global(.randomizer-mutator-budget) {
+.configPage .randomizerMutatorBudget {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
     margin-bottom: 10px;
 }
 
-.configPage :global(.randomizer-mutator-chip) {
+.configPage .randomizerMutatorChip {
     display: inline-flex;
     align-items: center;
     min-height: 32px;
@@ -1980,13 +1994,13 @@
     font-size: 12px;
 }
 
-.configPage :global(.randomizer-mutator-grid) {
+.configPage .randomizerMutatorGrid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
 }
 
-.configPage :global(.randomizer-mutator-card) {
+.configPage .randomizerMutatorCard {
     display: grid;
     grid-template-columns: 4.25rem minmax(0, 1fr);
     gap: 12px;
@@ -1997,7 +2011,7 @@
     background: rgba(15, 23, 42, 0.72);
 }
 
-.configPage :global(.randomizer-mutator-icon) {
+.configPage .randomizerMutatorIcon {
     inline-size: 4.25rem;
     block-size: 4.25rem;
     object-fit: contain;
@@ -2007,53 +2021,53 @@
     padding: 6px;
 }
 
-.configPage :global(.randomizer-mutator-copy) {
+.configPage .randomizerMutatorCopy {
     min-width: 0;
 }
 
-.configPage :global(.randomizer-mutator-card-head) {
+.configPage .randomizerMutatorCardHead {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
     gap: 12px;
 }
 
-.configPage :global(.randomizer-mutator-name) {
+.configPage .randomizerMutatorName {
     margin: 0 0 6px;
     color: #f8fafc;
     font-size: 16px;
     line-height: 1.2;
 }
 
-.configPage :global(.randomizer-mutator-points) {
+.configPage .randomizerMutatorPoints {
     color: #93c5fd;
     font-size: 12px;
     font-weight: 700;
     white-space: nowrap;
 }
 
-.configPage :global(.randomizer-mutator-description) {
+.configPage .randomizerMutatorDescription {
     margin: 0;
     color: #cbd5e1;
     font-size: 13px;
     line-height: 1.45;
 }
 
-.configPage :global(.performance-tab-card) {
+.configPage .performanceTabCard {
     inline-size: 100%;
     background: #3c3c3c;
     border-color: #4d4d4d;
     padding: 24px 26px;
 }
 
-.configPage :global(.performance-tab-copy h3),
-.configPage :global(.performance-tab-hotkey-block h3) {
+.configPage .performanceTabCopy h3,
+.configPage .performanceTabHotkeyBlock h3 {
     margin: 0 0 8px;
     color: #f8fafc;
     font-size: 21px;
 }
 
-.configPage :global(.performance-tab-copy p) {
+.configPage .performanceTabCopy p {
     margin: 0 0 18px;
     max-inline-size: 100%;
     color: #f5f5f5;
@@ -2061,7 +2075,7 @@
     line-height: 1.35;
 }
 
-.configPage :global(.performance-tab-check) {
+.configPage .performanceTabCheck {
     display: inline-flex;
     align-items: center;
     gap: 12px;
@@ -2070,46 +2084,46 @@
     font-size: 18px;
 }
 
-.configPage :global(.performance-tab-position-btn) {
+.configPage .performanceTabPositionBtn {
     display: block;
     margin-top: 18px;
     inline-size: 100%;
 }
 
-.configPage :global(.performance-tab-hotkey-block) {
+.configPage .performanceTabHotkeyBlock {
     margin-top: 3rem;
 }
 
-.configPage :global(.performance-tab-hotkey-row) {
+.configPage .performanceTabHotkeyRow {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 16px;
 }
 
-.configPage :global(.performance-tab-hotkey-row .input) {
+.configPage .performanceTabHotkeyRow .input {
     min-width: 0;
     max-width: 100%;
     background: #1a1a1a;
 }
 
-.configPage :global(.performance-tab-hotkey-row button) {
+.configPage .performanceTabHotkeyRow button {
     min-inline-size: 10em;
     background: linear-gradient(180deg, #656565 0%, #4a4a4a 100%);
     border: 1px solid #808080;
 }
 
-.configPage :global(.performance-tab-processes) {
+.configPage .performanceTabProcesses {
     margin: 18px 0 0;
     color: #d1d5db;
     font-size: 14px;
 }
 
-.configPage :global(.performance-tab-process-block) {
+.configPage .performanceTabProcessBlock {
     margin-top: 28px;
 }
 
-.configPage :global(.performance-tab-process-copy) {
+.configPage .performanceTabProcessCopy {
     margin: 0 0 12px;
     max-inline-size: 100%;
     color: #d1d5db;
@@ -2117,14 +2131,14 @@
     line-height: 1.45;
 }
 
-.configPage :global(.performance-tab-process-row) {
+.configPage .performanceTabProcessRow {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-start;
     gap: 16px;
 }
 
-.configPage :global(.performance-tab-process-input) {
+.configPage .performanceTabProcessInput {
     min-width: 0;
     max-width: 100%;
     min-height: 92px;
@@ -2137,52 +2151,52 @@
     color: var(--config-page-text);
 }
 
-.configPage.configPage :global(.tabs) {
+.configPage.configPage .tabs {
     border-bottom-color: var(--config-border);
 }
 
-.configPage.configPage :global(.tab-btn) {
+.configPage.configPage .tabBtn {
     background: var(--config-tab-bg);
     border-color: var(--config-border);
     color: var(--config-tab-text);
 }
 
-.configPage.configPage :global(.tab-btn:hover) {
+.configPage.configPage .tabBtn:hover {
     background: var(--config-tab-hover-bg);
     color: var(--config-tab-hover-text);
 }
 
-.configPage.configPage :global(.tab-btn.is-active) {
+.configPage.configPage .tabBtn.isActive {
     background: var(--config-tab-active-bg);
     color: var(--config-tab-active-text);
     box-shadow: inset 0 1px 0 var(--config-accent-main);
 }
 
-.configPage.configPage :global(.subtle),
-.configPage.configPage :global(.note),
-.configPage.configPage :global(.games-mutator-empty),
-.configPage.configPage :global(.players-handle-count),
-.configPage.configPage :global(.chat-modal-meta),
-.configPage.configPage :global(.randomizer-result-empty),
-.configPage.configPage :global(.stats-right-note),
-.configPage.configPage :global(.main-path-value) {
+.configPage.configPage .subtle,
+.configPage.configPage .note,
+.configPage.configPage .gamesMutatorEmpty,
+.configPage.configPage .playersHandleCount,
+.configPage.configPage .chatModalMeta,
+.configPage.configPage .randomizerResultEmpty,
+.configPage.configPage .statsRightNote,
+.configPage.configPage .mainPathValue {
     color: var(--config-muted-text);
 }
 
-.configPage.configPage :global(.link-list a),
-.configPage.configPage :global(.section-title),
-.configPage.configPage :global(.weeklies-map),
-.configPage.configPage :global(.main-settings-group-title),
-.configPage.configPage :global(.main-paths-title),
-.configPage.configPage :global(.chat-time) {
+.configPage.configPage .linkList a,
+.configPage.configPage .sectionTitle,
+.configPage.configPage .weekliesMap,
+.configPage.configPage .mainSettingsGroupTitle,
+.configPage.configPage .mainPathsTitle,
+.configPage.configPage .chatTime {
     color: var(--config-link-text);
 }
 
-.configPage.configPage :global(.link-list a:hover) {
+.configPage.configPage .linkList a:hover {
     color: var(--config-link-hover-text);
 }
 
-.configPage.configPage :global(.status) {
+.configPage.configPage .status {
     background: var(--config-surface);
     border-color: var(--config-border);
     color: var(--config-page-text);
@@ -2190,12 +2204,12 @@
 }
 
 @media (max-width: 900px) {
-    .configPage :global(.config-header) {
+    .configPage .configHeader {
         min-block-size: 0;
         padding-right: 0;
     }
 
-    .configPage :global(.status) {
+    .configPage .status {
         position: static;
         inline-size: 100%;
         margin-bottom: 10px;
@@ -2203,221 +2217,224 @@
     }
 }
 
-.configPage.configPage :global(.card),
-.configPage.configPage :global(.main-settings-group),
-.configPage.configPage :global(.main-settings-box),
-.configPage.configPage :global(.weeklies-detail-card),
-.configPage.configPage :global(.weeklies-mutator-card),
-.configPage.configPage :global(.randomizer-mutator-card),
-.configPage.configPage :global(.randomizer-pane),
-.configPage.configPage :global(.chat-row),
-.configPage.configPage :global(.chat-modal),
-.configPage.configPage :global(.performance-tab-card),
-.configPage.configPage :global(.games-panel),
-.configPage.configPage :global(.stats-root),
-.configPage.configPage :global(.randomizer-root) {
+.configPage.configPage .card,
+.configPage.configPage .mainSettingsGroup,
+.configPage.configPage .mainSettingsBox,
+.configPage.configPage .weekliesDetailCard,
+.configPage.configPage .weekliesMutatorCard,
+.configPage.configPage .randomizerMutatorCard,
+.configPage.configPage .randomizerPane,
+.configPage.configPage .chatRow,
+.configPage.configPage .chatModal,
+.configPage.configPage .performanceTabCard,
+.configPage.configPage .gamesPanel,
+.configPage.configPage .statsRoot,
+.configPage.configPage .randomizerRoot {
     background: var(--config-surface);
     border-color: var(--config-border);
     box-shadow: var(--config-shadow);
 }
 
-.configPage.configPage :global(.field),
-.configPage.configPage :global(.chat-modal-header),
-.configPage.configPage :global(.stats-subtabs) {
+.configPage.configPage .field,
+.configPage.configPage .chatModalHeader,
+.configPage.configPage .statsSubtabs {
     border-bottom-color: var(--config-border);
 }
 
-.configPage.configPage :global(.field-label),
-.configPage.configPage :global(.games-filter-check),
-.configPage.configPage :global(.chat-player),
-.configPage.configPage :global(.chat-text),
-.configPage.configPage :global(.randomizer-toggle),
-.configPage.configPage :global(.color-row-label),
-.configPage.configPage :global(.main-row-label),
-.configPage.configPage :global(.performance-tab-check),
-.configPage.configPage :global(.performance-tab-copy p),
-.configPage.configPage :global(.performance-tab-processes),
-.configPage.configPage :global(.performance-tab-process-copy),
-.configPage.configPage :global(.stats-map-player-line span),
-.configPage.configPage :global(.stats-map-masteries),
-.configPage.configPage :global(.stats-map-player-empty),
-.configPage.configPage :global(.randomizer-result-foot),
-.configPage.configPage :global(.weeklies-detail-title),
-.configPage.configPage :global(.weeklies-mutator-name),
-.configPage.configPage :global(.randomizer-mutator-name),
-.configPage.configPage :global(.stats-commander-meta),
-.configPage.configPage :global(.stats-commander-subheading),
-.configPage.configPage :global(.randomizer-result-head),
-.configPage.configPage :global(.performance-tab-copy h3),
-.configPage.configPage :global(.performance-tab-hotkey-block h3),
-.configPage.configPage :global(.stats-unit-table h3),
-.configPage.configPage :global(.main-setting-check span) {
+.configPage.configPage .fieldLabel,
+.configPage.configPage .gamesFilterCheck,
+.configPage.configPage .chatPlayer,
+.configPage.configPage .chatText,
+.configPage.configPage .randomizerToggle,
+.configPage.configPage .colorRowLabel,
+.configPage.configPage .mainRowLabel,
+.configPage.configPage .performanceTabCheck,
+.configPage.configPage .performanceTabCopy p,
+.configPage.configPage .performanceTabProcesses,
+.configPage.configPage .performanceTabProcessCopy,
+.configPage.configPage .statsMapPlayerLine span,
+.configPage.configPage .statsMapMasteries,
+.configPage.configPage .statsMapPlayerEmpty,
+.configPage.configPage .randomizerResultFoot,
+.configPage.configPage .weekliesDetailTitle,
+.configPage.configPage .weekliesMutatorName,
+.configPage.configPage .randomizerMutatorName,
+.configPage.configPage .statsCommanderMeta,
+.configPage.configPage .statsCommanderSubheading,
+.configPage.configPage .randomizerResultHead,
+.configPage.configPage .performanceTabCopy h3,
+.configPage.configPage .performanceTabHotkeyBlock h3,
+.configPage.configPage .statsUnitTable h3,
+.configPage.configPage .mainSettingCheck span {
     color: var(--config-page-text);
 }
 
-.configPage.configPage :global(.input),
-.configPage.configPage :global(textarea.input),
-.configPage.configPage :global(.stats-block),
-.configPage.configPage :global(.color-row-input-button),
-.configPage.configPage :global(.performance-tab-hotkey-row .input) {
+.configPage.configPage .input,
+.configPage.configPage textarea.input,
+.configPage.configPage .statsBlock,
+.configPage.configPage .colorRowInputButton,
+.configPage.configPage .performanceTabHotkeyRow .input {
     background: var(--config-input-bg);
     border-color: var(--config-border-strong);
     color: var(--config-page-text);
 }
 
-.configPage.configPage :global(.color-row-input-button:hover) {
+.configPage.configPage .colorRowInputButton:hover {
     background: var(--config-input-hover-bg);
 }
 
-.configPage.configPage :global(.data-table),
-.configPage.configPage :global(.data-table th),
-.configPage.configPage :global(.data-table td),
-.configPage.configPage :global(.randomizer-table-shell),
-.configPage.configPage :global(.randomizer-mutator-card),
-.configPage.configPage :global(.games-icon-btn),
-.configPage.configPage :global(.games-row-btn),
-.configPage.configPage :global(.stats-pane-right),
-.configPage.configPage :global(.stats-commander-hero),
-.configPage.configPage :global(.randomizer-result-preview),
-.configPage.configPage :global([class$="-chip"]),
-.configPage.configPage :global([class$="-pill"]) {
+.configPage.configPage .dataTable,
+.configPage.configPage .dataTable th,
+.configPage.configPage .dataTable td,
+.configPage.configPage .randomizerTableShell,
+.configPage.configPage .randomizerMutatorCard,
+.configPage.configPage .gamesIconBtn,
+.configPage.configPage .gamesRowBtn,
+.configPage.configPage .statsPaneRight,
+.configPage.configPage .statsCommanderHero,
+.configPage.configPage .randomizerResultPreview,
+.configPage.configPage .weekliesCurrentPill,
+.configPage.configPage .weekliesStatChip,
+.configPage.configPage .playersHandleChip,
+.configPage.configPage .randomizerMutatorChip {
     border-color: var(--config-border);
 }
 
-.configPage.configPage :global(.data-table th) {
+.configPage.configPage .dataTable th {
     background: var(--config-table-header-bg);
 }
 
-.configPage.configPage :global(.table-pagination-summary),
-.configPage.configPage :global(.games-filter-label),
-.configPage.configPage :global(.chat-empty),
-.configPage.configPage :global(.stats-unit-column h4),
-.configPage.configPage :global(.weeklies-mutator-description),
-.configPage.configPage :global(.randomizer-mutator-description) {
+.configPage.configPage .tablePaginationSummary,
+.configPage.configPage .gamesFilterLabel,
+.configPage.configPage .chatEmpty,
+.configPage.configPage .statsUnitColumn h4,
+.configPage.configPage .weekliesMutatorDescription,
+.configPage.configPage .randomizerMutatorDescription {
     color: var(--config-subtle-strong);
 }
 
-.configPage.configPage :global(.stats-detail-empty),
-.configPage.configPage :global(.randomizer-result-empty) {
+.configPage.configPage .statsDetailEmpty,
+.configPage.configPage .randomizerResultEmpty {
     background: var(--config-empty-bg);
     border: 1px solid var(--config-border);
     color: var(--config-empty-text);
 }
 
-.configPage.configPage :global(.data-table tbody tr:hover),
-.configPage.configPage :global(.players-summary-row.is-expanded) {
+.configPage.configPage .dataTable tbody tr:hover,
+.configPage.configPage .playersSummaryRow.isExpanded {
     background: var(--config-accent-soft);
 }
 
-.configPage.configPage :global(.data-table tr.selected-row) {
+.configPage.configPage .dataTable tr.selectedRow {
     background: var(--config-accent-soft-strong);
 }
 
-.configPage.configPage :global(.button-normal) {
+.configPage.configPage .buttonNormal {
     background: var(--config-button-bg);
     color: var(--config-button-text);
 }
 
-.configPage.configPage :global(.button-normal:disabled) {
+.configPage.configPage .buttonNormal:disabled {
     background: var(--config-button-disabled-bg);
 }
 
-.configPage.configPage :global(.data-table .table-sort-btn),
-.configPage.configPage :global(.data-table .stats-sort-btn),
-.configPage.configPage :global(.data-table .button-randomizer-table) {
+.configPage.configPage .dataTable .tableSortBtn,
+.configPage.configPage .dataTable .statsSortBtn,
+.configPage.configPage .dataTable .buttonRandomizerTable {
     background: transparent;
     border: 0;
     color: inherit;
     box-shadow: none;
 }
 
-.configPage.configPage :global(.mini-btn),
-.configPage.configPage :global(.table-pagination-btn:not(.button-normal)),
-.configPage.configPage :global(.games-icon-btn:not(.button-normal)),
-.configPage.configPage :global(.games-row-btn:not(.button-normal)),
-.configPage.configPage :global(.players-expander-btn),
-.configPage.configPage :global(.button-tab),
-.configPage.configPage
-    :global(.performance-tab-position-btn:not(.button-normal)),
-.configPage.configPage :global(.performance-tab-hotkey-row button) {
+.configPage.configPage .miniBtn,
+.configPage.configPage .tablePaginationBtn:not(.buttonNormal),
+.configPage.configPage .gamesIconBtn:not(.buttonNormal),
+.configPage.configPage .gamesRowBtn:not(.buttonNormal),
+.configPage.configPage .playersExpanderBtn,
+.configPage.configPage .buttonTab,
+.configPage.configPage .performanceTabPositionBtn:not(.buttonNormal),
+.configPage.configPage .performanceTabHotkeyRow button {
     background: var(--config-button-neutral-bg);
     color: var(--config-button-neutral-text);
     border: 1px solid var(--config-border);
 }
 
-.configPage.configPage :global(.mini-btn.is-active),
-.configPage.configPage :global(.button-tab.is-active) {
+.configPage.configPage .miniBtn.isActive,
+.configPage.configPage .buttonTab.isActive {
     background: var(--config-button-selected-bg);
     color: var(--config-button-selected-text);
 }
 
-.configPage.configPage :global(.selection-preview) {
+.configPage.configPage .selectionPreview {
     background: var(--config-preview-bg);
 }
 
-.configPage.configPage :global(.chat-modal-backdrop) {
+.configPage.configPage .chatModalBackdrop {
     background: var(--config-modal-backdrop);
 }
 
-.configPage.configPage :global([class$="-chip"]),
-.configPage.configPage :global([class$="-pill"]) {
+.configPage.configPage .weekliesCurrentPill,
+.configPage.configPage .weekliesStatChip,
+.configPage.configPage .playersHandleChip,
+.configPage.configPage .randomizerMutatorChip {
     background: var(--config-chip-bg);
     color: var(--config-chip-text);
 }
 
-.configPage.configPage :global(.weeklies-current-pill) {
+.configPage.configPage .weekliesCurrentPill {
     background: var(--config-accent-soft);
     border-color: var(--config-accent-border);
     color: var(--config-link-text);
 }
 
-.configPage.configPage :global(.players-expander-btn) {
+.configPage.configPage .playersExpanderBtn {
     background: var(--config-chip-bg);
 }
 
-.configPage.configPage :global(.players-expander-btn:hover) {
+.configPage.configPage .playersExpanderBtn:hover {
     background: var(--config-accent-soft);
     border-color: var(--config-accent-border);
 }
 
-.configPage.configPage :global(.players-detail-cell),
-.configPage.configPage :global(.stats-pane-right),
-.configPage.configPage :global(.randomizer-table-shell),
-.configPage.configPage :global(.main-settings-group),
-.configPage.configPage :global(.main-settings-box) {
+.configPage.configPage .playersDetailCell,
+.configPage.configPage .statsPaneRight,
+.configPage.configPage .randomizerTableShell,
+.configPage.configPage .mainSettingsGroup,
+.configPage.configPage .mainSettingsBox {
     background: var(--config-surface-soft);
 }
 
-.configPage.configPage :global(.randomizer-choice-table td),
-.configPage.configPage :global(.randomizer-choice-table th) {
+.configPage.configPage .randomizerChoiceTable td,
+.configPage.configPage .randomizerChoiceTable th {
     color: var(--config-page-text);
     background: transparent;
 }
 
-.configPage.configPage :global(.button-randomizer-table) {
+.configPage.configPage .buttonRandomizerTable {
     background: transparent;
     border: 0;
     color: var(--config-page-text);
     box-shadow: none;
 }
 
-.configPage.configPage :global(.stats-commander-prestige-row td) {
+.configPage.configPage .statsCommanderPrestigeRow td {
     color: var(--config-link-text);
     background: var(--config-accent-selected-bg);
 }
 
-.configPage.configPage :global(.stats-commander-category-gap td) {
+.configPage.configPage .statsCommanderCategoryGap td {
     border-top-color: var(--config-accent-main);
 }
 
-.configPage.configPage :global(.stats-sum-row td) {
+.configPage.configPage .statsSumRow td {
     color: var(--config-page-text);
 }
 
-.configPage.configPage :global(.main-setting-check.is-disabled) {
+.configPage.configPage .mainSettingCheck.isDisabled {
     opacity: 1;
 }
 
-.configPage.configPage :global(.main-setting-check.is-disabled span) {
+.configPage.configPage .mainSettingCheck.isDisabled span {
     color: var(--config-disabled-text);
 }

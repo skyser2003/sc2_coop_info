@@ -218,17 +218,12 @@ test("performance config tab matches the legacy control layout", async ({
         page.getByRole("button", { name: "Change overlay position" }),
     ).toBeVisible();
     await expect(page.locator('input[value="Ctrl+Alt+P"]')).toBeVisible();
-    await expect(page.locator(".performance-tab-process-input")).toHaveValue(
-        "SC2_x64.exe\nSC2.exe",
-    );
+    const processInput = page.getByPlaceholder("SC2_x64.exe\nSC2.exe");
+    await expect(processInput).toHaveValue("SC2_x64.exe\nSC2.exe");
 
-    await page
-        .locator(".performance-tab-process-input")
-        .fill("foo.exe\nbar.exe");
+    await processInput.fill("foo.exe\nbar.exe");
 
-    await expect(page.locator(".performance-tab-process-input")).toHaveValue(
-        "foo.exe\nbar.exe",
-    );
+    await expect(processInput).toHaveValue("foo.exe\nbar.exe");
     await expect
         .poll(() =>
             page.evaluate(() => {

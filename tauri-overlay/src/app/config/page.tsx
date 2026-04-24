@@ -15,6 +15,16 @@ export default function ConfigPage({ onThemeModeChange }: ConfigPageProps) {
     const [isDev, setIsDev] = useState<boolean>(false);
 
     useEffect(() => {
+        const body = document.body;
+        const previousOverflowY = body.style.overflowY;
+        body.style.overflowY = "scroll";
+
+        return () => {
+            body.style.overflowY = previousOverflowY;
+        };
+    }, []);
+
+    useEffect(() => {
         app.getVersion().then((version) => {
             setAppVersion(`${version}`);
         });

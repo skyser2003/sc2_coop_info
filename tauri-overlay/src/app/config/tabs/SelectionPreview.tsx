@@ -1,4 +1,5 @@
 import * as React from "react";
+import styles from "../page.module.css";
 
 type SelectionPreviewProps = {
     assetUrl: string;
@@ -9,12 +10,6 @@ type SelectionPreviewProps = {
     titleClassName?: string;
     subtitleClassName?: string;
 };
-
-function joinClassNames(...values: Array<string | undefined>): string {
-    return values
-        .filter((value) => typeof value === "string" && value !== "")
-        .join(" ");
-}
 
 export default function SelectionPreview({
     assetUrl,
@@ -35,39 +30,44 @@ export default function SelectionPreview({
 
     return (
         <div
-            className={joinClassNames(
-                "selection-preview",
-                `selection-preview-${kind}`,
-                assetFailed ? "is-fallback" : undefined,
+            className={[
+                styles.selectionPreview,
+                kind === "map"
+                    ? styles.selectionPreviewMap
+                    : styles.selectionPreviewCommander,
+                assetFailed ? styles.isFallback : "",
                 className,
-            )}
+            ]
+                .filter(Boolean)
+                .join(" ")}
         >
             {!assetFailed ? (
                 <img
-                    className="selection-preview-media"
+                    className={styles.selectionPreviewMedia}
                     src={assetUrl}
                     alt={title}
                     loading="lazy"
                     onError={() => setAssetFailed(true)}
                 />
             ) : null}
-            <div className="selection-preview-scrim" />
+            <div className={styles.selectionPreviewScrim} />
             {title !== "" ? (
                 <div
-                    className={joinClassNames(
-                        "selection-preview-title",
-                        titleClassName,
-                    )}
+                    className={[styles.selectionPreviewTitle, titleClassName]
+                        .filter(Boolean)
+                        .join(" ")}
                 >
                     {title}
                 </div>
             ) : null}
             {subtitle ? (
                 <div
-                    className={joinClassNames(
-                        "selection-preview-subtitle",
+                    className={[
+                        styles.selectionPreviewSubtitle,
                         subtitleClassName,
-                    )}
+                    ]
+                        .filter(Boolean)
+                        .join(" ")}
                 >
                     {subtitle}
                 </div>

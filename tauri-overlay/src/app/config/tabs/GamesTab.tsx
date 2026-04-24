@@ -6,6 +6,7 @@ import type {
     UiMutatorRow,
 } from "../../../bindings/overlay";
 import type { LanguageManager } from "../../i18n/languageManager";
+import styles from "../page.module.css";
 import {
     nextSortState,
     sortIndicator,
@@ -516,13 +517,19 @@ export default function GamesTab({
     ];
 
     return (
-        <div className="tab-content">
-            <section className="card group games-panel">
-                <div className="games-toolbar">
+        <div className={styles.tabContent}>
+            <section
+                className={[styles.card, styles.group, styles.gamesPanel]
+                    .filter(Boolean)
+                    .join(" ")}
+            >
+                <div className={styles.gamesToolbar}>
                     <h3>{t("ui_tab_games")}</h3>
-                    <div className="games-toolbar-actions">
+                    <div className={styles.gamesToolbarActions}>
                         <input
-                            className="input games-search"
+                            className={[styles.input, styles.gamesSearch]
+                                .filter(Boolean)
+                                .join(" ")}
                             type="text"
                             value={state.searchText || ""}
                             placeholder={t("ui_games_search")}
@@ -532,7 +539,12 @@ export default function GamesTab({
                         />
                         <button
                             type="button"
-                            className="games-icon-btn button-normal"
+                            className={[
+                                styles.gamesIconBtn,
+                                styles.buttonNormal,
+                            ]
+                                .filter(Boolean)
+                                .join(" ")}
                             onClick={state.refresh}
                             disabled={state.isBusy}
                             title={t("ui_common_refresh")}
@@ -541,9 +553,9 @@ export default function GamesTab({
                         </button>
                     </div>
                 </div>
-                <div className="games-filters">
-                    <div className="games-filter-group">
-                        <span className="games-filter-label">
+                <div className={styles.gamesFilters}>
+                    <div className={styles.gamesFilterGroup}>
+                        <span className={styles.gamesFilterLabel}>
                             {t("ui_games_filter_difficulty")}
                         </span>
                         {(
@@ -560,7 +572,10 @@ export default function GamesTab({
                                 ["BrutalPlus6", "difficulty_brutal_plus_6"],
                             ] as const
                         ).map(([key, labelId]) => (
-                            <label key={key} className="games-filter-check">
+                            <label
+                                key={key}
+                                className={styles.gamesFilterCheck}
+                            >
                                 <input
                                     type="checkbox"
                                     checked={difficultyFilters[key]}
@@ -575,11 +590,11 @@ export default function GamesTab({
                             </label>
                         ))}
                     </div>
-                    <div className="games-filter-group">
-                        <span className="games-filter-label">
+                    <div className={styles.gamesFilterGroup}>
+                        <span className={styles.gamesFilterLabel}>
                             {t("ui_games_filter_mode")}
                         </span>
-                        <label className="games-filter-check">
+                        <label className={styles.gamesFilterCheck}>
                             <input
                                 type="checkbox"
                                 checked={includeNormalGames}
@@ -589,7 +604,7 @@ export default function GamesTab({
                             />
                             <span>{t("ui_stats_normal_games")}</span>
                         </label>
-                        <label className="games-filter-check">
+                        <label className={styles.gamesFilterCheck}>
                             <input
                                 type="checkbox"
                                 checked={includeMutationGames}
@@ -609,15 +624,19 @@ export default function GamesTab({
                     totalRows={totalRowsForPagination}
                     hideWhenSinglePage={false}
                 />
-                <div className="table-wrap" style={{ marginTop: "20px" }}>
-                    <table className="data-table games-table">
+                <div className={styles.tableWrap} style={{ marginTop: "20px" }}>
+                    <table
+                        className={[styles.dataTable, styles.gamesTable]
+                            .filter(Boolean)
+                            .join(" ")}
+                    >
                         <thead>
                             <tr>
                                 {columns.map((column) => (
                                     <th key={`games-header-${column.key}`}>
                                         <button
                                             type="button"
-                                            className="table-sort-btn"
+                                            className={styles.tableSortBtn}
                                             onClick={() =>
                                                 setSortState((current) =>
                                                     nextSortState(
@@ -636,7 +655,10 @@ export default function GamesTab({
                         <tbody>
                             {sorted.length === 0 ? (
                                 <tr>
-                                    <td colSpan={10} className="empty-cell">
+                                    <td
+                                        colSpan={10}
+                                        className={styles.emptyCell}
+                                    >
                                         {data.length === 0
                                             ? t("ui_games_empty")
                                             : t("ui_games_empty_filtered")}
@@ -672,7 +694,7 @@ export default function GamesTab({
                                             className={
                                                 file ===
                                                 state.selectedReplayFile
-                                                    ? "selected-row"
+                                                    ? styles.selectedRow
                                                     : ""
                                             }
                                             onClick={() =>
@@ -691,10 +713,18 @@ export default function GamesTab({
                                                     row.result,
                                                 )}
                                             </td>
-                                            <td className="games-player-cell">
+                                            <td
+                                                className={
+                                                    styles.gamesPlayerCell
+                                                }
+                                            >
                                                 {p1Label}
                                             </td>
-                                            <td className="games-player-cell">
+                                            <td
+                                                className={
+                                                    styles.gamesPlayerCell
+                                                }
+                                            >
                                                 {p2Label}
                                             </td>
                                             <td>
@@ -716,10 +746,18 @@ export default function GamesTab({
                                                 )}
                                             </td>
                                             <td>
-                                                <div className="games-mutator-list">
+                                                <div
+                                                    className={
+                                                        styles.gamesMutatorList
+                                                    }
+                                                >
                                                     {rowMutators.length ===
                                                     0 ? (
-                                                        <span className="games-mutator-empty">
+                                                        <span
+                                                            className={
+                                                                styles.gamesMutatorEmpty
+                                                            }
+                                                        >
                                                             -
                                                         </span>
                                                     ) : (
@@ -757,7 +795,9 @@ export default function GamesTab({
                                                                 return (
                                                                     <img
                                                                         key={`${asTableValue(mutator.id || mutator.name)}-${mutatorIndex}`}
-                                                                        className="games-mutator-icon"
+                                                                        className={
+                                                                            styles.gamesMutatorIcon
+                                                                        }
                                                                         src={mutatorIconPath(
                                                                             iconName,
                                                                         )}
@@ -777,10 +817,19 @@ export default function GamesTab({
                                             <td>
                                                 {formatReplayTime(row.date)}
                                             </td>
-                                            <td className="games-actions-cell">
+                                            <td
+                                                className={
+                                                    styles.gamesActionsCell
+                                                }
+                                            >
                                                 <button
                                                     type="button"
-                                                    className="games-row-btn button-normal"
+                                                    className={[
+                                                        styles.gamesRowBtn,
+                                                        styles.buttonNormal,
+                                                    ]
+                                                        .filter(Boolean)
+                                                        .join(" ")}
                                                     disabled={!file}
                                                     onClick={(event) => {
                                                         event.stopPropagation();
@@ -793,7 +842,12 @@ export default function GamesTab({
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    className="games-row-btn button-normal"
+                                                    className={[
+                                                        styles.gamesRowBtn,
+                                                        styles.buttonNormal,
+                                                    ]
+                                                        .filter(Boolean)
+                                                        .join(" ")}
                                                     disabled={!file}
                                                     onClick={(event) => {
                                                         event.stopPropagation();
@@ -806,7 +860,12 @@ export default function GamesTab({
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    className="games-row-btn button-normal"
+                                                    className={[
+                                                        styles.gamesRowBtn,
+                                                        styles.buttonNormal,
+                                                    ]
+                                                        .filter(Boolean)
+                                                        .join(" ")}
                                                     disabled={!file}
                                                     onClick={(event) => {
                                                         event.stopPropagation();
@@ -832,23 +891,23 @@ export default function GamesTab({
             </section>
             {chatModalOpen ? (
                 <div
-                    className="chat-modal-backdrop"
+                    className={styles.chatModalBackdrop}
                     onClick={closeChatModal}
                     role="presentation"
                 >
                     <div
-                        className="chat-modal"
+                        className={styles.chatModal}
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="chat-modal-title"
                         onClick={(event) => event.stopPropagation()}
                     >
-                        <div className="chat-modal-header">
-                            <div className="chat-modal-heading">
+                        <div className={styles.chatModalHeader}>
+                            <div className={styles.chatModalHeading}>
                                 <h3 id="chat-modal-title">
                                     {t("ui_games_chat_title")}
                                 </h3>
-                                <p className="chat-modal-meta">
+                                <p className={styles.chatModalMeta}>
                                     {chatPayload
                                         ? `${asTableValue(chatPayload.map) || t("ui_games_unknown_map")} | ${asTableValue(chatPayload.result) || t("ui_games_unknown_result")} | ${formatReplayTime(chatPayload.date)}`
                                         : t("ui_games_chat_loading")}
@@ -856,45 +915,59 @@ export default function GamesTab({
                             </div>
                             <button
                                 type="button"
-                                className="games-row-btn chat-modal-close button-normal"
+                                className={[
+                                    styles.gamesRowBtn,
+                                    styles.chatModalClose,
+                                    styles.buttonNormal,
+                                ]
+                                    .filter(Boolean)
+                                    .join(" ")}
                                 onClick={closeChatModal}
                             >
                                 {t("ui_common_close")}
                             </button>
                         </div>
-                        <div className="chat-modal-body">
+                        <div className={styles.chatModalBody}>
                             {chatLoading ? (
-                                <p className="chat-empty">
+                                <p className={styles.chatEmpty}>
                                     {t("ui_common_loading")}
                                 </p>
                             ) : chatError ? (
-                                <p className="chat-empty">{chatError}</p>
+                                <p className={styles.chatEmpty}>{chatError}</p>
                             ) : !chatPayload ||
                               !Array.isArray(chatPayload.messages) ||
                               chatPayload.messages.length === 0 ? (
-                                <p className="chat-empty">
+                                <p className={styles.chatEmpty}>
                                     {t("ui_games_chat_no_messages")}
                                 </p>
                             ) : (
-                                <div className="chat-log">
+                                <div className={styles.chatLog}>
                                     {chatPayload.messages.map(
                                         (message, index) => (
                                             <div
                                                 key={`chat-line-${index}-${asTableValue(message.time)}`}
-                                                className="chat-row"
+                                                className={styles.chatRow}
                                             >
-                                                <span className="chat-time">
+                                                <span
+                                                    className={styles.chatTime}
+                                                >
                                                     {formatChatTime(
                                                         message.time,
                                                     )}
                                                 </span>
-                                                <span className="chat-player">
+                                                <span
+                                                    className={
+                                                        styles.chatPlayer
+                                                    }
+                                                >
                                                     {chatPlayerLabel(
                                                         chatPayload,
                                                         message.player,
                                                     )}
                                                 </span>
-                                                <span className="chat-text">
+                                                <span
+                                                    className={styles.chatText}
+                                                >
                                                     {asTableValue(
                                                         message.text,
                                                     ) || "-"}

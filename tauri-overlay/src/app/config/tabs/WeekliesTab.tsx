@@ -2,6 +2,7 @@ import * as React from "react";
 import type { UiMutatorRow, WeeklyRowPayload } from "../../../bindings/overlay";
 import type { LanguageManager } from "../../i18n/languageManager";
 import type { DisplayValue } from "../types";
+import styles from "../page.module.css";
 import {
     nextSortState,
     sortIndicator,
@@ -205,14 +206,23 @@ export default function WeekliesTab({
     ];
 
     return (
-        <div className="tab-content">
-            <section className="card group games-panel">
-                <div className="games-toolbar">
+        <div className={styles.tabContent}>
+            <section
+                className={[styles.card, styles.group, styles.gamesPanel]
+                    .filter(Boolean)
+                    .join(" ")}
+            >
+                <div className={styles.gamesToolbar}>
                     <h3>{t("ui_tab_weeklies")}</h3>
-                    <div className="games-toolbar-actions">
+                    <div className={styles.gamesToolbarActions}>
                         <button
                             type="button"
-                            className="games-icon-btn button-normal"
+                            className={[
+                                styles.gamesIconBtn,
+                                styles.buttonNormal,
+                            ]
+                                .filter(Boolean)
+                                .join(" ")}
                             onClick={onRefresh}
                             disabled={isBusy}
                             title={t("ui_common_refresh")}
@@ -221,9 +231,17 @@ export default function WeekliesTab({
                         </button>
                     </div>
                 </div>
-                <div className="weeklies-layout">
-                    <div className="weeklies-table-pane table-wrap">
-                        <table className="data-table games-table">
+                <div className={styles.weekliesLayout}>
+                    <div
+                        className={[styles.weekliesTablePane, styles.tableWrap]
+                            .filter(Boolean)
+                            .join(" ")}
+                    >
+                        <table
+                            className={[styles.dataTable, styles.gamesTable]
+                                .filter(Boolean)
+                                .join(" ")}
+                        >
                             <thead>
                                 <tr>
                                     {columns.map((column) => (
@@ -232,7 +250,7 @@ export default function WeekliesTab({
                                         >
                                             <button
                                                 type="button"
-                                                className="table-sort-btn"
+                                                className={styles.tableSortBtn}
                                                 onClick={() =>
                                                     setSortState((current) =>
                                                         nextSortState(
@@ -251,7 +269,10 @@ export default function WeekliesTab({
                             <tbody>
                                 {sorted.length === 0 ? (
                                     <tr>
-                                        <td colSpan={6} className="empty-cell">
+                                        <td
+                                            colSpan={6}
+                                            className={styles.emptyCell}
+                                        >
                                             {t("ui_weeklies_empty")}
                                         </td>
                                     </tr>
@@ -264,7 +285,14 @@ export default function WeekliesTab({
                                         return (
                                             <tr
                                                 key={`${mutationKey}-${idx}`}
-                                                className={`weeklies-row-clickable${isSelected ? " selected-row" : ""}`}
+                                                className={[
+                                                    styles.weekliesRowClickable,
+                                                    isSelected
+                                                        ? styles.selectedRow
+                                                        : "",
+                                                ]
+                                                    .filter(Boolean)
+                                                    .join(" ")}
                                                 onClick={() =>
                                                     setSelectedMutation(
                                                         mutationKey,
@@ -272,7 +300,11 @@ export default function WeekliesTab({
                                                 }
                                             >
                                                 <td>
-                                                    <div className="weeklies-name-cell">
+                                                    <div
+                                                        className={
+                                                            styles.weekliesNameCell
+                                                        }
+                                                    >
                                                         <span>
                                                             {localizedWeeklyMutationName(
                                                                 row,
@@ -282,7 +314,11 @@ export default function WeekliesTab({
                                                         </span>
                                                         {row.isCurrent ===
                                                         true ? (
-                                                            <span className="weeklies-current-pill">
+                                                            <span
+                                                                className={
+                                                                    styles.weekliesCurrentPill
+                                                                }
+                                                            >
                                                                 {languageManager.translate(
                                                                     "ui_weeklies_now",
                                                                 )}
@@ -318,52 +354,62 @@ export default function WeekliesTab({
                             </tbody>
                         </table>
                     </div>
-                    <aside className="weeklies-detail-pane">
+                    <aside className={styles.weekliesDetailPane}>
                         {selectedRow === null ? (
-                            <div className="stats-detail-empty">
+                            <div className={styles.statsDetailEmpty}>
                                 {t("ui_weeklies_empty")}
                             </div>
                         ) : (
-                            <div className="weeklies-detail-card">
-                                <div className="weeklies-detail-head">
+                            <div className={styles.weekliesDetailCard}>
+                                <div className={styles.weekliesDetailHead}>
                                     <div>
-                                        <h4 className="weeklies-detail-title">
+                                        <h4
+                                            className={
+                                                styles.weekliesDetailTitle
+                                            }
+                                        >
                                             {localizedWeeklyMutationName(
                                                 selectedRow,
                                                 languageManager,
                                                 asTableValue,
                                             )}
                                         </h4>
-                                        <p className="weeklies-map">
+                                        <p className={styles.weekliesMap}>
                                             {languageManager.localize(
                                                 selectedRow.map,
                                             )}
                                         </p>
                                     </div>
                                     {selectedRow.isCurrent === true ? (
-                                        <span className="weeklies-current-pill">
+                                        <span
+                                            className={
+                                                styles.weekliesCurrentPill
+                                            }
+                                        >
                                             {t("ui_weeklies_current")}
                                         </span>
                                     ) : null}
                                 </div>
-                                <div className="weeklies-meta-row">
-                                    <span className="weeklies-stat-chip">
+                                <div className={styles.weekliesMetaRow}>
+                                    <span className={styles.weekliesStatChip}>
                                         {`${t("ui_weeklies_column_next_in")}: ${localizeWeeklyDuration(
                                             selectedRow.nextDuration,
                                             languageManager,
                                             asTableValue,
                                         )}`}
                                     </span>
-                                    <span className="weeklies-stat-chip">
+                                    <span className={styles.weekliesStatChip}>
                                         {`${t("ui_weeklies_column_best_difficulty")}: ${languageManager.localize(selectedRow.difficulty)}`}
                                     </span>
-                                    <span className="weeklies-stat-chip">
+                                    <span className={styles.weekliesStatChip}>
                                         {`${t("ui_weeklies_column_winrate")}: ${formatPercent(selectedRow.winrate)}`}
                                     </span>
                                 </div>
-                                <div className="weeklies-mutator-grid">
+                                <div className={styles.weekliesMutatorGrid}>
                                     {selectedMutators.length === 0 ? (
-                                        <div className="stats-detail-empty">
+                                        <div
+                                            className={styles.statsDetailEmpty}
+                                        >
                                             No mutator details available.
                                         </div>
                                     ) : (
@@ -384,20 +430,36 @@ export default function WeekliesTab({
                                                 return (
                                                     <article
                                                         key={`${asTableValue(mutator.id || mutator.name?.en || "")}-${index}`}
-                                                        className="weeklies-mutator-card"
+                                                        className={
+                                                            styles.weekliesMutatorCard
+                                                        }
                                                     >
                                                         <img
-                                                            className="weeklies-mutator-icon"
+                                                            className={
+                                                                styles.weekliesMutatorIcon
+                                                            }
                                                             src={mutatorIconPath(
                                                                 iconName,
                                                             )}
                                                             alt={displayName}
                                                         />
-                                                        <div className="weeklies-mutator-copy">
-                                                            <h5 className="weeklies-mutator-name">
+                                                        <div
+                                                            className={
+                                                                styles.weekliesMutatorCopy
+                                                            }
+                                                        >
+                                                            <h5
+                                                                className={
+                                                                    styles.weekliesMutatorName
+                                                                }
+                                                            >
                                                                 {displayName}
                                                             </h5>
-                                                            <p className="weeklies-mutator-description">
+                                                            <p
+                                                                className={
+                                                                    styles.weekliesMutatorDescription
+                                                                }
+                                                            >
                                                                 {localizedMutatorDescription(
                                                                     mutator,
                                                                     languageManager,

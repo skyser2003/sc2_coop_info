@@ -2,6 +2,7 @@ import * as React from "react";
 import type { PlayerRowPayload } from "../../../bindings/overlay";
 import type { LanguageManager } from "../../i18n/languageManager";
 import type { DisplayValue } from "../types";
+import styles from "../page.module.css";
 import {
     nextSortState,
     sortIndicator,
@@ -236,14 +237,20 @@ export default function PlayersTab({
         });
     }
     return (
-        <div className="tab-content">
-            <section className="card group games-panel">
-                <div className="games-toolbar">
+        <div className={styles.tabContent}>
+            <section
+                className={[styles.card, styles.group, styles.gamesPanel]
+                    .filter(Boolean)
+                    .join(" ")}
+            >
+                <div className={styles.gamesToolbar}>
                     <h3>{t("ui_tab_players")}</h3>
-                    <div className="games-toolbar-actions">
+                    <div className={styles.gamesToolbarActions}>
                         <input
                             type="text"
-                            className="input games-search"
+                            className={[styles.input, styles.gamesSearch]
+                                .filter(Boolean)
+                                .join(" ")}
                             value={searchText}
                             onChange={(event) =>
                                 setSearchText(event.currentTarget.value)
@@ -253,7 +260,12 @@ export default function PlayersTab({
                         />
                         <button
                             type="button"
-                            className="games-icon-btn button-normal"
+                            className={[
+                                styles.gamesIconBtn,
+                                styles.buttonNormal,
+                            ]
+                                .filter(Boolean)
+                                .join(" ")}
                             onClick={onRefresh}
                             disabled={isBusy}
                             title={t("ui_common_refresh")}
@@ -267,15 +279,19 @@ export default function PlayersTab({
                     onPageChange={setCurrentPage}
                     totalRows={sorted.length}
                 />
-                <div className="table-wrap" style={{ marginTop: "20px" }}>
-                    <table className="data-table games-table">
+                <div className={styles.tableWrap} style={{ marginTop: "20px" }}>
+                    <table
+                        className={[styles.dataTable, styles.gamesTable]
+                            .filter(Boolean)
+                            .join(" ")}
+                    >
                         <thead>
                             <tr>
                                 {columns.map((column) => (
                                     <th key={`players-header-${column.key}`}>
                                         <button
                                             type="button"
-                                            className="table-sort-btn"
+                                            className={styles.tableSortBtn}
                                             onClick={() =>
                                                 setSortState((current) =>
                                                     nextSortState(
@@ -294,7 +310,10 @@ export default function PlayersTab({
                         <tbody>
                             {sorted.length === 0 ? (
                                 <tr>
-                                    <td colSpan={10} className="empty-cell">
+                                    <td
+                                        colSpan={10}
+                                        className={styles.emptyCell}
+                                    >
                                         {t("ui_players_empty")}
                                     </td>
                                 </tr>
@@ -310,8 +329,8 @@ export default function PlayersTab({
                                             toggleExpanded(row.handleKey);
                                         }
                                     };
-                                    const clickableClass = canExpand
-                                        ? "players-row-clickable"
+                                    const clickableClassName = canExpand
+                                        ? styles.playersRowClickable
                                         : "";
 
                                     return (
@@ -321,22 +340,42 @@ export default function PlayersTab({
                                             <tr
                                                 className={
                                                     isExpanded
-                                                        ? "players-summary-row is-expanded"
-                                                        : "players-summary-row"
+                                                        ? [
+                                                              styles.playersSummaryRow,
+                                                              styles.isExpanded,
+                                                          ]
+                                                              .filter(Boolean)
+                                                              .join(" ")
+                                                        : styles.playersSummaryRow
                                                 }
                                             >
                                                 <td
-                                                    className={clickableClass}
+                                                    className={
+                                                        clickableClassName
+                                                    }
                                                     onClick={toggleRow}
                                                 >
                                                     {asTableValue(row.handle)}
                                                 </td>
                                                 <td
-                                                    className={`player ${clickableClass}`.trim()}
+                                                    className={[
+                                                        styles.player,
+                                                        clickableClassName,
+                                                    ]
+                                                        .filter(Boolean)
+                                                        .join(" ")}
                                                     onClick={toggleRow}
                                                 >
-                                                    <div className="players-player-cell">
-                                                        <span className="players-player-name">
+                                                    <div
+                                                        className={
+                                                            styles.playersPlayerCell
+                                                        }
+                                                    >
+                                                        <span
+                                                            className={
+                                                                styles.playersPlayerName
+                                                            }
+                                                        >
                                                             {asTableValue(
                                                                 row.player,
                                                             )}
@@ -344,7 +383,9 @@ export default function PlayersTab({
                                                         {canExpand ? (
                                                             <button
                                                                 type="button"
-                                                                className="players-expander-btn"
+                                                                className={
+                                                                    styles.playersExpanderBtn
+                                                                }
                                                                 aria-label={
                                                                     isExpanded
                                                                         ? t(
@@ -371,25 +412,33 @@ export default function PlayersTab({
                                                     </div>
                                                 </td>
                                                 <td
-                                                    className={clickableClass}
+                                                    className={
+                                                        clickableClassName
+                                                    }
                                                     onClick={toggleRow}
                                                 >
                                                     {asTableValue(row.wins)}
                                                 </td>
                                                 <td
-                                                    className={clickableClass}
+                                                    className={
+                                                        clickableClassName
+                                                    }
                                                     onClick={toggleRow}
                                                 >
                                                     {asTableValue(row.losses)}
                                                 </td>
                                                 <td
-                                                    className={clickableClass}
+                                                    className={
+                                                        clickableClassName
+                                                    }
                                                     onClick={toggleRow}
                                                 >
                                                     {formatPercent(row.winrate)}
                                                 </td>
                                                 <td
-                                                    className={clickableClass}
+                                                    className={
+                                                        clickableClassName
+                                                    }
                                                     onClick={toggleRow}
                                                 >
                                                     {asTableValue(
@@ -401,7 +450,9 @@ export default function PlayersTab({
                                                     )}
                                                 </td>
                                                 <td
-                                                    className={clickableClass}
+                                                    className={
+                                                        clickableClassName
+                                                    }
                                                     onClick={toggleRow}
                                                 >
                                                     {languageManager.localize(
@@ -409,13 +460,17 @@ export default function PlayersTab({
                                                     )}
                                                 </td>
                                                 <td
-                                                    className={clickableClass}
+                                                    className={
+                                                        clickableClassName
+                                                    }
                                                     onClick={toggleRow}
                                                 >
                                                     {`${(Number(row.kills || 0) * 100).toFixed(1)}%`}
                                                 </td>
                                                 <td
-                                                    className={clickableClass}
+                                                    className={
+                                                        clickableClassName
+                                                    }
                                                     onClick={toggleRow}
                                                 >
                                                     {formatReplayTime(
@@ -425,7 +480,7 @@ export default function PlayersTab({
                                                 <td>
                                                     <input
                                                         type="text"
-                                                        className="input"
+                                                        className={styles.input}
                                                         value={row.resolvedNote}
                                                         onChange={(event) =>
                                                             onNoteChange(
@@ -455,25 +510,45 @@ export default function PlayersTab({
                                                 </td>
                                             </tr>
                                             {isExpanded ? (
-                                                <tr className="players-detail-row">
+                                                <tr
+                                                    className={
+                                                        styles.playersDetailRow
+                                                    }
+                                                >
                                                     <td
                                                         colSpan={10}
-                                                        className="players-detail-cell"
+                                                        className={
+                                                            styles.playersDetailCell
+                                                        }
                                                     >
-                                                        <div className="players-detail-block">
-                                                            <span className="players-detail-label">
+                                                        <div
+                                                            className={
+                                                                styles.playersDetailBlock
+                                                            }
+                                                        >
+                                                            <span
+                                                                className={
+                                                                    styles.playersDetailLabel
+                                                                }
+                                                            >
                                                                 {t(
                                                                     "ui_players_usernames",
                                                                 )}
                                                             </span>
-                                                            <div className="players-handle-list">
+                                                            <div
+                                                                className={
+                                                                    styles.playersHandleList
+                                                                }
+                                                            >
                                                                 {row.playerNamesList.map(
                                                                     (name) => (
                                                                         <code
                                                                             key={
                                                                                 name
                                                                             }
-                                                                            className="players-handle-chip"
+                                                                            className={
+                                                                                styles.playersHandleChip
+                                                                            }
                                                                         >
                                                                             {
                                                                                 name

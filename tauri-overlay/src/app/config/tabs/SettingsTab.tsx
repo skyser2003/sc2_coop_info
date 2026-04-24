@@ -5,6 +5,7 @@ import { check, Update } from "@tauri-apps/plugin-updater";
 import { app } from "@tauri-apps/api";
 import type { AppSettings } from "../../../bindings/overlay";
 import type { DisplayValue, JsonValue } from "../types";
+import styles from "../page.module.css";
 
 type SettingsActions = {
     isBusy: boolean;
@@ -221,9 +222,9 @@ function renderAnalysisProgress(
 
     return (
         <>
-            <div className="analysis-progress-group">
+            <div className={styles.analysisProgressGroup}>
                 <div
-                    className="analysis-progress-bar"
+                    className={styles.analysisProgressBar}
                     role="progressbar"
                     aria-valuemin={0}
                     aria-valuemax={safeTotal}
@@ -231,18 +232,22 @@ function renderAnalysisProgress(
                     aria-label={languageManager.translate("ui_stats_progress")}
                 >
                     <div
-                        className="analysis-progress-fill"
+                        className={styles.analysisProgressFill}
                         style={{ width: `${progressPercent}%` }}
                     />
                 </div>
             </div>
-            <p className="note analysis-progress-count">
+            <p
+                className={[styles.note, styles.analysisProgressCount]
+                    .filter(Boolean)
+                    .join(" ")}
+            >
                 {translateText(languageManager, "ui_stats_progress", {
                     current: formatNumber(safeCompleted),
                     total: formatNumber(safeTotal),
                 })}
             </p>
-            <p className="note">
+            <p className={styles.note}>
                 {translateText(languageManager, "ui_stats_failed_files", {
                     value: formatNumber(failed),
                 })}
@@ -507,12 +512,12 @@ const ColorField = React.memo(function ColorField({
     };
 
     return (
-        <div key={path.join(".")} ref={rootRef} className="color-row">
-            <span className="color-row-label">{label}</span>
-            <div className="color-row-input">
+        <div key={path.join(".")} ref={rootRef} className={styles.colorRow}>
+            <span className={styles.colorRowLabel}>{label}</span>
+            <div className={styles.colorRowInput}>
                 <button
                     type="button"
-                    className="color-row-input-button"
+                    className={styles.colorRowInputButton}
                     onClick={() => {
                         if (disabled) {
                             return;
@@ -523,21 +528,23 @@ const ColorField = React.memo(function ColorField({
                     disabled={disabled}
                 >
                     <span
-                        className="color-row-swatch"
+                        className={styles.colorRowSwatch}
                         aria-hidden="true"
                         style={{ backgroundColor: localColor }}
                     />
                 </button>
             </div>
-            <div className="color-row-popup-anchor">
+            <div className={styles.colorRowPopupAnchor}>
                 {isOpen ? (
                     <div
-                        className="color-picker-popup"
+                        className={styles.colorPickerPopup}
                         data-disabled={String(disabled)}
                     >
                         <input
                             type="text"
-                            className="input color-row-text"
+                            className={[styles.input, styles.colorRowText]
+                                .filter(Boolean)
+                                .join(" ")}
                             value={textValue}
                             inputMode="text"
                             spellCheck={false}
@@ -560,10 +567,10 @@ const ColorField = React.memo(function ColorField({
                                 }
                             }}
                         />
-                        <div className="color-wheel-picker">
+                        <div className={styles.colorWheelPicker}>
                             <div
                                 ref={wheelRef}
-                                className="color-wheel-ring"
+                                className={styles.colorWheelRing}
                                 onPointerDown={(event) => {
                                     if (disabled) {
                                         return;
@@ -596,13 +603,13 @@ const ColorField = React.memo(function ColorField({
                                 }}
                             >
                                 <div
-                                    className="color-wheel-ring-marker"
+                                    className={styles.colorWheelRingMarker}
                                     style={wheelMarkerStyle}
                                 />
                             </div>
                             <div
                                 ref={squareRef}
-                                className="color-wheel-square"
+                                className={styles.colorWheelSquare}
                                 style={{
                                     backgroundImage: `linear-gradient(to right, #FFFFFF, ${hueColor}), linear-gradient(to top, #000000, transparent)`,
                                 }}
@@ -639,7 +646,7 @@ const ColorField = React.memo(function ColorField({
                                 }}
                             >
                                 <div
-                                    className="color-wheel-square-marker"
+                                    className={styles.colorWheelSquareMarker}
                                     style={squareMarkerStyle}
                                 />
                             </div>
@@ -676,7 +683,12 @@ export default function SettingsTab({
         disabled = false,
     ) => (
         <label
-            className={`main-setting-check ${disabled ? "is-disabled" : ""}`}
+            className={[
+                styles.mainSettingCheck,
+                disabled ? styles.isDisabled : "",
+            ]
+                .filter(Boolean)
+                .join(" ")}
             key={path.join(".")}
         >
             <input
@@ -797,13 +809,15 @@ export default function SettingsTab({
                 columns={10}
                 spacing={1.25}
                 alignItems="stretch"
-                className="hotkey-entry"
+                className={styles.hotkeyEntry}
                 key={id}
             >
                 <Grid size={4}>
                     <button
                         type="button"
-                        className="hotkey-action-btn button-normal"
+                        className={[styles.hotkeyActionBtn, styles.buttonNormal]
+                            .filter(Boolean)
+                            .join(" ")}
                         onClick={() => actions.triggerOverlayAction(actionName)}
                         disabled={actions.isBusy}
                     >
@@ -813,7 +827,15 @@ export default function SettingsTab({
                 <Grid size={6}>
                     <input
                         type="text"
-                        className={`input hotkey-input ${actions.activeHotkeyPath === hotkeyPath ? "is-recording" : ""}`}
+                        className={[
+                            styles.input,
+                            styles.hotkeyInput,
+                            actions.activeHotkeyPath === hotkeyPath
+                                ? styles.isRecording
+                                : "",
+                        ]
+                            .filter(Boolean)
+                            .join(" ")}
                         readOnly
                         value={String(read(path, "") || "")}
                         placeholder={
@@ -943,16 +965,20 @@ export default function SettingsTab({
     };
 
     return (
-        <div className="tab-content main-settings-content">
-            <Grid container className="card">
+        <div
+            className={[styles.tabContent, styles.mainSettingsContent]
+                .filter(Boolean)
+                .join(" ")}
+        >
+            <Grid container className={styles.card}>
                 <Grid size={4}>
-                    <div className="main-settings-top">
-                        <div className="main-settings-groups">
-                            <section className="main-settings-group">
-                                <h3 className="main-settings-group-title">
+                    <div className={styles.mainSettingsTop}>
+                        <div className={styles.mainSettingsGroups}>
+                            <section className={styles.mainSettingsGroup}>
+                                <h3 className={styles.mainSettingsGroupTitle}>
                                     {t("ui_settings_launch_setting")}
                                 </h3>
-                                <div className="main-settings-group-fields">
+                                <div className={styles.mainSettingsGroupFields}>
                                     {boolField(
                                         t("ui_settings_start_with_windows"),
                                         ["start_with_windows"],
@@ -974,24 +1000,26 @@ export default function SettingsTab({
                                     )}
                                 </div>
                             </section>
-                            <section className="main-settings-group">
-                                <h3 className="main-settings-group-title">
+                            <section className={styles.mainSettingsGroup}>
+                                <h3 className={styles.mainSettingsGroupTitle}>
                                     {t("ui_settings_overlay_options")}
                                 </h3>
-                                <div className="main-settings-group-fields">
+                                <div className={styles.mainSettingsGroupFields}>
                                     <Grid
                                         container
                                         spacing={1}
-                                        className="main-number-row"
+                                        className={styles.mainNumberRow}
                                     >
                                         <Grid>
-                                            <span className="main-row-label">
+                                            <span
+                                                className={styles.mainRowLabel}
+                                            >
                                                 {t("ui_settings_duration")}
                                             </span>
                                         </Grid>
                                         <Grid>
                                             <input
-                                                className="input"
+                                                className={styles.input}
                                                 type="number"
                                                 min={1}
                                                 max={9999}
@@ -1043,25 +1071,30 @@ export default function SettingsTab({
                                     )}
                                 </div>
                             </section>
-                            <section className="main-settings-group">
-                                <h3 className="main-settings-group-title">
+                            <section className={styles.mainSettingsGroup}>
+                                <h3 className={styles.mainSettingsGroupTitle}>
                                     {t(
                                         "ui_statistics_subtab_detailed_analysis",
                                     )}
                                 </h3>
-                                <div className="main-settings-group-fields">
-                                    <p className="note">
+                                <div className={styles.mainSettingsGroupFields}>
+                                    <p className={styles.note}>
                                         {t("ui_stats_detailed_description")}
                                     </p>
-                                    <p className="note">
+                                    <p className={styles.note}>
                                         {t("ui_stats_detailed_warning")}
                                     </p>
-                                    <Grid container className="main-range-row">
+                                    <Grid
+                                        container
+                                        className={styles.mainRangeRow}
+                                    >
                                         <Grid
                                             size={4}
-                                            className="main-range-header"
+                                            className={styles.mainRangeHeader}
                                         >
-                                            <span className="main-row-label">
+                                            <span
+                                                className={styles.mainRowLabel}
+                                            >
                                                 {t(
                                                     "ui_settings_analysis_worker_threads",
                                                 )}
@@ -1069,11 +1102,13 @@ export default function SettingsTab({
                                         </Grid>
                                         <Grid
                                             size={8}
-                                            className="main-range-controls"
+                                            className={styles.mainRangeControls}
                                         >
                                             <input
                                                 type="range"
-                                                className="main-range-input"
+                                                className={
+                                                    styles.mainRangeInput
+                                                }
                                                 min={1}
                                                 max={logicalCoreCount}
                                                 step={1}
@@ -1091,7 +1126,12 @@ export default function SettingsTab({
                                             />
                                             <input
                                                 type="number"
-                                                className="input main-range-number"
+                                                className={[
+                                                    styles.input,
+                                                    styles.mainRangeNumber,
+                                                ]
+                                                    .filter(Boolean)
+                                                    .join(" ")}
                                                 min={1}
                                                 max={logicalCoreCount}
                                                 step={1}
@@ -1109,10 +1149,10 @@ export default function SettingsTab({
                                             />
                                         </Grid>
                                     </Grid>
-                                    <div className="toolbar">
+                                    <div className={styles.toolbar}>
                                         <button
                                             type="button"
-                                            className="button-normal"
+                                            className={styles.buttonNormal}
                                             onClick={
                                                 detailedAnalysisRunning
                                                     ? actions.stopDetailedAnalysis
@@ -1131,7 +1171,7 @@ export default function SettingsTab({
                                         </button>
                                         <button
                                             type="button"
-                                            className="button-normal"
+                                            className={styles.buttonNormal}
                                             onClick={
                                                 actions.startSimpleAnalysis
                                             }
@@ -1150,7 +1190,7 @@ export default function SettingsTab({
                                         </button>
                                         <button
                                             type="button"
-                                            className="button-normal"
+                                            className={styles.buttonNormal}
                                             onClick={actions.deleteParsedData}
                                             disabled={
                                                 actions.isBusy ||
@@ -1166,7 +1206,7 @@ export default function SettingsTab({
                                         ),
                                         ["detailed_analysis_atstart"],
                                     )}
-                                    <p className="note">
+                                    <p className={styles.note}>
                                         {generalAnalysisStatus}
                                     </p>
                                     {renderAnalysisProgress(
@@ -1178,13 +1218,18 @@ export default function SettingsTab({
                                     )}
                                 </div>
                             </section>
-                            <section className="main-settings-group">
-                                <h3 className="main-settings-group-title">
+                            <section className={styles.mainSettingsGroup}>
+                                <h3 className={styles.mainSettingsGroupTitle}>
                                     {t("ui_settings_etc")}
                                 </h3>
                                 <Grid
                                     container
-                                    className="main-settings-group-fields main-settings-inline-numbers"
+                                    className={[
+                                        styles.mainSettingsGroupFields,
+                                        styles.mainSettingsInlineNumbers,
+                                    ]
+                                        .filter(Boolean)
+                                        .join(" ")}
                                     spacing={1.25}
                                 >
                                     <Grid size={12}>
@@ -1193,10 +1238,16 @@ export default function SettingsTab({
                                             columns={10}
                                             spacing={1.25}
                                             alignItems="center"
-                                            className="main-settings-row-grid"
+                                            className={
+                                                styles.mainSettingsRowGrid
+                                            }
                                         >
                                             <Grid size={4}>
-                                                <span className="main-row-label">
+                                                <span
+                                                    className={
+                                                        styles.mainRowLabel
+                                                    }
+                                                >
                                                     {t(
                                                         "ui_settings_language_label",
                                                     )}
@@ -1204,7 +1255,12 @@ export default function SettingsTab({
                                             </Grid>
                                             <Grid size={6}>
                                                 <select
-                                                    className="input main-fixed-select"
+                                                    className={[
+                                                        styles.input,
+                                                        styles.mainFixedSelect,
+                                                    ]
+                                                        .filter(Boolean)
+                                                        .join(" ")}
                                                     value={String(
                                                         read(
                                                             ["language"],
@@ -1238,16 +1294,27 @@ export default function SettingsTab({
                                             columns={10}
                                             spacing={1.25}
                                             alignItems="center"
-                                            className="main-settings-row-grid"
+                                            className={
+                                                styles.mainSettingsRowGrid
+                                            }
                                         >
                                             <Grid size={4}>
-                                                <span className="main-row-label">
+                                                <span
+                                                    className={
+                                                        styles.mainRowLabel
+                                                    }
+                                                >
                                                     {t("ui_settings_monitor")}
                                                 </span>
                                             </Grid>
                                             <Grid size={6}>
                                                 <select
-                                                    className="input main-fixed-select"
+                                                    className={[
+                                                        styles.input,
+                                                        styles.mainFixedSelect,
+                                                    ]
+                                                        .filter(Boolean)
+                                                        .join(" ")}
                                                     value={Number(
                                                         read(["monitor"], 1) ||
                                                             1,
@@ -1301,15 +1368,22 @@ export default function SettingsTab({
                     </div>
                 </Grid>
                 <Grid size={4}>
-                    <div className="main-settings-top">
-                        <div className="main-settings-groups">
-                            <div className="main-settings-group">
-                                <h3 className="main-settings-group-title">
+                    <div className={styles.mainSettingsTop}>
+                        <div className={styles.mainSettingsGroups}>
+                            <div className={styles.mainSettingsGroup}>
+                                <h3 className={styles.mainSettingsGroupTitle}>
                                     {t("ui_settings_paths_description")}
                                 </h3>
                                 <Grid container>
                                     <Grid size={8}>
-                                        <p className="main-path-value mono">
+                                        <p
+                                            className={[
+                                                styles.mainPathValue,
+                                                styles.mono,
+                                            ]
+                                                .filter(Boolean)
+                                                .join(" ")}
+                                        >
                                             {asTableValue(
                                                 read(
                                                     ["account_folder"],
@@ -1323,7 +1397,12 @@ export default function SettingsTab({
                                     <Grid>
                                         <button
                                             type="button"
-                                            className="main-path-btn button-normal"
+                                            className={[
+                                                styles.mainPathBtn,
+                                                styles.buttonNormal,
+                                            ]
+                                                .filter(Boolean)
+                                                .join(" ")}
                                             onClick={() =>
                                                 actions.promptPath(
                                                     ["account_folder"],
@@ -1340,7 +1419,12 @@ export default function SettingsTab({
                                     <Grid>
                                         <button
                                             type="button"
-                                            className="main-path-btn button-normal"
+                                            className={[
+                                                styles.mainPathBtn,
+                                                styles.buttonNormal,
+                                            ]
+                                                .filter(Boolean)
+                                                .join(" ")}
                                             style={{ marginLeft: "5px" }}
                                             onClick={() =>
                                                 actions.openFolderPath(
@@ -1362,7 +1446,14 @@ export default function SettingsTab({
                                 </Grid>
                                 <Grid container>
                                     <Grid size={8}>
-                                        <p className="main-path-value mono">
+                                        <p
+                                            className={[
+                                                styles.mainPathValue,
+                                                styles.mono,
+                                            ]
+                                                .filter(Boolean)
+                                                .join(" ")}
+                                        >
                                             {asTableValue(
                                                 read(
                                                     ["screenshot_folder"],
@@ -1376,7 +1467,12 @@ export default function SettingsTab({
                                     <Grid>
                                         <button
                                             type="button"
-                                            className="main-path-btn button-normal"
+                                            className={[
+                                                styles.mainPathBtn,
+                                                styles.buttonNormal,
+                                            ]
+                                                .filter(Boolean)
+                                                .join(" ")}
                                             onClick={() =>
                                                 actions.promptPath(
                                                     ["screenshot_folder"],
@@ -1393,7 +1489,12 @@ export default function SettingsTab({
                                     <Grid>
                                         <button
                                             type="button"
-                                            className="main-path-btn button-normal"
+                                            className={[
+                                                styles.mainPathBtn,
+                                                styles.buttonNormal,
+                                            ]
+                                                .filter(Boolean)
+                                                .join(" ")}
                                             style={{ marginLeft: "5px" }}
                                             onClick={() =>
                                                 actions.openFolderPath(
@@ -1416,14 +1517,14 @@ export default function SettingsTab({
                                     </Grid>
                                 </Grid>
                             </div>
-                            <div className="main-settings-group">
-                                <h3 className="main-settings-group-title">
+                            <div className={styles.mainSettingsGroup}>
+                                <h3 className={styles.mainSettingsGroupTitle}>
                                     {t("ui_settings_hotkeys")}
                                 </h3>
                                 <Grid
                                     container
                                     spacing={1.25}
-                                    className="hotkeys-grid"
+                                    className={styles.hotkeysGrid}
                                 >
                                     {hotkeyEntry(
                                         "showhide",
@@ -1469,8 +1570,8 @@ export default function SettingsTab({
                                     )}
                                 </Grid>
                             </div>
-                            <div className="main-settings-group">
-                                <h3 className="main-settings-group-title">
+                            <div className={styles.mainSettingsGroup}>
+                                <h3 className={styles.mainSettingsGroupTitle}>
                                     {t("ui_settings_customize_colors")}
                                 </h3>
                                 {colorField(t("ui_settings_player_1"), [
@@ -1490,11 +1591,25 @@ export default function SettingsTab({
                     </div>
                 </Grid>
                 <Grid size={4}>
-                    <div className="main-settings-box main-settings-bottom">
-                        <div className="main-settings-box main-bottom-left">
+                    <div
+                        className={[
+                            styles.mainSettingsBox,
+                            styles.mainSettingsBottom,
+                        ]
+                            .filter(Boolean)
+                            .join(" ")}
+                    >
+                        <div
+                            className={[
+                                styles.mainSettingsBox,
+                                styles.mainBottomLeft,
+                            ]
+                                .filter(Boolean)
+                                .join(" ")}
+                        >
                             <button
                                 type="button"
-                                className="button-normal"
+                                className={styles.buttonNormal}
                                 onClick={actions.overlayScreenshot}
                                 disabled={actions.isBusy}
                             >
@@ -1502,7 +1617,7 @@ export default function SettingsTab({
                             </button>
                             <button
                                 type="button"
-                                className="button-normal"
+                                className={styles.buttonNormal}
                                 onClick={actions.parseReplayPrompt}
                                 disabled={actions.isBusy}
                             >
@@ -1510,7 +1625,7 @@ export default function SettingsTab({
                             </button>
                             <button
                                 type="button"
-                                className="button-normal"
+                                className={styles.buttonNormal}
                                 onClick={actions.createDesktopShortcut}
                                 disabled={actions.isBusy}
                             >
@@ -1518,16 +1633,23 @@ export default function SettingsTab({
                             </button>
                             <button
                                 type="button"
-                                className="button-normal"
+                                className={styles.buttonNormal}
                                 onClick={checkUpdate}
                             >
                                 {t("ui_settings_check_for_update")}
                             </button>
                         </div>
-                        <div className="main-settings-box main-bottom-right">
+                        <div
+                            className={[
+                                styles.mainSettingsBox,
+                                styles.mainBottomRight,
+                            ]
+                                .filter(Boolean)
+                                .join(" ")}
+                        >
                             <button
                                 type="button"
-                                className="button-normal"
+                                className={styles.buttonNormal}
                                 onClick={actions.resetMainSettings}
                                 disabled={
                                     actions.isBusy || !actions.hasPendingChanges
@@ -1537,7 +1659,7 @@ export default function SettingsTab({
                             </button>
                             <button
                                 type="button"
-                                className="button-normal"
+                                className={styles.buttonNormal}
                                 onClick={actions.applyMainSettings}
                                 disabled={
                                     actions.isBusy || !actions.hasPendingChanges

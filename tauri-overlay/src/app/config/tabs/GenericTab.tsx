@@ -2,6 +2,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import * as React from "react";
 import type { AppSettings } from "../../../bindings/overlay";
 import type { JsonValue } from "../types";
+import styles from "../page.module.css";
 
 type TabGroup = {
     title: string;
@@ -43,15 +44,20 @@ export default function GenericTab({
 }: GenericTabProps) {
     const groups = tab.groups || [];
     return (
-        <div className="tab-content">
+        <div className={styles.tabContent}>
             {groups.map((group) => (
-                <section key={group.title} className="card group">
+                <section
+                    key={group.title}
+                    className={[styles.card, styles.group]
+                        .filter(Boolean)
+                        .join(" ")}
+                >
                     <h3>{group.title}</h3>
                     {group.placeholder ? (
-                        <p className="note">{group.placeholder}</p>
+                        <p className={styles.note}>{group.placeholder}</p>
                     ) : null}
                     {group.links ? (
-                        <ul className="link-list">
+                        <ul className={styles.linkList}>
                             {group.links.map(([label, href]) => (
                                 <li key={href}>
                                     <a
@@ -80,7 +86,7 @@ export default function GenericTab({
                                   return (
                                       <div
                                           key={path.join(".")}
-                                          className="group-field"
+                                          className={styles.groupField}
                                       >
                                           {renderNode(
                                               value,

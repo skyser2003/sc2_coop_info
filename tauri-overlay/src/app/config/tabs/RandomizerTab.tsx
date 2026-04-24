@@ -10,6 +10,7 @@ import { PreviewManager } from "../../previews/PreviewManager";
 import type { PrestigeNameMap } from "../types";
 import SelectionPreview from "./SelectionPreview";
 import { Grid } from "@mui/material";
+import styles from "../page.module.css";
 
 type RandomizerChoices = AppSettings["rng_choices"];
 type RandomizerDraft = {
@@ -383,34 +384,56 @@ export default function RandomizerTab({
         (commanderNames.length === 0 && catalog.mutators.length === 0)
     ) {
         return (
-            <div className="tab-content">
-                <section className="card group">
+            <div className={styles.tabContent}>
+                <section
+                    className={[styles.card, styles.group]
+                        .filter(Boolean)
+                        .join(" ")}
+                >
                     <h3>{t("ui_randomizer_title")}</h3>
-                    <p className="note">{t("ui_randomizer_unavailable")}</p>
+                    <p className={styles.note}>
+                        {t("ui_randomizer_unavailable")}
+                    </p>
                 </section>
             </div>
         );
     }
 
     return (
-        <div className="tab-content">
-            <section className="card group randomizer-root">
-                <div className="randomizer-layout">
-                    <div className="randomizer-pane randomizer-pane-left">
-                        <div className="randomizer-controls">
+        <div className={styles.tabContent}>
+            <section
+                className={[styles.card, styles.group, styles.randomizerRoot]
+                    .filter(Boolean)
+                    .join(" ")}
+            >
+                <div className={styles.randomizerLayout}>
+                    <div
+                        className={[
+                            styles.randomizerPane,
+                            styles.randomizerPaneLeft,
+                        ]
+                            .filter(Boolean)
+                            .join(" ")}
+                    >
+                        <div className={styles.randomizerControls}>
                             <Grid
                                 container
                                 spacing={1}
-                                className="randomizer-inline-field"
+                                className={styles.randomizerInlineField}
                             >
                                 <Grid>
-                                    <span className="field-label">
+                                    <span className={styles.fieldLabel}>
                                         {t("ui_randomizer_mastery_mode")}
                                     </span>
                                 </Grid>
                                 <Grid>
                                     <select
-                                        className="input randomizer-select"
+                                        className={[
+                                            styles.input,
+                                            styles.randomizerSelect,
+                                        ]
+                                            .filter(Boolean)
+                                            .join(" ")}
                                         aria-label={t(
                                             "ui_randomizer_mastery_mode_aria",
                                         )}
@@ -433,7 +456,7 @@ export default function RandomizerTab({
                                     </select>
                                 </Grid>
 
-                                <Grid className="randomizer-toggle">
+                                <Grid className={styles.randomizerToggle}>
                                     <input
                                         type="checkbox"
                                         checked={includeMap}
@@ -444,7 +467,7 @@ export default function RandomizerTab({
                                     <span>{t("ui_randomizer_random_map")}</span>
                                 </Grid>
 
-                                <Grid className="randomizer-toggle">
+                                <Grid className={styles.randomizerToggle}>
                                     <input
                                         type="checkbox"
                                         checked={includeRace}
@@ -459,11 +482,21 @@ export default function RandomizerTab({
                             </Grid>
                         </div>
 
-                        <Grid container className="randomizer-main-grid">
-                            <Grid size={6} className="randomizer-choice-box">
+                        <Grid container className={styles.randomizerMainGrid}>
+                            <Grid
+                                size={6}
+                                className={styles.randomizerChoiceBox}
+                            >
                                 <h3>{t("ui_randomizer_choices_title")}</h3>
-                                <div className="randomizer-table-shell">
-                                    <table className="data-table randomizer-choice-table">
+                                <div className={styles.randomizerTableShell}>
+                                    <table
+                                        className={[
+                                            styles.dataTable,
+                                            styles.randomizerChoiceTable,
+                                        ]
+                                            .filter(Boolean)
+                                            .join(" ")}
+                                    >
                                         <thead>
                                             <tr>
                                                 <th>
@@ -475,11 +508,20 @@ export default function RandomizerTab({
                                                     (prestige) => (
                                                         <th
                                                             key={`head-${prestige}`}
-                                                            className="randomizer-header-toggle-cell"
+                                                            className={
+                                                                styles.randomizerHeaderToggleCell
+                                                            }
                                                         >
                                                             <button
                                                                 type="button"
-                                                                className="randomizer-header-toggle button-randomizer-table"
+                                                                className={[
+                                                                    styles.randomizerHeaderToggle,
+                                                                    styles.buttonRandomizerTable,
+                                                                ]
+                                                                    .filter(
+                                                                        Boolean,
+                                                                    )
+                                                                    .join(" ")}
                                                                 aria-label={formatText(
                                                                     "ui_randomizer_toggle_prestige_all",
                                                                     {
@@ -502,10 +544,19 @@ export default function RandomizerTab({
                                         <tbody>
                                             {commanderNames.map((commander) => (
                                                 <tr key={commander}>
-                                                    <td className="randomizer-commander-cell">
+                                                    <td
+                                                        className={
+                                                            styles.randomizerCommanderCell
+                                                        }
+                                                    >
                                                         <button
                                                             type="button"
-                                                            className="randomizer-commander-toggle button-randomizer-table"
+                                                            className={[
+                                                                styles.randomizerCommanderToggle,
+                                                                styles.buttonRandomizerTable,
+                                                            ]
+                                                                .filter(Boolean)
+                                                                .join(" ")}
                                                             aria-label={formatText(
                                                                 "ui_randomizer_toggle_all_prestiges",
                                                                 {
@@ -538,7 +589,9 @@ export default function RandomizerTab({
                                                             return (
                                                                 <td
                                                                     key={`${commander}-${prestige}`}
-                                                                    className="randomizer-checkbox-cell"
+                                                                    className={
+                                                                        styles.randomizerCheckboxCell
+                                                                    }
                                                                 >
                                                                     <input
                                                                         type="checkbox"
@@ -574,10 +627,10 @@ export default function RandomizerTab({
                                     </table>
                                 </div>
 
-                                <div className="randomizer-actions">
+                                <div className={styles.randomizerActions}>
                                     <button
                                         type="button"
-                                        className="button-normal"
+                                        className={styles.buttonNormal}
                                         onClick={onGenerateCommander}
                                         disabled={actions.isBusy}
                                     >
@@ -586,11 +639,18 @@ export default function RandomizerTab({
                                 </div>
                             </Grid>
 
-                            <Grid size={6} className="randomizer-result-box">
+                            <Grid
+                                size={6}
+                                className={styles.randomizerResultBox}
+                            >
                                 <h3>{t("ui_randomizer_result")}</h3>
                                 {commanderResult ? (
                                     <>
-                                        <div className="randomizer-result-head">
+                                        <div
+                                            className={
+                                                styles.randomizerResultHead
+                                            }
+                                        >
                                             {`${languageManager.localize(commanderResult.commander)} - ${prestigeLabelForLanguage(
                                                 catalog.prestige_names,
                                                 commanderResult.commander,
@@ -598,7 +658,11 @@ export default function RandomizerTab({
                                                 languageManager.currentLanguage(),
                                             )} (P${commanderResult.prestige})`}
                                         </div>
-                                        <div className="randomizer-result-previews">
+                                        <div
+                                            className={
+                                                styles.randomizerResultPreviews
+                                            }
+                                        >
                                             <SelectionPreview
                                                 assetUrl={
                                                     resultCommanderPreview.url
@@ -613,9 +677,15 @@ export default function RandomizerTab({
                                                     languageManager.currentLanguage(),
                                                 )} (P${commanderResult.prestige})`}
                                                 kind="commander"
-                                                className="randomizer-result-preview"
-                                                titleClassName="randomizer-result-preview-title"
-                                                subtitleClassName="randomizer-result-preview-subtitle"
+                                                className={
+                                                    styles.randomizerResultPreview
+                                                }
+                                                titleClassName={
+                                                    styles.randomizerResultPreviewTitle
+                                                }
+                                                subtitleClassName={
+                                                    styles.randomizerResultPreviewSubtitle
+                                                }
                                             />
                                             {resultMapRace.map !== "" ? (
                                                 <SelectionPreview
@@ -634,24 +704,44 @@ export default function RandomizerTab({
                                                             : undefined
                                                     }
                                                     kind="map"
-                                                    className="randomizer-result-preview"
-                                                    titleClassName="randomizer-result-preview-title"
-                                                    subtitleClassName="randomizer-result-preview-subtitle"
+                                                    className={
+                                                        styles.randomizerResultPreview
+                                                    }
+                                                    titleClassName={
+                                                        styles.randomizerResultPreviewTitle
+                                                    }
+                                                    subtitleClassName={
+                                                        styles.randomizerResultPreviewSubtitle
+                                                    }
                                                 />
                                             ) : null}
                                         </div>
-                                        <div className="stats-block randomizer-result-body">
+                                        <div
+                                            className={[
+                                                styles.statsBlock,
+                                                styles.randomizerResultBody,
+                                            ]
+                                                .filter(Boolean)
+                                                .join(" ")}
+                                        >
                                             {resultMasteryRows.map(
                                                 (row, index) => (
                                                     <div
                                                         key={`${row.label}-${index}`}
-                                                        className={`randomizer-result-row${
+                                                        className={[
+                                                            styles.randomizerResultRow,
                                                             row.points === 0
-                                                                ? " is-zero"
-                                                                : ""
-                                                        }`}
+                                                                ? styles.isZero
+                                                                : "",
+                                                        ]
+                                                            .filter(Boolean)
+                                                            .join(" ")}
                                                     >
-                                                        <span className="randomizer-result-points">
+                                                        <span
+                                                            className={
+                                                                styles.randomizerResultPoints
+                                                            }
+                                                        >
                                                             {String(
                                                                 row.points,
                                                             ).padStart(2, " ")}
@@ -661,15 +751,30 @@ export default function RandomizerTab({
                                                 ),
                                             )}
                                         </div>
-                                        <div className="randomizer-result-foot">
+                                        <div
+                                            className={
+                                                styles.randomizerResultFoot
+                                            }
+                                        >
                                             {languageManager.localizeMapRacePair(
                                                 commanderResult.map_race,
                                             )}
                                         </div>
                                     </>
                                 ) : (
-                                    <div className="stats-block randomizer-result-body">
-                                        <div className="randomizer-result-empty">
+                                    <div
+                                        className={[
+                                            styles.statsBlock,
+                                            styles.randomizerResultBody,
+                                        ]
+                                            .filter(Boolean)
+                                            .join(" ")}
+                                    >
+                                        <div
+                                            className={
+                                                styles.randomizerResultEmpty
+                                            }
+                                        >
                                             {t("ui_randomizer_empty_result")}
                                         </div>
                                     </div>
@@ -677,20 +782,38 @@ export default function RandomizerTab({
                             </Grid>
                         </Grid>
                     </div>
-                    <div className="randomizer-pane randomizer-pane-right">
-                        <Grid container className="randomizer-main-grid">
-                            <Grid size={4} className="randomizer-choice-box">
+                    <div
+                        className={[
+                            styles.randomizerPane,
+                            styles.randomizerPaneRight,
+                        ]
+                            .filter(Boolean)
+                            .join(" ")}
+                    >
+                        <Grid container className={styles.randomizerMainGrid}>
+                            <Grid
+                                size={4}
+                                className={styles.randomizerChoiceBox}
+                            >
                                 <h3>
                                     {t("ui_randomizer_mutator_settings_title")}
                                 </h3>
-                                <div className="randomizer-mutator-settings">
-                                    <div className="randomizer-controls">
+                                <div
+                                    className={styles.randomizerMutatorSettings}
+                                >
+                                    <div className={styles.randomizerControls}>
                                         <Grid
                                             container
-                                            className="randomizer-inline-field"
+                                            className={
+                                                styles.randomizerInlineField
+                                            }
                                         >
                                             <Grid size={4}>
-                                                <span className="field-label">
+                                                <span
+                                                    className={
+                                                        styles.fieldLabel
+                                                    }
+                                                >
                                                     {t(
                                                         "ui_randomizer_mutator_mode",
                                                     )}
@@ -698,7 +821,12 @@ export default function RandomizerTab({
                                             </Grid>
                                             <Grid size={8}>
                                                 <select
-                                                    className="input randomizer-select"
+                                                    className={[
+                                                        styles.input,
+                                                        styles.randomizerSelect,
+                                                    ]
+                                                        .filter(Boolean)
+                                                        .join(" ")}
                                                     aria-label={t(
                                                         "ui_randomizer_mutator_mode_aria",
                                                     )}
@@ -732,15 +860,23 @@ export default function RandomizerTab({
                                             <Grid
                                                 container
                                                 rowSpacing={1}
-                                                className="randomizer-range-group"
+                                                className={
+                                                    styles.randomizerRangeGroup
+                                                }
                                             >
                                                 <Grid
                                                     container
                                                     size={12}
-                                                    className="randomizer-inline-field"
+                                                    className={
+                                                        styles.randomizerInlineField
+                                                    }
                                                 >
                                                     <Grid size={4}>
-                                                        <span className="field-label">
+                                                        <span
+                                                            className={
+                                                                styles.fieldLabel
+                                                            }
+                                                        >
                                                             {t(
                                                                 "ui_common_minimum",
                                                             )}
@@ -748,7 +884,12 @@ export default function RandomizerTab({
                                                     </Grid>
                                                     <Grid size={8}>
                                                         <input
-                                                            className="input randomizer-number-input"
+                                                            className={[
+                                                                styles.input,
+                                                                styles.randomizerNumberInput,
+                                                            ]
+                                                                .filter(Boolean)
+                                                                .join(" ")}
                                                             type="number"
                                                             min={1}
                                                             max={10}
@@ -784,10 +925,16 @@ export default function RandomizerTab({
                                                 <Grid
                                                     container
                                                     size={12}
-                                                    className="randomizer-inline-field"
+                                                    className={
+                                                        styles.randomizerInlineField
+                                                    }
                                                 >
                                                     <Grid size={4}>
-                                                        <span className="field-label">
+                                                        <span
+                                                            className={
+                                                                styles.fieldLabel
+                                                            }
+                                                        >
                                                             {t(
                                                                 "ui_common_maximum",
                                                             )}
@@ -795,7 +942,12 @@ export default function RandomizerTab({
                                                     </Grid>
                                                     <Grid size={8}>
                                                         <input
-                                                            className="input randomizer-number-input"
+                                                            className={[
+                                                                styles.input,
+                                                                styles.randomizerNumberInput,
+                                                            ]
+                                                                .filter(Boolean)
+                                                                .join(" ")}
                                                             type="number"
                                                             min={1}
                                                             max={10}
@@ -832,10 +984,16 @@ export default function RandomizerTab({
                                         ) : (
                                             <Grid
                                                 container
-                                                className="randomizer-inline-field"
+                                                className={
+                                                    styles.randomizerInlineField
+                                                }
                                             >
                                                 <Grid size={4}>
-                                                    <span className="field-label">
+                                                    <span
+                                                        className={
+                                                            styles.fieldLabel
+                                                        }
+                                                    >
                                                         {t(
                                                             "ui_randomizer_mutator_brutal_plus",
                                                         )}
@@ -843,7 +1001,12 @@ export default function RandomizerTab({
                                                 </Grid>
                                                 <Grid size={8}>
                                                     <select
-                                                        className="input randomizer-select"
+                                                        className={[
+                                                            styles.input,
+                                                            styles.randomizerSelect,
+                                                        ]
+                                                            .filter(Boolean)
+                                                            .join(" ")}
                                                         aria-label={t(
                                                             "ui_randomizer_mutator_brutal_plus_aria",
                                                         )}
@@ -885,7 +1048,7 @@ export default function RandomizerTab({
                                     </div>
 
                                     {mutatorMode === "all_random" ? (
-                                        <p className="note">
+                                        <p className={styles.note}>
                                             {formatText(
                                                 "ui_randomizer_mutator_all_random_summary",
                                                 {
@@ -895,16 +1058,28 @@ export default function RandomizerTab({
                                             )}
                                         </p>
                                     ) : selectedBrutalPlusEntry ? (
-                                        <div className="randomizer-mutator-budget">
-                                            <div className="randomizer-mutator-chip">
+                                        <div
+                                            className={
+                                                styles.randomizerMutatorBudget
+                                            }
+                                        >
+                                            <div
+                                                className={
+                                                    styles.randomizerMutatorChip
+                                                }
+                                            >
                                                 {`${t("ui_randomizer_mutator_count")}: ${selectedBrutalPlusEntry.mutator_count.min}-${selectedBrutalPlusEntry.mutator_count.max}`}
                                             </div>
-                                            <div className="randomizer-mutator-chip">
+                                            <div
+                                                className={
+                                                    styles.randomizerMutatorChip
+                                                }
+                                            >
                                                 {`${t("ui_randomizer_mutator_points")}: ${selectedBrutalPlusEntry.mutator_points.min}-${selectedBrutalPlusEntry.mutator_points.max}`}
                                             </div>
                                         </div>
                                     ) : null}
-                                    <p className="note">
+                                    <p className={styles.note}>
                                         {formatText(
                                             "ui_randomizer_mutator_pool_summary",
                                             {
@@ -914,10 +1089,10 @@ export default function RandomizerTab({
                                     </p>
                                 </div>
 
-                                <div className="randomizer-actions">
+                                <div className={styles.randomizerActions}>
                                     <button
                                         type="button"
-                                        className="button-normal"
+                                        className={styles.buttonNormal}
                                         onClick={onGenerateMutator}
                                         disabled={actions.isBusy}
                                     >
@@ -926,11 +1101,18 @@ export default function RandomizerTab({
                                 </div>
                             </Grid>
 
-                            <Grid size={8} className="randomizer-result-box">
+                            <Grid
+                                size={8}
+                                className={styles.randomizerResultBox}
+                            >
                                 <h3>{t("ui_randomizer_result")}</h3>
                                 {mutatorResult ? (
                                     <>
-                                        <div className="randomizer-result-head">
+                                        <div
+                                            className={
+                                                styles.randomizerResultHead
+                                            }
+                                        >
                                             {mutatorResult.brutal_plus === null
                                                 ? formatText(
                                                       "ui_randomizer_mutator_result_head_random",
@@ -951,23 +1133,43 @@ export default function RandomizerTab({
                                                       },
                                                   )}
                                         </div>
-                                        <div className="randomizer-mutator-budget">
-                                            <div className="randomizer-mutator-chip">
+                                        <div
+                                            className={
+                                                styles.randomizerMutatorBudget
+                                            }
+                                        >
+                                            <div
+                                                className={
+                                                    styles.randomizerMutatorChip
+                                                }
+                                            >
                                                 {`${t("ui_randomizer_mutator_count")}: ${mutatorResult.mutator_count}`}
                                             </div>
-                                            <div className="randomizer-mutator-chip">
+                                            <div
+                                                className={
+                                                    styles.randomizerMutatorChip
+                                                }
+                                            >
                                                 {`${t("ui_randomizer_mutator_total_points")}: ${mutatorResult.mutator_total_points}`}
                                             </div>
                                         </div>
-                                        <div className="randomizer-mutator-grid">
+                                        <div
+                                            className={
+                                                styles.randomizerMutatorGrid
+                                            }
+                                        >
                                             {mutatorResult.mutators.map(
                                                 (mutator) => (
                                                     <article
                                                         key={mutator.id}
-                                                        className="randomizer-mutator-card"
+                                                        className={
+                                                            styles.randomizerMutatorCard
+                                                        }
                                                     >
                                                         <img
-                                                            className="randomizer-mutator-icon"
+                                                            className={
+                                                                styles.randomizerMutatorIcon
+                                                            }
                                                             src={mutatorIconPath(
                                                                 mutator.iconName,
                                                             )}
@@ -976,15 +1178,31 @@ export default function RandomizerTab({
                                                                 languageManager,
                                                             )}
                                                         />
-                                                        <div className="randomizer-mutator-copy">
-                                                            <div className="randomizer-mutator-card-head">
-                                                                <h4 className="randomizer-mutator-name">
+                                                        <div
+                                                            className={
+                                                                styles.randomizerMutatorCopy
+                                                            }
+                                                        >
+                                                            <div
+                                                                className={
+                                                                    styles.randomizerMutatorCardHead
+                                                                }
+                                                            >
+                                                                <h4
+                                                                    className={
+                                                                        styles.randomizerMutatorName
+                                                                    }
+                                                                >
                                                                     {localizedMutatorText(
                                                                         mutator.name,
                                                                         languageManager,
                                                                     )}
                                                                 </h4>
-                                                                <span className="randomizer-mutator-points">
+                                                                <span
+                                                                    className={
+                                                                        styles.randomizerMutatorPoints
+                                                                    }
+                                                                >
                                                                     {formatText(
                                                                         "ui_randomizer_mutator_point_value",
                                                                         {
@@ -993,7 +1211,11 @@ export default function RandomizerTab({
                                                                     )}
                                                                 </span>
                                                             </div>
-                                                            <p className="randomizer-mutator-description">
+                                                            <p
+                                                                className={
+                                                                    styles.randomizerMutatorDescription
+                                                                }
+                                                            >
                                                                 {localizedMutatorText(
                                                                     mutator.description,
                                                                     languageManager,
@@ -1006,8 +1228,19 @@ export default function RandomizerTab({
                                         </div>
                                     </>
                                 ) : (
-                                    <div className="stats-block randomizer-result-body">
-                                        <div className="randomizer-result-empty">
+                                    <div
+                                        className={[
+                                            styles.statsBlock,
+                                            styles.randomizerResultBody,
+                                        ]
+                                            .filter(Boolean)
+                                            .join(" ")}
+                                    >
+                                        <div
+                                            className={
+                                                styles.randomizerResultEmpty
+                                            }
+                                        >
                                             {t(
                                                 "ui_randomizer_mutator_empty_result",
                                             )}

@@ -50,6 +50,7 @@ import RandomizerTab from "./tabs/RandomizerTab";
 import SettingsTab from "./tabs/SettingsTab";
 import StatisticsTab from "./tabs/StatisticsTab";
 import WeekliesTab from "./tabs/WeekliesTab";
+import styles from "./page.module.css";
 
 const { useEffect, useMemo, useRef, useState } = React;
 
@@ -451,7 +452,14 @@ function renderNode(
     depth: number,
     onChange: PathValueUpdater,
 ): React.ReactNode {
-    const style = `node-depth-${Math.min(depth, 3)}`;
+    const nodeDepthClassName =
+        depth <= 0
+            ? styles.nodeDepth0
+            : depth === 1
+              ? styles.nodeDepth1
+              : depth === 2
+                ? styles.nodeDepth2
+                : styles.nodeDepth3;
     const label = path[path.length - 1]
         ? prettyLabel(path[path.length - 1])
         : "Settings";
@@ -466,8 +474,8 @@ function renderNode(
     ) {
         if (typeof value === "boolean") {
             return (
-                <label className="field">
-                    <span className="field-label">{label}</span>
+                <label className={styles.field}>
+                    <span className={styles.fieldLabel}>{label}</span>
                     <input
                         type="checkbox"
                         checked={Boolean(value)}
@@ -484,14 +492,22 @@ function renderNode(
             (templateValue && Array.isArray(templateValue))
         ) {
             return (
-                <label className="field field-textarea">
-                    <span className="field-label">{`${label} (one row per line)`}</span>
+                <label
+                    className={[styles.field, styles.fieldTextarea]
+                        .filter(Boolean)
+                        .join(" ")}
+                >
+                    <span
+                        className={styles.fieldLabel}
+                    >{`${label} (one row per line)`}</span>
                     <textarea
                         rows={Math.max(
                             3,
                             Array.isArray(value) ? value.length : 3,
                         )}
-                        className="mono input"
+                        className={[styles.mono, styles.input]
+                            .filter(Boolean)
+                            .join(" ")}
                         value={asTextFromValue(value)}
                         onChange={(event) =>
                             onChange(
@@ -509,13 +525,13 @@ function renderNode(
 
         if (typeof value === "number") {
             return (
-                <label className="field">
-                    <span className="field-label">{label}</span>
+                <label className={styles.field}>
+                    <span className={styles.fieldLabel}>{label}</span>
                     <input
                         type="number"
                         step="any"
                         value={Number.isFinite(value) ? value : 0}
-                        className="input"
+                        className={styles.input}
                         onChange={(event) =>
                             onChange(path, Number(event.target.value))
                         }
@@ -525,12 +541,12 @@ function renderNode(
         }
 
         return (
-            <label className="field">
-                <span className="field-label">{label}</span>
+            <label className={styles.field}>
+                <span className={styles.fieldLabel}>{label}</span>
                 <input
                     type={isSensitivePath(path) ? "password" : "text"}
                     value={asTextFromValue(value)}
-                    className="input"
+                    className={styles.input}
                     onChange={(event) => onChange(path, event.target.value)}
                 />
             </label>
@@ -540,8 +556,13 @@ function renderNode(
     if (typeof value === "object") {
         const entries = Object.entries(value);
         return (
-            <details className={`${style} card`} open>
-                <summary className="section-title">{label}</summary>
+            <details
+                className={[nodeDepthClassName, styles.card]
+                    .filter(Boolean)
+                    .join(" ")}
+                open
+            >
+                <summary className={styles.sectionTitle}>{label}</summary>
                 {entries.map(([k, child]) =>
                     renderNode(
                         child,
@@ -2432,8 +2453,12 @@ function SettingsEditor({
     const active = TABS.find((tab) => tab.id === activeTab) || TABS[0];
     const tabContent =
         draft === null ? (
-            <section className="tab-content">
-                <div className="card group">
+            <section className={styles.tabContent}>
+                <div
+                    className={[styles.card, styles.group]
+                        .filter(Boolean)
+                        .join(" ")}
+                >
                     <p>{status}</p>
                 </div>
             </section>
@@ -2685,14 +2710,14 @@ function SettingsEditor({
 
     return (
         <section id="app-content">
-            <div className="config-header">
+            <div className={styles.configHeader}>
                 <h1>
                     SC2 Coop Info v{appVersion}
                     {isDev ? " Dev" : ""}
                 </h1>
                 <p
                     id="app-status"
-                    className="status"
+                    className={styles.status}
                     data-busy={String(isBusy)}
                 >
                     {status}
@@ -2700,7 +2725,7 @@ function SettingsEditor({
             </div>
             <Tabs
                 id="app-tab-nav"
-                className="tabs"
+                className={styles.tabs}
                 value={activeTab}
                 variant="scrollable"
                 scrollButtons="auto"
@@ -2713,7 +2738,12 @@ function SettingsEditor({
                     <Tab
                         key={tab.id}
                         value={tab.id}
-                        className={`tab-btn${tab.id === activeTab ? " is-active" : ""}`}
+                        className={[
+                            styles.tabBtn,
+                            tab.id === activeTab ? styles.isActive : "",
+                        ]
+                            .filter(Boolean)
+                            .join(" ")}
                         label={languageManager.translate(tab.titleId)}
                         component={RouterLink}
                         to={getTabRoute(tab.id)}
@@ -2726,13 +2756,19 @@ function SettingsEditor({
             <div
                 id="app-footer"
                 className={
-                    active.id === "settings" ? "footer is-hidden" : "footer"
+                    active.id === "settings"
+                        ? [styles.footer, styles.isHidden]
+                              .filter(Boolean)
+                              .join(" ")
+                        : styles.footer
                 }
             >
                 <button
                     id="app-save"
                     type="button"
-                    className="submit button-normal"
+                    className={[styles.submit, styles.buttonNormal]
+                        .filter(Boolean)
+                        .join(" ")}
                     disabled={!dirty || isBusy || draft === null}
                     onClick={saveSettings}
                 >
@@ -2743,7 +2779,9 @@ function SettingsEditor({
                 <button
                     id="app-revert"
                     type="button"
-                    className="submit button-normal"
+                    className={[styles.submit, styles.buttonNormal]
+                        .filter(Boolean)
+                        .join(" ")}
                     disabled={!dirty || isBusy || draft === null}
                     onClick={resetSettings}
                 >
@@ -2752,7 +2790,9 @@ function SettingsEditor({
                 <button
                     id="app-reload"
                     type="button"
-                    className="submit button-normal"
+                    className={[styles.submit, styles.buttonNormal]
+                        .filter(Boolean)
+                        .join(" ")}
                     disabled={isBusy || draft === null}
                     onClick={loadSettings}
                 >
