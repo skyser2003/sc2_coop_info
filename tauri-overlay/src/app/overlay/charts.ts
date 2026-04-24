@@ -8,7 +8,6 @@ let chartDevicePixelRatio = 0;
 
 type ChartMetric = "army" | "supply" | "killed" | "mining";
 
-export type ReplayDataRecord = Record<string, ReplayPlayerSeries>;
 export type OverlayChartCanvasMap = Record<
     ChartMetric,
     HTMLCanvasElement | null
@@ -54,21 +53,9 @@ function destroyChartSafe(chart: OverlayChart | undefined | null): void {
     }
 }
 
-function getReplayPlayer(
-    replayData: ReplayDataRecord,
-    playerId: 1 | 2,
-): ReplayPlayerSeries | null {
-    const numberKey = replayData[playerId];
-    if (numberKey) {
-        return numberKey;
-    }
-    const stringKey = replayData[String(playerId)];
-    return stringKey ?? null;
-}
-
 function generateConfig(
-    player1: ReplayPlayerSeries,
-    player2: ReplayPlayerSeries,
+    mainPlayer: ReplayPlayerSeries,
+    allyPlayer: ReplayPlayerSeries,
     labels: string[],
     metric: ChartMetric,
     title: string,
@@ -79,13 +66,13 @@ function generateConfig(
             labels,
             datasets: [
                 {
-                    data: player1[metric],
-                    label: player1.name,
+                    data: mainPlayer[metric],
+                    label: mainPlayer.name,
                     borderColor: player1Color,
                 },
                 {
-                    data: player2[metric],
-                    label: player2.name,
+                    data: allyPlayer[metric],
+                    label: allyPlayer.name,
                     borderColor: player2Color,
                 },
             ],
@@ -162,16 +149,16 @@ function generateConfig(
 
 function updateChart(
     chart: OverlayChart,
-    player1: ReplayPlayerSeries,
-    player2: ReplayPlayerSeries,
+    mainPlayer: ReplayPlayerSeries,
+    allyPlayer: ReplayPlayerSeries,
     labels: string[],
     metric: ChartMetric,
     title: string,
 ): void {
-    chart.data.datasets[0].data = player1[metric];
-    chart.data.datasets[1].data = player2[metric];
-    chart.data.datasets[0].label = player1.name;
-    chart.data.datasets[1].label = player2.name;
+    chart.data.datasets[0].data = mainPlayer[metric];
+    chart.data.datasets[1].data = allyPlayer[metric];
+    chart.data.datasets[0].label = mainPlayer.name;
+    chart.data.datasets[1].label = allyPlayer.name;
     chart.data.labels = labels;
     chart.options.plugins.title.text = title;
 
@@ -179,7 +166,8 @@ function updateChart(
 }
 
 function plotChart(
-    replayData: ReplayDataRecord,
+    mainPlayer: ReplayPlayerSeries,
+    allyPlayer: ReplayPlayerSeries,
     labels: string[],
     metric: ChartMetric,
     canvas: HTMLCanvasElement | null,
@@ -193,15 +181,9 @@ function plotChart(
         return;
     }
 
-    const player1 = getReplayPlayer(replayData, 1);
-    const player2 = getReplayPlayer(replayData, 2);
-    if (!player1 || !player2) {
-        return;
-    }
-
     const tracked = charts[metric];
     if (tracked && tracked.canvas === canvas) {
-        updateChart(tracked, player1, player2, labels, metric, title);
+        updateChart(tracked, mainPlayer, allyPlayer, labels, metric, title);
         return;
     }
 
@@ -212,7 +194,7 @@ function plotChart(
     ensureChartComponentsRegistered();
     charts[metric] = new Chart(
         ctx,
-        generateConfig(player1, player2, labels, metric, title),
+        generateConfig(mainPlayer, allyPlayer, labels, metric, title),
     );
 }
 
@@ -222,21 +204,20 @@ export function setChartPlayerColors(p1: string, p2: string): void {
 }
 
 export function plot_charts(
-    replayData: ReplayDataRecord,
+    mainPlayer: ReplayPlayerSeries,
+    allyPlayer: ReplayPlayerSeries,
     canvases: OverlayChartCanvasMap,
     chartTitles: Record<ChartMetric, string>,
 ): void {
-    const player1 = getReplayPlayer(replayData, 1);
-    if (!player1) return;
-
     const labels: string[] = [];
-    for (let i = 0; i < player1.army.length; i++) {
+    for (let i = 0; i < mainPlayer.army.length; i++) {
         labels.push(formatLength(i * 10, false));
     }
 
     for (const metric of chartMetrics) {
         plotChart(
-            replayData,
+            mainPlayer,
+            allyPlayer,
             labels,
             metric,
             canvases[metric],

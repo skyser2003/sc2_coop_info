@@ -20,6 +20,37 @@ fn sample_replay() -> ReplayInfo {
     replay
 }
 
+fn cached_orientation_replay_with_reversed_player_stats() -> ReplayInfo {
+    let mut replay = ReplayInfo::with_players(
+        ReplayPlayerInfo::default()
+            .with_name("AllyPlayer")
+            .with_commander("Swann"),
+        ReplayPlayerInfo::default()
+            .with_name("MainPlayer")
+            .with_commander("Abathur"),
+        1,
+    );
+    replay.set_file("cached-replay.SC2Replay");
+    replay.set_result("Victory");
+    replay.set_player_stats(json!({
+        "1": {
+            "name": "AllyPlayer",
+            "army": [11.0],
+            "supply": [12.0],
+            "killed": [13.0],
+            "mining": [14.0]
+        },
+        "2": {
+            "name": "MainPlayer",
+            "army": [21.0],
+            "supply": [22.0],
+            "killed": [23.0],
+            "mining": [24.0]
+        }
+    }));
+    replay
+}
+
 #[test]
 fn overlay_payload_omits_session_counts_when_disabled() {
     let state = BackendState::new();
@@ -60,4 +91,48 @@ fn overlay_prestige_text_uses_selected_language() {
     );
     assert_eq!(localized_prestige_text("Abathur", 1, "ko"), "정수 축적가");
     assert_eq!(localized_prestige_text("Swann", 2, "ko"), "노련한 기계공");
+}
+
+#[test]
+fn overlay_payload_exposes_semantic_player_stats_for_main_and_ally() {
+    let state = BackendState::new();
+    let payload = overlay_payload_from_replay(
+        &state,
+        &cached_orientation_replay_with_reversed_player_stats(),
+        false,
+        false,
+        0,
+        0,
+    );
+
+    assert_eq!(payload.main, "MainPlayer");
+    assert_eq!(payload.ally, "AllyPlayer");
+    assert_eq!(
+        payload
+            .main_player_stats
+            .as_ref()
+            .map(|stats| stats.name.as_str()),
+        Some("MainPlayer")
+    );
+    assert_eq!(
+        payload
+            .main_player_stats
+            .as_ref()
+            .map(|stats| stats.army.clone()),
+        Some(vec![21.0])
+    );
+    assert_eq!(
+        payload
+            .ally_player_stats
+            .as_ref()
+            .map(|stats| stats.name.as_str()),
+        Some("AllyPlayer")
+    );
+    assert_eq!(
+        payload
+            .ally_player_stats
+            .as_ref()
+            .map(|stats| stats.army.clone()),
+        Some(vec![11.0])
+    );
 }

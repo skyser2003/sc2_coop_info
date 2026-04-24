@@ -7,7 +7,10 @@ import {
     update_charts_colors,
     updateChartTitles,
 } from "../charts";
-import type { OverlayReplayPayload } from "../../../bindings/overlay";
+import type {
+    OverlayReplayPayload,
+    ReplayPlayerSeries,
+} from "../../../bindings/overlay";
 import { LanguageManager } from "../../i18n/languageManager";
 
 export interface ReplayChartVisible {
@@ -26,6 +29,28 @@ const hiddenChartStyle: ChartStyleState = {
     opacity: "0",
     transition: "",
 };
+
+function resolvePlayerSeriesByName(
+    playerStats: OverlayReplayPayload["player_stats"],
+    targetName: string,
+    fallbackKey: "1" | "2",
+): ReplayPlayerSeries | null {
+    if (playerStats == null) {
+        return null;
+    }
+
+    const trimmedTarget = targetName.trim();
+    if (trimmedTarget !== "") {
+        const matchedSeries = Object.values(playerStats).find(
+            (series) => series.name.trim() === trimmedTarget,
+        );
+        if (matchedSeries != null) {
+            return matchedSeries;
+        }
+    }
+
+    return playerStats[fallbackKey] ?? null;
+}
 
 export default function GameStatChart({
     payload,
@@ -50,9 +75,24 @@ export default function GameStatChart({
     const miningChartRef = useRef<HTMLCanvasElement | null>(null);
 
     useEffect(() => {
-        const replayPlayerStats = payload?.player_stats ?? null;
+        const mainPlayerStats =
+            payload?.mainPlayerStats ??
+            resolvePlayerSeriesByName(
+                payload?.player_stats,
+                payload?.main ?? "",
+                "1",
+            );
+        const allyPlayerStats =
+            payload?.allyPlayerStats ??
+            resolvePlayerSeriesByName(
+                payload?.player_stats,
+                payload?.ally ?? "",
+                "2",
+            );
         const shouldShowCharts =
-            chartVisibility.visible && replayPlayerStats !== null;
+            chartVisibility.visible &&
+            mainPlayerStats !== null &&
+            allyPlayerStats !== null;
         const chartCanvases: OverlayChartCanvasMap = {
             army: armyChartRef.current,
             supply: supplyChartRef.current,
@@ -68,7 +108,12 @@ export default function GameStatChart({
         };
 
         if (shouldShowCharts) {
-            plot_charts(replayPlayerStats, chartCanvases, chartTitles);
+            plot_charts(
+                mainPlayerStats,
+                allyPlayerStats,
+                chartCanvases,
+                chartTitles,
+            );
             setChartStyle({
                 display: "block",
                 opacity: chartVisibility.immediate ? "1" : "0",

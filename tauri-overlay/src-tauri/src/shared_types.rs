@@ -244,6 +244,12 @@ pub struct OverlayReplayPayload {
     #[serde(rename = "player_stats")]
     #[ts(optional)]
     pub player_stats: Option<ReplayDataRecord>,
+    #[serde(rename = "mainPlayerStats")]
+    #[ts(optional)]
+    pub main_player_stats: Option<ReplayPlayerSeries>,
+    #[serde(rename = "allyPlayerStats")]
+    #[ts(optional)]
+    pub ally_player_stats: Option<ReplayPlayerSeries>,
     #[serde(rename = "mainPrestige")]
     pub main_prestige: String,
     #[serde(rename = "allyPrestige")]

@@ -20,6 +20,7 @@ use crate::randomizer;
 use crate::shared_types::{
     overlay_icon_payload_from_value, replay_data_record_from_value, swap_replay_data_record_sides,
     unit_stats_map_from_value, EmptyPayload, OverlayReplayPayload, OverlayScreenshotRequestPayload,
+    ReplayDataRecord, ReplayPlayerSeries,
 };
 use crate::{
     replay_index_by_file, replay_should_swap_main_and_ally, sanitize_replay_text, BackendState,
@@ -287,6 +288,12 @@ impl OverlayReplayPayload {
             language,
             dictionary,
         );
+        let player_stats = replay_data_record_from_value(&sanitized.player_stats);
+        let (main_player_stats, ally_player_stats) = semantic_player_stats_from_record(
+            &player_stats,
+            &sanitized.main().name,
+            &sanitized.ally().name,
+        );
         Self {
             file: sanitized.file.clone(),
             map_name: sanitized.map.clone(),
@@ -321,7 +328,9 @@ impl OverlayReplayPayload {
                 .collect(),
             bonus: sanitized.bonus.iter().copied().map(as_u32).collect(),
             bonus_total: sanitized.bonus_total.map(as_u32),
-            player_stats: Some(replay_data_record_from_value(&sanitized.player_stats)),
+            player_stats: Some(player_stats),
+            main_player_stats,
+            ally_player_stats,
             main_prestige,
             ally_prestige,
             victory: None,
@@ -339,6 +348,12 @@ impl OverlayReplayPayload {
         let sanitized = replay.sanitized_for_client();
         let main_prestige = Self::localized_prestige_text(sanitized.main_prestige());
         let ally_prestige = Self::localized_prestige_text(sanitized.ally_prestige());
+        let player_stats = replay_data_record_from_value(&sanitized.player_stats);
+        let (main_player_stats, ally_player_stats) = semantic_player_stats_from_record(
+            &player_stats,
+            &sanitized.main().name,
+            &sanitized.ally().name,
+        );
         Self {
             file: sanitized.file.clone(),
             map_name: sanitized.map.clone(),
@@ -369,7 +384,9 @@ impl OverlayReplayPayload {
             mutators: sanitized.mutators.clone(),
             bonus: sanitized.bonus.iter().copied().map(as_u32).collect(),
             bonus_total: sanitized.bonus_total.map(as_u32),
-            player_stats: Some(replay_data_record_from_value(&sanitized.player_stats)),
+            player_stats: Some(player_stats),
+            main_player_stats,
+            ally_player_stats,
             main_prestige,
             ally_prestige,
             victory: None,
@@ -395,8 +412,45 @@ impl OverlayReplayPayload {
         std::mem::swap(&mut self.main_units, &mut self.ally_units);
         std::mem::swap(&mut self.main_icons, &mut self.ally_icons);
         std::mem::swap(&mut self.main_prestige, &mut self.ally_prestige);
+        std::mem::swap(&mut self.main_player_stats, &mut self.ally_player_stats);
         swap_replay_data_record_sides(&mut self.player_stats);
     }
+}
+
+fn player_series_by_name(
+    player_stats: &ReplayDataRecord,
+    player_name: &str,
+    excluded_index: Option<usize>,
+) -> Option<ReplayPlayerSeries> {
+    let target_name = player_name.trim();
+    if target_name.is_empty() {
+        return None;
+    }
+
+    player_stats
+        .values()
+        .enumerate()
+        .find(|(index, series)| Some(*index) != excluded_index && series.name.trim() == target_name)
+        .map(|(_, series)| series.clone())
+}
+
+fn semantic_player_stats_from_record(
+    player_stats: &ReplayDataRecord,
+    main_name: &str,
+    ally_name: &str,
+) -> (Option<ReplayPlayerSeries>, Option<ReplayPlayerSeries>) {
+    let main_player_stats = player_series_by_name(player_stats, main_name, None)
+        .or_else(|| player_stats.get("1").cloned());
+    let ally_player_stats = player_series_by_name(
+        player_stats,
+        ally_name,
+        main_player_stats
+            .as_ref()
+            .and_then(|target| player_stats.values().position(|series| series == target)),
+    )
+    .or_else(|| player_stats.get("2").cloned());
+
+    (main_player_stats, ally_player_stats)
 }
 
 pub fn overlay_window_bounds_for_monitor(
