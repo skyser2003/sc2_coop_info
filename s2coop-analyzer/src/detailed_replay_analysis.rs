@@ -208,7 +208,6 @@ struct ReplayDetailedParseContext {
 #[derive(Debug, Clone)]
 struct ReplayBaseParse {
     context: ReplayParsedContext,
-    mutator_context: ReplayMutatorParseContext,
     build: ReplayBuildInfo,
     file: String,
     map_name: String,
@@ -233,10 +232,6 @@ struct ReplayParsedInputBundle {
     parser: ParsedReplayInput,
     all_players: Vec<ParsedReplayPlayer>,
     accurate_length_force_float: bool,
-    metadata_duration: f64,
-    metadata_player_apm: Vec<f64>,
-    game_speed_code: i64,
-    mutator_context: ReplayMutatorParseContext,
     realtime_length: f64,
     commander_found: bool,
     enemy_race_present: bool,
@@ -484,12 +479,15 @@ impl DetailedReplayAnalyzer {
         }
 
         let (mut parsed, events) = if options.include_events {
-            let mut parsed =
-                ReplayParser::parse_file_with_store_ordered_events(replay_path, protocol_store)
-                    .map_err(|error| ReplayBaseParseError::ReplayParse {
-                        path: replay_path.display().to_string(),
-                        message: error.to_string(),
-                    })?;
+            let mut parsed = ReplayParser::parse_file_with_store_ordered_events_filtered(
+                replay_path,
+                protocol_store,
+                ReplayEventKind::needed_for_detailed_analysis_name,
+            )
+            .map_err(|error| ReplayBaseParseError::ReplayParse {
+                path: replay_path.display().to_string(),
+                message: error.to_string(),
+            })?;
             let events = parsed.take_events();
             (parsed.take_replay(), events)
         } else {
@@ -636,7 +634,6 @@ impl DetailedReplayAnalyzer {
                 init_data,
                 metadata,
             },
-            mutator_context,
             build: ReplayBuildInfo::new(
                 base_build,
                 DetailedReplayAnalyzer::resolve_protocol_build(
@@ -1655,53 +1652,49 @@ impl<'a> GenerateCacheProgressReporter<'a> {
 #[derive(Debug, Clone)]
 struct CandidateReplay {
     path: PathBuf,
-    parsed: ReplayParsedInputBundle,
+    hash: String,
 }
 
 impl CandidateReplay {
-    fn collect(replay_path: &Path, resources: &ReplayAnalysisResources) -> Option<Self> {
-        let (_, parsed) = CacheReplayEntry::parse_with_options(
-            replay_path,
-            resources,
-            ReplayBaseParseOptions {
-                include_events: false,
-                filters: ReplayBaseParseFilters::saved_cache(),
-            },
-        )?;
-
-        Some(Self {
+    fn collect(replay_path: &Path) -> Self {
+        Self {
             path: replay_path.to_path_buf(),
-            parsed,
-        })
+            hash: DetailedReplayAnalyzer::calculate_replay_hash(replay_path),
+        }
     }
 
     fn analyze(
         self,
         main_handles: &HashSet<String>,
         resources: &ReplayAnalysisResources,
-    ) -> CacheReplayEntry {
-        let Self { path, parsed } = self;
-        let basic = parsed.cache_entry();
+    ) -> Option<CacheReplayEntry> {
+        let Self { path, hash: _ } = self;
+        let Some((basic, parsed)) = CacheReplayEntry::parse_with_options(
+            &path,
+            resources,
+            ReplayBaseParseOptions {
+                include_events: true,
+                filters: ReplayBaseParseFilters::saved_cache(),
+            },
+        ) else {
+            return CacheReplayEntry::parse_basic_with_resources(&path, resources);
+        };
 
-        let detailed = parsed
-            .with_detailed_events(&path, resources)
-            .and_then(|parsed| {
-                DetailedReplayAnalyzer::analyze_parsed_replay_with_cache_entry(
-                    parsed,
-                    main_handles,
-                    resources.hidden_created_lost(),
-                    Some(&basic),
-                    resources,
-                )
-            });
+        let detailed = DetailedReplayAnalyzer::analyze_parsed_replay_with_cache_entry(
+            parsed,
+            main_handles,
+            resources.hidden_created_lost(),
+            Some(&basic),
+            resources,
+        );
 
         if let Ok(result) = detailed {
             if result.report().has_non_empty_player_stats() {
-                return result.into_cache_entry();
+                return Some(result.into_cache_entry());
             }
         }
 
-        basic
+        Some(basic)
     }
 
     fn partition_cached(
@@ -1712,14 +1705,17 @@ impl CandidateReplay {
         let mut pending_candidates = Vec::new();
 
         for candidate in candidates {
-            let hash = candidate.parsed.parser.hash.clone().unwrap_or_default();
+            let hash = candidate.hash.clone();
             if hash.is_empty() {
                 pending_candidates.push((hash, candidate));
                 continue;
             }
 
             if let Some(existing_entry) = existing_entries.get(&hash) {
-                reused_entries.insert(hash, existing_entry.refreshed_for_parsed(&candidate.parsed));
+                reused_entries.insert(
+                    hash.clone(),
+                    existing_entry.refreshed_for_candidate(candidate.path.as_path(), hash.as_str()),
+                );
             } else {
                 pending_candidates.push((hash, candidate));
             }
@@ -1878,7 +1874,7 @@ impl DetailedReplayAnalyzer {
                             stop_requested_for_candidates.store(true, AtomicOrdering::Release);
                             return None;
                         }
-                        CandidateReplay::collect(path, &resources)
+                        Some(CandidateReplay::collect(path))
                     })
                     .collect::<Vec<CandidateReplay>>()
             });
@@ -1918,11 +1914,13 @@ impl DetailedReplayAnalyzer {
                                     return None;
                                 }
                                 let entry = candidate.analyze(&main_handles, &resources);
-                                if entry.detailed_analysis {
-                                    progress_for_workers.add_temp_entry(entry.clone());
+                                if let Some(entry) = &entry {
+                                    if entry.detailed_analysis {
+                                        progress_for_workers.add_temp_entry(entry.clone());
+                                    }
                                 }
                                 progress_for_workers.record_processed_file();
-                                Some((entry.hash.clone(), entry))
+                                entry.map(|entry| (entry.hash.clone(), entry))
                             })
                             .collect::<HashMap<_, _>>()
                     })
@@ -2081,12 +2079,6 @@ impl ReplayParsedInputBundle {
 
         let length = metadata.Duration;
         let accurate_length = base.accurate_length;
-        let game_speed_code = DetailedReplayAnalyzer::replay_game_speed_code(details, init_data);
-        let metadata_player_apm = metadata
-            .Players
-            .iter()
-            .map(|player| player.APM)
-            .collect::<Vec<_>>();
         let cache_context = ReplayCacheContext {
             is_mm_replay: base.file.contains("[MM]"),
             is_blizzard_map: details.m_isBlizzardMap,
@@ -2226,100 +2218,12 @@ impl ReplayParsedInputBundle {
             parser,
             all_players,
             accurate_length_force_float: base.accurate_length_force_float,
-            metadata_duration: length,
-            metadata_player_apm,
-            game_speed_code,
-            mutator_context: base.mutator_context,
             realtime_length: base.realtime_length,
             commander_found,
             enemy_race_present,
             cache_context,
             detailed: base.detailed,
         })
-    }
-
-    fn apply_event_derived_fields(
-        &mut self,
-        events: Vec<ReplayEvent>,
-        dictionaries: CacheGenerationData<'_>,
-    ) {
-        let start_time = DetailedReplayAnalyzer::get_start_time(&events);
-        let last_deselect_event = DetailedReplayAnalyzer::get_last_deselect_event(&events)
-            .unwrap_or(ReplayNumericValue::Float(self.metadata_duration));
-        let length_numeric = ReplayNumericValue::Float(self.metadata_duration);
-        let accurate_length_numeric = if self.parser.result == "Victory" {
-            last_deselect_event.subtract(&start_time)
-        } else {
-            length_numeric.subtract(&start_time)
-        };
-        let accurate_length = accurate_length_numeric.as_f64();
-        let end_time = if self.parser.result == "Victory" {
-            last_deselect_event.as_f64()
-        } else {
-            self.metadata_duration
-        };
-        let (mutators, weekly) = DetailedReplayAnalyzer::identify_mutators_for_replay(
-            &events,
-            &dictionaries.mutators_all,
-            &dictionaries.mutators_ui,
-            &dictionaries.mutator_ids,
-            &dictionaries.cached_mutators,
-            self.parser.extension,
-            self.cache_context.is_mm_replay,
-            Some(&self.mutator_context),
-        );
-
-        self.parser.accurate_length = accurate_length;
-        self.parser.form_alength = DetailedReplayAnalyzer::format_duration(accurate_length);
-        self.parser.mutators = mutators;
-        self.parser.weekly = weekly;
-        self.accurate_length_force_float =
-            matches!(accurate_length_numeric, ReplayNumericValue::Float(_));
-        self.realtime_length = DetailedReplayAnalyzer::realtime_length_from_game_speed(
-            accurate_length,
-            self.game_speed_code,
-        );
-        self.recompute_player_apm();
-        self.detailed = Some(ReplayDetailedParseContext {
-            events,
-            start_time: start_time.as_f64(),
-            end_time,
-        });
-    }
-
-    fn recompute_player_apm(&mut self) {
-        for (index, player) in self.all_players.iter_mut().enumerate() {
-            let raw_apm = self
-                .metadata_player_apm
-                .get(index)
-                .copied()
-                .unwrap_or_default();
-            player.apm = if self.parser.accurate_length == 0.0 {
-                0
-            } else {
-                (raw_apm * self.metadata_duration / self.parser.accurate_length).round_ties_even()
-                    as u32
-            };
-        }
-        self.parser.players = Self::parser_players_from_all_players(&self.all_players);
-    }
-
-    fn with_detailed_events(
-        mut self,
-        replay_path: &Path,
-        resources: &ReplayAnalysisResources,
-    ) -> Result<Self, DetailedReplayAnalysisError> {
-        let events = ReplayParser::parse_ordered_events_with_store_filtered(
-            replay_path,
-            resources.protocol_store(),
-            ReplayEventKind::needed_for_detailed_analysis_name,
-        )
-        .map_err(|error| DetailedReplayAnalysisError::ReplayParse {
-            path: replay_path.display().to_string(),
-            message: error.to_string(),
-        })?;
-        self.apply_event_derived_fields(events, resources.cache_generation_data());
-        Ok(self)
     }
 
     fn parse(
@@ -2400,11 +2304,10 @@ impl CacheReplayEntry {
         Some((entry, parsed))
     }
 
-    fn refreshed_for_parsed(&self, parsed: &ReplayParsedInputBundle) -> Self {
+    fn refreshed_for_candidate(&self, path: &Path, hash: &str) -> Self {
         let mut reused_entry = self.clone();
-        reused_entry.file =
-            CacheOverallStatsFile::normalized_path_string(Path::new(&parsed.parser.file));
-        reused_entry.hash = parsed.parser.hash.clone().unwrap_or_default();
+        reused_entry.file = CacheOverallStatsFile::normalized_path_string(path);
+        reused_entry.hash = hash.to_string();
         reused_entry
     }
 }
