@@ -1,6 +1,5 @@
 use fastrand::Rng;
-use sco_tauri_overlay::randomizer::{RandomizerOps, RandomizerRequest};
-use sco_tauri_overlay::test_helper::TestHelperOps;
+use sco_tauri_overlay::{RandomizerOps, RandomizerRequest, TestHelperOps};
 use std::collections::BTreeMap;
 
 #[test]
@@ -38,7 +37,7 @@ fn randomizer_defaults_to_p0_when_saved_choices_are_empty() {
         .expect("randomizer should use default P0 selections");
 
     match result {
-        sco_tauri_overlay::randomizer::RandomizerResult::Commander {
+        sco_tauri_overlay::RandomizerResult::Commander {
             prestige,
             map_race,
             mastery_indices,
@@ -75,7 +74,7 @@ fn randomizer_respects_selected_choices_and_none_mode() {
         .expect("randomizer should accept a single explicit selection");
 
     match result {
-        sco_tauri_overlay::randomizer::RandomizerResult::Commander {
+        sco_tauri_overlay::RandomizerResult::Commander {
             commander,
             prestige,
             mastery_indices,
@@ -111,7 +110,7 @@ fn randomizer_all_in_mode_assigns_one_side_of_each_mastery_pair() {
         .expect("randomizer should produce mastery points");
 
     match result {
-        sco_tauri_overlay::randomizer::RandomizerResult::Commander {
+        sco_tauri_overlay::RandomizerResult::Commander {
             commander,
             prestige,
             map_race,
@@ -148,7 +147,7 @@ fn randomizer_generates_random_mutators_without_point_budget() {
         .expect("randomizer should produce mutators");
 
     match result {
-        sco_tauri_overlay::randomizer::RandomizerResult::Mutator {
+        sco_tauri_overlay::RandomizerResult::Mutator {
             mutators,
             mutator_count,
             mutator_total_points,
@@ -184,7 +183,7 @@ fn randomizer_generates_brutal_plus_matched_mutators() {
         .expect("randomizer should produce mutators");
 
     match result {
-        sco_tauri_overlay::randomizer::RandomizerResult::Mutator {
+        sco_tauri_overlay::RandomizerResult::Mutator {
             mutators,
             mutator_count,
             mutator_total_points,

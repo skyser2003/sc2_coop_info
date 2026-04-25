@@ -1,4 +1,4 @@
-use sco_tauri_overlay::test_helper::TestHelperOps;
+use sco_tauri_overlay::TestHelperOps;
 use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo};
 use serde_json::json;
 use std::collections::HashSet;

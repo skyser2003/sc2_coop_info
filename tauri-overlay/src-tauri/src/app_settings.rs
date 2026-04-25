@@ -387,7 +387,7 @@ impl AppSettings {
     }
 }
 
-pub struct AppSettingsOps;
+struct AppSettingsOps;
 
 impl AppSettingsOps {
     fn get_system_language() -> String {

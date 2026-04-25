@@ -2,8 +2,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     CacheCountValue, CachePlayer, CacheReplayEntry, CacheUnitStats, ProtocolBuildValue,
     ReplayBuildInfo,
 };
-use sco_tauri_overlay::replay_analysis::ReplayAnalysisOps;
-use sco_tauri_overlay::test_helper::TestHelperOps;
+use sco_tauri_overlay::{ReplayAnalysisOps, TestHelperOps};
 use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

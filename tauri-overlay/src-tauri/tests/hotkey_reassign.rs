@@ -1,25 +1,25 @@
-use sco_tauri_overlay::{overlay_info, AppSettings};
+use sco_tauri_overlay::{AppSettings, OverlayInfoOps, ResolvedHotkeyBinding};
 use serde_json::json;
 
 #[test]
 fn normalize_hotkey_accepts_shifted_symbol_variants() {
     assert_eq!(
-        overlay_info::OverlayInfoOps::normalize_hotkey("Ctrl+Shift+&"),
+        OverlayInfoOps::normalize_hotkey("Ctrl+Shift+&"),
         Some("control+shift+7".to_string())
     );
     assert_eq!(
-        overlay_info::OverlayInfoOps::normalize_hotkey("Meta+P"),
+        OverlayInfoOps::normalize_hotkey("Meta+P"),
         Some("super+p".to_string())
     );
     assert_eq!(
-        overlay_info::OverlayInfoOps::normalize_hotkey("Ctrl+Shift+?"),
+        OverlayInfoOps::normalize_hotkey("Ctrl+Shift+?"),
         Some("control+shift+/".to_string())
     );
 }
 
 #[test]
 fn reassign_end_uses_cached_binding_when_current_settings_do_not_resolve_path() {
-    let fallback = overlay_info::ResolvedHotkeyBinding::new(
+    let fallback = ResolvedHotkeyBinding::new(
         "performance_hotkey",
         "performance_show_hide",
         "control+shift+p",
@@ -40,7 +40,7 @@ fn reassign_end_uses_cached_binding_when_current_settings_do_not_resolve_path() 
 
 #[test]
 fn reassign_end_reuses_cached_binding_when_hotkey_is_null() {
-    let fallback = overlay_info::ResolvedHotkeyBinding::new(
+    let fallback = ResolvedHotkeyBinding::new(
         "performance_hotkey",
         "performance_show_hide",
         "control+shift+p",
@@ -59,7 +59,7 @@ fn reassign_end_reuses_cached_binding_when_hotkey_is_null() {
 
 #[test]
 fn reassign_end_does_not_restore_explicitly_cleared_hotkey() {
-    let fallback = overlay_info::ResolvedHotkeyBinding::new(
+    let fallback = ResolvedHotkeyBinding::new(
         "performance_hotkey",
         "performance_show_hide",
         "control+shift+p",

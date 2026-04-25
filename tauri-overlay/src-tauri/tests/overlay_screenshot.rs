@@ -1,4 +1,4 @@
-use sco_tauri_overlay::{overlay_info, AppSettings};
+use sco_tauri_overlay::{AppSettings, OverlayInfoOps};
 use serde_json::json;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -34,7 +34,7 @@ fn save_overlay_screenshot_writes_png_file() {
     let dir = unique_temp_dir("write");
     let path = dir.join("overlay.png");
 
-    overlay_info::OverlayInfoOps::save_overlay_screenshot(&path, ONE_BY_ONE_PNG)
+    OverlayInfoOps::save_overlay_screenshot(&path, ONE_BY_ONE_PNG)
         .expect("valid PNG screenshot should be saved");
 
     let written = std::fs::read(&path).expect("written screenshot should exist");
@@ -48,7 +48,7 @@ fn save_overlay_screenshot_rejects_non_png_bytes() {
     let dir = unique_temp_dir("invalid");
     let path = dir.join("overlay.png");
 
-    let error = overlay_info::OverlayInfoOps::save_overlay_screenshot(&path, b"not-a-png")
+    let error = OverlayInfoOps::save_overlay_screenshot(&path, b"not-a-png")
         .expect_err("invalid screenshot data should be rejected");
 
     assert_eq!(error, "Overlay screenshot data is not a PNG image");

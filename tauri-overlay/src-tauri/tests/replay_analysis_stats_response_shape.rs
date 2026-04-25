@@ -1,4 +1,4 @@
-use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
+use sco_tauri_overlay::ReplayAnalysis;
 use sco_tauri_overlay::{ReplayInfo, StatsState};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};

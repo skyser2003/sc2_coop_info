@@ -1,4 +1,4 @@
-use sco_tauri_overlay::test_helper::TestHelperOps;
+use sco_tauri_overlay::TestHelperOps;
 use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo};
 
 fn player(name: &str, handle: &str, commander: &str) -> ReplayPlayerInfo {

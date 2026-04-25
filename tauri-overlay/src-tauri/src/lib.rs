@@ -9,8 +9,6 @@ use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use serde::Serialize;
 use serde_json::{self, Map, Value};
 use std::collections::{HashMap, HashSet};
-use std::io::{Read, Write};
-use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex, TryLockError};
 use std::thread;
@@ -24,18 +22,18 @@ mod backend_state;
 mod command_payloads;
 mod game_launch_detector;
 mod live_game;
-pub mod logging;
-pub mod monitor_settings;
-pub mod overlay_info;
-pub mod path_manager;
+mod logging;
+mod monitor_settings;
+mod overlay_info;
+mod path_manager;
 mod performance_overlay;
-pub mod randomizer;
-pub mod replay_analysis;
+mod randomizer;
+mod replay_analysis;
 mod replay_info;
-pub mod shared_types;
+mod shared_types;
 mod stats_state;
-pub mod test_helper;
-pub use app_settings::AppSettings;
+mod test_helper;
+pub use app_settings::{AppSettings, PlayerNotes, RandomizerChoices};
 pub use backend_state::BackendState;
 pub use command_payloads::{
     AnalysisCompletedPayload, ConfigChatPayload, ConfigPayload, ConfigPlayersPayload,
@@ -43,29 +41,31 @@ pub use command_payloads::{
     StatsActionPayload, StatsStatePayload,
 };
 pub use game_launch_detector::{GameLaunchDetector, GameLaunchStatus};
-pub(crate) use replay_info::{
-    Aggregate, CommanderAggregate, MapAggregate, PlayerAggregate, RegionAggregate,
-};
+pub use logging::LoggingOps;
+pub use monitor_settings::{MonitorDescriptor, MonitorSettingsOps};
+pub use overlay_info::{OverlayInfoOps, ResolvedHotkeyBinding};
+pub use path_manager::PathManagerOps;
+pub use randomizer::{RandomizerMutatorResult, RandomizerOps, RandomizerRequest, RandomizerResult};
+pub use replay_analysis::{PlayerRowPayload, ReplayAnalysis, ReplayAnalysisOps, WeeklyRowPayload};
 pub use replay_info::{
     CommanderUnitRollup, GamesRowPayload, ReplayChatMessage, ReplayChatPayload, ReplayInfo,
     ReplayPlayerInfo, UnitStatsRollup,
 };
+pub use shared_types::*;
 pub use stats_state::{
     AnalysisMode, StartupAnalysisRequestOutcome, StartupAnalysisTrigger, StatsSnapshot, StatsState,
 };
+pub use test_helper::TestHelperOps;
 
 #[macro_export]
 macro_rules! sco_log {
     ($($arg:tt)*) => {{
-        $crate::logging::LoggingOps::log_line(&format!($($arg)*));
+        $crate::LoggingOps::log_line(&format!($($arg)*));
     }};
 }
 
 use crate::backend_state::ReplayState;
-use crate::live_game::LiveGamePlayer;
-use crate::path_manager::PathManagerOps;
-use crate::replay_analysis::ReplayAnalysis;
-use crate::shared_types::{LocalizedLabels, ReplayScanProgressPayload};
+use crate::live_game::LiveGameOps;
 use crate::stats_state::AnalysisOutcome;
 
 pub const UNLIMITED_REPLAY_LIMIT: usize = 0;
@@ -3669,140 +3669,6 @@ impl TauriOverlayOps {
 }
 
 impl TauriOverlayOps {
-    fn value_as_u64_lossy(value: Option<&Value>) -> Option<u64> {
-        value
-            .and_then(Value::as_u64)
-            .or_else(|| {
-                value
-                    .and_then(Value::as_i64)
-                    .and_then(|entry| u64::try_from(entry).ok())
-            })
-            .or_else(|| {
-                value
-                    .and_then(Value::as_f64)
-                    .filter(|entry| entry.is_finite() && *entry >= 0.0)
-                    .map(|entry| entry.floor() as u64)
-            })
-    }
-}
-
-impl TauriOverlayOps {
-    fn fetch_sc2_live_game_payload() -> Option<Value> {
-        let mut stream = TcpStream::connect("127.0.0.1:6119").ok()?;
-        let _ = stream.set_read_timeout(Some(Duration::from_millis(800)));
-        let _ = stream.set_write_timeout(Some(Duration::from_millis(800)));
-        let request = b"GET /game HTTP/1.1\r\nHost: localhost:6119\r\nConnection: close\r\n\r\n";
-        stream.write_all(request).ok()?;
-
-        let mut response = Vec::<u8>::new();
-        stream.read_to_end(&mut response).ok()?;
-        let header_end = response
-            .windows(4)
-            .position(|window| window == b"\r\n\r\n")?;
-        let body = response.get((header_end + 4)..)?;
-        serde_json::from_slice::<Value>(body).ok()
-    }
-}
-
-impl TauriOverlayOps {
-    fn extract_live_game_players(payload: &Value) -> Vec<LiveGamePlayer> {
-        let Some(players) = payload.get("players").and_then(Value::as_array) else {
-            return Vec::new();
-        };
-
-        players
-            .iter()
-            .filter_map(|player| {
-                let as_object = player.as_object()?;
-                let id = TauriOverlayOps::value_as_u64_lossy(as_object.get("id"))
-                    .or_else(|| TauriOverlayOps::value_as_u64_lossy(as_object.get("playerId")))
-                    .or_else(|| TauriOverlayOps::value_as_u64_lossy(as_object.get("m_playerId")))
-                    .unwrap_or(0);
-
-                let name = as_object
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .trim()
-                    .to_string();
-                let kind = as_object
-                    .get("type")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .trim()
-                    .to_ascii_lowercase();
-                let handle = as_object
-                    .get("handle")
-                    .or_else(|| as_object.get("toonHandle"))
-                    .or_else(|| as_object.get("toon_handle"))
-                    .or_else(|| as_object.get("battleTag"))
-                    .or_else(|| as_object.get("battletag"))
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .trim()
-                    .to_string();
-
-                Some(LiveGamePlayer {
-                    id,
-                    name,
-                    kind,
-                    handle,
-                })
-            })
-            .collect()
-    }
-}
-
-impl TauriOverlayOps {
-    fn choose_other_coop_player_stats(
-        players: &[LiveGamePlayer],
-        main_names: &HashSet<String>,
-        main_handles: &HashSet<String>,
-    ) -> Option<(String, String)> {
-        let coop_players: Vec<&LiveGamePlayer> = players
-            .iter()
-            .filter(|player| player.id == 1 || player.id == 2)
-            .filter(|player| !player.kind.eq_ignore_ascii_case("computer"))
-            .collect();
-        if coop_players.is_empty() {
-            return None;
-        }
-
-        let mut main_marked_count = 0usize;
-        let mut other_candidates = Vec::<&LiveGamePlayer>::new();
-        for player in coop_players.iter() {
-            let is_main = ReplayAnalysis::is_main_player_identity(
-                &player.name,
-                &player.handle,
-                main_names,
-                main_handles,
-            );
-            if is_main {
-                main_marked_count += 1;
-            } else {
-                other_candidates.push(*player);
-            }
-        }
-
-        if main_marked_count > 0 && !other_candidates.is_empty() {
-            other_candidates.sort_by_key(|player| player.id);
-
-            return other_candidates
-                .into_iter()
-                .map(|player| {
-                    let name = player.name.trim();
-                    let handle = player.handle.to_string();
-
-                    (handle, name.to_string())
-                })
-                .next();
-        }
-
-        None
-    }
-}
-
-impl TauriOverlayOps {
     fn spawn_game_launch_player_stats_task(app: tauri::AppHandle<Wry>) {
         thread::spawn(move || {
             thread::sleep(Duration::from_secs(4));
@@ -3823,7 +3689,7 @@ impl TauriOverlayOps {
                 let now = Instant::now();
                 launch_detector.observe_replay_count(replay_count, now);
 
-                let Some(payload) = TauriOverlayOps::fetch_sc2_live_game_payload() else {
+                let Some(payload) = LiveGameOps::fetch_sc2_live_game_payload() else {
                     launch_detector.observe_non_live_state();
                     continue;
                 };
@@ -3836,21 +3702,17 @@ impl TauriOverlayOps {
                     continue;
                 }
 
-                let players = TauriOverlayOps::extract_live_game_players(&payload);
-                if players.len() <= 2 {
+                if LiveGameOps::extract_live_game_players(&payload) <= 2 {
                     launch_detector.observe_non_live_state();
                     continue;
                 }
-                let all_users = players
-                    .iter()
-                    .all(|player| player.kind.eq_ignore_ascii_case("user"));
-                if all_users {
+                if LiveGameOps::all_players_are_users(&payload) {
                     launch_detector.observe_non_live_state();
                     continue;
                 }
 
                 let display_time =
-                    TauriOverlayOps::value_as_u64_lossy(payload.get("displayTime")).unwrap_or(0);
+                    LiveGameOps::value_as_u64_lossy(payload.get("displayTime")).unwrap_or(0);
                 match launch_detector.update_display_time_status(display_time) {
                     GameLaunchStatus::Started => {}
                     GameLaunchStatus::Unknown
@@ -3870,8 +3732,8 @@ impl TauriOverlayOps {
 
                 let (main_names, main_handles) = state.build_launch_main_identity();
                 let Some((other_player_handle, other_player_name)) =
-                    TauriOverlayOps::choose_other_coop_player_stats(
-                        &players,
+                    LiveGameOps::choose_other_coop_player_stats(
+                        &payload,
                         &main_names,
                         &main_handles,
                     )

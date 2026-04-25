@@ -1,7 +1,7 @@
-use crate::shared_types;
+use crate::UiMutatorRow;
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::HashMap;
 use ts_rs::TS;
 
 #[derive(Clone, Serialize, Default, PartialEq, TS)]
@@ -57,7 +57,7 @@ pub struct GamesRowPayload {
     pub weekly: bool,
     #[ts(optional)]
     pub weekly_name: Option<String>,
-    pub mutators: Vec<shared_types::UiMutatorRow>,
+    pub mutators: Vec<UiMutatorRow>,
     pub is_mutation: bool,
 }
 
@@ -101,76 +101,6 @@ pub struct ReplayPlayerInfo {
     pub(crate) masteries: Vec<u64>,
     pub(crate) units: Value,
     pub(crate) icons: Value,
-}
-
-#[derive(Default)]
-pub(crate) struct Aggregate {
-    pub(crate) wins: u64,
-    pub(crate) losses: u64,
-}
-
-#[derive(Default)]
-pub(crate) struct RegionAggregate {
-    pub(crate) wins: u64,
-    pub(crate) losses: u64,
-    pub(crate) max_asc: u64,
-    pub(crate) max_com: HashSet<String>,
-    pub(crate) prestiges: HashMap<String, u64>,
-}
-
-#[derive(Default)]
-pub(crate) struct CommanderAggregate {
-    pub(crate) wins: u64,
-    pub(crate) losses: u64,
-    pub(crate) apm_values: Vec<u64>,
-    pub(crate) kill_fractions: Vec<f64>,
-    pub(crate) mastery_counts: [f64; 6],
-    pub(crate) mastery_by_prestige_counts: [[f64; 6]; 4],
-    pub(crate) prestige_counts: [u64; 4],
-    pub(crate) detailed_count: u64,
-}
-
-#[derive(Default)]
-pub(crate) struct PlayerAggregate {
-    pub(crate) wins: u64,
-    pub(crate) losses: u64,
-    pub(crate) apm_values: Vec<u64>,
-    pub(crate) kill_fractions: Vec<f64>,
-    pub(crate) last_seen: u64,
-    pub(crate) handles: BTreeSet<String>,
-    pub(crate) names: HashMap<String, u64>,
-    pub(crate) commander: String,
-    pub(crate) commander_counts: HashMap<String, u64>,
-}
-
-#[derive(Default)]
-pub(crate) struct MapAggregate {
-    pub(crate) wins: u64,
-    pub(crate) losses: u64,
-    pub(crate) victory_length_sum: f64,
-    pub(crate) victory_games: u64,
-    pub(crate) bonus_fraction_sum: f64,
-    pub(crate) bonus_games: u64,
-    pub(crate) fastest_length: f64,
-    pub(crate) fastest_file: String,
-    pub(crate) fastest_p1: String,
-    pub(crate) fastest_p2: String,
-    pub(crate) fastest_p1_handle: String,
-    pub(crate) fastest_p2_handle: String,
-    pub(crate) fastest_p1_commander: String,
-    pub(crate) fastest_p2_commander: String,
-    pub(crate) fastest_p1_apm: u64,
-    pub(crate) fastest_p2_apm: u64,
-    pub(crate) fastest_p1_mastery_level: u64,
-    pub(crate) fastest_p2_mastery_level: u64,
-    pub(crate) fastest_p1_masteries: Vec<u64>,
-    pub(crate) fastest_p2_masteries: Vec<u64>,
-    pub(crate) fastest_p1_prestige: u64,
-    pub(crate) fastest_p2_prestige: u64,
-    pub(crate) fastest_date: u64,
-    pub(crate) fastest_difficulty: String,
-    pub(crate) fastest_enemy_race: String,
-    pub(crate) detailed_count: u64,
 }
 
 #[derive(Default, Clone)]

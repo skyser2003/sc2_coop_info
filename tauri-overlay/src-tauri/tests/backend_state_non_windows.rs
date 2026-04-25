@@ -1,8 +1,7 @@
 #![cfg(not(windows))]
 
-use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
-use sco_tauri_overlay::test_helper::TestHelperOps;
 use sco_tauri_overlay::{BackendState, ReplayInfo, ReplayPlayerInfo, StatsState};
+use sco_tauri_overlay::{ReplayAnalysis, TestHelperOps};
 use serde_json::json;
 use serde_json::Value;
 use std::sync::Arc;

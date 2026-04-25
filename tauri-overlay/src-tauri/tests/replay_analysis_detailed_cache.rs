@@ -2,7 +2,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     CacheCountValue, CacheNumericValue, CacheOverallStatsFile, CachePlayer, CacheReplayEntry,
     CacheUnitStats, ProtocolBuildValue, ReplayBuildInfo,
 };
-use sco_tauri_overlay::test_helper::TestHelperOps;
+use sco_tauri_overlay::TestHelperOps;
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

@@ -33,7 +33,7 @@ enum CachedLoad<T> {
     Failed(String),
 }
 
-pub struct BackendStateOps;
+struct BackendStateOps;
 
 impl BackendStateOps {
     fn load_cached_state<T, F>(slot: &Mutex<CachedLoad<T>>, loader: F) -> Result<Arc<T>, String>

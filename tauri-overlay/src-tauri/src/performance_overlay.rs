@@ -66,7 +66,7 @@ pub(crate) struct PerformanceGeometry {
     height: u32,
 }
 
-pub struct PerformanceOverlayOps;
+pub(crate) struct PerformanceOverlayOps;
 
 impl PerformanceOverlayOps {
     fn required_window_height() -> u32 {

@@ -28,9 +28,8 @@ use crate::shared_types::{
     LocalizedLabels, LocalizedText, ReplayScanProgressPayload, UiMutatorRow,
 };
 use crate::{
-    Aggregate, AppSettings, CommanderAggregate, CommanderUnitRollup, MapAggregate, PlayerAggregate,
-    RegionAggregate, ReplayChatMessage, ReplayInfo, ReplayPlayerInfo, StatsSnapshot, StatsState,
-    TauriOverlayOps, UnitStatsRollup, UNLIMITED_REPLAY_LIMIT,
+    AppSettings, CommanderUnitRollup, ReplayChatMessage, ReplayInfo, ReplayPlayerInfo,
+    StatsSnapshot, StatsState, TauriOverlayOps, UnitStatsRollup, UNLIMITED_REPLAY_LIMIT,
 };
 
 const PRESTIGE_TRACKING_START_YMD: u32 = 20200726;
@@ -619,6 +618,76 @@ impl ReplayAnalysisOps {
         let value = TauriOverlayOps::parse_query_value(path, key)?;
         ReplayAnalysisOps::parse_replay_timestamp_seconds(&value)
     }
+}
+
+#[derive(Default)]
+struct Aggregate {
+    wins: u64,
+    losses: u64,
+}
+
+#[derive(Default)]
+struct RegionAggregate {
+    wins: u64,
+    losses: u64,
+    max_asc: u64,
+    max_com: HashSet<String>,
+    prestiges: HashMap<String, u64>,
+}
+
+#[derive(Default)]
+struct CommanderAggregate {
+    wins: u64,
+    losses: u64,
+    apm_values: Vec<u64>,
+    kill_fractions: Vec<f64>,
+    mastery_counts: [f64; 6],
+    mastery_by_prestige_counts: [[f64; 6]; 4],
+    prestige_counts: [u64; 4],
+    detailed_count: u64,
+}
+
+#[derive(Default)]
+struct PlayerAggregate {
+    wins: u64,
+    losses: u64,
+    apm_values: Vec<u64>,
+    kill_fractions: Vec<f64>,
+    last_seen: u64,
+    handles: BTreeSet<String>,
+    names: HashMap<String, u64>,
+    commander: String,
+    commander_counts: HashMap<String, u64>,
+}
+
+#[derive(Default)]
+struct MapAggregate {
+    wins: u64,
+    losses: u64,
+    victory_length_sum: f64,
+    victory_games: u64,
+    bonus_fraction_sum: f64,
+    bonus_games: u64,
+    fastest_length: f64,
+    fastest_file: String,
+    fastest_p1: String,
+    fastest_p2: String,
+    fastest_p1_handle: String,
+    fastest_p2_handle: String,
+    fastest_p1_commander: String,
+    fastest_p2_commander: String,
+    fastest_p1_apm: u64,
+    fastest_p2_apm: u64,
+    fastest_p1_mastery_level: u64,
+    fastest_p2_mastery_level: u64,
+    fastest_p1_masteries: Vec<u64>,
+    fastest_p2_masteries: Vec<u64>,
+    fastest_p1_prestige: u64,
+    fastest_p2_prestige: u64,
+    fastest_date: u64,
+    fastest_difficulty: String,
+    fastest_enemy_race: String,
+    detailed_count: u64,
 }
 
 impl PlayerAggregate {

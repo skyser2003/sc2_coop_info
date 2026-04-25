@@ -1,7 +1,7 @@
 use crate::error::DecodeError;
 use std::convert::TryInto;
 
-pub struct BitPackedBuffer<'a> {
+pub(crate) struct BitPackedBuffer<'a> {
     data: &'a [u8],
     used: usize,
     next: u8,
@@ -10,7 +10,7 @@ pub struct BitPackedBuffer<'a> {
 }
 
 impl<'a> BitPackedBuffer<'a> {
-    pub fn new(contents: &'a [u8], big_endian: bool) -> Self {
+    pub(crate) fn new(contents: &'a [u8], big_endian: bool) -> Self {
         BitPackedBuffer {
             data: contents,
             used: 0,
@@ -20,19 +20,19 @@ impl<'a> BitPackedBuffer<'a> {
         }
     }
 
-    pub fn done(&self) -> bool {
+    pub(crate) fn done(&self) -> bool {
         self.next_bits == 0 && self.used >= self.data.len()
     }
 
-    pub fn used_bits(&self) -> usize {
+    pub(crate) fn used_bits(&self) -> usize {
         self.used * 8 - self.next_bits as usize
     }
 
-    pub fn byte_align(&mut self) {
+    pub(crate) fn byte_align(&mut self) {
         self.next_bits = 0;
     }
 
-    pub fn read_aligned_slice(&mut self, bytes: usize) -> Result<&'a [u8], DecodeError> {
+    pub(crate) fn read_aligned_slice(&mut self, bytes: usize) -> Result<&'a [u8], DecodeError> {
         self.byte_align();
         let end = self.used.checked_add(bytes).ok_or(DecodeError::Truncated)?;
         if end > self.data.len() {
@@ -44,20 +44,20 @@ impl<'a> BitPackedBuffer<'a> {
         Ok(out)
     }
 
-    pub fn read_aligned_bytes(&mut self, bytes: usize) -> Result<Vec<u8>, DecodeError> {
+    pub(crate) fn read_aligned_bytes(&mut self, bytes: usize) -> Result<Vec<u8>, DecodeError> {
         Ok(self.read_aligned_slice(bytes)?.to_vec())
     }
 
-    pub fn read_aligned_array<const N: usize>(&mut self) -> Result<[u8; N], DecodeError> {
+    pub(crate) fn read_aligned_array<const N: usize>(&mut self) -> Result<[u8; N], DecodeError> {
         let slice = self.read_aligned_slice(N)?;
         slice.try_into().map_err(|_| DecodeError::Truncated)
     }
 
-    pub fn skip_aligned_bytes(&mut self, bytes: usize) -> Result<(), DecodeError> {
+    pub(crate) fn skip_aligned_bytes(&mut self, bytes: usize) -> Result<(), DecodeError> {
         self.read_aligned_slice(bytes).map(|_| ())
     }
 
-    pub fn read_bits(&mut self, bits: usize) -> Result<u64, DecodeError> {
+    pub(crate) fn read_bits(&mut self, bits: usize) -> Result<u64, DecodeError> {
         if bits == 0 {
             return Ok(0);
         }
@@ -126,7 +126,7 @@ impl<'a> BitPackedBuffer<'a> {
         Ok(result)
     }
 
-    pub fn skip_bits(&mut self, bits: usize) -> Result<(), DecodeError> {
+    pub(crate) fn skip_bits(&mut self, bits: usize) -> Result<(), DecodeError> {
         let mut remaining = bits;
 
         if self.next_bits > 0 {
@@ -154,7 +154,7 @@ impl<'a> BitPackedBuffer<'a> {
         Ok(())
     }
 
-    pub fn read_unaligned_array<const N: usize>(&mut self) -> Result<[u8; N], DecodeError> {
+    pub(crate) fn read_unaligned_array<const N: usize>(&mut self) -> Result<[u8; N], DecodeError> {
         if self.next_bits == 0 {
             return self.read_aligned_array();
         }
@@ -166,7 +166,7 @@ impl<'a> BitPackedBuffer<'a> {
         Ok(out)
     }
 
-    pub fn skip_unaligned_bytes(&mut self, bytes: usize) -> Result<(), DecodeError> {
+    pub(crate) fn skip_unaligned_bytes(&mut self, bytes: usize) -> Result<(), DecodeError> {
         let bits = bytes
             .checked_mul(8)
             .ok_or_else(|| DecodeError::Corrupted("byte skip width overflows usize".into()))?;

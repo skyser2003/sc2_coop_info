@@ -3,7 +3,7 @@
 use s2coop_analyzer::cache_overall_stats_generator::{
     CacheNumericValue, CacheOverallStatsFile, CacheReplayEntry, ProtocolBuildValue, ReplayBuildInfo,
 };
-use sco_tauri_overlay::test_helper::TestHelperOps;
+use sco_tauri_overlay::TestHelperOps;
 use sco_tauri_overlay::{
     persist_detailed_cache_entry_to_path, BackendState, ReplayInfo, ReplayPlayerInfo, StatsState,
 };

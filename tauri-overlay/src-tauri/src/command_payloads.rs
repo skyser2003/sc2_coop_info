@@ -1,6 +1,8 @@
 use crate::replay_info::{GamesRowPayload, ReplayChatPayload};
-use crate::shared_types::{LocalizedLabels, ReplayScanProgressPayload};
-use crate::{randomizer, replay_analysis, AppSettings};
+use crate::{
+    AppSettings, LocalizedLabels, MonitorOption, OverlayRandomizerCatalog, PlayerRowPayload,
+    RandomizerResult, ReplayScanProgressPayload, WeeklyRowPayload,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
@@ -20,7 +22,7 @@ pub struct OverlayActionResponse {
     pub result: OverlayActionResult,
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub randomizer: Option<randomizer::RandomizerResult>,
+    pub randomizer: Option<RandomizerResult>,
 }
 
 #[derive(Clone, Debug, Serialize, TS)]
@@ -29,8 +31,8 @@ pub struct ConfigPayload {
     pub status: &'static str,
     pub settings: AppSettings,
     pub active_settings: AppSettings,
-    pub randomizer_catalog: crate::shared_types::OverlayRandomizerCatalog,
-    pub monitor_catalog: Vec<crate::shared_types::MonitorOption>,
+    pub randomizer_catalog: OverlayRandomizerCatalog,
+    pub monitor_catalog: Vec<MonitorOption>,
 }
 
 #[derive(Clone, Debug, Serialize, TS)]
@@ -47,7 +49,7 @@ pub struct ConfigReplaysPayload {
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct ConfigPlayersPayload {
     pub status: &'static str,
-    pub players: Vec<replay_analysis::PlayerRowPayload>,
+    pub players: Vec<PlayerRowPayload>,
     pub loading: bool,
 }
 
@@ -55,7 +57,7 @@ pub struct ConfigPlayersPayload {
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct ConfigWeekliesPayload {
     pub status: &'static str,
-    pub weeklies: Vec<replay_analysis::WeeklyRowPayload>,
+    pub weeklies: Vec<WeeklyRowPayload>,
 }
 
 #[derive(Clone, Serialize, TS)]

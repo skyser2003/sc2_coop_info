@@ -1,7 +1,6 @@
 use chrono::NaiveDate;
-use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
-use sco_tauri_overlay::test_helper::TestHelperOps;
 use sco_tauri_overlay::ReplayInfo;
+use sco_tauri_overlay::{ReplayAnalysis, TestHelperOps};
 
 fn weekly_replay(weekly_name: &str, result: &str) -> ReplayInfo {
     let mut replay = ReplayInfo::default();

@@ -1,4 +1,4 @@
-use sco_tauri_overlay::path_manager::PathManagerOps;
+use sco_tauri_overlay::PathManagerOps;
 use std::path::{Path, PathBuf};
 
 struct FileRestoreGuard {

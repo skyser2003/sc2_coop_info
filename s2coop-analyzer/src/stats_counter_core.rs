@@ -6,17 +6,17 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
-pub struct StatsCounterDictionaries {
-    pub unit_base_costs: UnitBaseCostsJson,
-    pub royal_guards: HashSet<String>,
-    pub horners_units: HashSet<String>,
-    pub tychus_base_upgrades: HashSet<String>,
-    pub tychus_ultimate_upgrades: HashSet<String>,
-    pub outlaws: HashSet<String>,
+pub(crate) struct StatsCounterDictionaries {
+    pub(crate) unit_base_costs: UnitBaseCostsJson,
+    pub(crate) royal_guards: HashSet<String>,
+    pub(crate) horners_units: HashSet<String>,
+    pub(crate) tychus_base_upgrades: HashSet<String>,
+    pub(crate) tychus_ultimate_upgrades: HashSet<String>,
+    pub(crate) outlaws: HashSet<String>,
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct ReplayDroneIdentifierCore {
+pub(crate) struct ReplayDroneIdentifierCore {
     commanders: [String; 2],
     recently_used: bool,
     drones: i64,
@@ -24,7 +24,7 @@ pub struct ReplayDroneIdentifierCore {
 }
 
 #[derive(Clone, Debug)]
-pub struct ReplayStatsCounterCore {
+pub(crate) struct ReplayStatsCounterCore {
     dictionaries: Arc<StatsCounterDictionaries>,
     masteries: [i64; 6],
     unit_dict: HashMap<String, (f64, f64)>,
@@ -45,7 +45,7 @@ pub struct ReplayStatsCounterCore {
 }
 
 impl ReplayDroneIdentifierCore {
-    pub fn new(com1: Option<String>, com2: Option<String>) -> Self {
+    pub(crate) fn new(com1: Option<String>, com2: Option<String>) -> Self {
         Self {
             commanders: [com1.unwrap_or_default(), com2.unwrap_or_default()],
             recently_used: false,
@@ -54,7 +54,7 @@ impl ReplayDroneIdentifierCore {
         }
     }
 
-    pub fn update_commanders(&mut self, idx: i64, commander: &str) {
+    pub(crate) fn update_commanders(&mut self, idx: i64, commander: &str) {
         if idx == 1 || idx == 2 {
             let Ok(position) = usize::try_from(idx - 1) else {
                 return;
@@ -63,11 +63,11 @@ impl ReplayDroneIdentifierCore {
         }
     }
 
-    pub fn get_bonus_vespene(&self) -> f64 {
+    pub(crate) fn get_bonus_vespene(&self) -> f64 {
         self.drones as f64 * 19.055
     }
 
-    pub fn event(&mut self, event: &GameEvent) {
+    pub(crate) fn event(&mut self, event: &GameEvent) {
         let event_name = event.event.as_str();
         if event_name != "NNet.Game.SCmdEvent"
             && event_name != "NNet.Game.SCmdUpdateTargetUnitEvent"
@@ -145,7 +145,7 @@ impl ReplayDroneIdentifierCore {
 }
 
 impl ReplayStatsCounterCore {
-    pub fn new(
+    pub(crate) fn new(
         dictionaries: Arc<StatsCounterDictionaries>,
         masteries: [u32; 6],
         commander: Option<String>,
@@ -440,7 +440,7 @@ impl ReplayStatsCounterCore {
     }
 
     fn cost_gas(&mut self, unit: &str) -> f64 {
-        self.unit_cost(unit).first().gas
+        self.unit_cost(unit).first().gas()
     }
 
     fn calculate_army_value(&mut self) -> i64 {
@@ -473,7 +473,7 @@ impl ReplayStatsCounterCore {
         total as i64
     }
 
-    pub fn set_unit_dict(&mut self, unit_dict: &indexmap::IndexMap<String, [i64; 4]>) {
+    pub(crate) fn set_unit_dict(&mut self, unit_dict: &indexmap::IndexMap<String, [i64; 4]>) {
         let mut out: HashMap<String, (f64, f64)> = HashMap::new();
         for (unit, values) in unit_dict {
             out.insert(unit.clone(), (values[0] as f64, values[1] as f64));
@@ -481,15 +481,15 @@ impl ReplayStatsCounterCore {
         self.unit_dict = out;
     }
 
-    pub fn set_enable_updates(&mut self, enabled: bool) {
+    pub(crate) fn set_enable_updates(&mut self, enabled: bool) {
         self.enable_updates = enabled;
     }
 
-    pub fn append_salvaged_unit(&mut self, unit: &str) {
+    pub(crate) fn append_salvaged_unit(&mut self, unit: &str) {
         self.salvaged_units.push(unit.to_string());
     }
 
-    pub fn update_mastery(&mut self, idx: i64, count: i64) {
+    pub(crate) fn update_mastery(&mut self, idx: i64, count: i64) {
         let Ok(index) = usize::try_from(idx) else {
             return;
         };
@@ -498,7 +498,7 @@ impl ReplayStatsCounterCore {
         }
     }
 
-    pub fn update_prestige(&mut self, prestige: &str) {
+    pub(crate) fn update_prestige(&mut self, prestige: &str) {
         if self.prestige.as_deref() == Some(prestige) {
             return;
         }
@@ -513,7 +513,7 @@ impl ReplayStatsCounterCore {
         self.unit_costs_cache.clear();
     }
 
-    pub fn update_commander(&mut self, commander: &str) {
+    pub(crate) fn update_commander(&mut self, commander: &str) {
         let commander_name = StatsCounterMath::normalize_commander_name(commander);
         if self.enable_updates && self.commander != commander_name {
             self.commander = commander_name;
@@ -521,7 +521,7 @@ impl ReplayStatsCounterCore {
         }
     }
 
-    pub fn unit_change_event(&mut self, unit: &str, old_unit: &str) {
+    pub(crate) fn unit_change_event(&mut self, unit: &str, old_unit: &str) {
         if old_unit == "TrooperMengsk"
             && matches!(
                 unit,
@@ -609,14 +609,14 @@ impl ReplayStatsCounterCore {
         }
     }
 
-    pub fn mindcontrolled_unit_dies(&mut self, unit: &str) {
+    pub(crate) fn mindcontrolled_unit_dies(&mut self, unit: &str) {
         let cost = self.cost_sum(unit);
         if cost > 0.0 {
             self.army_value_offset += cost;
         }
     }
 
-    pub fn upgrade_event(&mut self, upgrade: &str) {
+    pub(crate) fn upgrade_event(&mut self, upgrade: &str) {
         if self.dictionaries.tychus_base_upgrades.contains(upgrade) {
             self.army_value_offset += self.tychus_gear_cost.0;
         } else if self.dictionaries.tychus_ultimate_upgrades.contains(upgrade) {
@@ -624,7 +624,7 @@ impl ReplayStatsCounterCore {
         }
     }
 
-    pub fn unit_created_event(&mut self, unit_type: &str, event: &TrackerEvent) {
+    pub(crate) fn unit_created_event(&mut self, unit_type: &str, event: &TrackerEvent) {
         if self.commander != "Zagara"
             || (unit_type != "Baneling" && unit_type != "HotSSplitterlingBig")
         {
@@ -636,7 +636,7 @@ impl ReplayStatsCounterCore {
         }
     }
 
-    pub fn add_stats(
+    pub(crate) fn add_stats(
         &mut self,
         drone_counter: &ReplayDroneIdentifierCore,
         kills: i64,
@@ -651,7 +651,7 @@ impl ReplayStatsCounterCore {
             .push(collection_rate + drone_counter.get_bonus_vespene());
     }
 
-    pub fn get_stats(&mut self, player_name: &str) -> AnalysisPlayerStatsSeries {
+    pub(crate) fn get_stats(&mut self, player_name: &str) -> AnalysisPlayerStatsSeries {
         let mut dehaka_changed_indices = BTreeSet::new();
         if self.commander == "Dehaka" {
             dehaka_changed_indices = StatsCounterMath::upward_spike_indices(&self.army_value)

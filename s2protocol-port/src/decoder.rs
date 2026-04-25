@@ -896,7 +896,7 @@ impl ProtocolDefinition {
     }
 }
 
-pub trait TypeDecoder {
+pub(crate) trait TypeDecoder {
     fn done(&self) -> bool;
     fn used_bits(&self) -> usize;
     fn byte_align(&mut self);
@@ -971,7 +971,7 @@ trait HeaderIntegerDecoder {
     fn integer_from_plan(&mut self, plan: &IntegerDecodePlan) -> Result<i128, DecodeError>;
 }
 
-pub struct BitPackedDecoder<'a> {
+struct BitPackedDecoder<'a> {
     buffer: BitPackedBuffer<'a>,
     typeinfos: Arc<[TypeInfo]>,
 }
@@ -1561,7 +1561,7 @@ impl EventSpecialDataDecoder {
 }
 
 impl<'a> BitPackedDecoder<'a> {
-    pub fn new(contents: &'a [u8], typeinfos: Arc<[TypeInfo]>) -> Self {
+    fn new(contents: &'a [u8], typeinfos: Arc<[TypeInfo]>) -> Self {
         Self {
             buffer: BitPackedBuffer::new(contents, true),
             typeinfos,
@@ -2244,13 +2244,13 @@ impl HeaderIntegerDecoder for BitPackedDecoder<'_> {
     }
 }
 
-pub struct VersionedDecoder<'a> {
+struct VersionedDecoder<'a> {
     buffer: BitPackedBuffer<'a>,
     typeinfos: Arc<[TypeInfo]>,
 }
 
 impl<'a> VersionedDecoder<'a> {
-    pub fn new(contents: &'a [u8], typeinfos: Arc<[TypeInfo]>) -> Self {
+    fn new(contents: &'a [u8], typeinfos: Arc<[TypeInfo]>) -> Self {
         Self {
             buffer: BitPackedBuffer::new(contents, true),
             typeinfos,

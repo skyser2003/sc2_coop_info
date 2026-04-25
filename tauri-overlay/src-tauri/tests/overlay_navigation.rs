@@ -1,6 +1,5 @@
-use sco_tauri_overlay::overlay_info::OverlayInfoOps;
-use sco_tauri_overlay::test_helper::TestHelperOps;
 use sco_tauri_overlay::ReplayInfo;
+use sco_tauri_overlay::{OverlayInfoOps, TestHelperOps};
 
 fn sample_replay(file: &str) -> ReplayInfo {
     let mut replay = ReplayInfo::default();

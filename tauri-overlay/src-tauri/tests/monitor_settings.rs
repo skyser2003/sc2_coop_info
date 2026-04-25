@@ -1,4 +1,4 @@
-use sco_tauri_overlay::monitor_settings::{MonitorDescriptor, MonitorSettingsOps};
+use sco_tauri_overlay::{MonitorDescriptor, MonitorSettingsOps};
 
 #[test]
 fn normalize_monitor_descriptors_sorts_by_geometry_and_fills_empty_names() {

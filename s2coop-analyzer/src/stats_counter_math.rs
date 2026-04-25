@@ -2,8 +2,8 @@ use std::collections::HashSet;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct UnitCost {
-    pub(crate) mineral: f64,
-    pub(crate) gas: f64,
+    mineral: f64,
+    gas: f64,
 }
 
 impl UnitCost {
@@ -20,6 +20,10 @@ impl UnitCost {
 
     pub(crate) fn sum(self) -> f64 {
         self.mineral + self.gas
+    }
+
+    pub(crate) fn gas(self) -> f64 {
+        self.gas
     }
 
     pub(crate) fn scaled(self, min_mult: f64, gas_mult: f64) -> Self {

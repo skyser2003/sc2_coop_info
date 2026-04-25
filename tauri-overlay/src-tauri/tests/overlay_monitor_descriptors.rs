@@ -1,4 +1,4 @@
-use sco_tauri_overlay::monitor_settings::{MonitorDescriptor, MonitorSettingsOps};
+use sco_tauri_overlay::{MonitorDescriptor, MonitorSettingsOps};
 
 #[test]
 fn resolved_monitor_descriptors_keep_runtime_geometry_for_monitor_one_alignment() {

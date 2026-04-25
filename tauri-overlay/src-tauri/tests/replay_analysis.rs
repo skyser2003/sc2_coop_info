@@ -1,7 +1,5 @@
-use sco_tauri_overlay::path_manager::PathManagerOps;
-use sco_tauri_overlay::replay_analysis::{ReplayAnalysis, ReplayAnalysisOps};
-use sco_tauri_overlay::test_helper::TestHelperOps;
 use sco_tauri_overlay::{AppSettings, ReplayInfo, ReplayPlayerInfo, TauriOverlayOps};
+use sco_tauri_overlay::{PathManagerOps, ReplayAnalysis, ReplayAnalysisOps, TestHelperOps};
 use serde_json::json;
 use serde_json::Value;
 use std::collections::HashSet;

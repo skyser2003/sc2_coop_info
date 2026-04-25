@@ -1,6 +1,5 @@
-use sco_tauri_overlay::overlay_info::OverlayInfoOps;
-use sco_tauri_overlay::test_helper::TestHelperOps;
 use sco_tauri_overlay::{AppSettings, BackendState, ReplayInfo, ReplayPlayerInfo};
+use sco_tauri_overlay::{OverlayInfoOps, TestHelperOps};
 use serde_json::json;
 
 fn sample_replay() -> ReplayInfo {

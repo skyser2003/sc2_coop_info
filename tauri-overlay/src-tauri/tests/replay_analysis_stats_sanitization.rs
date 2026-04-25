@@ -1,5 +1,4 @@
-use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
-use sco_tauri_overlay::test_helper::TestHelperOps;
+use sco_tauri_overlay::{ReplayAnalysis, TestHelperOps};
 use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo};
 use serde_json::{json, Value};
 
