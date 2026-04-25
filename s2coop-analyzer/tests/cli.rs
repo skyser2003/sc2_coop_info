@@ -27,6 +27,7 @@ fn parse_generate_cache_command() {
             account_dir: PathBuf::from("fixtures/replays"),
             output_file: PathBuf::from("cache_overall_stats"),
             recent_replay_count: None,
+            worker_count: AnalyzerCli::default_generate_cache_worker_count(),
         })
     );
 }
@@ -51,6 +52,32 @@ fn parse_generate_cache_command_with_recent_files() {
             account_dir: PathBuf::from("fixtures/replays"),
             output_file: PathBuf::from("cache_overall_stats"),
             recent_replay_count: Some(100),
+            worker_count: AnalyzerCli::default_generate_cache_worker_count(),
+        })
+    );
+}
+
+#[test]
+fn parse_generate_cache_command_with_workers() {
+    let args = vec![
+        "s2coop-analyzer-cli".to_string(),
+        "generate-cache".to_string(),
+        "--account-dir".to_string(),
+        "fixtures/replays".to_string(),
+        "--output".to_string(),
+        "cache_overall_stats".to_string(),
+        "--workers".to_string(),
+        "8".to_string(),
+    ];
+
+    let command = AnalyzerCli::parse_args(&args).expect("cli should parse");
+    assert_eq!(
+        command,
+        Command::GenerateCache(GenerateCacheArgs {
+            account_dir: PathBuf::from("fixtures/replays"),
+            output_file: PathBuf::from("cache_overall_stats"),
+            recent_replay_count: None,
+            worker_count: 8,
         })
     );
 }

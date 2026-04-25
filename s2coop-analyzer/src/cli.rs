@@ -16,6 +16,7 @@ pub struct GenerateCacheArgs {
     pub account_dir: PathBuf,
     pub output_file: PathBuf,
     pub recent_replay_count: Option<usize>,
+    pub worker_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +55,13 @@ pub enum CliRunError {
 pub struct AnalyzerCli;
 
 impl AnalyzerCli {
+    pub fn default_generate_cache_worker_count() -> usize {
+        let cpu_count = std::thread::available_parallelism()
+            .map(|value| value.get())
+            .unwrap_or(1);
+        std::cmp::max(1, cpu_count / 2)
+    }
+
     pub fn parse_args(raw_args: &[String]) -> Result<Command, CliParseError> {
         if raw_args.len() <= 1 {
             return Ok(Command::Help);
@@ -77,6 +85,7 @@ impl AnalyzerCli {
         let mut account_dir: Option<PathBuf> = None;
         let mut output_file: Option<PathBuf> = None;
         let mut recent_replay_count: Option<usize> = None;
+        let mut worker_count = Self::default_generate_cache_worker_count();
 
         let mut index = 0_usize;
         while index < args.len() {
@@ -87,6 +96,7 @@ impl AnalyzerCli {
                         account_dir: PathBuf::new(),
                         output_file: PathBuf::new(),
                         recent_replay_count: None,
+                        worker_count,
                     });
                 }
                 "--account-dir" => {
@@ -122,6 +132,25 @@ impl AnalyzerCli {
                     recent_replay_count = Some(parsed);
                     index += 2;
                 }
+                "--workers" => {
+                    let Some(value) = args.get(index + 1) else {
+                        return Err(CliParseError::MissingArgumentValue(flag.to_string()));
+                    };
+                    let parsed = value.parse::<usize>().map_err(|error| {
+                        CliParseError::InvalidArgumentValue(
+                            flag.to_string(),
+                            format!("expected a positive integer, got '{value}': {error}"),
+                        )
+                    })?;
+                    if parsed == 0 {
+                        return Err(CliParseError::InvalidArgumentValue(
+                            flag.to_string(),
+                            "expected a positive integer greater than zero".to_string(),
+                        ));
+                    }
+                    worker_count = parsed;
+                    index += 2;
+                }
                 other => {
                     return Err(CliParseError::UnknownGenerateCacheArgument(
                         other.to_string(),
@@ -146,6 +175,7 @@ impl AnalyzerCli {
             account_dir: account_dir.expect("validated account_dir"),
             output_file: output_file.expect("validated output_file"),
             recent_replay_count,
+            worker_count,
         })
     }
 
@@ -229,7 +259,8 @@ impl AnalyzerCli {
                     .map_err(|error| {
                         GenerateCacheError::DetailedAnalysisConfig(error.to_string())
                     })?;
-                let runtime = GenerateCacheRuntimeOptions::default();
+                let runtime =
+                    GenerateCacheRuntimeOptions::default().with_worker_count(args.worker_count);
                 let summary = DetailedReplayAnalyzer::analyze_full_detailed(
                     &config, &resources, logger, &runtime,
                 )?;
@@ -258,13 +289,14 @@ impl AnalyzerCli {
     pub fn usage_text() -> String {
         [
         "Usage:",
-        "  s2coop-analyzer-cli generate-cache --account-dir <DIR> --output <FILE> [--recent-files <COUNT>]",
+        "  s2coop-analyzer-cli generate-cache --account-dir <DIR> --output <FILE> [--recent-files <COUNT>] [--workers <COUNT>]",
         "  s2coop-analyzer-cli test-cache-overall-stats-detailed-analysis [--account-dir <DIR>] [--output <FILE>] [--original <FILE>]",
         "",
         "Notes:",
         "  - This generates deterministic cache_overall_stats entries.",
         "  - Detailed replay analysis is enabled for each replay file.",
         "  - --recent-files limits processing to the most recently modified replay files.",
+        "  - --workers controls the replay analysis worker thread count; default is half of available logical cores.",
         "  - test-cache-overall-stats-detailed-analysis defaults to .env SC2 account paths and ../original/cache_overall_stats.",
     ]
     .join("\n")
