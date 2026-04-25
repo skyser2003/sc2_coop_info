@@ -282,7 +282,7 @@ impl TauriOverlayOps {
         }
 
         if let Ok(mut stats) = app.state::<BackendState>().stats_handle().lock() {
-            stats.detailed_analysis_atstart = next_settings.detailed_analysis_atstart();
+            stats.set_detailed_analysis_atstart(next_settings.detailed_analysis_atstart());
         }
     }
 }
@@ -1829,8 +1829,8 @@ impl TauriOverlayOps {
                 replay_scan_progress.set_stage("detailed_analysis_running");
                 replay_scan_progress.set_status("Parsing");
                 if let Ok(mut guard) = stats.lock() {
-                    guard.detailed_analysis_status = normalized.clone();
-                    guard.message = normalized.clone();
+                    guard.set_detailed_analysis_status(normalized.clone());
+                    guard.set_message(normalized.clone());
                 }
                 TauriOverlayOps::emit_replay_scan_progress(&app, false);
             }
@@ -2080,29 +2080,6 @@ impl TauriOverlayOps {
     }
 }
 
-impl StatsState {
-    fn set_analysis_running_status(&mut self, mode: AnalysisMode, phase: &str) {
-        let status = TauriOverlayOps::analysis_status_text(mode, phase);
-        match mode {
-            AnalysisMode::Simple => self.simple_analysis_status = status,
-            AnalysisMode::Detailed => self.detailed_analysis_status = status,
-        }
-    }
-
-    fn set_analysis_terminal_status(&mut self, mode: AnalysisMode, phase: &str) {
-        self.analysis_running = false;
-        self.analysis_running_mode = None;
-        match mode {
-            AnalysisMode::Simple => {
-                self.simple_analysis_status = TauriOverlayOps::analysis_status_text(mode, phase);
-            }
-            AnalysisMode::Detailed => {
-                self.detailed_analysis_status = TauriOverlayOps::analysis_status_text(mode, phase);
-            }
-        }
-    }
-}
-
 impl TauriOverlayOps {
     fn startup_analysis_mode(include_detailed: bool) -> &'static str {
         TauriOverlayOps::analysis_mode(include_detailed).slug()
@@ -2114,17 +2091,17 @@ impl TauriOverlayOps {
         stats: &mut StatsState,
         trigger: StartupAnalysisTrigger,
     ) -> StartupAnalysisRequestOutcome {
-        let include_detailed = stats.detailed_analysis_atstart;
-        if stats.startup_analysis_requested {
+        let include_detailed = stats.detailed_analysis_atstart();
+        if stats.startup_analysis_requested() {
             return StartupAnalysisRequestOutcome {
                 include_detailed,
                 started: false,
             };
         }
 
-        stats.startup_analysis_requested = true;
+        stats.set_startup_analysis_requested(true);
         let mode = TauriOverlayOps::analysis_mode(include_detailed);
-        stats.message = match trigger {
+        stats.set_message(match trigger {
             StartupAnalysisTrigger::Setup => format!(
                 "{}: startup requested while the frontend loads.",
                 mode.display()
@@ -2132,7 +2109,7 @@ impl TauriOverlayOps {
             StartupAnalysisTrigger::FrontendReady => {
                 format!("{}: startup requested in background.", mode.display())
             }
-        };
+        });
 
         StartupAnalysisRequestOutcome {
             include_detailed,
@@ -2347,12 +2324,12 @@ impl TauriOverlayOps {
             let final_cache_entries =
                 TauriOverlayOps::merge_cache_entries(&existing_cache_by_hash, new_cache_entries);
 
-            Ok(AnalysisOutcome {
-                reported_replay_count: scanned_replays,
+            Ok(AnalysisOutcome::new(
+                scanned_replays,
                 replays,
                 final_cache_entries,
-                analysis_completed: completed,
-            })
+                completed,
+            ))
         } else {
             let main_names = state.configured_main_names();
             let main_handles = state.configured_main_handles();
@@ -2372,12 +2349,12 @@ impl TauriOverlayOps {
                 .into_values()
                 .collect();
 
-            Ok(AnalysisOutcome {
-                reported_replay_count: replays.len(),
+            Ok(AnalysisOutcome::new(
+                replays.len(),
                 replays,
                 final_cache_entries,
-                analysis_completed: true,
-            })
+                true,
+            ))
         }
     }
 }
@@ -2410,22 +2387,23 @@ impl TauriOverlayOps {
                 }
             };
 
-            if guard.analysis_running {
-                let active_mode = guard.analysis_running_mode;
+            if guard.analysis_running() {
+                let active_mode = guard.analysis_running_mode();
                 if active_mode == Some(mode) {
                     crate::sco_log!("[SCO/stats] {} already running", mode.display());
-                    guard.message = TauriOverlayOps::analysis_already_running_message(mode);
+                    guard.set_message(TauriOverlayOps::analysis_already_running_message(mode));
                 } else {
                     crate::sco_log!(
                         "[SCO/stats] {} blocked while another analysis is running",
                         mode.display()
                     );
-                    guard.message = TauriOverlayOps::analysis_blocked_by_other_mode_message(mode);
+                    guard.set_message(TauriOverlayOps::analysis_blocked_by_other_mode_message(
+                        mode,
+                    ));
                 }
                 return;
             }
-            guard.analysis_running = true;
-            guard.analysis_running_mode = Some(mode);
+            guard.start_analysis(mode);
             guard.set_analysis_running_status(
                 mode,
                 if include_detailed {
@@ -2434,16 +2412,15 @@ impl TauriOverlayOps {
                     "scanning replays"
                 },
             );
-            guard.message = TauriOverlayOps::analysis_started_message(mode);
+            guard.set_message(TauriOverlayOps::analysis_started_message(mode));
 
-            guard.ready = false;
-            guard.analysis = Some(TauriOverlayOps::empty_stats_payload());
-            guard.games = 0;
-            guard.main_players = Vec::new();
-            guard.main_handles = Vec::new();
-            guard.prestige_names = Default::default();
-            if guard.message.is_empty() {
-                guard.message = TauriOverlayOps::analysis_started_message(mode);
+            guard.set_ready(false);
+            guard.set_analysis(Some(TauriOverlayOps::empty_stats_payload()));
+            guard.set_games(0);
+            guard.clear_main_identities();
+            guard.clear_prestige_names();
+            if guard.message().is_empty() {
+                guard.set_message(TauriOverlayOps::analysis_started_message(mode));
             }
         }
         replay_scan_progress.reset("queued");
@@ -2502,17 +2479,19 @@ impl TauriOverlayOps {
                     crate::sco_log!("[SCO/stats] {} failed: {message}", mode.display());
                     if let Ok(mut guard) = analysis_state.lock() {
                         guard.set_analysis_terminal_status(mode, "failed");
-                        guard.detailed_analysis_status =
-                            TauriOverlayOps::analysis_error_status_text(mode, &message);
-                        guard.message =
-                            TauriOverlayOps::analysis_failed_message(mode, &message, elapsed);
+                        guard.set_detailed_analysis_status(
+                            TauriOverlayOps::analysis_error_status_text(mode, &message),
+                        );
+                        guard.set_message(TauriOverlayOps::analysis_failed_message(
+                            mode, &message, elapsed,
+                        ));
                     }
                     replay_scan_progress_for_thread.set_stage("analysis_failed");
                     replay_scan_progress_for_thread.set_status("Completed");
                     let _ = progress_tx.send(ProgressEmitterCommand::Stop);
                     let completion_message = analysis_state
                         .lock()
-                        .map(|guard| guard.message.clone())
+                        .map(|guard| guard.message().to_string())
                         .unwrap_or_else(|_| {
                             TauriOverlayOps::analysis_failed_message(mode, &message, elapsed)
                         });
@@ -2528,35 +2507,31 @@ impl TauriOverlayOps {
 
             if let Ok(mut guard) = analysis_state.lock() {
                 if include_detailed {
-                    let replay_count = analysis_outcome.reported_replay_count;
-                    if analysis_outcome.analysis_completed {
+                    let replay_count = analysis_outcome.reported_replay_count();
+                    if analysis_outcome.analysis_completed() {
                         guard.set_analysis_running_status(mode, "refreshing replay summaries");
-                        guard.message = format!(
+                        guard.set_message(format!(
                             "Generated '{}' with {} replay entr{}.",
                             PathManagerOps::get_cache_path().display(),
                             replay_count,
                             if replay_count == 1 { "y" } else { "ies" }
-                        );
+                        ));
                     } else {
-                        guard.analysis_running = false;
-                        guard.analysis_running_mode = None;
-                        guard.detailed_analysis_status =
-                            TauriOverlayOps::analysis_status_text(mode, "stopped");
-                        guard.message = format!(
+                        guard.set_analysis_running(false);
+                        guard.set_detailed_analysis_status(TauriOverlayOps::analysis_status_text(
+                            mode, "stopped",
+                        ));
+                        guard.set_message(format!(
                             "Detailed analysis stopped after saving {} replay entr{}.",
                             replay_count,
                             if replay_count == 1 { "y" } else { "ies" }
-                        );
+                        ));
                     }
                 }
             }
 
-            let AnalysisOutcome {
-                reported_replay_count: _reported_replay_count,
-                replays: all_replays,
-                final_cache_entries,
-                analysis_completed: detailed_completed,
-            } = analysis_outcome;
+            let (_reported_replay_count, all_replays, final_cache_entries, detailed_completed) =
+                analysis_outcome.into_parts();
 
             let mut hashes = HashMap::new();
 
@@ -2617,11 +2592,16 @@ impl TauriOverlayOps {
                         dictionary,
                     )
                 })
-                .unwrap_or_else(|| StatsSnapshot {
-                    ready: true,
-                    games: all_replays.len() as u64,
-                    message: "Dictionary data is unavailable.".to_string(),
-                    ..StatsSnapshot::default()
+                .unwrap_or_else(|| {
+                    StatsSnapshot::new(
+                        true,
+                        all_replays.len() as u64,
+                        Vec::new(),
+                        Vec::new(),
+                        Value::Null,
+                        Default::default(),
+                        "Dictionary data is unavailable.",
+                    )
                 });
 
             let mut guard = match analysis_state.lock() {
@@ -2648,29 +2628,29 @@ impl TauriOverlayOps {
             };
 
             if include_detailed && !detailed_completed {
-                guard.analysis_running = false;
-                guard.analysis_running_mode = None;
+                guard.set_analysis_running(false);
             } else {
                 guard.set_analysis_running_status(mode, "building statistics");
             }
 
             TauriOverlayOps::apply_rebuild_snapshot(&mut guard, snapshot, mode);
             if include_detailed && !detailed_completed {
-                guard.analysis_running = false;
-                guard.analysis_running_mode = None;
-                guard.detailed_analysis_status =
-                    TauriOverlayOps::analysis_status_text(mode, "stopped");
-                guard.message = TauriOverlayOps::analysis_stopped_message(
+                guard.set_analysis_running(false);
+                guard.set_detailed_analysis_status(TauriOverlayOps::analysis_status_text(
+                    mode, "stopped",
+                ));
+                guard.set_message(TauriOverlayOps::analysis_stopped_message(
                     mode,
                     "Run detailed analysis to continue generating cache.",
                     started_at.elapsed(),
-                );
+                ));
             } else {
-                guard.message = TauriOverlayOps::analysis_completed_message(
+                let games = guard.games();
+                guard.set_message(TauriOverlayOps::analysis_completed_message(
                     mode,
-                    guard.games,
+                    games,
                     started_at.elapsed(),
-                );
+                ));
             }
             if !include_detailed {
                 if let Some(dictionary) = dictionary.as_deref() {
@@ -2698,7 +2678,7 @@ impl TauriOverlayOps {
                 }
             );
 
-            let completion_message = guard.message.clone();
+            let completion_message = guard.message().to_string();
             drop(guard);
             TauriOverlayOps::emit_analysis_completed(&app_for_analysis, mode, &completion_message);
             let _ = progress_handle.join();
@@ -3298,15 +3278,14 @@ impl StatsState {
             })
             .count();
 
-        self.analysis_running = false;
-        self.analysis_running_mode = None;
-        self.detailed_analysis_status = if detailed_parsed_count == 0 {
+        self.set_analysis_running(false);
+        self.set_detailed_analysis_status(if detailed_parsed_count == 0 {
             TauriOverlayOps::analysis_status_text(AnalysisMode::Detailed, "not started")
         } else {
             format!(
                 "Detailed analysis: loaded from cache ({detailed_parsed_count}/{total_valid_files})."
             )
-        };
+        });
     }
 
     pub fn sync_detailed_analysis_status_from_replays_with_dictionary(
@@ -3330,15 +3309,14 @@ impl StatsState {
             })
             .count();
 
-        self.analysis_running = false;
-        self.analysis_running_mode = None;
-        self.detailed_analysis_status = if detailed_parsed_count == 0 {
+        self.set_analysis_running(false);
+        self.set_detailed_analysis_status(if detailed_parsed_count == 0 {
             TauriOverlayOps::analysis_status_text(AnalysisMode::Detailed, "not started")
         } else {
             format!(
                 "Detailed analysis: loaded from cache ({detailed_parsed_count}/{total_valid_files})."
             )
-        };
+        });
     }
 }
 
@@ -3927,13 +3905,15 @@ impl TauriOverlayOps {
         snapshot: StatsSnapshot,
         mode: AnalysisMode,
     ) {
-        stats.ready = snapshot.ready;
-        stats.games = snapshot.games;
-        stats.main_players = snapshot.main_players;
-        stats.main_handles = snapshot.main_handles;
-        stats.analysis = Some(snapshot.analysis);
-        stats.prestige_names = snapshot.prestige_names;
-        stats.message = snapshot.message;
+        let (ready, games, main_players, main_handles, analysis, prestige_names, message) =
+            snapshot.into_parts();
+        stats.set_ready(ready);
+        stats.set_games(games);
+        stats.set_main_players(main_players);
+        stats.set_main_handles(main_handles);
+        stats.set_analysis(Some(analysis));
+        stats.set_prestige_names(prestige_names);
+        stats.set_message(message);
 
         stats.set_analysis_terminal_status(mode, "completed");
     }
@@ -3986,191 +3966,6 @@ impl TauriOverlayOps {
         }
 
         app.exit(exit_code);
-    }
-}
-
-impl Default for StatsState {
-    fn default() -> Self {
-        Self {
-            ready: false,
-            analysis: Some(TauriOverlayOps::empty_stats_payload()),
-            games: 0,
-            main_players: vec![],
-            main_handles: vec![],
-            startup_analysis_requested: false,
-            analysis_running: false,
-            analysis_running_mode: None,
-            simple_analysis_status: TauriOverlayOps::analysis_status_text(
-                AnalysisMode::Simple,
-                "waiting for startup",
-            ),
-            detailed_analysis_status: TauriOverlayOps::analysis_status_text(
-                AnalysisMode::Detailed,
-                "not started",
-            ),
-            detailed_analysis_atstart: false,
-            prestige_names: Default::default(),
-            message: "No parsed statistics available yet.".to_string(),
-        }
-    }
-}
-
-impl StatsState {
-    fn from_settings(settings: &AppSettings) -> Self {
-        Self {
-            detailed_analysis_atstart: settings.detailed_analysis_atstart(),
-            ..Self::default()
-        }
-    }
-
-    pub fn ready(&self) -> bool {
-        self.ready
-    }
-
-    pub fn analysis(&self) -> Option<&Value> {
-        self.analysis.as_ref()
-    }
-
-    pub fn analysis_cloned(&self) -> Option<Value> {
-        self.analysis.clone()
-    }
-
-    pub fn games(&self) -> u64 {
-        self.games
-    }
-
-    pub fn main_players(&self) -> &[String] {
-        &self.main_players
-    }
-
-    pub fn main_handles(&self) -> &[String] {
-        &self.main_handles
-    }
-
-    pub fn startup_analysis_requested(&self) -> bool {
-        self.startup_analysis_requested
-    }
-
-    pub fn analysis_running(&self) -> bool {
-        self.analysis_running
-    }
-
-    pub fn detailed_analysis_status(&self) -> &str {
-        &self.detailed_analysis_status
-    }
-
-    pub fn message(&self) -> &str {
-        &self.message
-    }
-
-    pub fn set_ready(&mut self, value: bool) {
-        self.ready = value;
-    }
-
-    pub fn set_analysis(&mut self, value: Option<Value>) {
-        self.analysis = value;
-    }
-
-    pub fn set_message(&mut self, value: impl Into<String>) {
-        self.message = value.into();
-    }
-
-    pub fn set_detailed_analysis_atstart(&mut self, value: bool) {
-        self.detailed_analysis_atstart = value;
-    }
-
-    pub fn with_detailed_analysis_atstart(mut self, value: bool) -> Self {
-        self.set_detailed_analysis_atstart(value);
-        self
-    }
-
-    pub(crate) fn include_detailed_stats_for_cache(&self, replays: &[ReplayInfo]) -> bool {
-        self.analysis
-            .as_ref()
-            .and_then(|analysis| analysis.get("UnitData"))
-            .is_some_and(|value| !value.is_null())
-            || replays.iter().any(ReplayInfo::has_detailed_unit_stats)
-    }
-
-    fn as_payload(&self, scan_progress: ReplayScanProgressPayload) -> Value {
-        let (analysis, main_players, main_handles, prestige_names, games, message) = if self.ready {
-            (
-                self.analysis.clone(),
-                self.main_players.clone(),
-                self.main_handles.clone(),
-                self.prestige_names.clone(),
-                self.games,
-                self.message.clone(),
-            )
-        } else {
-            (
-                Some(TauriOverlayOps::empty_stats_payload()),
-                Vec::new(),
-                Vec::new(),
-                Default::default(),
-                0,
-                if self.message.is_empty() {
-                    "Statistics are updating. This may take a while.".to_string()
-                } else {
-                    self.message.clone()
-                },
-            )
-        };
-
-        TauriOverlayOps::to_json_value(StatsStatePayload {
-            ready: self.ready,
-            games,
-            detailed_parsed_count: 0,
-            total_valid_files: 0,
-            analysis,
-            main_players,
-            main_handles,
-            analysis_running: self.analysis_running,
-            analysis_running_mode: self
-                .analysis_running_mode
-                .map(|mode| mode.key().to_string()),
-            simple_analysis_status: self.simple_analysis_status.clone(),
-            detailed_analysis_status: self.detailed_analysis_status.clone(),
-            detailed_analysis_atstart: self.detailed_analysis_atstart,
-            prestige_names,
-            message,
-            scan_progress,
-        })
-    }
-
-    fn as_payload_typed(&self, scan_progress: ReplayScanProgressPayload) -> StatsStatePayload {
-        serde_json::from_value(self.as_payload(scan_progress))
-            .unwrap_or_else(|error| panic!("Failed to convert stats payload: {error}"))
-    }
-}
-
-impl StatsSnapshot {
-    pub fn ready(&self) -> bool {
-        self.ready
-    }
-
-    pub fn games(&self) -> u64 {
-        self.games
-    }
-
-    pub fn main_players(&self) -> &[String] {
-        &self.main_players
-    }
-
-    pub fn main_handles(&self) -> &[String] {
-        &self.main_handles
-    }
-
-    pub fn analysis(&self) -> &Value {
-        &self.analysis
-    }
-
-    pub fn prestige_names(&self) -> &std::collections::BTreeMap<String, LocalizedLabels> {
-        &self.prestige_names
-    }
-
-    pub fn message(&self) -> &str {
-        &self.message
     }
 }
 
@@ -4706,7 +4501,7 @@ async fn config_stats_action(
                     ok: true,
                     path: None,
                 },
-                message: stats.message.clone(),
+                message: stats.message().to_string(),
                 stats: Some(stats.as_payload_typed(state.replay_scan_progress().as_payload())),
             });
         }
@@ -4734,10 +4529,10 @@ async fn config_stats_action(
                 .lock()
                 .ok()
                 .and_then(|stats| {
-                    if stats.message.is_empty() {
+                    if stats.message().is_empty() {
                         None
                     } else {
-                        Some(stats.message.clone())
+                        Some(stats.message().to_string())
                     }
                 })
                 .unwrap_or_else(|| TauriOverlayOps::analysis_started_message(mode));
@@ -4774,17 +4569,18 @@ async fn config_stats_action(
 
     match action {
         "stop_detailed_analysis" => {
-            if !stats.analysis_running
-                || stats.analysis_running_mode != Some(AnalysisMode::Detailed)
+            if !stats.analysis_running()
+                || stats.analysis_running_mode() != Some(AnalysisMode::Detailed)
             {
-                stats.message = "Detailed analysis is not running.".to_string();
+                stats.set_message("Detailed analysis is not running.");
             } else if state.request_detailed_analysis_stop() {
-                stats.detailed_analysis_status =
-                    TauriOverlayOps::analysis_status_text(AnalysisMode::Detailed, "stopping");
-                stats.message =
-                    "Detailed analysis will stop after the current work finishes.".to_string();
+                stats.set_detailed_analysis_status(TauriOverlayOps::analysis_status_text(
+                    AnalysisMode::Detailed,
+                    "stopping",
+                ));
+                stats.set_message("Detailed analysis will stop after the current work finishes.");
             } else {
-                stats.message = "Detailed analysis stop could not be requested.".to_string();
+                stats.set_message("Detailed analysis stop could not be requested.");
             }
             crate::sco_log!(
                 "[SCO/stats] stop_detailed_analysis requested elapsed={}ms",
@@ -4807,19 +4603,19 @@ async fn config_stats_action(
                 Ok(contents) => match std::fs::write(&dump_path, contents) {
                     Ok(_) => {
                         let path = dump_path.display();
-                        stats.message = format!("Data dumped to {path}");
+                        stats.set_message(format!("Data dumped to {path}"));
                         crate::sco_log!("[SCO/stats] dump_data written to {path}");
                     }
                     Err(error) => {
                         let message = format!("Failed to write dump: {error}");
                         crate::sco_log!("[SCO/stats] {message}");
-                        stats.message = message;
+                        stats.set_message(message);
                     }
                 },
                 Err(error) => {
                     let message = format!("Failed to serialize dump: {error}");
                     crate::sco_log!("[SCO/stats] {message}");
-                    stats.message = message;
+                    stats.set_message(message);
                 }
             }
             crate::sco_log!(
@@ -4829,14 +4625,14 @@ async fn config_stats_action(
         }
         "delete_parsed_data" => {
             crate::sco_log!("[SCO/stats/action] delete_parsed_data requested");
-            stats.ready = false;
-            stats.startup_analysis_requested = false;
-            stats.analysis = Some(TauriOverlayOps::empty_stats_payload());
-            stats.prestige_names = Default::default();
+            stats.set_ready(false);
+            stats.set_startup_analysis_requested(false);
+            stats.set_analysis(Some(TauriOverlayOps::empty_stats_payload()));
+            stats.clear_prestige_names();
             stats.set_analysis_terminal_status(AnalysisMode::Simple, "not started");
             stats.set_analysis_terminal_status(AnalysisMode::Detailed, "not started");
             state.set_detailed_analysis_stop_controller(None);
-            stats.message = "No parsed statistics available yet.".to_string();
+            stats.set_message("No parsed statistics available yet.");
             state.clear_replay_cache_slots();
             state.clear_stats_current_replay_files();
             state.set_overlay_replay_data_active(false);
@@ -4849,7 +4645,7 @@ async fn config_stats_action(
         "set_detailed_analysis_atstart" => {
             if let Some(payload) = body.as_ref() {
                 if let Some(enabled) = payload.get("enabled").and_then(Value::as_bool) {
-                    stats.detailed_analysis_atstart = enabled;
+                    stats.set_detailed_analysis_atstart(enabled);
                     if let Err(error) =
                         state.persist_bool_setting("detailed_analysis_atstart", enabled)
                     {
@@ -4857,7 +4653,7 @@ async fn config_stats_action(
                             "[SCO/settings] Failed to save detailed_analysis_atstart: {error}"
                         );
                     }
-                    stats.message = TauriOverlayOps::analysis_at_start_message(enabled);
+                    stats.set_message(TauriOverlayOps::analysis_at_start_message(enabled));
                     crate::sco_log!(
                         "[SCO/stats] set_detailed_analysis_atstart requested: {enabled}"
                     );
@@ -4876,14 +4672,14 @@ async fn config_stats_action(
                 .unwrap_or("");
             let file = requested_file;
             if file.is_empty() {
-                stats.message = "No replay file specified to reveal.".to_string();
+                stats.set_message("No replay file specified to reveal.");
             } else {
                 match overlay_info::OverlayInfoOps::reveal_file_in_explorer(file) {
-                    Ok(()) => stats.message = format!("Revealing file: {file}"),
+                    Ok(()) => stats.set_message(format!("Revealing file: {file}")),
                     Err(error) => {
                         let message = format!("Unable to reveal file: {error}");
                         crate::sco_log!("[SCO/stats] reveal_file failed: {error}");
-                        stats.message = message;
+                        stats.set_message(message);
                     }
                 }
             }

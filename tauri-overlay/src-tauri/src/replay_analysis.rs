@@ -3425,13 +3425,13 @@ impl ReplayAnalysis {
             started_at.elapsed().as_millis()
         );
 
-        StatsSnapshot {
-            ready: true,
-            games: replay_count as u64,
+        StatsSnapshot::new(
+            true,
+            replay_count as u64,
             main_players,
             main_handles,
             analysis,
-            prestige_names: payload
+            payload
                 .get("prestige_names")
                 .cloned()
                 .map(serde_json::from_value)
@@ -3439,7 +3439,7 @@ impl ReplayAnalysis {
                 .unwrap_or_default()
                 .unwrap_or_default(),
             message,
-        }
+        )
     }
 
     pub fn load_detailed_analysis_replays_snapshot_from_path(

@@ -1082,11 +1082,16 @@ impl BackendState {
                     dictionary,
                 )
             })
-            .unwrap_or_else(|| crate::StatsSnapshot {
-                ready: true,
-                games: stats_replays.len() as u64,
-                message: "Dictionary data is unavailable.".to_string(),
-                ..crate::StatsSnapshot::default()
+            .unwrap_or_else(|| {
+                crate::StatsSnapshot::new(
+                    true,
+                    stats_replays.len() as u64,
+                    Vec::new(),
+                    Vec::new(),
+                    Value::Null,
+                    Default::default(),
+                    "Dictionary data is unavailable.",
+                )
             });
         TauriOverlayOps::apply_rebuild_snapshot(&mut stats, snapshot, mode);
         if !include_detailed {

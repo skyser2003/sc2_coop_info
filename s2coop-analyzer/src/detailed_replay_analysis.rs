@@ -2566,14 +2566,14 @@ impl DetailedReplayAnalyzer {
     fn build_stats_counter_dictionaries(
         dictionaries: &CacheGenerationData<'_>,
     ) -> StatsCounterDictionaries {
-        StatsCounterDictionaries {
-            unit_base_costs: dictionaries.unit_base_costs.clone(),
-            royal_guards: dictionaries.royal_guards.clone(),
-            horners_units: dictionaries.horners_units.clone(),
-            tychus_base_upgrades: dictionaries.tychus_base_upgrades.clone(),
-            tychus_ultimate_upgrades: dictionaries.tychus_ultimate_upgrades.clone(),
-            outlaws: dictionaries.outlaws.clone(),
-        }
+        StatsCounterDictionaries::new(
+            dictionaries.unit_base_costs.clone(),
+            dictionaries.royal_guards.clone(),
+            dictionaries.horners_units.clone(),
+            dictionaries.tychus_base_upgrades.clone(),
+            dictionaries.tychus_ultimate_upgrades.clone(),
+            dictionaries.outlaws.clone(),
+        )
     }
 
     fn switched_unit_counts(
@@ -3074,23 +3074,23 @@ impl DetailedReplayAnalyzer {
                                 &killcounts,
                             )
                         {
-                            match update.target {
+                            match update.target() {
                                 StatsCounterTarget::Main => {
                                     main_stats_counter.set_unit_dict(&unit_type_dict_main);
                                     main_stats_counter.add_stats(
                                         &vespene_drone_identifier,
-                                        update.kills,
-                                        update.supply_used,
-                                        update.collection_rate,
+                                        update.kills(),
+                                        update.supply_used(),
+                                        update.collection_rate(),
                                     );
                                 }
                                 StatsCounterTarget::Ally => {
                                     ally_stats_counter.set_unit_dict(&unit_type_dict_ally);
                                     ally_stats_counter.add_stats(
                                         &vespene_drone_identifier,
-                                        update.kills,
-                                        update.supply_used,
-                                        update.collection_rate,
+                                        update.kills(),
+                                        update.supply_used(),
+                                        update.collection_rate(),
                                     );
                                 }
                             }
@@ -3115,7 +3115,7 @@ impl DetailedReplayAnalyzer {
                         &dictionaries.prestige_upgrades,
                     );
 
-                    if let Some(target) = update.target {
+                    if let Some(target) = update.target() {
                         match target {
                             StatsCounterTarget::Main => {
                                 main_stats_counter.upgrade_event(upg_name.as_str())
@@ -3126,11 +3126,11 @@ impl DetailedReplayAnalyzer {
                         }
                     }
 
-                    if let Some(commander_name) = update.commander_name.as_deref() {
+                    if let Some(commander_name) = update.commander_name() {
                         commander_by_player.insert(upg_pid, commander_name.to_string());
                         vespene_drone_identifier.update_commanders(upg_pid, commander_name);
 
-                        if let Some(target) = update.target {
+                        if let Some(target) = update.target() {
                             match target {
                                 StatsCounterTarget::Main => {
                                     main_stats_counter.update_commander(commander_name);
@@ -3142,32 +3142,32 @@ impl DetailedReplayAnalyzer {
                         }
                     }
 
-                    if let Some(mastery_idx) = update.mastery_index {
+                    if let Some(mastery_idx) = update.mastery_index() {
                         if let Some(row) = mastery_by_player.get_mut(&upg_pid) {
                             if let Ok(index) = usize::try_from(mastery_idx) {
                                 if index < row.len() {
-                                    row[index] = update.upgrade_count;
+                                    row[index] = update.upgrade_count();
                                 }
                             }
                         }
 
-                        if let Some(target) = update.target {
+                        if let Some(target) = update.target() {
                             match target {
                                 StatsCounterTarget::Main => {
                                     main_stats_counter
-                                        .update_mastery(mastery_idx, update.upgrade_count);
+                                        .update_mastery(mastery_idx, update.upgrade_count());
                                 }
                                 StatsCounterTarget::Ally => {
                                     ally_stats_counter
-                                        .update_mastery(mastery_idx, update.upgrade_count);
+                                        .update_mastery(mastery_idx, update.upgrade_count());
                                 }
                             }
                         }
                     }
 
-                    if let Some(prestige_name) = update.prestige_name.as_deref() {
+                    if let Some(prestige_name) = update.prestige_name() {
                         prestige_by_player.insert(upg_pid, prestige_name.to_string());
-                        if let Some(target) = update.target {
+                        if let Some(target) = update.target() {
                             match target {
                                 StatsCounterTarget::Main => {
                                     main_stats_counter.update_prestige(prestige_name);
@@ -3188,19 +3188,17 @@ impl DetailedReplayAnalyzer {
                 let ReplayEvent::Tracker(event) = event else {
                     continue;
                 };
-                let event_fields = UnitBornOrInitEventFields {
-                    unit_type: event.m_unit_type_name.clone().unwrap_or_default(),
-                    ability_name: event.m_creator_ability_name.clone(),
-                    unit_id: DetailedReplayAnalyzer::replay_unitid_from_event(event, false, false)
+                let event_fields = UnitBornOrInitEventFields::new(
+                    event.m_unit_type_name.clone().unwrap_or_default(),
+                    event.m_creator_ability_name.clone(),
+                    DetailedReplayAnalyzer::replay_unitid_from_event(event, false, false)
                         .unwrap_or_default(),
-                    creator_unit_id: DetailedReplayAnalyzer::replay_unitid_from_event(
-                        event, false, true,
-                    ),
-                    control_pid: event.m_control_player_id.unwrap_or_default(),
-                    gameloop: event.game_loop,
-                    event_x: event.m_x.unwrap_or_default(),
-                    event_y: event.m_y.unwrap_or_default(),
-                };
+                    DetailedReplayAnalyzer::replay_unitid_from_event(event, false, true),
+                    event.m_control_player_id.unwrap_or_default(),
+                    event.game_loop,
+                    event.m_x.unwrap_or_default(),
+                    event.m_y.unwrap_or_default(),
+                );
                 let update = ReplayEventHandlers::replay_handle_unit_born_or_init_event_fields(
                     &event_fields,
                     main_player,
@@ -3225,16 +3223,16 @@ impl DetailedReplayAnalyzer {
                     tychus_outlaws_set,
                     &dictionaries.units_in_waves,
                 );
-                unit_id = update.unit_id;
-                last_biomass_position = update.last_biomass_position;
+                unit_id = update.unit_id();
+                last_biomass_position = update.last_biomass_position();
 
-                if let Some((target, unit_type)) = update.created_event.as_ref() {
+                if let Some((target, unit_type)) = update.created_event() {
                     match target {
                         StatsCounterTarget::Main => {
-                            main_stats_counter.unit_created_event(unit_type.as_str(), event);
+                            main_stats_counter.unit_created_event(unit_type, event);
                         }
                         StatsCounterTarget::Ally => {
-                            ally_stats_counter.unit_created_event(unit_type.as_str(), event);
+                            ally_stats_counter.unit_created_event(unit_type, event);
                         }
                     }
                 }
@@ -3268,11 +3266,11 @@ impl DetailedReplayAnalyzer {
                 let ReplayEvent::Tracker(event) = event else {
                     continue;
                 };
-                let event_fields = UnitTypeChangeEventFields {
-                    event_unit_id: event_unit_id.unwrap_or_default(),
-                    unit_type: event.m_unit_type_name.clone().unwrap_or_default(),
-                    gameloop: event.game_loop,
-                };
+                let event_fields = UnitTypeChangeEventFields::new(
+                    event_unit_id.unwrap_or_default(),
+                    event.m_unit_type_name.clone().unwrap_or_default(),
+                    event.game_loop,
+                );
                 let update = ReplayEventHandlers::replay_handle_unit_type_change_event_fields(
                     &event_fields,
                     parser.map_name.as_str(),
@@ -3296,17 +3294,15 @@ impl DetailedReplayAnalyzer {
                     unit_add_losses_to_set,
                     dont_count_morphs_set,
                 );
-                research_vessel_landed_timing = update.landed_timing;
+                research_vessel_landed_timing = update.landed_timing();
 
-                if let Some((target, new_unit, old_unit)) = update.unit_change_event.as_ref() {
+                if let Some((target, new_unit, old_unit)) = update.unit_change_event() {
                     match target {
                         StatsCounterTarget::Main => {
-                            main_stats_counter
-                                .unit_change_event(new_unit.as_str(), old_unit.as_str());
+                            main_stats_counter.unit_change_event(new_unit, old_unit);
                         }
                         StatsCounterTarget::Ally => {
-                            ally_stats_counter
-                                .unit_change_event(new_unit.as_str(), old_unit.as_str());
+                            ally_stats_counter.unit_change_event(new_unit, old_unit);
                         }
                     }
                 }
@@ -3336,9 +3332,9 @@ impl DetailedReplayAnalyzer {
                         &mut mw_bonus_initial_timing,
                     );
 
-                    if let Some(mindcontrolled_unit_id) = update.mind_controlled_unit_id {
+                    if let Some(mindcontrolled_unit_id) = update.mind_controlled_unit_id() {
                         mind_controlled_units.insert(mindcontrolled_unit_id);
-                        match update.icon_target {
+                        match update.icon_target() {
                             Some(StatsCounterTarget::Main) => {
                                 DetailedReplayAnalyzer::increment_icon_count(
                                     &mut main_icons_base,
@@ -3407,16 +3403,14 @@ impl DetailedReplayAnalyzer {
                     let ReplayEvent::Tracker(event) = event else {
                         continue;
                     };
-                    let event_fields = UnitDiedEventFields {
-                        event_unit_id: detail_unit_id,
-                        killing_unit_id: DetailedReplayAnalyzer::replay_unitid_from_event(
-                            event, true, false,
-                        ),
-                        killing_player: event.m_killer_player_id,
-                        gameloop: event.game_loop,
-                        event_x: event.m_x.unwrap_or_default(),
-                        event_y: event.m_y.unwrap_or_default(),
-                    };
+                    let event_fields = UnitDiedEventFields::new(
+                        detail_unit_id,
+                        DetailedReplayAnalyzer::replay_unitid_from_event(event, true, false),
+                        event.m_killer_player_id,
+                        event.game_loop,
+                        event.m_x.unwrap_or_default(),
+                        event.m_y.unwrap_or_default(),
+                    );
                     let update = ReplayEventHandlers::replay_handle_unit_died_detail_event_fields(
                         &event_fields,
                         parser.map_name.as_str(),
@@ -3453,26 +3447,26 @@ impl DetailedReplayAnalyzer {
                         duplicating_units_set,
                         salvage_units_set,
                     );
-                    unit_id = update.current_unit_id;
+                    unit_id = update.current_unit_id();
 
-                    if let Some((target, unit_name)) = update.salvaged_unit.as_ref() {
+                    if let Some((target, unit_name)) = update.salvaged_unit() {
                         match target {
                             StatsCounterTarget::Main => {
-                                main_stats_counter.append_salvaged_unit(unit_name.as_str());
+                                main_stats_counter.append_salvaged_unit(unit_name);
                             }
                             StatsCounterTarget::Ally => {
-                                ally_stats_counter.append_salvaged_unit(unit_name.as_str());
+                                ally_stats_counter.append_salvaged_unit(unit_name);
                             }
                         }
                     }
 
-                    if let Some((target, unit_name)) = update.mindcontrolled_unit_died.as_ref() {
+                    if let Some((target, unit_name)) = update.mindcontrolled_unit_died() {
                         match target {
                             StatsCounterTarget::Main => {
-                                main_stats_counter.mindcontrolled_unit_dies(unit_name.as_str());
+                                main_stats_counter.mindcontrolled_unit_dies(unit_name);
                             }
                             StatsCounterTarget::Ally => {
-                                ally_stats_counter.mindcontrolled_unit_dies(unit_name.as_str());
+                                ally_stats_counter.mindcontrolled_unit_dies(unit_name);
                             }
                         }
                     }

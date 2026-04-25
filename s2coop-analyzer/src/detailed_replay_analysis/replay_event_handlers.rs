@@ -9,16 +9,16 @@ pub(super) type IdentifiedWavesMap = BTreeMap<i64, Vec<String>>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct UnitSnapshot {
-    pub(super) unit_type: String,
-    pub(super) control_pid: i64,
+    unit_type: String,
+    control_pid: i64,
 }
 
 pub(super) type UnitStateMap = IndexMap<i64, UnitSnapshot>;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) struct WaveUnitsState {
-    pub(super) second_gameloop: i64,
-    pub(super) units: Vec<String>,
+    second_gameloop: i64,
+    units: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -29,74 +29,224 @@ pub(super) enum StatsCounterTarget {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct PlayerStatsUpdate {
-    pub(super) target: StatsCounterTarget,
-    pub(super) kills: i64,
-    pub(super) supply_used: f64,
-    pub(super) collection_rate: f64,
+    target: StatsCounterTarget,
+    kills: i64,
+    supply_used: f64,
+    collection_rate: f64,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) struct UpgradeEventUpdate {
-    pub(super) target: Option<StatsCounterTarget>,
-    pub(super) commander_name: Option<String>,
-    pub(super) mastery_index: Option<i64>,
-    pub(super) upgrade_count: i64,
-    pub(super) prestige_name: Option<String>,
+    target: Option<StatsCounterTarget>,
+    commander_name: Option<String>,
+    mastery_index: Option<i64>,
+    upgrade_count: i64,
+    prestige_name: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) struct UnitOwnerChangeUpdate {
-    pub(super) mind_controlled_unit_id: Option<i64>,
-    pub(super) icon_target: Option<StatsCounterTarget>,
+    mind_controlled_unit_id: Option<i64>,
+    icon_target: Option<StatsCounterTarget>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) struct UnitBornOrInitEventFields {
-    pub(super) unit_type: String,
-    pub(super) ability_name: Option<String>,
-    pub(super) unit_id: i64,
-    pub(super) creator_unit_id: Option<i64>,
-    pub(super) control_pid: i64,
-    pub(super) gameloop: i64,
-    pub(super) event_x: i64,
-    pub(super) event_y: i64,
+    unit_type: String,
+    ability_name: Option<String>,
+    unit_id: i64,
+    creator_unit_id: Option<i64>,
+    control_pid: i64,
+    gameloop: i64,
+    event_x: i64,
+    event_y: i64,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) struct UnitBornOrInitUpdate {
-    pub(super) unit_id: i64,
-    pub(super) last_biomass_position: [i64; 3],
-    pub(super) created_event: Option<(StatsCounterTarget, String)>,
+    unit_id: i64,
+    last_biomass_position: [i64; 3],
+    created_event: Option<(StatsCounterTarget, String)>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) struct UnitTypeChangeEventFields {
-    pub(super) event_unit_id: i64,
-    pub(super) unit_type: String,
-    pub(super) gameloop: i64,
+    event_unit_id: i64,
+    unit_type: String,
+    gameloop: i64,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) struct UnitTypeChangeUpdate {
-    pub(super) landed_timing: Option<i64>,
-    pub(super) unit_change_event: Option<(StatsCounterTarget, String, String)>,
+    landed_timing: Option<i64>,
+    unit_change_event: Option<(StatsCounterTarget, String, String)>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) struct UnitDiedEventFields {
-    pub(super) event_unit_id: i64,
-    pub(super) killing_unit_id: Option<i64>,
-    pub(super) killing_player: Option<i64>,
-    pub(super) gameloop: i64,
-    pub(super) event_x: i64,
-    pub(super) event_y: i64,
+    event_unit_id: i64,
+    killing_unit_id: Option<i64>,
+    killing_player: Option<i64>,
+    gameloop: i64,
+    event_x: i64,
+    event_y: i64,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) struct UnitDiedDetailUpdate {
-    pub(super) current_unit_id: i64,
-    pub(super) salvaged_unit: Option<(StatsCounterTarget, String)>,
-    pub(super) mindcontrolled_unit_died: Option<(StatsCounterTarget, String)>,
+    current_unit_id: i64,
+    salvaged_unit: Option<(StatsCounterTarget, String)>,
+    mindcontrolled_unit_died: Option<(StatsCounterTarget, String)>,
+}
+
+impl PlayerStatsUpdate {
+    pub(super) fn target(&self) -> StatsCounterTarget {
+        self.target
+    }
+
+    pub(super) fn kills(&self) -> i64 {
+        self.kills
+    }
+
+    pub(super) fn supply_used(&self) -> f64 {
+        self.supply_used
+    }
+
+    pub(super) fn collection_rate(&self) -> f64 {
+        self.collection_rate
+    }
+}
+
+impl UpgradeEventUpdate {
+    pub(super) fn target(&self) -> Option<StatsCounterTarget> {
+        self.target
+    }
+
+    pub(super) fn commander_name(&self) -> Option<&str> {
+        self.commander_name.as_deref()
+    }
+
+    pub(super) fn mastery_index(&self) -> Option<i64> {
+        self.mastery_index
+    }
+
+    pub(super) fn upgrade_count(&self) -> i64 {
+        self.upgrade_count
+    }
+
+    pub(super) fn prestige_name(&self) -> Option<&str> {
+        self.prestige_name.as_deref()
+    }
+}
+
+impl UnitOwnerChangeUpdate {
+    pub(super) fn mind_controlled_unit_id(&self) -> Option<i64> {
+        self.mind_controlled_unit_id
+    }
+
+    pub(super) fn icon_target(&self) -> Option<StatsCounterTarget> {
+        self.icon_target
+    }
+}
+
+impl UnitBornOrInitEventFields {
+    pub(super) fn new(
+        unit_type: String,
+        ability_name: Option<String>,
+        unit_id: i64,
+        creator_unit_id: Option<i64>,
+        control_pid: i64,
+        gameloop: i64,
+        event_x: i64,
+        event_y: i64,
+    ) -> Self {
+        Self {
+            unit_type,
+            ability_name,
+            unit_id,
+            creator_unit_id,
+            control_pid,
+            gameloop,
+            event_x,
+            event_y,
+        }
+    }
+}
+
+impl UnitBornOrInitUpdate {
+    pub(super) fn unit_id(&self) -> i64 {
+        self.unit_id
+    }
+
+    pub(super) fn last_biomass_position(&self) -> [i64; 3] {
+        self.last_biomass_position
+    }
+
+    pub(super) fn created_event(&self) -> Option<(StatsCounterTarget, &str)> {
+        self.created_event
+            .as_ref()
+            .map(|(target, unit_type)| (*target, unit_type.as_str()))
+    }
+}
+
+impl UnitTypeChangeEventFields {
+    pub(super) fn new(event_unit_id: i64, unit_type: String, gameloop: i64) -> Self {
+        Self {
+            event_unit_id,
+            unit_type,
+            gameloop,
+        }
+    }
+}
+
+impl UnitTypeChangeUpdate {
+    pub(super) fn landed_timing(&self) -> Option<i64> {
+        self.landed_timing
+    }
+
+    pub(super) fn unit_change_event(&self) -> Option<(StatsCounterTarget, &str, &str)> {
+        self.unit_change_event
+            .as_ref()
+            .map(|(target, new_unit, old_unit)| (*target, new_unit.as_str(), old_unit.as_str()))
+    }
+}
+
+impl UnitDiedEventFields {
+    pub(super) fn new(
+        event_unit_id: i64,
+        killing_unit_id: Option<i64>,
+        killing_player: Option<i64>,
+        gameloop: i64,
+        event_x: i64,
+        event_y: i64,
+    ) -> Self {
+        Self {
+            event_unit_id,
+            killing_unit_id,
+            killing_player,
+            gameloop,
+            event_x,
+            event_y,
+        }
+    }
+}
+
+impl UnitDiedDetailUpdate {
+    pub(super) fn current_unit_id(&self) -> i64 {
+        self.current_unit_id
+    }
+
+    pub(super) fn salvaged_unit(&self) -> Option<(StatsCounterTarget, &str)> {
+        self.salvaged_unit
+            .as_ref()
+            .map(|(target, unit_type)| (*target, unit_type.as_str()))
+    }
+
+    pub(super) fn mindcontrolled_unit_died(&self) -> Option<(StatsCounterTarget, &str)> {
+        self.mindcontrolled_unit_died
+            .as_ref()
+            .map(|(target, unit_type)| (*target, unit_type.as_str()))
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

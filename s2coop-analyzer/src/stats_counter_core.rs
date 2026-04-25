@@ -7,12 +7,12 @@ use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub(crate) struct StatsCounterDictionaries {
-    pub(crate) unit_base_costs: UnitBaseCostsJson,
-    pub(crate) royal_guards: HashSet<String>,
-    pub(crate) horners_units: HashSet<String>,
-    pub(crate) tychus_base_upgrades: HashSet<String>,
-    pub(crate) tychus_ultimate_upgrades: HashSet<String>,
-    pub(crate) outlaws: HashSet<String>,
+    unit_base_costs: UnitBaseCostsJson,
+    royal_guards: HashSet<String>,
+    horners_units: HashSet<String>,
+    tychus_base_upgrades: HashSet<String>,
+    tychus_ultimate_upgrades: HashSet<String>,
+    outlaws: HashSet<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -42,6 +42,53 @@ pub(crate) struct ReplayStatsCounterCore {
     army_value: Vec<f64>,
     supply: Vec<f64>,
     collection_rate: Vec<f64>,
+}
+
+impl StatsCounterDictionaries {
+    pub(crate) fn new(
+        unit_base_costs: UnitBaseCostsJson,
+        royal_guards: HashSet<String>,
+        horners_units: HashSet<String>,
+        tychus_base_upgrades: HashSet<String>,
+        tychus_ultimate_upgrades: HashSet<String>,
+        outlaws: HashSet<String>,
+    ) -> Self {
+        Self {
+            unit_base_costs,
+            royal_guards,
+            horners_units,
+            tychus_base_upgrades,
+            tychus_ultimate_upgrades,
+            outlaws,
+        }
+    }
+
+    fn base_cost(&self, commander: &str, unit: &str) -> Option<TotalUnitCost> {
+        self.unit_base_costs
+            .get(commander)
+            .and_then(|commander_costs| commander_costs.get(unit))
+            .map(|cost| TotalUnitCost::from_slice(cost))
+    }
+
+    fn contains_horner_unit(&self, unit: &str) -> bool {
+        self.horners_units.contains(unit)
+    }
+
+    fn contains_royal_guard(&self, unit: &str) -> bool {
+        self.royal_guards.contains(unit)
+    }
+
+    fn contains_outlaw(&self, unit: &str) -> bool {
+        self.outlaws.contains(unit)
+    }
+
+    fn contains_tychus_base_upgrade(&self, upgrade: &str) -> bool {
+        self.tychus_base_upgrades.contains(upgrade)
+    }
+
+    fn contains_tychus_ultimate_upgrade(&self, upgrade: &str) -> bool {
+        self.tychus_ultimate_upgrades.contains(upgrade)
+    }
 }
 
 impl ReplayDroneIdentifierCore {
@@ -176,11 +223,8 @@ impl ReplayStatsCounterCore {
         if self.commander.is_empty() {
             return None;
         }
-        let Some(commander_costs) = self.dictionaries.unit_base_costs.get(&self.commander) else {
-            return None;
-        };
-        if let Some(cost) = commander_costs.get(unit) {
-            return Some(TotalUnitCost::from_slice(cost));
+        if let Some(cost) = self.dictionaries.base_cost(&self.commander, unit) {
+            return Some(cost);
         }
 
         let replacements: [(&str, &str); 6] = [
@@ -198,8 +242,8 @@ impl ReplayStatsCounterCore {
                 } else {
                     unit.replace(suffix, replace_with)
                 };
-                if let Some(cost) = commander_costs.get(&candidate) {
-                    return Some(TotalUnitCost::from_slice(cost));
+                if let Some(cost) = self.dictionaries.base_cost(&self.commander, &candidate) {
+                    return Some(cost);
                 }
             }
         }
@@ -242,11 +286,11 @@ impl ReplayStatsCounterCore {
                 cost = cost.scaled(0.5, 0.5);
             } else if self.commander == "Horner" {
                 if prestige == "Chaotic Power Couple"
-                    && self.dictionaries.horners_units.contains(unit)
+                    && self.dictionaries.contains_horner_unit(unit)
                 {
                     cost = cost.scaled(1.3, 1.3);
                 } else if prestige == "Wing Commanders"
-                    && self.dictionaries.horners_units.contains(unit)
+                    && self.dictionaries.contains_horner_unit(unit)
                 {
                     cost = cost.scaled_gas(0.8);
                 } else if prestige == "Galactic Gunrunners" && unit == "HHBomberPlatform" {
@@ -267,12 +311,12 @@ impl ReplayStatsCounterCore {
             } else if self.commander == "Kerrigan" && self.masteries[2] > 0 {
                 cost = cost.scaled_gas(1.0 - self.masteries[2] as f64 / 100.0);
             } else if self.commander == "Mengsk" {
-                if self.masteries[3] > 0 && self.dictionaries.royal_guards.contains(unit) {
+                if self.masteries[3] > 0 && self.dictionaries.contains_royal_guard(unit) {
                     let coef = 1.0 - 20.0 * self.masteries[3] as f64 / 3000.0;
                     cost = cost.scaled(coef, coef);
                 }
                 if prestige == "Principal Proletariat"
-                    && self.dictionaries.royal_guards.contains(unit)
+                    && self.dictionaries.contains_royal_guard(unit)
                 {
                     cost = cost.scaled(2.0, 0.75);
                 }
@@ -399,7 +443,7 @@ impl ReplayStatsCounterCore {
         let Some((unit_alive_raw, unit_dead_raw)) = self.unit_dict.get(unit).copied() else {
             return 0.0;
         };
-        let unit_dead = if self.dictionaries.outlaws.contains(unit) {
+        let unit_dead = if self.dictionaries.contains_outlaw(unit) {
             0.0
         } else {
             unit_dead_raw
@@ -457,7 +501,7 @@ impl ReplayStatsCounterCore {
             if self
                 .unit_dict
                 .keys()
-                .any(|unit| self.dictionaries.outlaws.contains(unit))
+                .any(|unit| self.dictionaries.contains_outlaw(unit))
             {
                 self.tychus_has_first_outlaw = true;
             }
@@ -617,9 +661,9 @@ impl ReplayStatsCounterCore {
     }
 
     pub(crate) fn upgrade_event(&mut self, upgrade: &str) {
-        if self.dictionaries.tychus_base_upgrades.contains(upgrade) {
+        if self.dictionaries.contains_tychus_base_upgrade(upgrade) {
             self.army_value_offset += self.tychus_gear_cost.0;
-        } else if self.dictionaries.tychus_ultimate_upgrades.contains(upgrade) {
+        } else if self.dictionaries.contains_tychus_ultimate_upgrade(upgrade) {
             self.army_value_offset += self.tychus_gear_cost.1;
         }
     }
