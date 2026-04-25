@@ -10,7 +10,7 @@ use std::{
 };
 
 use s2coop_analyzer::detailed_replay_analysis::{
-    GenerateCacheStopController, ReplayAnalysisResources,
+    GenerateCacheStopController, ReplayAnalysisResources, ReplayFileIdentity,
 };
 use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use serde::Serialize;
@@ -901,9 +901,8 @@ impl BackendState {
 
     pub fn upsert_replay_cache_slot(&self, replay: &ReplayInfo) {
         if let Ok(replay_state) = self.replay_state.lock() {
-            let replay_hash = s2coop_analyzer::detailed_replay_analysis::calculate_replay_hash(
-                &std::path::PathBuf::from(&replay.file),
-            );
+            let replay_hash =
+                ReplayFileIdentity::calculate_hash(&std::path::PathBuf::from(&replay.file));
             replay_state.upsert_replay_cache_slot(&replay_hash, replay);
         }
     }
@@ -1007,10 +1006,9 @@ impl BackendState {
                     if let Ok(mut cache) = state.replays.lock() {
                         cache.clear();
                         for replay in replays {
-                            let replay_hash =
-                                s2coop_analyzer::detailed_replay_analysis::calculate_replay_hash(
-                                    &std::path::PathBuf::from(&replay.file),
-                                );
+                            let replay_hash = ReplayFileIdentity::calculate_hash(
+                                &std::path::PathBuf::from(&replay.file),
+                            );
                             upsert_replay_map(&mut cache, &replay_hash, &replay);
                         }
                     } else {
@@ -1228,9 +1226,7 @@ impl ReplayState {
                 cache.clear();
                 for replay in &loaded {
                     let replay_hash =
-                        s2coop_analyzer::detailed_replay_analysis::calculate_replay_hash(
-                            &std::path::PathBuf::from(&replay.file),
-                        );
+                        ReplayFileIdentity::calculate_hash(&std::path::PathBuf::from(&replay.file));
                     upsert_replay_map(&mut cache, &replay_hash, replay);
                 }
             }

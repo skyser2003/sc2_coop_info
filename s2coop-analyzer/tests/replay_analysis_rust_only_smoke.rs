@@ -1,6 +1,6 @@
 mod common;
 
-use s2coop_analyzer::detailed_replay_analysis::analyze_replay_file_with_resources;
+use s2coop_analyzer::detailed_replay_analysis::analyze_single_detailed;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -98,11 +98,10 @@ fn rust_only_path_can_build_report_from_real_replay() {
     let resources = common::load_replay_resources();
     for replay_path in replay_paths {
         attempted += 1;
-        let Ok(report) =
-            analyze_replay_file_with_resources(&replay_path, &HashSet::new(), &resources)
-        else {
+        let Ok(result) = analyze_single_detailed(&replay_path, &HashSet::new(), &resources) else {
             continue;
         };
+        let report = result.report();
 
         let has_non_empty_stats = report
             .player_stats

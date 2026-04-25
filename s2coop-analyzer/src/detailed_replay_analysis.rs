@@ -159,6 +159,26 @@ pub struct ReplayBuildInfo {
     protocol_build: ProtocolBuildValue,
 }
 
+pub struct ReplayTiming;
+
+impl ReplayTiming {
+    pub fn realtime_length_from_replay(
+        accurate_length: f64,
+        details: &ReplayDetails,
+        init_data: &ReplayInitData,
+    ) -> f64 {
+        realtime_length_from_replay(accurate_length, details, init_data)
+    }
+}
+
+pub struct ReplayFileIdentity;
+
+impl ReplayFileIdentity {
+    pub fn calculate_hash(path: &Path) -> String {
+        calculate_replay_hash(path)
+    }
+}
+
 impl ReplayBuildInfo {
     pub fn new(replay_build: u32, protocol_build: ProtocolBuildValue) -> Self {
         Self {
@@ -430,7 +450,7 @@ fn game_speed_multiplier(game_speed: i64) -> f64 {
     }
 }
 
-pub fn realtime_length_from_replay(
+fn realtime_length_from_replay(
     accurate_length: f64,
     details: &ReplayDetails,
     init_data: &ReplayInitData,
@@ -677,7 +697,7 @@ fn file_date_string(file: &Path) -> Result<String, std::io::Error> {
     Ok(datetime.format("%Y:%m:%d:%H:%M:%S").to_string())
 }
 
-pub fn calculate_replay_hash(path: &Path) -> String {
+fn calculate_replay_hash(path: &Path) -> String {
     match fs::read(path) {
         Ok(bytes) => format!("{:x}", md5::compute(bytes)),
         Err(_) => format!("{:x}", md5::compute(path.to_string_lossy().as_bytes())),
@@ -1195,6 +1215,76 @@ pub enum GenerateCacheError {
     ParseExistingCache(PathBuf, #[source] serde_json::Error),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FullAnalysisMode {
+    Simple,
+    Detailed,
+}
+
+pub fn analyze_full_simple(
+    config: &GenerateCacheConfig,
+    resources: &ReplayAnalysisResources,
+    logger: Option<&(dyn Fn(String) + Send + Sync + '_)>,
+    runtime: &GenerateCacheRuntimeOptions,
+) -> Result<GenerateCacheSummary, GenerateCacheError> {
+    run_full_analysis(config, resources, logger, runtime, FullAnalysisMode::Simple)
+}
+
+pub fn analyze_full_detailed(
+    config: &GenerateCacheConfig,
+    resources: &ReplayAnalysisResources,
+    logger: Option<&(dyn Fn(String) + Send + Sync + '_)>,
+    runtime: &GenerateCacheRuntimeOptions,
+) -> Result<GenerateCacheSummary, GenerateCacheError> {
+    run_full_analysis(
+        config,
+        resources,
+        logger,
+        runtime,
+        FullAnalysisMode::Detailed,
+    )
+}
+
+pub fn analyze_single_detailed(
+    replay_path: &Path,
+    main_player_handles: &HashSet<String>,
+    resources: &ReplayAnalysisResources,
+) -> Result<DetailedReplayAnalysisResult, DetailedReplayAnalysisError> {
+    let parsed = ReplayParsedInputBundle::parse_detailed_required(replay_path, resources)?;
+    analyze_parsed_replay_with_cache_entry(
+        parsed,
+        main_player_handles,
+        resources.hidden_created_lost(),
+        None,
+        resources,
+    )
+}
+
+fn run_full_analysis(
+    config: &GenerateCacheConfig,
+    resources: &ReplayAnalysisResources,
+    logger: Option<&(dyn Fn(String) + Send + Sync + '_)>,
+    runtime: &GenerateCacheRuntimeOptions,
+    mode: FullAnalysisMode,
+) -> Result<GenerateCacheSummary, GenerateCacheError> {
+    if !config.account_dir.is_dir() {
+        return Err(GenerateCacheError::InvalidAccountDirectory(
+            config.account_dir.clone(),
+        ));
+    }
+
+    config.ensure_output_directory()?;
+    let cache_output = analyze_replays_for_cache_output(config, logger, runtime, resources, mode)?;
+    CacheReplayEntry::write_entries(&cache_output.entries, &config.output_file)?;
+    write_pretty_cache_file(&config.output_file, None)?;
+
+    Ok(GenerateCacheSummary::new(
+        cache_output.entries.len(),
+        config.output_file.clone(),
+        cache_output.completed,
+    ))
+}
+
 impl GenerateCacheConfig {
     pub fn new(account_dir: impl Into<PathBuf>, output_file: impl Into<PathBuf>) -> Self {
         Self {
@@ -1219,71 +1309,6 @@ impl GenerateCacheConfig {
 
     pub fn recent_replay_count(&self) -> Option<usize> {
         self.recent_replay_count
-    }
-
-    pub fn generate(
-        &self,
-        resources: &ReplayAnalysisResources,
-    ) -> Result<GenerateCacheSummary, GenerateCacheError> {
-        self.generate_with_resources_and_logger_and_runtime(
-            resources,
-            None,
-            &GenerateCacheRuntimeOptions::default(),
-        )
-    }
-
-    pub fn generate_with_logger(
-        &self,
-        resources: &ReplayAnalysisResources,
-        logger: &(dyn Fn(String) + Send + Sync),
-    ) -> Result<GenerateCacheSummary, GenerateCacheError> {
-        self.generate_with_resources_and_logger_and_runtime(
-            resources,
-            Some(logger),
-            &GenerateCacheRuntimeOptions::default(),
-        )
-    }
-
-    pub fn generate_with_runtime_and_logger(
-        &self,
-        resources: &ReplayAnalysisResources,
-        logger: &(dyn Fn(String) + Send + Sync),
-        runtime: &GenerateCacheRuntimeOptions,
-    ) -> Result<GenerateCacheSummary, GenerateCacheError> {
-        self.generate_with_resources_and_logger_and_runtime(resources, Some(logger), runtime)
-    }
-
-    pub fn generate_with_resources_and_runtime_and_logger(
-        &self,
-        resources: &ReplayAnalysisResources,
-        logger: &(dyn Fn(String) + Send + Sync),
-        runtime: &GenerateCacheRuntimeOptions,
-    ) -> Result<GenerateCacheSummary, GenerateCacheError> {
-        self.generate_with_resources_and_logger_and_runtime(resources, Some(logger), runtime)
-    }
-
-    fn generate_with_resources_and_logger_and_runtime(
-        &self,
-        resources: &ReplayAnalysisResources,
-        logger: Option<&(dyn Fn(String) + Send + Sync + '_)>,
-        runtime: &GenerateCacheRuntimeOptions,
-    ) -> Result<GenerateCacheSummary, GenerateCacheError> {
-        if !self.account_dir.is_dir() {
-            return Err(GenerateCacheError::InvalidAccountDirectory(
-                self.account_dir.clone(),
-            ));
-        }
-
-        self.ensure_output_directory()?;
-        let cache_output = analyze_replays_for_cache_output(self, logger, runtime, resources)?;
-        CacheReplayEntry::write_entries(&cache_output.entries, &self.output_file)?;
-        write_pretty_cache_file(&self.output_file, None)?;
-
-        Ok(GenerateCacheSummary::new(
-            cache_output.entries.len(),
-            self.output_file.clone(),
-            cache_output.completed,
-        ))
     }
 
     fn ensure_output_directory(&self) -> Result<(), GenerateCacheError> {
@@ -1764,8 +1789,13 @@ fn analyze_replays_for_cache_output(
     logger: Option<&(dyn Fn(String) + Send + Sync + '_)>,
     runtime: &GenerateCacheRuntimeOptions,
     resources: &ReplayAnalysisResources,
+    mode: FullAnalysisMode,
 ) -> Result<GeneratedCacheOutput, GenerateCacheError> {
     let replay_files = collect_cache_replay_files(&config.account_dir, config.recent_replay_count);
+    if mode == FullAnalysisMode::Simple {
+        return analyze_simple_replays_for_cache_output(replay_files, runtime, resources);
+    }
+
     let main_handles = resolve_main_handles(&config.account_dir);
     let existing_detailed_cache_entries = CacheReplayEntry::load_existing_detailed_cache_entries(
         config.output_file.as_path(),
@@ -1876,6 +1906,60 @@ fn analyze_replays_for_cache_output(
 
     Ok(GeneratedCacheOutput {
         entries: all_entries,
+        completed: !stop_requested.load(AtomicOrdering::Acquire),
+    })
+}
+
+fn analyze_simple_replays_for_cache_output(
+    replay_files: Vec<PathBuf>,
+    runtime: &GenerateCacheRuntimeOptions,
+    resources: &ReplayAnalysisResources,
+) -> Result<GeneratedCacheOutput, GenerateCacheError> {
+    if replay_files.is_empty() {
+        return Ok(GeneratedCacheOutput {
+            entries: Vec::new(),
+            completed: true,
+        });
+    }
+
+    let worker_count = runtime.resolved_worker_count(replay_files.len());
+    let thread_pool = ThreadPoolBuilder::new()
+        .num_threads(worker_count)
+        .build()
+        .map_err(|error| GenerateCacheError::ThreadPoolBuildFailed(error.to_string()))?;
+    let stop_controller = runtime.stop_controller.clone();
+    let stop_requested = Arc::new(AtomicBool::new(false));
+    let stop_requested_for_workers = stop_requested.clone();
+    let entries = thread_pool.install(|| {
+        replay_files
+            .par_iter()
+            .filter_map(|path| {
+                if stop_controller
+                    .as_ref()
+                    .is_some_and(|controller| controller.stop_requested())
+                {
+                    stop_requested_for_workers.store(true, AtomicOrdering::Release);
+                    return None;
+                }
+
+                CacheReplayEntry::parse_with_options(
+                    path,
+                    resources,
+                    ReplayBaseParseOptions {
+                        include_events: false,
+                        filters: ReplayBaseParseFilters::saved_cache(),
+                    },
+                )
+                .map(|(entry, _)| entry)
+            })
+            .collect::<Vec<CacheReplayEntry>>()
+    });
+
+    let mut entries = entries;
+    entries.sort_by(|left, right| left.cmp_cache_order(right));
+
+    Ok(GeneratedCacheOutput {
+        entries,
         completed: !stop_requested.load(AtomicOrdering::Acquire),
     })
 }
@@ -2725,39 +2809,6 @@ fn apply_custom_kill_icons(
                 .max(0) as u64,
         );
     }
-}
-
-pub fn analyze_replay_file_with_resources(
-    replay_path: &Path,
-    main_player_handles: &HashSet<String>,
-    resources: &ReplayAnalysisResources,
-) -> Result<ReplayReport, DetailedReplayAnalysisError> {
-    let dictionaries = resources.cache_generation_data();
-    let parsed = ReplayParsedInputBundle::parse_detailed_required(replay_path, resources)?;
-    analyze_replay_file_impl(
-        main_player_handles,
-        parsed,
-        &dictionaries,
-        resources.analysis_sets(),
-        resources.stats_counter_dictionaries(),
-    )
-}
-
-pub fn analyze_replay_file_with_cache_entry_with_resources(
-    replay_path: &Path,
-    main_player_handles: &HashSet<String>,
-    hidden_created_lost: &HashSet<String>,
-    basic_cache_entry: Option<&CacheReplayEntry>,
-    resources: &ReplayAnalysisResources,
-) -> Result<DetailedReplayAnalysisResult, DetailedReplayAnalysisError> {
-    let parsed = ReplayParsedInputBundle::parse_detailed_required(replay_path, resources)?;
-    analyze_parsed_replay_with_cache_entry(
-        parsed,
-        main_player_handles,
-        hidden_created_lost,
-        basic_cache_entry,
-        resources,
-    )
 }
 
 fn analyze_parsed_replay_with_cache_entry(

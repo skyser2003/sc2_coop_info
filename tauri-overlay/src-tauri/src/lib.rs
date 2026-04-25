@@ -1,10 +1,9 @@
 use notify::{Config as NotifyConfig, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use rfd::FileDialog;
 use s2coop_analyzer::cache_overall_stats_generator::CacheReplayEntry;
-use s2coop_analyzer::detailed_replay_analysis::calculate_replay_hash;
 use s2coop_analyzer::detailed_replay_analysis::{
-    GenerateCacheConfig, GenerateCacheRuntimeOptions, GenerateCacheStopController,
-    ReplayAnalysisResources,
+    analyze_full_detailed, GenerateCacheConfig, GenerateCacheRuntimeOptions,
+    GenerateCacheStopController, ReplayAnalysisResources, ReplayFileIdentity,
 };
 use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use serde::{Deserialize, Serialize};
@@ -2024,14 +2023,11 @@ fn generate_detailed_analysis_cache(
         .replay_analysis_resources()
         .map_err(|error| format!("Failed to access replay analysis resources: {error}"))?;
 
-    GenerateCacheConfig::new(account_dir, output_file.clone())
-        .generate_with_resources_and_runtime_and_logger(
-            resources.as_ref(),
-            &logger,
-            &GenerateCacheRuntimeOptions::default()
-                .with_worker_count(worker_count)
-                .with_stop_controller(stop_controller),
-        )
+    let config = GenerateCacheConfig::new(account_dir, output_file.clone());
+    let runtime = GenerateCacheRuntimeOptions::default()
+        .with_worker_count(worker_count)
+        .with_stop_controller(stop_controller);
+    analyze_full_detailed(&config, resources.as_ref(), Some(&logger), &runtime)
         .map(|summary| (summary.scanned_replays(), summary.completed()))
         .map_err(|error| format!("Failed to generate '{}': {error}", output_file.display()))
 }
@@ -2337,7 +2333,7 @@ pub fn update_analysis_replay_cache_slots(
     if let Ok(mut cache) = replays_slot.lock() {
         cache.clear();
         for replay in replays {
-            let replay_hash = calculate_replay_hash(&PathBuf::from(&replay.file));
+            let replay_hash = ReplayFileIdentity::calculate_hash(&PathBuf::from(&replay.file));
             if replay_hash.is_empty() {
                 continue;
             }
@@ -2685,7 +2681,7 @@ fn spawn_analysis_task(
         let all_replays = all_replays
             .into_iter()
             .filter(|replay| {
-                let hash = calculate_replay_hash(&PathBuf::from(&replay.file));
+                let hash = ReplayFileIdentity::calculate_hash(&PathBuf::from(&replay.file));
 
                 let is_detailed = hashes.get(&hash);
 
@@ -3449,7 +3445,7 @@ fn process_new_replay_path(
         .as_ref()
         .map(|entry| entry.hash.clone())
         .filter(|hash| !hash.is_empty())
-        .unwrap_or_else(|| calculate_replay_hash(path));
+        .unwrap_or_else(|| ReplayFileIdentity::calculate_hash(path));
     if replay.main_commander().trim().is_empty() && replay.ally_commander().trim().is_empty() {
         crate::sco_log!(
             "[SCO/watch] parsed replay ignored file='{}' reason=missing_commanders main='{}' ally='{}'",
@@ -3528,7 +3524,7 @@ fn process_replay_detailed(
 
     crate::sco_log!("[SCO/show] processing existing replay file='{}'", file);
 
-    let replay_hash = calculate_replay_hash(path);
+    let replay_hash = ReplayFileIdentity::calculate_hash(path);
     if let Some(existing) = state.cached_replay_by_hash(&replay_hash) {
         if existing.is_detailed {
             return (ReplayProcessOutcome::Processed, Some(existing));
@@ -3561,7 +3557,7 @@ fn process_replay_detailed(
         .as_ref()
         .map(|entry| entry.hash.clone())
         .filter(|hash| !hash.is_empty())
-        .unwrap_or_else(|| calculate_replay_hash(path));
+        .unwrap_or_else(|| ReplayFileIdentity::calculate_hash(path));
     state.upsert_replay_in_memory_cache(&replay_hash, &replay);
     if let Some(cache_entry) = cache_entry {
         spawn_detailed_cache_persist(state, cache_entry, "show");

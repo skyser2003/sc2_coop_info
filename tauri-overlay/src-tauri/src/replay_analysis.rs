@@ -5,7 +5,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     CacheReplayEntry, CacheUnitStats, ReplayMessage,
 };
 use s2coop_analyzer::detailed_replay_analysis::{
-    analyze_replay_file_with_cache_entry_with_resources, ReplayAnalysisResources,
+    analyze_single_detailed, ReplayAnalysisResources, ReplayFileIdentity,
 };
 use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use s2coop_analyzer::tauri_replay_analysis_impl::{
@@ -3281,13 +3281,7 @@ impl ReplayAnalysis {
             .unwrap_or("<unknown>");
         let empty_handles = std::collections::HashSet::new();
 
-        match analyze_replay_file_with_cache_entry_with_resources(
-            path,
-            &empty_handles,
-            resources.hidden_created_lost(),
-            None,
-            resources,
-        ) {
+        match analyze_single_detailed(path, &empty_handles, resources) {
             Ok(result) => {
                 let replay = replay_info_from_report_with_dictionary(
                     path,
@@ -3536,7 +3530,7 @@ impl ReplayAnalysis {
         let mut replay_map = HashMap::<String, ReplayInfo>::new();
         let mut simple_cache_entries = Vec::<CacheReplayEntry>::new();
         for replay in existing_replays {
-            let replay_hash = crate::calculate_replay_hash(&PathBuf::from(&replay.file));
+            let replay_hash = ReplayFileIdentity::calculate_hash(&PathBuf::from(&replay.file));
             if replay_hash.is_empty() {
                 continue;
             }
@@ -3575,7 +3569,8 @@ impl ReplayAnalysis {
                 }
             }
 
-            let replay_hash = crate::calculate_replay_hash(&PathBuf::from(&result.replay.file));
+            let replay_hash =
+                ReplayFileIdentity::calculate_hash(&PathBuf::from(&result.replay.file));
             if replay_hash.is_empty() {
                 continue;
             }

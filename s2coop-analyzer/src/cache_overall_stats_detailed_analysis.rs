@@ -1,6 +1,7 @@
 use crate::cache_overall_stats_generator::{pretty_output_path, write_pretty_cache_file};
 use crate::detailed_replay_analysis::{
-    GenerateCacheConfig, GenerateCacheError, ReplayAnalysisResources,
+    analyze_full_detailed, GenerateCacheConfig, GenerateCacheError, GenerateCacheRuntimeOptions,
+    ReplayAnalysisResources,
 };
 use crate::dictionary_data::Sc2DictionaryData;
 use serde_json::Value;
@@ -130,11 +131,8 @@ pub fn run_test_cache_overall_stats_detailed_analysis(
     );
     let resources = ReplayAnalysisResources::from_dictionary_data(dictionary_data)
         .map_err(|error| GenerateCacheError::DetailedAnalysisConfig(error.to_string()))?;
-    let summary = if let Some(logger) = logger {
-        config.generate_with_logger(&resources, logger)?
-    } else {
-        config.generate(&resources)?
-    };
+    let runtime = GenerateCacheRuntimeOptions::default();
+    let summary = analyze_full_detailed(&config, &resources, logger, &runtime)?;
 
     if !generated_output.is_file() {
         return Err(

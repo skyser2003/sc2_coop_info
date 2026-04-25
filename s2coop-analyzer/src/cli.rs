@@ -3,7 +3,8 @@ use crate::cache_overall_stats_detailed_analysis::{
     TestCacheOverallStatsDetailedAnalysisError,
 };
 use crate::detailed_replay_analysis::{
-    GenerateCacheConfig, GenerateCacheError, ReplayAnalysisResources,
+    analyze_full_detailed, GenerateCacheConfig, GenerateCacheError, GenerateCacheRuntimeOptions,
+    ReplayAnalysisResources,
 };
 use crate::dictionary_data::Sc2DictionaryData;
 use std::path::PathBuf;
@@ -220,11 +221,8 @@ fn run_cli_impl(
                 })?);
             let resources = ReplayAnalysisResources::from_dictionary_data(dictionary_data)
                 .map_err(|error| GenerateCacheError::DetailedAnalysisConfig(error.to_string()))?;
-            let summary = if let Some(logger) = logger {
-                config.generate_with_logger(&resources, logger)?
-            } else {
-                config.generate(&resources)?
-            };
+            let runtime = GenerateCacheRuntimeOptions::default();
+            let summary = analyze_full_detailed(&config, &resources, logger, &runtime)?;
 
             Ok(format!(
                 "Generated cache_overall_stats with {} replay entr{} at {}",

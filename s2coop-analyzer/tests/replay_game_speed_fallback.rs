@@ -1,4 +1,4 @@
-use s2coop_analyzer::detailed_replay_analysis::realtime_length_from_replay;
+use s2coop_analyzer::detailed_replay_analysis::ReplayTiming;
 use s2protocol_port::{ReplayDetails, ReplayGameDescription, ReplayInitData, ReplaySyncLobbyState};
 
 fn init_data_with_game_speed(game_speed: i64) -> ReplayInitData {
@@ -22,7 +22,7 @@ fn details_with_game_speed(game_speed: i64) -> ReplayDetails {
 
 #[test]
 fn realtime_length_prefers_details_game_speed() {
-    let realtime_length = realtime_length_from_replay(
+    let realtime_length = ReplayTiming::realtime_length_from_replay(
         560.0,
         &details_with_game_speed(4),
         &init_data_with_game_speed(2),
@@ -33,7 +33,7 @@ fn realtime_length_prefers_details_game_speed() {
 
 #[test]
 fn realtime_length_falls_back_to_init_data_game_speed_when_details_speed_is_invalid() {
-    let realtime_length = realtime_length_from_replay(
+    let realtime_length = ReplayTiming::realtime_length_from_replay(
         560.0,
         &details_with_game_speed(99),
         &init_data_with_game_speed(4),
@@ -44,7 +44,7 @@ fn realtime_length_falls_back_to_init_data_game_speed_when_details_speed_is_inva
 
 #[test]
 fn realtime_length_defaults_to_faster_when_both_game_speed_codes_are_invalid() {
-    let realtime_length = realtime_length_from_replay(
+    let realtime_length = ReplayTiming::realtime_length_from_replay(
         560.0,
         &details_with_game_speed(99),
         &init_data_with_game_speed(99),
