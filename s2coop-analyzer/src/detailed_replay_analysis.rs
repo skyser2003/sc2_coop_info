@@ -13,8 +13,8 @@ use chrono::{DateTime, Local};
 use indexmap::IndexMap;
 use s2protocol_port::{
     build_protocol_store, parse_file_with_store, parse_file_with_store_ordered_events,
-    ProtocolStore, ReplayDetails, ReplayEvent, ReplayInitData, ReplayMetadata, ReplayParseMode,
-    TrackerEvent,
+    parse_ordered_events_with_store, ProtocolStore, ReplayDetails, ReplayEvent, ReplayInitData,
+    ReplayMetadata, ReplayParseMode, TrackerEvent,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -144,6 +144,7 @@ struct ReplayDetailedParseContext {
 #[derive(Debug, Clone)]
 struct ReplayBaseParse {
     context: ReplayParsedContext,
+    mutator_context: ReplayMutatorParseContext,
     build: ReplayBuildInfo,
     file: String,
     map_name: String,
@@ -168,6 +169,10 @@ struct ReplayParsedInputBundle {
     parser: ParsedReplayInput,
     all_players: Vec<ParsedReplayPlayer>,
     accurate_length_force_float: bool,
+    metadata_duration: f64,
+    metadata_player_apm: Vec<f64>,
+    game_speed_code: i64,
+    mutator_context: ReplayMutatorParseContext,
     realtime_length: f64,
     commander_found: bool,
     enemy_race_present: bool,
@@ -180,6 +185,30 @@ struct ReplayCacheContext {
     is_mm_replay: bool,
     is_blizzard_map: bool,
     recover_disabled: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ReplayMutatorParseContext {
+    cache_handles: Vec<String>,
+    brutal_plus_difficulty: i64,
+    retry_mutation_indexes: Vec<i64>,
+}
+
+impl ReplayMutatorParseContext {
+    fn from_init_data(init_data: &ReplayInitData) -> Self {
+        let game_description = &init_data.m_syncLobbyState.m_gameDescription;
+        let slot0 = init_data.m_syncLobbyState.m_lobbyState.m_slots.first();
+
+        Self {
+            cache_handles: game_description.m_cacheHandles.clone(),
+            brutal_plus_difficulty: slot0
+                .map(|slot| slot.m_brutalPlusDifficulty)
+                .unwrap_or_default(),
+            retry_mutation_indexes: slot0
+                .map(|slot| slot.m_retryMutationIndexes.clone())
+                .unwrap_or_default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -343,11 +372,15 @@ pub fn realtime_length_from_replay(
     details: &ReplayDetails,
     init_data: &ReplayInitData,
 ) -> f64 {
+    realtime_length_from_game_speed(accurate_length, replay_game_speed_code(details, init_data))
+}
+
+fn realtime_length_from_game_speed(accurate_length: f64, game_speed_code: i64) -> f64 {
     if !accurate_length.is_finite() || accurate_length <= 0.0 {
         return 0.0;
     }
 
-    let multiplier = game_speed_multiplier(replay_game_speed_code(details, init_data));
+    let multiplier = game_speed_multiplier(game_speed_code);
 
     accurate_length / multiplier
 }
@@ -482,6 +515,7 @@ fn parse_replay_base(
     } else {
         metadata.Duration
     };
+    let mutator_context = ReplayMutatorParseContext::from_init_data(&init_data);
 
     let (mutators, weekly) = identify_mutators_for_replay(
         &events,
@@ -491,7 +525,7 @@ fn parse_replay_base(
         &inputs.cached_mutators,
         extension,
         replay_path.to_string_lossy().contains("[MM]"),
-        Some(&init_data),
+        Some(&mutator_context),
     );
 
     let raw_messages = message_events
@@ -505,6 +539,7 @@ fn parse_replay_base(
             init_data,
             metadata,
         },
+        mutator_context,
         build: ReplayBuildInfo::new(
             base_build,
             resolve_protocol_build(replay_build, latest_build, selected_build),
@@ -745,7 +780,7 @@ fn identify_mutators_for_replay(
     cached_mutators: &crate::dictionary_data::CachedMutatorsJson,
     extension: bool,
     mm: bool,
-    detailed_info: Option<&ReplayInitData>,
+    mutator_context: Option<&ReplayMutatorParseContext>,
 ) -> (Vec<String>, bool) {
     let mut mutators = Vec::new();
     let mut weekly = false;
@@ -770,10 +805,8 @@ fn identify_mutators_for_replay(
     }
 
     if extension {
-        if let Some(handles) =
-            detailed_info.map(|value| &value.m_syncLobbyState.m_gameDescription.m_cacheHandles)
-        {
-            for handle in handles {
+        if let Some(context) = mutator_context {
+            for handle in &context.cache_handles {
                 let cached = cache_handle_id(handle);
                 if cached.is_empty() {
                     continue;
@@ -787,12 +820,9 @@ fn identify_mutators_for_replay(
     }
 
     if !extension {
-        if let Some(slot0) =
-            detailed_info.and_then(|value| value.m_syncLobbyState.m_lobbyState.m_slots.first())
-        {
-            let brutal_plus = slot0.m_brutalPlusDifficulty;
-            if brutal_plus > 0 {
-                for key in &slot0.m_retryMutationIndexes {
+        if let Some(context) = mutator_context {
+            if context.brutal_plus_difficulty > 0 {
+                for key in &context.retry_mutation_indexes {
                     if *key <= 0 {
                         continue;
                     }
@@ -1481,13 +1511,19 @@ impl CandidateReplay {
         let Self { path, parsed } = self;
         let basic = parsed.cache_entry();
 
-        if let Ok(result) = analyze_replay_file_with_cache_entry_with_resources(
-            &path,
-            main_handles,
-            resources.hidden_created_lost(),
-            Some(&basic),
-            resources,
-        ) {
+        let detailed = parsed
+            .with_detailed_events(&path, resources)
+            .and_then(|parsed| {
+                analyze_parsed_replay_with_cache_entry(
+                    parsed,
+                    main_handles,
+                    resources.hidden_created_lost(),
+                    Some(&basic),
+                    resources,
+                )
+            });
+
+        if let Ok(result) = detailed {
             if result.report().has_non_empty_player_stats() {
                 return result.into_cache_entry();
             }
@@ -1800,6 +1836,12 @@ impl ReplayParsedInputBundle {
 
         let length = metadata.Duration;
         let accurate_length = base.accurate_length;
+        let game_speed_code = replay_game_speed_code(details, init_data);
+        let metadata_player_apm = metadata
+            .Players
+            .iter()
+            .map(|player| player.APM)
+            .collect::<Vec<_>>();
         let cache_context = ReplayCacheContext {
             is_mm_replay: base.file.contains("[MM]"),
             is_blizzard_map: details.m_isBlizzardMap,
@@ -1936,12 +1978,94 @@ impl ReplayParsedInputBundle {
             parser,
             all_players,
             accurate_length_force_float: base.accurate_length_force_float,
+            metadata_duration: length,
+            metadata_player_apm,
+            game_speed_code,
+            mutator_context: base.mutator_context,
             realtime_length: base.realtime_length,
             commander_found,
             enemy_race_present,
             cache_context,
             detailed: base.detailed,
         })
+    }
+
+    fn apply_event_derived_fields(
+        &mut self,
+        events: Vec<ReplayEvent>,
+        dictionaries: CacheGenerationData<'_>,
+    ) {
+        let start_time = get_start_time(&events);
+        let last_deselect_event = get_last_deselect_event(&events)
+            .unwrap_or(ReplayNumericValue::Float(self.metadata_duration));
+        let length_numeric = ReplayNumericValue::Float(self.metadata_duration);
+        let accurate_length_numeric = if self.parser.result == "Victory" {
+            last_deselect_event.subtract(&start_time)
+        } else {
+            length_numeric.subtract(&start_time)
+        };
+        let accurate_length = accurate_length_numeric.as_f64();
+        let end_time = if self.parser.result == "Victory" {
+            last_deselect_event.as_f64()
+        } else {
+            self.metadata_duration
+        };
+        let (mutators, weekly) = identify_mutators_for_replay(
+            &events,
+            &dictionaries.mutators_all,
+            &dictionaries.mutators_ui,
+            &dictionaries.mutator_ids,
+            &dictionaries.cached_mutators,
+            self.parser.extension,
+            self.cache_context.is_mm_replay,
+            Some(&self.mutator_context),
+        );
+
+        self.parser.accurate_length = accurate_length;
+        self.parser.form_alength = format_duration(accurate_length);
+        self.parser.mutators = mutators;
+        self.parser.weekly = weekly;
+        self.accurate_length_force_float =
+            matches!(accurate_length_numeric, ReplayNumericValue::Float(_));
+        self.realtime_length =
+            realtime_length_from_game_speed(accurate_length, self.game_speed_code);
+        self.recompute_player_apm();
+        self.detailed = Some(ReplayDetailedParseContext {
+            events,
+            start_time: start_time.as_f64(),
+            end_time,
+        });
+    }
+
+    fn recompute_player_apm(&mut self) {
+        for (index, player) in self.all_players.iter_mut().enumerate() {
+            let raw_apm = self
+                .metadata_player_apm
+                .get(index)
+                .copied()
+                .unwrap_or_default();
+            player.apm = if self.parser.accurate_length == 0.0 {
+                0
+            } else {
+                (raw_apm * self.metadata_duration / self.parser.accurate_length).round_ties_even()
+                    as u32
+            };
+        }
+        self.parser.players = Self::parser_players_from_all_players(&self.all_players);
+    }
+
+    fn with_detailed_events(
+        mut self,
+        replay_path: &Path,
+        resources: &ReplayAnalysisResources,
+    ) -> Result<Self, DetailedReplayAnalysisError> {
+        let events = parse_ordered_events_with_store(replay_path, resources.protocol_store())
+            .map_err(|error| DetailedReplayAnalysisError::ReplayParse {
+                path: replay_path.display().to_string(),
+                message: error.to_string(),
+            })?;
+        self.apply_event_derived_fields(events, resources.cache_generation_data());
+        Ok(self)
     }
 
     fn parse(
@@ -2509,8 +2633,24 @@ pub fn analyze_replay_file_with_cache_entry_with_resources(
     basic_cache_entry: Option<&CacheReplayEntry>,
     resources: &ReplayAnalysisResources,
 ) -> Result<DetailedReplayAnalysisResult, DetailedReplayAnalysisError> {
-    let dictionaries = resources.cache_generation_data();
     let parsed = ReplayParsedInputBundle::parse_detailed_required(replay_path, resources)?;
+    analyze_parsed_replay_with_cache_entry(
+        parsed,
+        main_player_handles,
+        hidden_created_lost,
+        basic_cache_entry,
+        resources,
+    )
+}
+
+fn analyze_parsed_replay_with_cache_entry(
+    parsed: ReplayParsedInputBundle,
+    main_player_handles: &HashSet<String>,
+    hidden_created_lost: &HashSet<String>,
+    basic_cache_entry: Option<&CacheReplayEntry>,
+    resources: &ReplayAnalysisResources,
+) -> Result<DetailedReplayAnalysisResult, DetailedReplayAnalysisError> {
+    let dictionaries = resources.cache_generation_data();
     let fallback_basic = basic_cache_entry
         .cloned()
         .unwrap_or_else(|| parsed.cache_entry());

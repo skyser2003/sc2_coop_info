@@ -1,6 +1,6 @@
 use s2protocol_port::{
-    build_protocol_store, parse_file_with_store, parse_file_with_store_ordered_events, ReplayEvent,
-    ReplayParseMode,
+    build_protocol_store, parse_file_with_store, parse_file_with_store_ordered_events,
+    parse_ordered_events_with_store, ReplayEvent, ReplayParseMode,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -151,5 +151,30 @@ fn ordered_event_parse_matches_split_detailed_events() {
     expected.sort_by_key(|event| event.game_loop);
 
     let actual = ordered.events().iter().map(ordered_key).collect::<Vec<_>>();
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn events_only_parse_matches_ordered_replay_events() {
+    let Some(account_dir) = resolve_account_dir() else {
+        eprintln!("skipping events-only regression test: no SC2 account directory configured");
+        return;
+    };
+    let Some(replay_path) = find_replay(&account_dir, "잘못된 전쟁 (63).SC2Replay") else {
+        eprintln!(
+            "skipping events-only regression test: replay not found under {}",
+            account_dir.display()
+        );
+        return;
+    };
+
+    let store = build_protocol_store().expect("protocol store should build");
+    let ordered = parse_file_with_store_ordered_events(&replay_path, &store)
+        .expect("ordered replay parser should read the replay");
+    let events_only = parse_ordered_events_with_store(&replay_path, &store)
+        .expect("events-only replay parser should read the replay");
+
+    let expected = ordered.events().iter().map(ordered_key).collect::<Vec<_>>();
+    let actual = events_only.iter().map(ordered_key).collect::<Vec<_>>();
     assert_eq!(actual, expected);
 }
