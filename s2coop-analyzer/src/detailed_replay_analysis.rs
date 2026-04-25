@@ -30,13 +30,15 @@ use walkdir::WalkDir;
 mod replay_event_handlers;
 
 use crate::stats_counter_core::{
-    ReplayDroneIdentifierCore, ReplayStatsCounterCore, StatsCounterDictionaries,
+    ReplayDroneCommandEventKind, ReplayDroneIdentifierCore, ReplayStatsCounterCore,
+    StatsCounterDictionaries,
 };
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use rayon::ThreadPoolBuilder;
 use replay_event_handlers::{
-    IdentifiedWavesMap, ReplayEventHandlers, StatsCounterTarget, UnitBornOrInitEventFields,
-    UnitDiedEventFields, UnitStateMap, UnitTypeChangeEventFields, UnitTypeCountMap, WaveUnitsState,
+    IdentifiedWavesMap, ReplayEventHandlers, ReplayEventStringSets, ReplayMapAnalysisFlags,
+    ReplayPlayerIdSet, StatsCounterTarget, UnitBornOrInitEventFields, UnitDiedEventFields,
+    UnitStateMap, UnitTypeChangeEventFields, UnitTypeCountMap, WaveUnitsState,
 };
 
 const LOCUST_SOURCE_UNITS: [&str; 5] = [
@@ -109,6 +111,13 @@ struct ReplayAnalysisSets {
     salvage_units: HashSet<String>,
     unit_add_losses_to: HashSet<String>,
     commander_no_units_values: HashSet<String>,
+    mastery_upgrade_indices: HashMap<String, i64>,
+    prestige_upgrade_names: HashMap<String, String>,
+    locust_source_units: HashSet<String>,
+    broodling_source_units: HashSet<String>,
+    zeratul_artifact_pickups: HashSet<String>,
+    zeratul_shade_projections: HashSet<String>,
+    event_string_sets: ReplayEventStringSets,
 }
 
 impl ReplayAnalysisSets {
@@ -117,6 +126,22 @@ impl ReplayAnalysisSets {
         let mut commander_no_units_values = HashSet::new();
         for units in replay_data.commander_no_units.values() {
             commander_no_units_values.extend(units.iter().cloned());
+        }
+        let mut mastery_upgrade_indices = HashMap::new();
+        for upgrades in data.co_mastery_upgrades.values() {
+            for (index, upgrade_name) in upgrades.iter().enumerate() {
+                mastery_upgrade_indices
+                    .entry(upgrade_name.clone())
+                    .or_insert(index as i64);
+            }
+        }
+        let mut prestige_upgrade_names = HashMap::new();
+        for upgrades in data.prestige_upgrades.values() {
+            for (upgrade_name, prestige_name) in upgrades {
+                prestige_upgrade_names
+                    .entry(upgrade_name.clone())
+                    .or_insert_with(|| prestige_name.clone());
+            }
         }
 
         Self {
@@ -137,7 +162,18 @@ impl ReplayAnalysisSets {
             salvage_units: replay_data.salvage_units.iter().cloned().collect(),
             unit_add_losses_to: replay_data.unit_add_losses_to.keys().cloned().collect(),
             commander_no_units_values,
+            mastery_upgrade_indices,
+            prestige_upgrade_names,
+            locust_source_units: Self::string_set(&LOCUST_SOURCE_UNITS),
+            broodling_source_units: Self::string_set(&BROODLING_SOURCE_UNITS),
+            zeratul_artifact_pickups: Self::string_set(&ZERATUL_ARTIFACT_PICKUPS),
+            zeratul_shade_projections: Self::string_set(&ZERATUL_SHADE_PROJECTIONS),
+            event_string_sets: ReplayEventStringSets::new(),
         }
+    }
+
+    fn string_set(values: &[&str]) -> HashSet<String> {
+        values.iter().map(|value| (*value).to_string()).collect()
     }
 }
 
@@ -665,13 +701,14 @@ impl DetailedReplayAnalyzer {
                     message: error.to_string(),
                 }
             })?,
-            detailed: options
-                .include_events
-                .then_some(ReplayDetailedParseContext {
-                    events,
-                    start_time: start_time.as_f64(),
-                    end_time,
-                }),
+            detailed: options.include_events.then(|| ReplayDetailedParseContext {
+                events: events
+                    .into_iter()
+                    .filter(ReplayEventKind::needed_for_replay_report_analysis_event)
+                    .collect(),
+                start_time: start_time.as_f64(),
+                end_time,
+            }),
         }))
     }
 
@@ -751,6 +788,22 @@ enum ReplayEventKind {
     Other,
 }
 
+const REPLAY_EVENT_KIND_TIMING_COUNT_NAMES: [&str; 13] = [
+    "count.game_user_leave",
+    "count.game_selection_delta",
+    "count.game_trigger_dialog_control",
+    "count.game_command",
+    "count.game_command_update_target_unit",
+    "count.tracker_player_stats",
+    "count.tracker_upgrade",
+    "count.tracker_unit_born",
+    "count.tracker_unit_init",
+    "count.tracker_unit_type_change",
+    "count.tracker_unit_owner_change",
+    "count.tracker_unit_died",
+    "count.other",
+];
+
 impl ReplayEventKind {
     fn from_name(event_name: &str) -> Self {
         match event_name {
@@ -777,6 +830,158 @@ impl ReplayEventKind {
     fn needed_for_detailed_analysis_name(event_name: &str) -> bool {
         !matches!(Self::from_name(event_name), Self::Other)
     }
+
+    fn needed_for_replay_report_analysis_event(event: &ReplayEvent) -> bool {
+        matches!(
+            Self::from_event(event),
+            Self::GameUserLeave
+                | Self::GameCommand
+                | Self::GameCommandUpdateTargetUnit
+                | Self::TrackerPlayerStats
+                | Self::TrackerUpgrade
+                | Self::TrackerUnitBorn
+                | Self::TrackerUnitInit
+                | Self::TrackerUnitTypeChange
+                | Self::TrackerUnitOwnerChange
+                | Self::TrackerUnitDied
+        )
+    }
+
+    fn timing_count_index(self) -> usize {
+        match self {
+            Self::GameUserLeave => 0,
+            Self::GameSelectionDelta => 1,
+            Self::GameTriggerDialogControl => 2,
+            Self::GameCommand => 3,
+            Self::GameCommandUpdateTargetUnit => 4,
+            Self::TrackerPlayerStats => 5,
+            Self::TrackerUpgrade => 6,
+            Self::TrackerUnitBorn => 7,
+            Self::TrackerUnitInit => 8,
+            Self::TrackerUnitTypeChange => 9,
+            Self::TrackerUnitOwnerChange => 10,
+            Self::TrackerUnitDied => 11,
+            Self::Other => 12,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ReplayAnalysisTimingCollector {
+    label: String,
+    started: Instant,
+    spans: BTreeMap<&'static str, Duration>,
+    event_counts: [usize; 13],
+    extra_counts: BTreeMap<&'static str, usize>,
+}
+
+#[derive(Debug, Default)]
+struct ReplayAnalysisNoopTimingCollector;
+
+trait ReplayAnalysisTiming {
+    type SpanStart;
+
+    fn new(label: &str) -> Self;
+    fn start(&self) -> Self::SpanStart;
+    fn finish(&mut self, name: &'static str, started: Self::SpanStart);
+    fn increment_event_kind(&mut self, event_kind: ReplayEventKind);
+    fn add_count(&mut self, name: &'static str, value: usize);
+    fn print(&self);
+}
+
+impl ReplayAnalysisTimingCollector {
+    fn enabled_from_env() -> bool {
+        std::env::var_os("S2COOP_ANALYZER_TIMINGS")
+            .and_then(|value| value.into_string().ok())
+            .map(|value| {
+                let trimmed = value.trim();
+                !trimmed.is_empty() && trimmed != "0" && !trimmed.eq_ignore_ascii_case("false")
+            })
+            .unwrap_or(false)
+    }
+}
+
+impl ReplayAnalysisTiming for ReplayAnalysisTimingCollector {
+    type SpanStart = Instant;
+
+    fn new(label: &str) -> Self {
+        Self {
+            label: label.to_owned(),
+            started: Instant::now(),
+            spans: BTreeMap::new(),
+            event_counts: [0; 13],
+            extra_counts: BTreeMap::new(),
+        }
+    }
+
+    #[inline(always)]
+    fn start(&self) -> Self::SpanStart {
+        Instant::now()
+    }
+
+    #[inline(always)]
+    fn finish(&mut self, name: &'static str, started: Self::SpanStart) {
+        let elapsed = started.elapsed();
+        let value = self.spans.entry(name).or_default();
+        *value += elapsed;
+    }
+
+    #[inline(always)]
+    fn increment_event_kind(&mut self, event_kind: ReplayEventKind) {
+        self.event_counts[event_kind.timing_count_index()] += 1;
+    }
+
+    #[inline(always)]
+    fn add_count(&mut self, name: &'static str, value: usize) {
+        *self.extra_counts.entry(name).or_default() += value;
+    }
+
+    fn print(&self) {
+        eprintln!(
+            "[s2coop timing] analyze_replay_file_impl label=\"{}\" total={:.3}ms",
+            self.label,
+            self.started.elapsed().as_secs_f64() * 1000.0
+        );
+        for (name, duration) in &self.spans {
+            eprintln!(
+                "[s2coop timing] span.{name}={:.3}ms",
+                duration.as_secs_f64() * 1000.0
+            );
+        }
+        for (name, count) in &self.extra_counts {
+            eprintln!("[s2coop timing] {name}={count}");
+        }
+        for (index, count) in self.event_counts.iter().enumerate() {
+            if *count > 0 {
+                let name = REPLAY_EVENT_KIND_TIMING_COUNT_NAMES[index];
+                eprintln!("[s2coop timing] {name}={count}");
+            }
+        }
+    }
+}
+
+impl ReplayAnalysisTiming for ReplayAnalysisNoopTimingCollector {
+    type SpanStart = ();
+
+    #[inline(always)]
+    fn new(_label: &str) -> Self {
+        Self
+    }
+
+    #[inline(always)]
+    fn start(&self) -> Self::SpanStart {}
+
+    #[inline(always)]
+    fn finish(&mut self, _name: &'static str, _started: Self::SpanStart) {}
+
+    #[inline(always)]
+    fn increment_event_kind(&mut self, _event_kind: ReplayEventKind) {}
+
+    #[inline(always)]
+    fn add_count(&mut self, _name: &'static str, _value: usize) {}
+
+    #[inline(always)]
+    fn print(&self) {}
 }
 
 impl DetailedReplayAnalyzer {
@@ -2318,21 +2523,28 @@ impl DetailedReplayAnalyzer {
             || (map_name.contains("[MM] Lnl") && candidate == "Lock & Load")
     }
 
-    fn replay_unitid_from_event(event: &TrackerEvent, killer: bool, creator: bool) -> Option<i64> {
-        let (index, recycle_index) = if killer {
-            (
-                event.m_killer_unit_tag_index?,
-                event.m_killer_unit_tag_recycle?,
-            )
-        } else if creator {
-            (
-                event.m_creator_unit_tag_index?,
-                event.m_creator_unit_tag_recycle?,
-            )
-        } else {
-            (event.m_unit_tag_index?, event.m_unit_tag_recycle?)
-        };
+    fn replay_unitid(index: Option<i64>, recycle_index: Option<i64>) -> Option<i64> {
+        let index = index?;
+        let recycle_index = recycle_index?;
         Some(recycle_index * 100_000 + index)
+    }
+
+    fn replay_event_unitid(event: &TrackerEvent) -> Option<i64> {
+        Self::replay_unitid(event.m_unit_tag_index, event.m_unit_tag_recycle)
+    }
+
+    fn replay_creator_unitid(event: &TrackerEvent) -> Option<i64> {
+        Self::replay_unitid(
+            event.m_creator_unit_tag_index,
+            event.m_creator_unit_tag_recycle,
+        )
+    }
+
+    fn replay_killer_unitid(event: &TrackerEvent) -> Option<i64> {
+        Self::replay_unitid(
+            event.m_killer_unit_tag_index,
+            event.m_killer_unit_tag_recycle,
+        )
     }
 
     fn clamp_nonnegative_to_u64(value: i64) -> u64 {
@@ -2563,15 +2775,20 @@ impl DetailedReplayAnalyzer {
         unit_name_dict: &UnitNamesJson,
         unit_add_kills_to: &UnitAddKillsToJson,
         unit_add_losses_to: &HashMap<String, String>,
-        dont_include_units: &HashSet<String>,
-        icon_units: &HashSet<String>,
+        analysis_sets: &ReplayAnalysisSets,
     ) -> (BTreeMap<String, UnitStats>, BTreeMap<String, u64>) {
         let mut icons = base_icons.clone();
         for (unit_name, values) in unit_counts {
             let created = values[0];
-            if LOCUST_SOURCE_UNITS.contains(&unit_name.as_str()) {
+            if analysis_sets
+                .locust_source_units
+                .contains(unit_name.as_str())
+            {
                 DetailedReplayAnalyzer::increment_icon_count(&mut icons, "locust", created);
-            } else if BROODLING_SOURCE_UNITS.contains(&unit_name.as_str()) {
+            } else if analysis_sets
+                .broodling_source_units
+                .contains(unit_name.as_str())
+            {
                 DetailedReplayAnalyzer::increment_icon_count(&mut icons, "broodling", created);
             }
         }
@@ -2588,7 +2805,7 @@ impl DetailedReplayAnalyzer {
             unit_name_dict,
             unit_add_kills_to,
             unit_add_losses_to,
-            dont_include_units,
+            &analysis_sets.dont_include_units,
         );
         let player_kills = DetailedReplayAnalyzer::count_for_pid(killcounts, player);
         let dehaka_created_lost = rows
@@ -2627,7 +2844,7 @@ impl DetailedReplayAnalyzer {
                 DetailedReplayAnalyzer::unit_stats_tuple(created, lost, kills, kill_fraction),
             );
 
-            if icon_units.contains(&unit_name) {
+            if analysis_sets.icon_units.contains(&unit_name) {
                 DetailedReplayAnalyzer::set_icon_count(&mut icons, &unit_name, created);
             }
         }
@@ -2637,10 +2854,16 @@ impl DetailedReplayAnalyzer {
             let created = values[0];
             let lost = values[1];
 
-            if ZERATUL_ARTIFACT_PICKUPS.contains(&unit_name.as_str()) {
+            if analysis_sets
+                .zeratul_artifact_pickups
+                .contains(unit_name.as_str())
+            {
                 artifacts_collected += lost;
             }
-            if ZERATUL_SHADE_PROJECTIONS.contains(&unit_name.as_str()) {
+            if analysis_sets
+                .zeratul_shade_projections
+                .contains(unit_name.as_str())
+            {
                 DetailedReplayAnalyzer::increment_icon_count(
                     &mut icons,
                     "ShadeProjection",
@@ -2658,24 +2881,23 @@ impl DetailedReplayAnalyzer {
     fn fill_amon_units(
         unit_counts: &UnitTypeCountMap,
         killcounts: &[i64],
-        amon_players: &HashSet<i64>,
+        amon_players: &ReplayPlayerIdSet,
         unit_name_dict: &UnitNamesJson,
         unit_add_kills_to: &UnitAddKillsToJson,
         unit_add_losses_to: &HashMap<String, String>,
-        dont_include_units: &HashSet<String>,
-        skip_tokens: &[String],
+        analysis_sets: &ReplayAnalysisSets,
     ) -> BTreeMap<String, UnitStats> {
         let rows = DetailedReplayAnalyzer::sorted_switch_name_entries(
             unit_counts,
             unit_name_dict,
             unit_add_kills_to,
             unit_add_losses_to,
-            dont_include_units,
+            &analysis_sets.dont_include_units,
         );
 
         let mut total_amon_kills = amon_players
             .iter()
-            .map(|player| DetailedReplayAnalyzer::count_for_pid(killcounts, *player))
+            .map(|player| DetailedReplayAnalyzer::count_for_pid(killcounts, player))
             .sum::<i64>();
         if total_amon_kills == 0 {
             total_amon_kills = 1;
@@ -2683,7 +2905,10 @@ impl DetailedReplayAnalyzer {
 
         let mut amon_units = BTreeMap::new();
         for (unit_name, created, lost, kills) in rows {
-            if DetailedReplayAnalyzer::contains_skip_strings_text(&unit_name, skip_tokens) {
+            if DetailedReplayAnalyzer::contains_skip_strings_text(
+                &unit_name,
+                &analysis_sets.skip_tokens,
+            ) {
                 continue;
             }
             let kill_fraction = DetailedReplayAnalyzer::round_to_digits_half_even(
@@ -2702,49 +2927,53 @@ impl DetailedReplayAnalyzer {
         identified_waves: &IdentifiedWavesMap,
         unit_comp_dict: &HashMap<String, Vec<HashSet<String>>>,
     ) -> String {
-        let mut ai_order = unit_comp_dict.keys().cloned().collect::<Vec<String>>();
+        let mut ai_order = unit_comp_dict.keys().collect::<Vec<&String>>();
         ai_order.sort();
-        let mut results = HashMap::new();
-        for ai in &ai_order {
-            results.insert(ai.clone(), 0.0_f64);
-        }
+        let mut scores = ai_order
+            .iter()
+            .map(|ai| (*ai, 0.0_f64))
+            .collect::<Vec<(&String, f64)>>();
 
         for wave in identified_waves.values() {
-            let types = wave.iter().cloned().collect::<HashSet<String>>();
+            let types = wave.iter().map(String::as_str).collect::<HashSet<&str>>();
             if types.is_empty() {
                 continue;
             }
 
-            for ai in &ai_order {
-                let Some(waves) = unit_comp_dict.get(ai) else {
+            for (ai, score) in &mut scores {
+                let Some(waves) = unit_comp_dict.get(ai.as_str()) else {
                     continue;
                 };
-                let score = results.entry(ai.clone()).or_insert(0.0);
                 for wave_row in waves {
-                    let mut wave_set = wave_row.clone();
-                    wave_set.remove("Medivac");
-                    if types == wave_set {
-                        *score += wave_set.len() as f64;
-                    } else if types.is_subset(&wave_set)
-                        && wave_set.len().saturating_sub(types.len()) == 1
-                    {
-                        *score += 0.25 * wave_set.len() as f64;
+                    let wave_len = if wave_row.contains("Medivac") {
+                        wave_row.len().saturating_sub(1)
+                    } else {
+                        wave_row.len()
+                    };
+                    let types_match_wave = types
+                        .iter()
+                        .all(|unit_type| *unit_type != "Medivac" && wave_row.contains(*unit_type));
+                    if types_match_wave && types.len() == wave_len {
+                        *score += wave_len as f64;
+                    } else if types_match_wave && wave_len.saturating_sub(types.len()) == 1 {
+                        *score += 0.25 * wave_len as f64;
                     }
                 }
             }
         }
 
-        let mut best_ai: Option<String> = None;
+        let mut best_ai: Option<&String> = None;
         let mut best_score = 0.0_f64;
-        for ai in ai_order {
-            let score = results.get(&ai).copied().unwrap_or_default();
+        for (ai, score) in scores {
             if score > best_score {
                 best_score = score;
                 best_ai = Some(ai);
             }
         }
 
-        best_ai.unwrap_or_else(|| "Unidentified AI".to_string())
+        best_ai
+            .cloned()
+            .unwrap_or_else(|| "Unidentified AI".to_string())
     }
 
     fn apply_custom_kill_icons(
@@ -2752,7 +2981,7 @@ impl DetailedReplayAnalyzer {
         ally_icons: &mut BTreeMap<String, u64>,
         custom_kill_count: &replay_event_handlers::NestedPlayerCountMap,
         unit_type_dict_amon: &UnitTypeCountMap,
-        map_name: &str,
+        map_flags: &ReplayMapAnalysisFlags,
         main_player: i64,
         ally_player: i64,
     ) {
@@ -2760,7 +2989,7 @@ impl DetailedReplayAnalyzer {
             let Some(player_counts) = custom_kill_count.get(key) else {
                 continue;
             };
-            if key == "deadofnight" && !map_name.contains("Dead of Night") {
+            if key == "deadofnight" && !map_flags.is_dead_of_night() {
                 continue;
             }
             if key == "minesweeper" && !unit_type_dict_amon.contains_key("MutatorSpiderMine") {
@@ -2825,6 +3054,32 @@ impl DetailedReplayAnalyzer {
         analysis_sets: &ReplayAnalysisSets,
         counter_dicts: Arc<StatsCounterDictionaries>,
     ) -> Result<ReplayReport, DetailedReplayAnalysisError> {
+        if ReplayAnalysisTimingCollector::enabled_from_env() {
+            Self::analyze_replay_file_impl_with_timings::<ReplayAnalysisTimingCollector>(
+                main_player_handles,
+                parsed,
+                dictionaries,
+                analysis_sets,
+                counter_dicts,
+            )
+        } else {
+            Self::analyze_replay_file_impl_with_timings::<ReplayAnalysisNoopTimingCollector>(
+                main_player_handles,
+                parsed,
+                dictionaries,
+                analysis_sets,
+                counter_dicts,
+            )
+        }
+    }
+
+    fn analyze_replay_file_impl_with_timings<Timing: ReplayAnalysisTiming>(
+        main_player_handles: &HashSet<String>,
+        parsed: ReplayParsedInputBundle,
+        dictionaries: &CacheGenerationData<'_>,
+        analysis_sets: &ReplayAnalysisSets,
+        counter_dicts: Arc<StatsCounterDictionaries>,
+    ) -> Result<ReplayReport, DetailedReplayAnalysisError> {
         let ReplayParsedInputBundle {
             mut parser,
             realtime_length,
@@ -2840,6 +3095,9 @@ impl DetailedReplayAnalyzer {
                 "detailed replay parsing did not include event context".to_string(),
             )
         })?;
+        let mut timings = Timing::new(parser.file.as_str());
+        timings.add_count("count.events_input", events.len());
+        let setup_started = timings.start();
 
         let main_player = i64::from(parser.selected_main_player_pid(main_player_handles));
         let ally_player = if main_player == 2 { 1 } else { 2 };
@@ -2872,19 +3130,16 @@ impl DetailedReplayAnalyzer {
 
         let do_not_count_kills_set = &analysis_sets.do_not_count_kills;
         let duplicating_units_set = &analysis_sets.duplicating_units;
-        let skip_tokens = &analysis_sets.skip_tokens;
         let dont_count_morphs_set = &analysis_sets.dont_count_morphs;
         let self_killing_units_set = &analysis_sets.self_killing_units;
         let aoe_units_set = &analysis_sets.aoe_units;
         let tychus_outlaws_set = &analysis_sets.tychus_outlaws;
         let units_killed_in_morph_set = &analysis_sets.units_killed_in_morph;
-        let dont_include_units_set = &analysis_sets.dont_include_units;
-        let icon_units_set = &analysis_sets.icon_units;
         let salvage_units_set = &analysis_sets.salvage_units;
         let unit_add_losses_to_set = &analysis_sets.unit_add_losses_to;
         let commander_no_units_values_set = &analysis_sets.commander_no_units_values;
 
-        let mut amon_player_ids_set: HashSet<i64> = HashSet::from([3_i64, 4_i64]);
+        let mut amon_player_ids_set = ReplayPlayerIdSet::from_values([3_i64, 4_i64]);
         for (mission_name, player_ids) in dictionaries.amon_player_ids.iter() {
             if !DetailedReplayAnalyzer::map_name_has_amon_override(&parser.map_name, mission_name) {
                 continue;
@@ -2892,17 +3147,20 @@ impl DetailedReplayAnalyzer {
             amon_player_ids_set.extend(player_ids.iter().copied());
             break;
         }
+        let map_flags = ReplayMapAnalysisFlags::new(parser.map_name.as_str());
+        let event_string_sets = &analysis_sets.event_string_sets;
 
         let mut unit_type_dict_main: UnitTypeCountMap = IndexMap::new();
         let mut unit_type_dict_ally: UnitTypeCountMap = IndexMap::new();
         let mut unit_type_dict_amon: UnitTypeCountMap = IndexMap::new();
-        let mut unit_dict: UnitStateMap = IndexMap::new();
+        let mut unit_dict: UnitStateMap = HashMap::new();
         let mut dt_ht_ignore = vec![0_i64; 17];
         let mut killcounts = vec![0_i64; 18];
         let mut commander_by_player = HashMap::<i64, String>::new();
         let mut mastery_by_player = HashMap::from([(1_i64, [0_i64; 6]), (2_i64, [0_i64; 6])]);
         let mut prestige_by_player = HashMap::<i64, String>::new();
         let mut outlaw_order: Vec<String> = Vec::new();
+        let mut outlaw_order_seen: HashSet<String> = HashSet::new();
         let mut wave_units = WaveUnitsState::default();
         let mut identified_waves: IdentifiedWavesMap = BTreeMap::new();
         let mut killbot_feed = vec![0_i64, 0, 0];
@@ -2926,36 +3184,59 @@ impl DetailedReplayAnalyzer {
         let mut last_aoe_unit_killed: Vec<Option<(String, f64)>> = vec![None; 17];
         let mut main_icons_base = BTreeMap::<String, u64>::new();
         let mut ally_icons_base = BTreeMap::<String, u64>::new();
+        timings.finish("setup", setup_started);
 
+        let end_gameloop = end_time * 16.0;
+        let ally_leave_transfer_threshold = end_time * 0.5;
+        let mut ally_kills_transfer_to_main = false;
+        let event_loop_started = timings.start();
         for event in &events {
             let current_event_kind = ReplayEventKind::from_event(event);
+            timings.increment_event_kind(current_event_kind);
+            let event_gameloop = DetailedReplayAnalyzer::event_gameloop(event);
 
             if current_event_kind == ReplayEventKind::GameUserLeave {
+                let handler_started = timings.start();
                 let user_id = DetailedReplayAnalyzer::event_user_id(event).unwrap_or_default();
-                let gameloop = DetailedReplayAnalyzer::event_gameloop(event) as f64;
+                let leaving_player = user_id + 1;
+                let leave_time = event_gameloop as f64 / 16.0;
                 ReplayEventHandlers::replay_handle_game_user_leave_event_fields(
                     user_id,
-                    gameloop,
+                    event_gameloop as f64,
                     &mut user_leave_times,
                 );
-            }
-
-            if DetailedReplayAnalyzer::event_gameloop(event) as f64 / 16.0 > end_time {
+                if leaving_player == ally_player && leave_time < ally_leave_transfer_threshold {
+                    ally_kills_transfer_to_main = true;
+                }
+                timings.finish("event.game_user_leave", handler_started);
                 continue;
             }
 
-            if matches!(
-                current_event_kind,
-                ReplayEventKind::GameCommand | ReplayEventKind::GameCommandUpdateTargetUnit
-            ) {
-                let ReplayEvent::Game(game_event) = event else {
-                    continue;
-                };
-                vespene_drone_identifier.event(game_event);
+            if event_gameloop as f64 > end_gameloop {
+                continue;
             }
 
-            if let ReplayEvent::Tracker(event) = event {
-                if current_event_kind == ReplayEventKind::TrackerPlayerStats {
+            match current_event_kind {
+                ReplayEventKind::GameCommand | ReplayEventKind::GameCommandUpdateTargetUnit => {
+                    let ReplayEvent::Game(game_event) = event else {
+                        continue;
+                    };
+                    let drone_event_kind = match current_event_kind {
+                        ReplayEventKind::GameCommand => ReplayDroneCommandEventKind::Command,
+                        ReplayEventKind::GameCommandUpdateTargetUnit => {
+                            ReplayDroneCommandEventKind::CommandUpdateTargetUnit
+                        }
+                        _ => unreachable!(),
+                    };
+                    let handler_started = timings.start();
+                    vespene_drone_identifier.event(drone_event_kind, game_event);
+                    timings.finish("event.drone_command", handler_started);
+                }
+                ReplayEventKind::TrackerPlayerStats => {
+                    let ReplayEvent::Tracker(event) = event else {
+                        continue;
+                    };
+                    let handler_started = timings.start();
                     let player = event.m_player_id.unwrap_or_default();
                     if let Some(stats) = event.m_stats.as_ref() {
                         let supply_used =
@@ -2979,8 +3260,8 @@ impl DetailedReplayAnalyzer {
                         {
                             match update.target() {
                                 StatsCounterTarget::Main => {
-                                    main_stats_counter.set_unit_dict(&unit_type_dict_main);
                                     main_stats_counter.add_stats(
+                                        &unit_type_dict_main,
                                         &vespene_drone_identifier,
                                         update.kills(),
                                         update.supply_used(),
@@ -2988,8 +3269,8 @@ impl DetailedReplayAnalyzer {
                                     );
                                 }
                                 StatsCounterTarget::Ally => {
-                                    ally_stats_counter.set_unit_dict(&unit_type_dict_ally);
                                     ally_stats_counter.add_stats(
+                                        &unit_type_dict_ally,
                                         &vespene_drone_identifier,
                                         update.kills(),
                                         update.supply_used(),
@@ -2999,11 +3280,16 @@ impl DetailedReplayAnalyzer {
                             }
                         }
                     }
+                    timings.finish("event.player_stats", handler_started);
                 }
-
-                if current_event_kind == ReplayEventKind::TrackerUpgrade
-                    && matches!(event.m_player_id, Some(1 | 2))
-                {
+                ReplayEventKind::TrackerUpgrade => {
+                    let ReplayEvent::Tracker(event) = event else {
+                        continue;
+                    };
+                    if !matches!(event.m_player_id, Some(1 | 2)) {
+                        continue;
+                    }
+                    let handler_started = timings.start();
                     let upg_name = event.m_upgrade_type_name.clone().unwrap_or_default();
                     let upg_pid = event.m_player_id.unwrap_or_default();
                     let upgrade_count = event.m_count.unwrap_or_default();
@@ -3014,8 +3300,8 @@ impl DetailedReplayAnalyzer {
                         main_player,
                         ally_player,
                         &dictionaries.replay_analysis_data.commander_upgrades,
-                        &dictionaries.co_mastery_upgrades,
-                        &dictionaries.prestige_upgrades,
+                        &analysis_sets.mastery_upgrade_indices,
+                        &analysis_sets.prestige_upgrade_names,
                     );
 
                     if let Some(target) = update.target() {
@@ -3081,150 +3367,154 @@ impl DetailedReplayAnalyzer {
                             }
                         }
                     }
+                    timings.finish("event.upgrade", handler_started);
                 }
-            }
-
-            if matches!(
-                current_event_kind,
-                ReplayEventKind::TrackerUnitBorn | ReplayEventKind::TrackerUnitInit
-            ) {
-                let ReplayEvent::Tracker(event) = event else {
-                    continue;
-                };
-                let event_fields = UnitBornOrInitEventFields::new(
-                    event.m_unit_type_name.clone().unwrap_or_default(),
-                    event.m_creator_ability_name.clone(),
-                    DetailedReplayAnalyzer::replay_unitid_from_event(event, false, false)
-                        .unwrap_or_default(),
-                    DetailedReplayAnalyzer::replay_unitid_from_event(event, false, true),
-                    event.m_control_player_id.unwrap_or_default(),
-                    event.game_loop,
-                    event.m_x.unwrap_or_default(),
-                    event.m_y.unwrap_or_default(),
-                );
-                let update = ReplayEventHandlers::replay_handle_unit_born_or_init_event_fields(
-                    &event_fields,
-                    main_player,
-                    ally_player,
-                    &amon_player_ids_set,
-                    &mut unit_dict,
-                    start_time,
-                    &mut unit_type_dict_main,
-                    &mut unit_type_dict_ally,
-                    &mut unit_type_dict_amon,
-                    &mut mutator_dehaka_drag_unit_ids,
-                    &mut murvar_spawns,
-                    &mut glevig_spawns,
-                    &mut broodlord_broodlings,
-                    &mut outlaw_order,
-                    &mut wave_units,
-                    &mut identified_waves,
-                    &mut abathur_kill_locusts,
-                    last_biomass_position,
-                    &dictionaries.replay_analysis_data.revival_types,
-                    &dictionaries.replay_analysis_data.primal_combat_predecessors,
-                    tychus_outlaws_set,
-                    &dictionaries.units_in_waves,
-                );
-                unit_id = update.unit_id();
-                last_biomass_position = update.last_biomass_position();
-
-                if let Some((target, unit_type)) = update.created_event() {
-                    match target {
-                        StatsCounterTarget::Main => {
-                            main_stats_counter.unit_created_event(unit_type, event);
-                        }
-                        StatsCounterTarget::Ally => {
-                            ally_stats_counter.unit_created_event(unit_type, event);
-                        }
-                    }
-                }
-            }
-
-            if current_event_kind == ReplayEventKind::TrackerUnitInit {
-                let ReplayEvent::Tracker(event) = event else {
-                    continue;
-                };
-                let event_unit_type = event.m_unit_type_name.clone().unwrap_or_default();
-                if event_unit_type == "Archon" {
-                    let control_pid = event.m_control_player_id.unwrap_or_default();
-                    ReplayEventHandlers::replay_handle_archon_init_event_control_pid(
-                        control_pid,
-                        &mut dt_ht_ignore,
-                    );
-                }
-            }
-
-            let event_unit_id = match event {
-                ReplayEvent::Tracker(event) => {
-                    DetailedReplayAnalyzer::replay_unitid_from_event(event, false, false)
-                }
-                ReplayEvent::Game(_) => None,
-            };
-            if current_event_kind == ReplayEventKind::TrackerUnitTypeChange
-                && event_unit_id
-                    .map(|value| unit_dict.contains_key(&value))
-                    .unwrap_or(false)
-            {
-                let ReplayEvent::Tracker(event) = event else {
-                    continue;
-                };
-                let event_fields = UnitTypeChangeEventFields::new(
-                    event_unit_id.unwrap_or_default(),
-                    event.m_unit_type_name.clone().unwrap_or_default(),
-                    event.game_loop,
-                );
-                let update = ReplayEventHandlers::replay_handle_unit_type_change_event_fields(
-                    &event_fields,
-                    parser.map_name.as_str(),
-                    main_player,
-                    ally_player,
-                    &amon_player_ids_set,
-                    &mut unit_dict,
-                    &mut unit_type_dict_main,
-                    &mut unit_type_dict_ally,
-                    &mut unit_type_dict_amon,
-                    start_time,
-                    &mut bonus_timings,
-                    unit_id,
-                    &glevig_spawns,
-                    &murvar_spawns,
-                    &mut zagaras_dummy_zerglings,
-                    &broodlord_broodlings,
-                    research_vessel_landed_timing,
-                    units_killed_in_morph_set,
-                    &dictionaries.unit_name_dict,
-                    unit_add_losses_to_set,
-                    dont_count_morphs_set,
-                );
-                research_vessel_landed_timing = update.landed_timing();
-
-                if let Some((target, new_unit, old_unit)) = update.unit_change_event() {
-                    match target {
-                        StatsCounterTarget::Main => {
-                            main_stats_counter.unit_change_event(new_unit, old_unit);
-                        }
-                        StatsCounterTarget::Ally => {
-                            ally_stats_counter.unit_change_event(new_unit, old_unit);
-                        }
-                    }
-                }
-            }
-
-            if current_event_kind == ReplayEventKind::TrackerUnitOwnerChange
-                && event_unit_id
-                    .map(|value| unit_dict.contains_key(&value))
-                    .unwrap_or(false)
-            {
-                if let Some(changed_unit_id) = event_unit_id {
+                ReplayEventKind::TrackerUnitBorn | ReplayEventKind::TrackerUnitInit => {
                     let ReplayEvent::Tracker(event) = event else {
                         continue;
                     };
+                    let handler_started = timings.start();
+                    let event_fields = UnitBornOrInitEventFields::new(
+                        event.m_unit_type_name.as_deref().unwrap_or_default(),
+                        event.m_creator_ability_name.as_deref(),
+                        DetailedReplayAnalyzer::replay_event_unitid(event).unwrap_or_default(),
+                        DetailedReplayAnalyzer::replay_creator_unitid(event),
+                        event.m_control_player_id.unwrap_or_default(),
+                        event.game_loop,
+                        event.m_x.unwrap_or_default(),
+                        event.m_y.unwrap_or_default(),
+                    );
+                    let update = ReplayEventHandlers::replay_handle_unit_born_or_init_event_fields(
+                        &event_fields,
+                        main_player,
+                        ally_player,
+                        &amon_player_ids_set,
+                        &mut unit_dict,
+                        start_time,
+                        &mut unit_type_dict_main,
+                        &mut unit_type_dict_ally,
+                        &mut unit_type_dict_amon,
+                        &mut mutator_dehaka_drag_unit_ids,
+                        &mut murvar_spawns,
+                        &mut glevig_spawns,
+                        &mut broodlord_broodlings,
+                        &mut outlaw_order,
+                        &mut outlaw_order_seen,
+                        &mut wave_units,
+                        &mut identified_waves,
+                        &mut abathur_kill_locusts,
+                        last_biomass_position,
+                        &dictionaries.replay_analysis_data.revival_types,
+                        &dictionaries.replay_analysis_data.primal_combat_predecessors,
+                        tychus_outlaws_set,
+                        &dictionaries.units_in_waves,
+                        event_string_sets,
+                    );
+                    unit_id = update.unit_id();
+                    last_biomass_position = update.last_biomass_position();
+
+                    if let Some((target, unit_type)) = update.created_event() {
+                        match target {
+                            StatsCounterTarget::Main => {
+                                main_stats_counter.unit_created_event(unit_type, event);
+                            }
+                            StatsCounterTarget::Ally => {
+                                ally_stats_counter.unit_created_event(unit_type, event);
+                            }
+                        }
+                    }
+                    timings.finish("event.unit_born_or_init", handler_started);
+
+                    if current_event_kind == ReplayEventKind::TrackerUnitInit {
+                        let handler_started = timings.start();
+                        if event.m_unit_type_name.as_deref() == Some("Archon") {
+                            let control_pid = event.m_control_player_id.unwrap_or_default();
+                            ReplayEventHandlers::replay_handle_archon_init_event_control_pid(
+                                control_pid,
+                                &mut dt_ht_ignore,
+                            );
+                        }
+                        timings.finish("event.unit_init_archon", handler_started);
+                    }
+                }
+                ReplayEventKind::TrackerUnitTypeChange => {
+                    let ReplayEvent::Tracker(event) = event else {
+                        continue;
+                    };
+                    let event_unit_id_started = timings.start();
+                    let event_unit_id = DetailedReplayAnalyzer::replay_event_unitid(event);
+                    let event_unit_in_dict = event_unit_id
+                        .map(|value| unit_dict.contains_key(&value))
+                        .unwrap_or(false);
+                    timings.finish("event.unit_id_lookup", event_unit_id_started);
+                    if !event_unit_in_dict {
+                        continue;
+                    }
+
+                    let handler_started = timings.start();
+                    let event_fields = UnitTypeChangeEventFields::new(
+                        event_unit_id.unwrap_or_default(),
+                        event.m_unit_type_name.as_deref().unwrap_or_default(),
+                        event.game_loop,
+                    );
+                    let update = ReplayEventHandlers::replay_handle_unit_type_change_event_fields(
+                        &event_fields,
+                        &map_flags,
+                        main_player,
+                        ally_player,
+                        &amon_player_ids_set,
+                        &mut unit_dict,
+                        &mut unit_type_dict_main,
+                        &mut unit_type_dict_ally,
+                        &mut unit_type_dict_amon,
+                        start_time,
+                        &mut bonus_timings,
+                        unit_id,
+                        &glevig_spawns,
+                        &murvar_spawns,
+                        &mut zagaras_dummy_zerglings,
+                        &broodlord_broodlings,
+                        research_vessel_landed_timing,
+                        units_killed_in_morph_set,
+                        &dictionaries.unit_name_dict,
+                        unit_add_losses_to_set,
+                        dont_count_morphs_set,
+                        event_string_sets,
+                    );
+                    research_vessel_landed_timing = update.landed_timing();
+
+                    if let Some((target, new_unit, old_unit)) = update.unit_change_event() {
+                        match target {
+                            StatsCounterTarget::Main => {
+                                main_stats_counter.unit_change_event(new_unit, old_unit);
+                            }
+                            StatsCounterTarget::Ally => {
+                                ally_stats_counter.unit_change_event(new_unit, old_unit);
+                            }
+                        }
+                    }
+                    timings.finish("event.unit_type_change", handler_started);
+                }
+                ReplayEventKind::TrackerUnitOwnerChange => {
+                    let ReplayEvent::Tracker(event) = event else {
+                        continue;
+                    };
+                    let event_unit_id_started = timings.start();
+                    let event_unit_id = DetailedReplayAnalyzer::replay_event_unitid(event);
+                    let event_unit_in_dict = event_unit_id
+                        .map(|value| unit_dict.contains_key(&value))
+                        .unwrap_or(false);
+                    timings.finish("event.unit_id_lookup", event_unit_id_started);
+                    let Some(changed_unit_id) = event_unit_id.filter(|_| event_unit_in_dict) else {
+                        continue;
+                    };
+
+                    let handler_started = timings.start();
                     let control_pid = event.m_control_player_id.unwrap_or_default();
                     let game_time = event.game_loop as f64 / 16.0 - start_time;
                     let update = ReplayEventHandlers::replay_handle_unit_owner_change_event_fields(
                         changed_unit_id,
-                        parser.map_name.as_str(),
+                        &map_flags,
                         control_pid,
                         main_player,
                         ally_player,
@@ -3255,60 +3545,60 @@ impl DetailedReplayAnalyzer {
                             None => {}
                         }
                     }
+                    timings.finish("event.unit_owner_change", handler_started);
                 }
-            }
+                ReplayEventKind::TrackerUnitDied => {
+                    let ReplayEvent::Tracker(event) = event else {
+                        continue;
+                    };
+                    let event_unit_id_started = timings.start();
+                    let event_unit_id = DetailedReplayAnalyzer::replay_event_unitid(event);
+                    let killed_snapshot = event_unit_id.and_then(|value| unit_dict.get(&value));
+                    let event_unit_in_dict = killed_snapshot.is_some();
+                    timings.finish("event.unit_id_lookup", event_unit_id_started);
 
-            if current_event_kind == ReplayEventKind::TrackerUnitDied {
-                let ReplayEvent::Tracker(event) = event else {
-                    continue;
-                };
-                let unit_in_dict = event_unit_id
-                    .map(|value| unit_dict.contains_key(&value))
-                    .unwrap_or(false);
-                if !unit_in_dict {
-                    let killed_unit_type = event.m_unit_type_name.clone().unwrap_or_default();
-                    if !do_not_count_kills_set.contains(killed_unit_type.as_str()) {
-                        if let Some(killer_player) = event.m_killer_player_id {
-                            if let Ok(index) = usize::try_from(killer_player) {
-                                if let Some(value) = killcounts.get_mut(index) {
-                                    *value += 1;
+                    let handler_started = timings.start();
+                    if !event_unit_in_dict {
+                        let killed_unit_type =
+                            event.m_unit_type_name.as_deref().unwrap_or_default();
+                        if !do_not_count_kills_set.contains(killed_unit_type) {
+                            if let Some(killer_player) = event.m_killer_player_id {
+                                if let Ok(index) = usize::try_from(killer_player) {
+                                    if let Some(value) = killcounts.get_mut(index) {
+                                        *value += 1;
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                ally_kills_counted_toward_main =
-                    ReplayEventHandlers::replay_handle_unit_died_kill_stats_event_fields(
-                        event_unit_id,
-                        event.m_killer_player_id,
-                        event.game_loop,
-                        main_player,
-                        ally_player,
-                        &amon_player_ids_set,
-                        &unit_dict,
-                        &mut killcounts,
-                        &user_leave_times,
-                        end_time,
-                        &mut last_aoe_unit_killed,
-                        ally_kills_counted_toward_main,
-                        do_not_count_kills_set,
-                        aoe_units_set,
-                    );
-            }
+                    ally_kills_counted_toward_main =
+                        ReplayEventHandlers::replay_handle_unit_died_kill_stats_event_fields(
+                            killed_snapshot,
+                            event.m_killer_player_id,
+                            event.game_loop,
+                            main_player,
+                            ally_player,
+                            &amon_player_ids_set,
+                            &mut killcounts,
+                            ally_kills_transfer_to_main,
+                            &mut last_aoe_unit_killed,
+                            ally_kills_counted_toward_main,
+                            do_not_count_kills_set,
+                            aoe_units_set,
+                        );
+                    timings.finish("event.unit_died_kill_stats", handler_started);
 
-            if current_event_kind == ReplayEventKind::TrackerUnitDied
-                && event_unit_id
-                    .map(|value| unit_dict.contains_key(&value))
-                    .unwrap_or(false)
-            {
-                if let Some(detail_unit_id) = event_unit_id {
-                    let ReplayEvent::Tracker(event) = event else {
+                    let Some(detail_unit_id) = event_unit_id.filter(|_| event_unit_in_dict) else {
                         continue;
                     };
+                    let Some(killed_snapshot) = killed_snapshot else {
+                        continue;
+                    };
+                    let handler_started = timings.start();
                     let event_fields = UnitDiedEventFields::new(
                         detail_unit_id,
-                        DetailedReplayAnalyzer::replay_unitid_from_event(event, true, false),
+                        DetailedReplayAnalyzer::replay_killer_unitid(event),
                         event.m_killer_player_id,
                         event.game_loop,
                         event.m_x.unwrap_or_default(),
@@ -3316,7 +3606,8 @@ impl DetailedReplayAnalyzer {
                     );
                     let update = ReplayEventHandlers::replay_handle_unit_died_detail_event_fields(
                         &event_fields,
-                        parser.map_name.as_str(),
+                        killed_snapshot,
+                        &map_flags,
                         main_player,
                         ally_player,
                         &amon_player_ids_set,
@@ -3349,6 +3640,7 @@ impl DetailedReplayAnalyzer {
                         self_killing_units_set,
                         duplicating_units_set,
                         salvage_units_set,
+                        event_string_sets,
                     );
                     unit_id = update.current_unit_id();
 
@@ -3373,10 +3665,14 @@ impl DetailedReplayAnalyzer {
                             }
                         }
                     }
+                    timings.finish("event.unit_died_detail", handler_started);
                 }
+                _ => {}
             }
         }
+        timings.finish("events.total", event_loop_started);
 
+        let overrides_started = timings.start();
         parser.apply_player_overrides(
             &commander_by_player,
             &mastery_by_player,
@@ -3384,7 +3680,9 @@ impl DetailedReplayAnalyzer {
         );
         parser.messages =
             ParsedReplayMessage::sorted_with_leave_events(&parser.messages, &user_leave_times);
+        timings.finish("post.player_overrides_messages", overrides_started);
 
+        let player_stats_started = timings.start();
         let main_name = parser
             .player(main_player as u8)
             .map(|player| player.name.clone())
@@ -3397,7 +3695,9 @@ impl DetailedReplayAnalyzer {
         let mut player_stats = BTreeMap::<u8, AnalysisPlayerStatsSeries>::new();
         player_stats.insert(1, main_stats_counter.get_stats(main_name.as_str()));
         player_stats.insert(2, ally_stats_counter.get_stats(ally_name.as_str()));
+        timings.finish("post.player_stats", player_stats_started);
 
+        let bonus_comp_started = timings.start();
         let bonus = bonus_timings
             .iter()
             .map(|value| DetailedReplayAnalyzer::format_mm_ss(*value))
@@ -3406,17 +3706,21 @@ impl DetailedReplayAnalyzer {
             &identified_waves,
             &dictionaries.unit_comp_dict,
         );
+        timings.finish("post.bonus_comp", bonus_comp_started);
 
+        let custom_icons_started = timings.start();
         DetailedReplayAnalyzer::apply_custom_kill_icons(
             &mut main_icons_base,
             &mut ally_icons_base,
             &custom_kill_count,
             &unit_type_dict_amon,
-            parser.map_name.as_str(),
+            &map_flags,
             main_player,
             ally_player,
         );
+        timings.finish("post.custom_kill_icons", custom_icons_started);
 
+        let main_units_started = timings.start();
         let (main_units, mut main_icons) = DetailedReplayAnalyzer::fill_unit_kills_and_icons(
             &main_icons_base,
             main_player,
@@ -3427,9 +3731,10 @@ impl DetailedReplayAnalyzer {
             &dictionaries.unit_name_dict,
             &dictionaries.unit_add_kills_to,
             &dictionaries.replay_analysis_data.unit_add_losses_to,
-            dont_include_units_set,
-            icon_units_set,
+            analysis_sets,
         );
+        timings.finish("post.main_units_icons", main_units_started);
+        let ally_units_started = timings.start();
         let (ally_units, mut ally_icons) = DetailedReplayAnalyzer::fill_unit_kills_and_icons(
             &ally_icons_base,
             ally_player,
@@ -3440,10 +3745,11 @@ impl DetailedReplayAnalyzer {
             &dictionaries.unit_name_dict,
             &dictionaries.unit_add_kills_to,
             &dictionaries.replay_analysis_data.unit_add_losses_to,
-            dont_include_units_set,
-            icon_units_set,
+            analysis_sets,
         );
+        timings.finish("post.ally_units_icons", ally_units_started);
 
+        let killbot_icons_started = timings.start();
         let main_killbot_feed = DetailedReplayAnalyzer::count_for_pid(&killbot_feed, main_player);
         if main_killbot_feed > 0 {
             DetailedReplayAnalyzer::set_icon_count(&mut main_icons, "killbots", main_killbot_feed);
@@ -3452,7 +3758,9 @@ impl DetailedReplayAnalyzer {
         if ally_killbot_feed > 0 {
             DetailedReplayAnalyzer::set_icon_count(&mut ally_icons, "killbots", ally_killbot_feed);
         }
+        timings.finish("post.killbot_icons", killbot_icons_started);
 
+        let amon_units_started = timings.start();
         let amon_units = DetailedReplayAnalyzer::fill_amon_units(
             &unit_type_dict_amon,
             &killcounts,
@@ -3460,10 +3768,11 @@ impl DetailedReplayAnalyzer {
             &dictionaries.unit_name_dict,
             &dictionaries.unit_add_kills_to,
             &dictionaries.replay_analysis_data.unit_add_losses_to,
-            dont_include_units_set,
-            skip_tokens,
+            analysis_sets,
         );
+        timings.finish("post.amon_units", amon_units_started);
 
+        let report_started = timings.start();
         let mut detailed_input = ReplayReportDetailedInput::from_parser(parser);
         detailed_input.positions = Some(PlayerPositions {
             main: main_player as u8,
@@ -3489,10 +3798,13 @@ impl DetailedReplayAnalyzer {
             outlaw_order,
         });
 
-        Ok(ReplayReport::from_detailed_input(
+        let report = ReplayReport::from_detailed_input(
             &detailed_input.parser.file,
             &detailed_input,
             main_player_handles,
-        ))
+        );
+        timings.finish("post.report_build", report_started);
+        timings.print();
+        Ok(report)
     }
 }

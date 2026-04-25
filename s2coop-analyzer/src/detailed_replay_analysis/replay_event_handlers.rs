@@ -1,4 +1,4 @@
-use crate::dictionary_data::{CoMasteryUpgradesJson, PrestigeUpgradesJson, UnitNamesJson};
+use crate::dictionary_data::UnitNamesJson;
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -7,13 +7,245 @@ pub(super) type TextListMapping = IndexMap<String, Vec<String>>;
 pub(super) type UnitTypeCountMap = IndexMap<String, [i64; 4]>;
 pub(super) type IdentifiedWavesMap = BTreeMap<i64, Vec<String>>;
 
+const PLAYER_ID_INDEXED_LIMIT: usize = 17;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct ReplayEventStringSets {
+    custom_kill_count_categories: HashMap<String, String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct ReplayPlayerIdSet {
+    indexed: [bool; PLAYER_ID_INDEXED_LIMIT],
+    values: HashSet<i64>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct ReplayMapAnalysisFlags {
+    scythe_of_amon: bool,
+    malwarfare: bool,
+    void_thrashing: bool,
+    dead_of_night: bool,
+    lock_and_load: bool,
+    chain_of_ascension: bool,
+    rifts_to_korhal: bool,
+    cradle_of_death: bool,
+    part_and_parcel: bool,
+    oblivion_express: bool,
+    mist_opportunities: bool,
+    vermillion_problem: bool,
+    miner_evacuation: bool,
+    temple_of_the_past: bool,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct UnitSnapshot {
     unit_type: String,
     control_pid: i64,
 }
 
-pub(super) type UnitStateMap = IndexMap<i64, UnitSnapshot>;
+pub(super) type UnitStateMap = HashMap<i64, UnitSnapshot>;
+
+impl ReplayEventStringSets {
+    pub(super) fn new() -> Self {
+        Self {
+            custom_kill_count_categories: Self::custom_kill_count_categories(),
+        }
+    }
+
+    fn contains_murvar_spawn_unit(&self, unit_type: &str) -> bool {
+        matches!(
+            unit_type,
+            "DehakaLocust" | "DehakaCreeperFlying" | "DehakaLocustFlying" | "DehakaCreeper"
+        )
+    }
+
+    fn contains_glevig_spawn_unit(&self, unit_type: &str) -> bool {
+        matches!(
+            unit_type,
+            "CoopDehakaGlevigEggZergling"
+                | "CoopDehakaGlevigEggRoach"
+                | "CoopDehakaGlevigEggHydralisk"
+        )
+    }
+
+    fn contains_glevig_killer_unit(&self, unit_type: &str) -> bool {
+        matches!(
+            unit_type,
+            "DehakaZerglingLevel2" | "DehakaRoachLevel2" | "DehakaHydraliskLevel2"
+        )
+    }
+
+    fn contains_broodling_unit(&self, unit_type: &str) -> bool {
+        matches!(unit_type, "Broodling" | "BroodlingStetmann")
+    }
+
+    fn contains_broodling_escort_unit(&self, unit_type: &str) -> bool {
+        matches!(unit_type, "BroodlingEscort" | "BroodlingEscortStetmann")
+    }
+
+    fn contains_killbot_unit(&self, unit_type: &str) -> bool {
+        matches!(
+            unit_type,
+            "MutatorKillBot" | "MutatorDeathBot" | "MutatorMurderBot"
+        )
+    }
+
+    fn contains_abathur_free_death_unit(&self, unit_type: &str) -> bool {
+        matches!(
+            unit_type,
+            "Roach"
+                | "RavagerAbathur"
+                | "RoachVileBurrowed"
+                | "RoachBurrowed"
+                | "SwarmHostBurrowed"
+                | "QueenBurrowed"
+        )
+    }
+
+    fn custom_kill_count_category(&self, unit_type: &str) -> Option<&str> {
+        self.custom_kill_count_categories
+            .get(unit_type)
+            .map(String::as_str)
+    }
+
+    fn custom_kill_count_categories() -> HashMap<String, String> {
+        let mut categories = HashMap::new();
+        Self::insert_custom_kill_count_category(&mut categories, "shuttles", &["ProtossFrigate"]);
+        Self::insert_custom_kill_count_category(
+            &mut categories,
+            "propagators",
+            &["MutatorPropagator"],
+        );
+        Self::insert_custom_kill_count_category(
+            &mut categories,
+            "minesweeper",
+            &[
+                "MutatorSpiderMine",
+                "MutatorSpiderMineBurrowed",
+                "WidowMineBurrowed",
+                "WidowMine",
+            ],
+        );
+        Self::insert_custom_kill_count_category(&mut categories, "voidrifts", &["MutatorVoidRift"]);
+        Self::insert_custom_kill_count_category(
+            &mut categories,
+            "turkey",
+            &["MutatorTurkey", "MutatorTurking", "MutatorInfestedTurkey"],
+        );
+        Self::insert_custom_kill_count_category(
+            &mut categories,
+            "voidreanimators",
+            &["MutatorVoidReanimator"],
+        );
+        Self::insert_custom_kill_count_category(
+            &mut categories,
+            "deadofnight",
+            &[
+                "InfestableBiodome",
+                "JarbanInfestibleColonistHut",
+                "InfestedMercHaven",
+                "InfestableHut",
+            ],
+        );
+        Self::insert_custom_kill_count_category(
+            &mut categories,
+            "missilecommand",
+            &[
+                "MutatorMissileSplitterChild",
+                "MutatorMissileNuke",
+                "MutatorMissileSplitter",
+                "MutatorMissileStandard",
+                "MutatorMissilePointDefense",
+            ],
+        );
+        categories
+    }
+
+    fn insert_custom_kill_count_category(
+        categories: &mut HashMap<String, String>,
+        category: &str,
+        unit_types: &[&str],
+    ) {
+        for unit_type in unit_types {
+            categories.insert((*unit_type).to_owned(), category.to_owned());
+        }
+    }
+}
+
+impl ReplayPlayerIdSet {
+    pub(super) fn from_values(values: impl IntoIterator<Item = i64>) -> Self {
+        let mut set = Self {
+            indexed: [false; PLAYER_ID_INDEXED_LIMIT],
+            values: HashSet::new(),
+        };
+        set.extend(values);
+        set
+    }
+
+    pub(super) fn insert(&mut self, player_id: i64) {
+        if let Ok(index) = usize::try_from(player_id) {
+            if let Some(slot) = self.indexed.get_mut(index) {
+                *slot = true;
+            }
+        }
+        self.values.insert(player_id);
+    }
+
+    pub(super) fn extend(&mut self, values: impl IntoIterator<Item = i64>) {
+        for value in values {
+            self.insert(value);
+        }
+    }
+
+    pub(super) fn contains(&self, player_id: i64) -> bool {
+        if let Ok(index) = usize::try_from(player_id) {
+            if let Some(value) = self.indexed.get(index) {
+                return *value;
+            }
+        }
+        self.values.contains(&player_id)
+    }
+
+    pub(super) fn iter(&self) -> impl Iterator<Item = i64> + '_ {
+        self.values.iter().copied()
+    }
+}
+
+impl ReplayMapAnalysisFlags {
+    pub(super) fn new(map_name: &str) -> Self {
+        Self {
+            scythe_of_amon: map_name.contains("Scythe of Amon"),
+            malwarfare: map_name.contains("Malwarfare"),
+            void_thrashing: map_name.contains("Void Thrashing"),
+            dead_of_night: map_name.contains("Dead of Night"),
+            lock_and_load: map_name.contains("Lock & Load")
+                || map_name.contains("[MM] LnL")
+                || map_name.contains("[MM] Lnl"),
+            chain_of_ascension: map_name.contains("Chain of Ascension"),
+            rifts_to_korhal: map_name.contains("Rifts to Korhal"),
+            cradle_of_death: map_name.contains("Cradle of Death"),
+            part_and_parcel: map_name.contains("Part and Parcel"),
+            oblivion_express: map_name.contains("Oblivion Express"),
+            mist_opportunities: map_name.contains("Mist Opportunities"),
+            vermillion_problem: map_name.contains("The Vermillion Problem"),
+            miner_evacuation: map_name.contains("Miner Evacuation"),
+            temple_of_the_past: map_name.contains("Temple of the Past"),
+        }
+    }
+
+    pub(super) fn is_dead_of_night(&self) -> bool {
+        self.dead_of_night
+    }
+
+    fn is_scythe_of_amon(&self) -> bool {
+        self.scythe_of_amon
+    }
+
+    fn is_malwarfare(&self) -> bool {
+        self.malwarfare
+    }
+}
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) struct WaveUnitsState {
@@ -50,10 +282,10 @@ pub(super) struct UnitOwnerChangeUpdate {
     icon_target: Option<StatsCounterTarget>,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(super) struct UnitBornOrInitEventFields {
-    unit_type: String,
-    ability_name: Option<String>,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct UnitBornOrInitEventFields<'a> {
+    unit_type: &'a str,
+    ability_name: Option<&'a str>,
     unit_id: i64,
     creator_unit_id: Option<i64>,
     control_pid: i64,
@@ -63,23 +295,23 @@ pub(super) struct UnitBornOrInitEventFields {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(super) struct UnitBornOrInitUpdate {
+pub(super) struct UnitBornOrInitUpdate<'a> {
     unit_id: i64,
     last_biomass_position: [i64; 3],
-    created_event: Option<(StatsCounterTarget, String)>,
+    created_event: Option<(StatsCounterTarget, &'a str)>,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(super) struct UnitTypeChangeEventFields {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct UnitTypeChangeEventFields<'a> {
     event_unit_id: i64,
-    unit_type: String,
+    unit_type: &'a str,
     gameloop: i64,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(super) struct UnitTypeChangeUpdate {
+pub(super) struct UnitTypeChangeUpdate<'a> {
     landed_timing: Option<i64>,
-    unit_change_event: Option<(StatsCounterTarget, String, String)>,
+    unit_change_event: Option<(StatsCounterTarget, &'a str, String)>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -93,10 +325,10 @@ pub(super) struct UnitDiedEventFields {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(super) struct UnitDiedDetailUpdate {
+pub(super) struct UnitDiedDetailUpdate<'a> {
     current_unit_id: i64,
-    salvaged_unit: Option<(StatsCounterTarget, String)>,
-    mindcontrolled_unit_died: Option<(StatsCounterTarget, String)>,
+    salvaged_unit: Option<(StatsCounterTarget, &'a str)>,
+    mindcontrolled_unit_died: Option<(StatsCounterTarget, &'a str)>,
 }
 
 impl PlayerStatsUpdate {
@@ -149,10 +381,10 @@ impl UnitOwnerChangeUpdate {
     }
 }
 
-impl UnitBornOrInitEventFields {
+impl<'a> UnitBornOrInitEventFields<'a> {
     pub(super) fn new(
-        unit_type: String,
-        ability_name: Option<String>,
+        unit_type: &'a str,
+        ability_name: Option<&'a str>,
         unit_id: i64,
         creator_unit_id: Option<i64>,
         control_pid: i64,
@@ -173,7 +405,7 @@ impl UnitBornOrInitEventFields {
     }
 }
 
-impl UnitBornOrInitUpdate {
+impl UnitBornOrInitUpdate<'_> {
     pub(super) fn unit_id(&self) -> i64 {
         self.unit_id
     }
@@ -184,13 +416,12 @@ impl UnitBornOrInitUpdate {
 
     pub(super) fn created_event(&self) -> Option<(StatsCounterTarget, &str)> {
         self.created_event
-            .as_ref()
-            .map(|(target, unit_type)| (*target, unit_type.as_str()))
+            .map(|(target, unit_type)| (target, unit_type))
     }
 }
 
-impl UnitTypeChangeEventFields {
-    pub(super) fn new(event_unit_id: i64, unit_type: String, gameloop: i64) -> Self {
+impl<'a> UnitTypeChangeEventFields<'a> {
+    pub(super) fn new(event_unit_id: i64, unit_type: &'a str, gameloop: i64) -> Self {
         Self {
             event_unit_id,
             unit_type,
@@ -199,7 +430,7 @@ impl UnitTypeChangeEventFields {
     }
 }
 
-impl UnitTypeChangeUpdate {
+impl UnitTypeChangeUpdate<'_> {
     pub(super) fn landed_timing(&self) -> Option<i64> {
         self.landed_timing
     }
@@ -207,7 +438,7 @@ impl UnitTypeChangeUpdate {
     pub(super) fn unit_change_event(&self) -> Option<(StatsCounterTarget, &str, &str)> {
         self.unit_change_event
             .as_ref()
-            .map(|(target, new_unit, old_unit)| (*target, new_unit.as_str(), old_unit.as_str()))
+            .map(|(target, new_unit, old_unit)| (*target, *new_unit, old_unit.as_str()))
     }
 }
 
@@ -231,21 +462,17 @@ impl UnitDiedEventFields {
     }
 }
 
-impl UnitDiedDetailUpdate {
+impl UnitDiedDetailUpdate<'_> {
     pub(super) fn current_unit_id(&self) -> i64 {
         self.current_unit_id
     }
 
     pub(super) fn salvaged_unit(&self) -> Option<(StatsCounterTarget, &str)> {
         self.salvaged_unit
-            .as_ref()
-            .map(|(target, unit_type)| (*target, unit_type.as_str()))
     }
 
     pub(super) fn mindcontrolled_unit_died(&self) -> Option<(StatsCounterTarget, &str)> {
         self.mindcontrolled_unit_died
-            .as_ref()
-            .map(|(target, unit_type)| (*target, unit_type.as_str()))
     }
 }
 
@@ -412,8 +639,8 @@ impl ReplayEventHandlers {
         main_player: i64,
         ally_player: i64,
         commander_upgrades: &HashMap<String, String>,
-        co_mastery_upgrades: &CoMasteryUpgradesJson,
-        prestige_upgrades: &PrestigeUpgradesJson,
+        mastery_upgrade_indices: &HashMap<String, i64>,
+        prestige_upgrade_names: &HashMap<String, String>,
     ) -> UpgradeEventUpdate {
         let target = if upg_pid == main_player {
             Some(StatsCounterTarget::Main)
@@ -424,17 +651,8 @@ impl ReplayEventHandlers {
         };
 
         let commander_name = commander_upgrades.get(upg_name).cloned();
-        let mut mastery_index: Option<i64> = None;
-        for upgrades in co_mastery_upgrades.values() {
-            if let Some(index) = upgrades.iter().position(|name| name == upg_name) {
-                mastery_index = Some(index as i64);
-                break;
-            }
-        }
-
-        let prestige_name = prestige_upgrades
-            .values()
-            .find_map(|prestige_by_upgrade| prestige_by_upgrade.get(upg_name).cloned());
+        let mastery_index = mastery_upgrade_indices.get(upg_name).copied();
+        let prestige_name = prestige_upgrade_names.get(upg_name).cloned();
 
         UpgradeEventUpdate {
             target,
@@ -445,11 +663,11 @@ impl ReplayEventHandlers {
         }
     }
 
-    pub(super) fn replay_handle_unit_born_or_init_event_fields(
-        event: &UnitBornOrInitEventFields,
+    pub(super) fn replay_handle_unit_born_or_init_event_fields<'a>(
+        event: &UnitBornOrInitEventFields<'a>,
         main_player: i64,
         ally_player: i64,
-        amon_players: &HashSet<i64>,
+        amon_players: &ReplayPlayerIdSet,
         unit_dict: &mut UnitStateMap,
         start_time: f64,
         unit_type_dict_main: &mut UnitTypeCountMap,
@@ -460,6 +678,7 @@ impl ReplayEventHandlers {
         glevig_spawns: &mut HashSet<i64>,
         broodlord_broodlings: &mut HashSet<i64>,
         outlaw_order: &mut Vec<String>,
+        outlaw_order_seen: &mut HashSet<String>,
         wave_units: &mut WaveUnitsState,
         identified_waves: &mut IdentifiedWavesMap,
         abathur_kill_locusts: &mut HashSet<i64>,
@@ -468,8 +687,9 @@ impl ReplayEventHandlers {
         primal_combat_predecessors: &HashMap<String, String>,
         tychus_outlaws: &HashSet<String>,
         units_in_waves: &HashSet<String>,
-    ) -> UnitBornOrInitUpdate {
-        let unit_type = event.unit_type.as_str();
+        string_sets: &ReplayEventStringSets,
+    ) -> UnitBornOrInitUpdate<'a> {
+        let unit_type = event.unit_type;
         let unit_id = event.unit_id;
         let control_pid = event.control_pid;
         let gameloop = event.gameloop;
@@ -483,32 +703,22 @@ impl ReplayEventHandlers {
             },
         );
 
-        if matches!(
-            unit_type,
-            "DehakaLocust" | "DehakaCreeperFlying" | "DehakaLocustFlying" | "DehakaCreeper"
-        ) && event.ability_name.as_deref() == Some("CoopMurvarSpawnCreepers")
+        if string_sets.contains_murvar_spawn_unit(unit_type)
+            && event.ability_name == Some("CoopMurvarSpawnCreepers")
         {
             murvar_spawns.insert(unit_id);
         }
 
-        if matches!(
-            unit_type,
-            "CoopDehakaGlevigEggZergling"
-                | "CoopDehakaGlevigEggRoach"
-                | "CoopDehakaGlevigEggHydralisk"
-        ) {
+        if string_sets.contains_glevig_spawn_unit(unit_type) {
             glevig_spawns.insert(unit_id);
         }
 
-        if (unit_type == "Broodling" || unit_type == "BroodlingStetmann")
-            && event.creator_unit_id.is_some()
-        {
+        let is_broodling_unit = string_sets.contains_broodling_unit(unit_type);
+        if is_broodling_unit && event.creator_unit_id.is_some() {
             if let Some(creator_id) = event.creator_unit_id {
                 if let Some(creator_row) = unit_dict.get(&creator_id) {
                     let creator_type = creator_row.unit_type.as_str();
-                    if creator_type == "BroodlingEscort"
-                        || creator_type == "BroodlingEscortStetmann"
-                    {
+                    if string_sets.contains_broodling_escort_unit(creator_type) {
                         broodlord_broodlings.insert(unit_id);
                     }
                 }
@@ -559,9 +769,8 @@ impl ReplayEventHandlers {
             }
         }
 
-        let is_broodlord_broodling = (unit_type == "Broodling" || unit_type == "BroodlingStetmann")
-            && broodlord_broodlings.contains(&unit_id);
-        let mut created_event: Option<(StatsCounterTarget, String)> = None;
+        let is_broodlord_broodling = is_broodling_unit && broodlord_broodlings.contains(&unit_id);
+        let mut created_event: Option<(StatsCounterTarget, &str)> = None;
         if !glevig_spawns.contains(&unit_id)
             && !murvar_spawns.contains(&unit_id)
             && !is_broodlord_broodling
@@ -574,7 +783,7 @@ impl ReplayEventHandlers {
                     0,
                     0,
                 );
-                created_event = Some((StatsCounterTarget::Main, unit_type.to_owned()));
+                created_event = Some((StatsCounterTarget::Main, unit_type));
             } else if control_pid == ally_player {
                 ReplayEventHandlerHelpers::update_unit_count(
                     unit_type_dict_ally,
@@ -583,9 +792,9 @@ impl ReplayEventHandlers {
                     0,
                     0,
                 );
-                created_event = Some((StatsCounterTarget::Ally, unit_type.to_owned()));
-            } else if amon_players.contains(&control_pid) {
-                if event.ability_name.as_deref() == Some("MutatorAmonDehakaDrag") {
+                created_event = Some((StatsCounterTarget::Ally, unit_type));
+            } else if amon_players.contains(control_pid) {
+                if event.ability_name == Some("MutatorAmonDehakaDrag") {
                     mutator_dehaka_drag_unit_ids.insert(unit_id);
                 } else {
                     ReplayEventHandlerHelpers::update_unit_count(
@@ -601,8 +810,9 @@ impl ReplayEventHandlers {
 
         if tychus_outlaws.contains(unit_type)
             && (control_pid == 1 || control_pid == 2)
-            && !outlaw_order.iter().any(|name| name == unit_type)
+            && !outlaw_order_seen.contains(unit_type)
         {
+            outlaw_order_seen.insert(unit_type.to_owned());
             outlaw_order.push(unit_type.to_owned());
         }
 
@@ -653,12 +863,12 @@ impl ReplayEventHandlers {
         }
     }
 
-    pub(super) fn replay_handle_unit_type_change_event_fields(
-        event: &UnitTypeChangeEventFields,
-        map_name: &str,
+    pub(super) fn replay_handle_unit_type_change_event_fields<'a>(
+        event: &UnitTypeChangeEventFields<'a>,
+        map_flags: &ReplayMapAnalysisFlags,
         main_player: i64,
         ally_player: i64,
-        amon_players: &HashSet<i64>,
+        amon_players: &ReplayPlayerIdSet,
         unit_dict: &mut UnitStateMap,
         unit_type_dict_main: &mut UnitTypeCountMap,
         unit_type_dict_ally: &mut UnitTypeCountMap,
@@ -675,7 +885,8 @@ impl ReplayEventHandlers {
         unit_name_dict: &UnitNamesJson,
         unit_add_losses_to: &HashSet<String>,
         dont_count_morphs: &HashSet<String>,
-    ) -> UnitTypeChangeUpdate {
+        string_sets: &ReplayEventStringSets,
+    ) -> UnitTypeChangeUpdate<'a> {
         let mut update = UnitTypeChangeUpdate {
             landed_timing: research_vessel_landed_timing,
             unit_change_event: None,
@@ -685,7 +896,7 @@ impl ReplayEventHandlers {
         };
 
         let control_pid = unit_row.control_pid;
-        let unit_type = event.unit_type.as_str();
+        let unit_type = event.unit_type;
         let gameloop = event.gameloop;
 
         if control_pid == 7 && unit_type == "ResearchVesselLanded" {
@@ -700,10 +911,7 @@ impl ReplayEventHandlers {
             }
         }
 
-        if map_name.contains("Scythe of Amon")
-            && control_pid == 11
-            && unit_type == "WarpPrismPhasing"
-        {
+        if map_flags.is_scythe_of_amon() && control_pid == 11 && unit_type == "WarpPrismPhasing" {
             bonus_timings.push(gameloop as f64 / 16.0 - start_time);
         }
 
@@ -714,32 +922,26 @@ impl ReplayEventHandlers {
         let old_unit_type = std::mem::replace(&mut unit_row.unit_type, unit_type.to_owned());
 
         if control_pid == main_player {
-            update.unit_change_event = Some((
-                StatsCounterTarget::Main,
-                unit_type.to_owned(),
-                old_unit_type.clone(),
-            ));
+            update.unit_change_event =
+                Some((StatsCounterTarget::Main, unit_type, old_unit_type.clone()));
         } else if control_pid == ally_player {
-            update.unit_change_event = Some((
-                StatsCounterTarget::Ally,
-                unit_type.to_owned(),
-                old_unit_type.clone(),
-            ));
+            update.unit_change_event =
+                Some((StatsCounterTarget::Ally, unit_type, old_unit_type.clone()));
         }
 
-        if unit_name_dict.contains_key(unit_type)
-            && unit_name_dict.contains_key(old_unit_type.as_str())
+        let new_display_name = unit_name_dict.get(unit_type);
+        let old_display_name = unit_name_dict.get(old_unit_type.as_str());
+        if let (Some(new_display_name), Some(old_display_name)) =
+            (new_display_name, old_display_name)
         {
             if old_unit_type == "BanelingCocoon" && unit_type == "HotSSwarmling" {
                 zagaras_dummy_zerglings.insert(event.event_unit_id);
                 return update;
             }
 
-            let names_differ =
-                unit_name_dict.get(unit_type) != unit_name_dict.get(old_unit_type.as_str());
+            let names_differ = new_display_name != old_display_name;
             // Preserve the historical Python loop-variable quirk used by the original cache.
-            let is_broodlord_broodling = (unit_type == "Broodling"
-                || unit_type == "BroodlingStetmann")
+            let is_broodlord_broodling = string_sets.contains_broodling_unit(unit_type)
                 && broodlord_broodlings.contains(&legacy_spawn_filter_unit_id);
             let should_add_created = names_differ
                 && !unit_add_losses_to.contains(old_unit_type.as_str())
@@ -765,7 +967,7 @@ impl ReplayEventHandlers {
                         0,
                         0,
                     );
-                } else if amon_players.contains(&control_pid) {
+                } else if amon_players.contains(control_pid) {
                     ReplayEventHandlerHelpers::update_unit_count(
                         unit_type_dict_amon,
                         unit_type,
@@ -793,7 +995,7 @@ impl ReplayEventHandlers {
                         0,
                     );
                 }
-                if amon_players.contains(&control_pid) {
+                if amon_players.contains(control_pid) {
                     ReplayEventHandlerHelpers::update_unit_count(
                         unit_type_dict_amon,
                         unit_type,
@@ -810,11 +1012,11 @@ impl ReplayEventHandlers {
 
     pub(super) fn replay_handle_unit_owner_change_event_fields(
         event_unit_id: i64,
-        map_name: &str,
+        map_flags: &ReplayMapAnalysisFlags,
         control_pid: i64,
         main_player: i64,
         ally_player: i64,
-        amon_players: &HashSet<i64>,
+        amon_players: &ReplayPlayerIdSet,
         unit_dict: &mut UnitStateMap,
         game_time: f64,
         bonus_timings: &mut Vec<f64>,
@@ -826,17 +1028,17 @@ impl ReplayEventHandlers {
         };
         let losing_player = unit_row.control_pid;
 
-        if control_pid == main_player && amon_players.contains(&losing_player) {
+        if control_pid == main_player && amon_players.contains(losing_player) {
             update.mind_controlled_unit_id = Some(event_unit_id);
             update.icon_target = Some(StatsCounterTarget::Main);
-        } else if control_pid == ally_player && amon_players.contains(&losing_player) {
+        } else if control_pid == ally_player && amon_players.contains(losing_player) {
             update.mind_controlled_unit_id = Some(event_unit_id);
             update.icon_target = Some(StatsCounterTarget::Ally);
         }
 
         unit_row.control_pid = control_pid;
 
-        if map_name.contains("Malwarfare") {
+        if map_flags.is_malwarfare() {
             let first_time = mw_bonus_initial_timing[0];
             let second_time = mw_bonus_initial_timing[1];
 
@@ -858,45 +1060,38 @@ impl ReplayEventHandlers {
     }
 
     pub(super) fn replay_handle_unit_died_kill_stats_event_fields(
-        event_unit_id: Option<i64>,
+        killed_row: Option<&UnitSnapshot>,
         killing_player: Option<i64>,
         gameloop: i64,
         main_player: i64,
         ally_player: i64,
-        amon_players: &HashSet<i64>,
-        unit_dict: &UnitStateMap,
+        amon_players: &ReplayPlayerIdSet,
         killcounts: &mut [i64],
-        user_leave_times: &IndexMap<i64, f64>,
-        end_time: f64,
+        ally_kills_transfer_to_main: bool,
         last_aoe_unit_killed: &mut [Option<(String, f64)>],
         ally_kills_counted_toward_main: i64,
         do_not_count_kills: &HashSet<String>,
         aoe_units: &HashSet<String>,
     ) -> i64 {
         let mut ally_kills = ally_kills_counted_toward_main;
-        let Some(event_unit_id) = event_unit_id else {
-            return ally_kills;
-        };
-        let Some(unit_row) = unit_dict.get(&event_unit_id) else {
+        let Some(unit_row) = killed_row else {
             return ally_kills;
         };
         let killed_unit_type = unit_row.unit_type.as_str();
         let losing_player = unit_row.control_pid;
+        let losing_player_is_amon = amon_players.contains(losing_player);
+        let losing_player_is_coop = losing_player == 1 || losing_player == 2;
+        let killing_player_is_coop = matches!(killing_player, Some(1 | 2));
 
         if let Some(killer) = killing_player {
             if !do_not_count_kills.contains(killed_unit_type) {
-                if (killer == 1 || killer == 2) && !amon_players.contains(&losing_player) {
+                let killer_is_amon = amon_players.contains(killer);
+                if (killer == 1 || killer == 2) && !losing_player_is_amon {
                     // ignore player-vs-player kills
-                } else if amon_players.contains(&killer)
-                    && !(losing_player == 1 || losing_player == 2)
-                {
+                } else if killer_is_amon && !losing_player_is_coop {
                     // ignore amon-vs-amon kills
                 } else if killer == ally_player {
-                    let ally_leave_time = user_leave_times
-                        .get(&ally_player)
-                        .copied()
-                        .unwrap_or(end_time);
-                    if ally_leave_time < end_time * 0.5 {
+                    if ally_kills_transfer_to_main {
                         ReplayEventHandlerHelpers::increment_i64_key(killcounts, main_player, 1);
                         ally_kills += 1;
                     } else {
@@ -908,12 +1103,7 @@ impl ReplayEventHandlers {
             }
         }
 
-        if aoe_units.contains(killed_unit_type)
-            && killing_player
-                .map(|value| value == 1 || value == 2)
-                .unwrap_or(false)
-            && amon_players.contains(&losing_player)
-        {
+        if aoe_units.contains(killed_unit_type) && killing_player_is_coop && losing_player_is_amon {
             if let Ok(index) = usize::try_from(losing_player) {
                 if let Some(slot) = last_aoe_unit_killed.get_mut(index) {
                     *slot = Some((killed_unit_type.to_owned(), gameloop as f64 / 16.0));
@@ -924,12 +1114,13 @@ impl ReplayEventHandlers {
         ally_kills
     }
 
-    pub(super) fn replay_handle_unit_died_detail_event_fields(
+    pub(super) fn replay_handle_unit_died_detail_event_fields<'a>(
         event: &UnitDiedEventFields,
-        map_name: &str,
+        killed_row: &'a UnitSnapshot,
+        map_flags: &ReplayMapAnalysisFlags,
         main_player: i64,
         ally_player: i64,
-        amon_players: &HashSet<i64>,
+        amon_players: &ReplayPlayerIdSet,
         unit_id: i64,
         unit_type_dict_main: &mut UnitTypeCountMap,
         unit_type_dict_ally: &mut UnitTypeCountMap,
@@ -959,7 +1150,8 @@ impl ReplayEventHandlers {
         self_killing_units: &HashSet<String>,
         duplicating_units: &HashSet<String>,
         salvage_units: &HashSet<String>,
-    ) -> UnitDiedDetailUpdate {
+        string_sets: &ReplayEventStringSets,
+    ) -> UnitDiedDetailUpdate<'a> {
         let mut update = UnitDiedDetailUpdate {
             current_unit_id: unit_id,
             salvaged_unit: None,
@@ -970,17 +1162,24 @@ impl ReplayEventHandlers {
         let killing_unit_id = event.killing_unit_id;
         let killing_player = event.killing_player;
 
-        let Some(killed_row) = unit_dict.get(&event_unit_id) else {
-            return update;
-        };
         let killed_unit_type = killed_row.unit_type.as_str();
         let losing_player = killed_row.control_pid;
+        let losing_player_is_coop = losing_player == 1 || losing_player == 2;
+        let losing_player_is_amon = amon_players.contains(losing_player);
+        let killing_player_is_coop = matches!(killing_player, Some(1 | 2));
+        let killing_player_is_amon = killing_player
+            .map(|value| amon_players.contains(value))
+            .unwrap_or(false);
+        let killing_player_is_main = killing_player == Some(main_player);
+        let killing_player_is_ally = killing_player == Some(ally_player);
         let commander = killing_player
             .and_then(|pid| commander_by_player.get(&pid))
-            .cloned();
+            .map(String::as_str);
 
+        let mut killer_in_unit_dict = false;
         let mut killing_unit_type = if let Some(killer_id) = killing_unit_id {
             if let Some(row) = unit_dict.get(&killer_id) {
+                killer_in_unit_dict = true;
                 row.unit_type.as_str()
             } else {
                 "NoUnit"
@@ -990,7 +1189,7 @@ impl ReplayEventHandlers {
         };
 
         if killing_unit_type == "NoUnit" {
-            if let Some(commander_name) = commander.as_deref() {
+            if let Some(commander_name) = commander {
                 if let Some(backup_units) = commander_no_units.get(commander_name) {
                     let source_dict: &UnitTypeCountMap = if killing_player == Some(main_player) {
                         &*unit_type_dict_main
@@ -1007,48 +1206,32 @@ impl ReplayEventHandlers {
             }
         }
 
-        if matches!(
-            killing_unit_type.as_ref(),
-            "MutatorKillBot" | "MutatorDeathBot" | "MutatorMurderBot"
-        ) && (losing_player == 1 || losing_player == 2)
-        {
+        if string_sets.contains_killbot_unit(killing_unit_type) && losing_player_is_coop {
             ReplayEventHandlerHelpers::increment_i64_key(killbot_feed, losing_player, 1);
         }
 
         if killing_unit_type == "Locust"
-            && commander.as_deref() == Some("Abathur")
+            && commander == Some("Abathur")
             && !killing_unit_id
                 .map(|value| abathur_kill_locusts.contains(&value))
                 .unwrap_or(false)
         {
-            if killing_player == Some(main_player) && unit_type_dict_main.contains_key("SwarmHost")
-            {
+            if killing_player_is_main && unit_type_dict_main.contains_key("SwarmHost") {
                 killing_unit_type = "SwarmHost";
             }
-            if killing_player == Some(ally_player) && unit_type_dict_ally.contains_key("SwarmHost")
-            {
+            if killing_player_is_ally && unit_type_dict_ally.contains_key("SwarmHost") {
                 killing_unit_type = "SwarmHost";
             }
-        } else if matches!(
-            killing_unit_type.as_ref(),
-            "DehakaZerglingLevel2" | "DehakaRoachLevel2" | "DehakaHydraliskLevel2"
-        ) && killing_unit_id
-            .map(|value| glevig_spawns.contains(&value))
-            .unwrap_or(false)
+        } else if string_sets.contains_glevig_killer_unit(killing_unit_type)
+            && killing_unit_id.is_some_and(|value| glevig_spawns.contains(&value))
         {
             killing_unit_type = "Glevig";
-        } else if matches!(
-            killing_unit_type.as_ref(),
-            "DehakaLocust" | "DehakaCreeperFlying" | "DehakaLocustFlying" | "DehakaCreeper"
-        ) && killing_unit_id
-            .map(|value| murvar_spawns.contains(&value))
-            .unwrap_or(false)
+        } else if string_sets.contains_murvar_spawn_unit(killing_unit_type)
+            && killing_unit_id.is_some_and(|value| murvar_spawns.contains(&value))
         {
             killing_unit_type = "Murvar";
-        } else if killing_unit_id
-            .map(|value| broodlord_broodlings.contains(&value))
-            .unwrap_or(false)
-            && (killing_unit_type == "Broodling" || killing_unit_type == "BroodlingStetmann")
+        } else if killing_unit_id.is_some_and(|value| broodlord_broodlings.contains(&value))
+            && string_sets.contains_broodling_unit(killing_unit_type)
         {
             if killing_unit_type == "Broodling" {
                 killing_unit_type = "BroodLord";
@@ -1057,11 +1240,7 @@ impl ReplayEventHandlers {
             }
         }
 
-        if killing_player
-            .map(|value| value == 1 || value == 2)
-            .unwrap_or(false)
-            && amon_players.contains(&losing_player)
-        {
+        if killing_player_is_coop && losing_player_is_amon {
             let killer = killing_player.unwrap_or_default();
             if hfts_units.contains(killed_unit_type) {
                 ReplayEventHandlerHelpers::increment_nested_player_count(
@@ -1079,92 +1258,17 @@ impl ReplayEventHandlers {
                     1,
                 );
             }
-            if killed_unit_type == "ProtossFrigate" {
+            if let Some(category) = string_sets.custom_kill_count_category(killed_unit_type) {
                 ReplayEventHandlerHelpers::increment_nested_player_count(
                     custom_kill_count,
-                    "shuttles",
-                    killer,
-                    1,
-                );
-            } else if killed_unit_type == "MutatorPropagator" {
-                ReplayEventHandlerHelpers::increment_nested_player_count(
-                    custom_kill_count,
-                    "propagators",
-                    killer,
-                    1,
-                );
-            } else if matches!(
-                killed_unit_type,
-                "MutatorSpiderMine"
-                    | "MutatorSpiderMineBurrowed"
-                    | "WidowMineBurrowed"
-                    | "WidowMine"
-            ) {
-                ReplayEventHandlerHelpers::increment_nested_player_count(
-                    custom_kill_count,
-                    "minesweeper",
-                    killer,
-                    1,
-                );
-            } else if killed_unit_type == "MutatorVoidRift" {
-                ReplayEventHandlerHelpers::increment_nested_player_count(
-                    custom_kill_count,
-                    "voidrifts",
-                    killer,
-                    1,
-                );
-            } else if matches!(
-                killed_unit_type,
-                "MutatorTurkey" | "MutatorTurking" | "MutatorInfestedTurkey"
-            ) {
-                ReplayEventHandlerHelpers::increment_nested_player_count(
-                    custom_kill_count,
-                    "turkey",
-                    killer,
-                    1,
-                );
-            } else if killed_unit_type == "MutatorVoidReanimator" {
-                ReplayEventHandlerHelpers::increment_nested_player_count(
-                    custom_kill_count,
-                    "voidreanimators",
-                    killer,
-                    1,
-                );
-            } else if matches!(
-                killed_unit_type,
-                "InfestableBiodome"
-                    | "JarbanInfestibleColonistHut"
-                    | "InfestedMercHaven"
-                    | "InfestableHut"
-            ) {
-                ReplayEventHandlerHelpers::increment_nested_player_count(
-                    custom_kill_count,
-                    "deadofnight",
-                    killer,
-                    1,
-                );
-            } else if matches!(
-                killed_unit_type,
-                "MutatorMissileSplitterChild"
-                    | "MutatorMissileNuke"
-                    | "MutatorMissileSplitter"
-                    | "MutatorMissileStandard"
-                    | "MutatorMissilePointDefense"
-            ) {
-                ReplayEventHandlerHelpers::increment_nested_player_count(
-                    custom_kill_count,
-                    "missilecommand",
+                    category,
                     killer,
                     1,
                 );
             }
         }
 
-        if (losing_player == 1 || losing_player == 2)
-            && killing_player
-                .map(|value| amon_players.contains(&value))
-                .unwrap_or(false)
-        {
+        if losing_player_is_coop && killing_player_is_amon {
             if killing_unit_type == "MutatorSpiderMine"
                 && killing_unit_id
                     .map(|value| !used_mutator_spider_mines.contains(&value))
@@ -1184,9 +1288,7 @@ impl ReplayEventHandlers {
 
         if killing_unit_type == "NoUnit"
             && killing_unit_id.is_none()
-            && killing_player
-                .map(|value| amon_players.contains(&value))
-                .unwrap_or(false)
+            && killing_player_is_amon
             && killing_player != Some(losing_player)
         {
             if let Some(killer) = killing_player {
@@ -1208,15 +1310,12 @@ impl ReplayEventHandlers {
             }
         }
 
-        let killer_in_unit_dict = killing_unit_id
-            .map(|value| unit_dict.contains_key(&value))
-            .unwrap_or(false);
         if (killer_in_unit_dict || commander_no_units_values.contains(killing_unit_type))
             && killing_unit_id != Some(event_unit_id)
             && killing_player != Some(losing_player)
             && !do_not_count_kills.contains(killed_unit_type)
         {
-            if killing_player == Some(main_player) && amon_players.contains(&losing_player) {
+            if killing_player_is_main && losing_player_is_amon {
                 ReplayEventHandlerHelpers::update_unit_count(
                     unit_type_dict_main,
                     killing_unit_type.as_ref(),
@@ -1225,7 +1324,7 @@ impl ReplayEventHandlers {
                     1,
                 );
             }
-            if killing_player == Some(ally_player) && amon_players.contains(&losing_player) {
+            if killing_player_is_ally && losing_player_is_amon {
                 ReplayEventHandlerHelpers::update_unit_count(
                     unit_type_dict_ally,
                     killing_unit_type.as_ref(),
@@ -1234,11 +1333,7 @@ impl ReplayEventHandlers {
                     1,
                 );
             }
-            if killing_player
-                .map(|value| amon_players.contains(&value))
-                .unwrap_or(false)
-                && (losing_player == 1 || losing_player == 2)
-            {
+            if killing_player_is_amon && losing_player_is_coop {
                 ReplayEventHandlerHelpers::update_unit_count(
                     unit_type_dict_amon,
                     killing_unit_type.as_ref(),
@@ -1297,10 +1392,7 @@ impl ReplayEventHandlers {
                 );
                 return update;
             }
-            if killing_player
-                .map(|value| amon_players.contains(&value))
-                .unwrap_or(false)
-            {
+            if killing_player_is_amon {
                 ReplayEventHandlerHelpers::update_unit_count(
                     unit_type_dict_amon,
                     killed_unit_type,
@@ -1326,110 +1418,153 @@ impl ReplayEventHandlers {
 
         let event_x = event.event_x;
         let event_y = event.event_y;
-        let rounded_bonus =
-            ReplayEventHandlerHelpers::round_to_digits_half_even(game_time - start_time, 0);
-        let bonus_len = bonus_timings.len();
-        let nova_eradicator_lost = unit_type_dict_amon
-            .get("NovaEradicator")
-            .map(|row| row[1])
-            .unwrap_or_default();
-
-        let bonus_triggered = (map_name.contains("Void Thrashing")
+        let bonus_timing = if map_flags.void_thrashing
             && (killed_unit_type == "ArchAngelCoopFighter"
                 || killed_unit_type == "ArchAngelCoopAssault")
-            && losing_player == 5)
-            || (map_name.contains("Dead of Night")
-                && killed_unit_type == "ACVirophage"
-                && losing_player == 7
-                && killing_player
-                    .map(|value| value == 1 || value == 2)
-                    .unwrap_or(false))
-            || ((map_name.contains("Lock & Load") || map_name.contains("[MM] LnL"))
-                && killed_unit_type == "XelNagaConstruct"
-                && losing_player == 3)
-            || (map_name.contains("Chain of Ascension")
-                && killed_unit_type == "SlaynElemental"
-                && losing_player == 10
-                && killing_player
-                    .map(|value| value == 1 || value == 2)
-                    .unwrap_or(false))
-            || (map_name.contains("Rifts to Korhal")
-                && killed_unit_type == "ACPirateCapitalShip"
-                && losing_player == 8
-                && killing_player
-                    .map(|value| value == 1 || value == 2)
-                    .unwrap_or(false))
-            || (map_name.contains("Cradle of Death")
-                && killed_unit_type == "LogisticsHeadquarters"
-                && losing_player == 3)
-            || (map_name.contains("Part and Parcel")
-                && (killed_unit_type == "Caboose" || killed_unit_type == "TarsonisEngine")
-                && !bonus_timings.contains(&rounded_bonus)
-                && bonus_len < 2
-                && losing_player == 8
-                && !(event_x == 169 && event_y == 99)
-                && !(event_x == 38 && event_y == 178))
-            || (map_name.contains("Oblivion Express")
-                && killed_unit_type == "TarsonisEngineFast"
-                && losing_player == 7
-                && event_x < 196)
-            || (map_name.contains("Mist Opportunities")
-                && killed_unit_type == "COOPTerrazineTank"
-                && losing_player == 3
-                && killing_player
-                    .map(|value| value == 1 || value == 2)
-                    .unwrap_or(false))
-            || (map_name.contains("The Vermillion Problem")
-                && (killed_unit_type == "RedstoneSalamander"
-                    || killed_unit_type == "RedstoneSalamanderBurrowed")
-                && losing_player == 9
-                && killing_player
-                    .map(|value| value == 1 || value == 2)
-                    .unwrap_or(false))
-            || (map_name.contains("Miner Evacuation")
-                && killed_unit_type == "Blightbringer"
-                && losing_player == 5
-                && killing_player
-                    .map(|value| value == 1 || value == 2)
-                    .unwrap_or(false))
-            || (map_name.contains("Miner Evacuation")
-                && killed_unit_type == "NovaEradicator"
-                && losing_player == 9
-                && nova_eradicator_lost == 1
-                && killing_player
-                    .map(|value| value == 1 || value == 2)
-                    .unwrap_or(false))
-            || (map_name.contains("Temple of the Past")
-                && killed_unit_type == "ZenithStone"
-                && losing_player == 8);
-        if bonus_triggered {
-            if map_name.contains("Cradle of Death") {
-                let value = ReplayEventHandlerHelpers::round_to_digits_half_even(
-                    game_time - start_time - 8.0,
-                    0,
-                );
-                bonus_timings.push(value);
+            && losing_player == 5
+        {
+            Some(ReplayEventHandlerHelpers::round_to_digits_half_even(
+                game_time - start_time,
+                0,
+            ))
+        } else if map_flags.dead_of_night
+            && killed_unit_type == "ACVirophage"
+            && losing_player == 7
+            && killing_player_is_coop
+        {
+            Some(ReplayEventHandlerHelpers::round_to_digits_half_even(
+                game_time - start_time,
+                0,
+            ))
+        } else if map_flags.lock_and_load
+            && killed_unit_type == "XelNagaConstruct"
+            && losing_player == 3
+        {
+            Some(ReplayEventHandlerHelpers::round_to_digits_half_even(
+                game_time - start_time,
+                0,
+            ))
+        } else if map_flags.chain_of_ascension
+            && killed_unit_type == "SlaynElemental"
+            && losing_player == 10
+            && killing_player_is_coop
+        {
+            Some(ReplayEventHandlerHelpers::round_to_digits_half_even(
+                game_time - start_time,
+                0,
+            ))
+        } else if map_flags.rifts_to_korhal
+            && killed_unit_type == "ACPirateCapitalShip"
+            && losing_player == 8
+            && killing_player_is_coop
+        {
+            Some(ReplayEventHandlerHelpers::round_to_digits_half_even(
+                game_time - start_time,
+                0,
+            ))
+        } else if map_flags.cradle_of_death
+            && killed_unit_type == "LogisticsHeadquarters"
+            && losing_player == 3
+        {
+            Some(ReplayEventHandlerHelpers::round_to_digits_half_even(
+                game_time - start_time - 8.0,
+                0,
+            ))
+        } else if map_flags.part_and_parcel
+            && (killed_unit_type == "Caboose" || killed_unit_type == "TarsonisEngine")
+            && losing_player == 8
+            && !(event_x == 169 && event_y == 99)
+            && !(event_x == 38 && event_y == 178)
+        {
+            let rounded_bonus =
+                ReplayEventHandlerHelpers::round_to_digits_half_even(game_time - start_time, 0);
+            if bonus_timings.len() < 2 && !bonus_timings.contains(&rounded_bonus) {
+                Some(rounded_bonus)
             } else {
-                let value =
-                    ReplayEventHandlerHelpers::round_to_digits_half_even(game_time - start_time, 0);
-                bonus_timings.push(value);
+                None
             }
+        } else if map_flags.oblivion_express
+            && killed_unit_type == "TarsonisEngineFast"
+            && losing_player == 7
+            && event_x < 196
+        {
+            Some(ReplayEventHandlerHelpers::round_to_digits_half_even(
+                game_time - start_time,
+                0,
+            ))
+        } else if map_flags.mist_opportunities
+            && killed_unit_type == "COOPTerrazineTank"
+            && losing_player == 3
+            && killing_player_is_coop
+        {
+            Some(ReplayEventHandlerHelpers::round_to_digits_half_even(
+                game_time - start_time,
+                0,
+            ))
+        } else if map_flags.vermillion_problem
+            && (killed_unit_type == "RedstoneSalamander"
+                || killed_unit_type == "RedstoneSalamanderBurrowed")
+            && losing_player == 9
+            && killing_player_is_coop
+        {
+            Some(ReplayEventHandlerHelpers::round_to_digits_half_even(
+                game_time - start_time,
+                0,
+            ))
+        } else if map_flags.miner_evacuation
+            && killed_unit_type == "Blightbringer"
+            && losing_player == 5
+            && killing_player_is_coop
+        {
+            Some(ReplayEventHandlerHelpers::round_to_digits_half_even(
+                game_time - start_time,
+                0,
+            ))
+        } else if map_flags.miner_evacuation
+            && killed_unit_type == "NovaEradicator"
+            && losing_player == 9
+            && killing_player_is_coop
+        {
+            let nova_eradicator_lost = unit_type_dict_amon
+                .get("NovaEradicator")
+                .map(|row| row[1])
+                .unwrap_or_default();
+            if nova_eradicator_lost == 1 {
+                Some(ReplayEventHandlerHelpers::round_to_digits_half_even(
+                    game_time - start_time,
+                    0,
+                ))
+            } else {
+                None
+            }
+        } else if map_flags.temple_of_the_past
+            && killed_unit_type == "ZenithStone"
+            && losing_player == 8
+        {
+            Some(ReplayEventHandlerHelpers::round_to_digits_half_even(
+                game_time - start_time,
+                0,
+            ))
+        } else {
+            None
+        };
+        if let Some(value) = bonus_timing {
+            bonus_timings.push(value);
         }
 
-        if salvage_units.contains(killed_unit_type) && killing_player == Some(losing_player) {
+        let is_salvaged_death =
+            salvage_units.contains(killed_unit_type) && killing_player == Some(losing_player);
+        if is_salvaged_death {
             if losing_player == main_player {
-                update.salvaged_unit =
-                    Some((StatsCounterTarget::Main, killed_unit_type.to_owned()));
+                update.salvaged_unit = Some((StatsCounterTarget::Main, killed_unit_type));
             } else if losing_player == ally_player {
-                update.salvaged_unit =
-                    Some((StatsCounterTarget::Ally, killed_unit_type.to_owned()));
+                update.salvaged_unit = Some((StatsCounterTarget::Ally, killed_unit_type));
             }
         }
 
-        let killed_is_broodlord_broodling = (killed_unit_type == "Broodling"
-            || killed_unit_type == "BroodlingStetmann")
+        let killed_is_broodlord_broodling = string_sets.contains_broodling_unit(killed_unit_type)
             && broodlord_broodlings.contains(&event_unit_id);
-        if (salvage_units.contains(killed_unit_type) && killing_player == Some(losing_player))
+        if is_salvaged_death
             || glevig_spawns.contains(&event_unit_id)
             || murvar_spawns.contains(&event_unit_id)
             || killed_is_broodlord_broodling
@@ -1443,17 +1578,10 @@ impl ReplayEventHandlers {
 
         let losing_commander = commander_by_player
             .get(&losing_player)
-            .cloned()
+            .map(String::as_str)
             .unwrap_or_default();
-        if matches!(
-            killed_unit_type,
-            "Roach"
-                | "RavagerAbathur"
-                | "RoachVileBurrowed"
-                | "RoachBurrowed"
-                | "SwarmHostBurrowed"
-                | "QueenBurrowed"
-        ) && losing_commander == "Abathur"
+        if string_sets.contains_abathur_free_death_unit(killed_unit_type)
+            && losing_commander == "Abathur"
             && killing_player.is_none()
         {
             return update;
@@ -1479,7 +1607,7 @@ impl ReplayEventHandlers {
 
             if mind_controlled_units.contains(&event_unit_id) {
                 update.mindcontrolled_unit_died =
-                    Some((StatsCounterTarget::Main, killed_unit_type.to_owned()));
+                    Some((StatsCounterTarget::Main, killed_unit_type));
             }
         }
 
@@ -1493,11 +1621,11 @@ impl ReplayEventHandlers {
             );
             if mind_controlled_units.contains(&event_unit_id) {
                 update.mindcontrolled_unit_died =
-                    Some((StatsCounterTarget::Ally, killed_unit_type.to_owned()));
+                    Some((StatsCounterTarget::Ally, killed_unit_type));
             }
         }
 
-        if amon_players.contains(&losing_player)
+        if losing_player_is_amon
             && game_time > 0.0
             && game_time > start_time + 1.0
             && !mutator_dehaka_drag_unit_ids.contains(&event_unit_id)
