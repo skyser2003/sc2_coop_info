@@ -304,6 +304,51 @@ fn decode_replay_ordered_events_with_store_fallback(
     }
 }
 
+fn decode_replay_ordered_events_with_store_fallback_filtered<F>(
+    store: &crate::protocol::ProtocolStore,
+    protocol: &crate::decoder::ProtocolDefinition,
+    build: u32,
+    game_raw: &[u8],
+    tracker_raw: Option<&[u8]>,
+    include_event: &F,
+) -> Result<Vec<ReplayEvent>, DecodeError>
+where
+    F: Fn(&str) -> bool,
+{
+    match protocol.decode_replay_ordered_events_filtered(game_raw, tracker_raw, include_event) {
+        Ok(events) => Ok(events),
+        Err(error) => {
+            let Some(tracker_raw) = tracker_raw else {
+                return Err(error);
+            };
+
+            let game_events = match protocol.decode_replay_game_events(game_raw) {
+                Ok(events) => events,
+                Err(_) => return Err(error),
+            };
+            let tracker_events =
+                decode_replay_tracker_events_with_store_fallback(store, build, tracker_raw)
+                    .unwrap_or_default();
+
+            let mut events = Vec::with_capacity(game_events.len() + tracker_events.len());
+            events.extend(
+                game_events
+                    .into_iter()
+                    .filter(|event| include_event(&event.event))
+                    .map(ReplayEvent::Game),
+            );
+            events.extend(
+                tracker_events
+                    .into_iter()
+                    .filter(|event| include_event(&event.event))
+                    .map(ReplayEvent::Tracker),
+            );
+            events.sort_by_key(ReplayEvent::_gameloop);
+            Ok(events)
+        }
+    }
+}
+
 pub fn parse_file_with_store(
     path: &Path,
     store: &crate::protocol::ProtocolStore,
@@ -327,6 +372,17 @@ pub fn parse_ordered_events_with_store(
     path: &Path,
     store: &crate::protocol::ProtocolStore,
 ) -> Result<Vec<ReplayEvent>, DecodeError> {
+    parse_ordered_events_with_store_filtered(path, store, |_| true)
+}
+
+pub fn parse_ordered_events_with_store_filtered<F>(
+    path: &Path,
+    store: &crate::protocol::ProtocolStore,
+    include_event: F,
+) -> Result<Vec<ReplayEvent>, DecodeError>
+where
+    F: Fn(&str) -> bool,
+{
     let header_blob = read_user_data_header_content(path)?;
     let header = ReplayHeader::from_value(store.latest()?.decode_replay_header(&header_blob)?)?;
 
@@ -342,12 +398,13 @@ pub fn parse_ordered_events_with_store(
         .ok_or_else(|| DecodeError::Corrupted("missing file replay.game.events".to_string()))?;
     let tracker_data = read_mpq_file(&mut archive, "replay.tracker.events")?;
 
-    decode_replay_ordered_events_with_store_fallback(
+    decode_replay_ordered_events_with_store_fallback_filtered(
         store,
         protocol,
         base_build,
         &game_data,
         tracker_data.as_deref(),
+        &include_event,
     )
     .map_err(|err| DecodeError::Corrupted(format!("decode replay events: {err}")))
 }

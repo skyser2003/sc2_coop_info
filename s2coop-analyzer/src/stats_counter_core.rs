@@ -2,6 +2,7 @@ use crate::cache_overall_stats_generator::AnalysisPlayerStatsSeries;
 use crate::dictionary_data::UnitBaseCostsJson;
 use s2protocol_port::{GameEvent, SnapshotPoint, SnapshotPointValue, TrackerEvent};
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct StatsCounterDictionaries {
@@ -23,7 +24,7 @@ pub struct ReplayDroneIdentifierCore {
 
 #[derive(Clone, Debug)]
 pub struct ReplayStatsCounterCore {
-    dictionaries: StatsCounterDictionaries,
+    dictionaries: Arc<StatsCounterDictionaries>,
     masteries: [i64; 6],
     unit_dict: HashMap<String, (f64, f64)>,
     commander: String,
@@ -269,7 +270,7 @@ impl ReplayDroneIdentifierCore {
 
 impl ReplayStatsCounterCore {
     pub fn new(
-        dictionaries: StatsCounterDictionaries,
+        dictionaries: Arc<StatsCounterDictionaries>,
         masteries: [u32; 6],
         commander: Option<String>,
     ) -> Self {

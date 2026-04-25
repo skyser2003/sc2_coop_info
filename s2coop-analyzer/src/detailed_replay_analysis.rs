@@ -13,8 +13,8 @@ use chrono::{DateTime, Local};
 use indexmap::IndexMap;
 use s2protocol_port::{
     build_protocol_store, parse_file_with_store, parse_file_with_store_ordered_events,
-    parse_ordered_events_with_store, ProtocolStore, ReplayDetails, ReplayEvent, ReplayInitData,
-    ReplayMetadata, ReplayParseMode, TrackerEvent,
+    parse_ordered_events_with_store_filtered, ProtocolStore, ReplayDetails, ReplayEvent,
+    ReplayInitData, ReplayMetadata, ReplayParseMode, TrackerEvent,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -94,7 +94,56 @@ type UnitStats = (i64, i64, i64, f64);
 pub struct ReplayAnalysisResources {
     dictionary_data: Arc<Sc2DictionaryData>,
     hidden_created_lost: HashSet<String>,
+    analysis_sets: ReplayAnalysisSets,
+    stats_counter_dictionaries: Arc<StatsCounterDictionaries>,
     protocol_store: ProtocolStore,
+}
+
+#[derive(Debug, Clone)]
+struct ReplayAnalysisSets {
+    do_not_count_kills: HashSet<String>,
+    duplicating_units: HashSet<String>,
+    skip_tokens: Vec<String>,
+    dont_count_morphs: HashSet<String>,
+    self_killing_units: HashSet<String>,
+    aoe_units: HashSet<String>,
+    tychus_outlaws: HashSet<String>,
+    units_killed_in_morph: HashSet<String>,
+    dont_include_units: HashSet<String>,
+    icon_units: HashSet<String>,
+    salvage_units: HashSet<String>,
+    unit_add_losses_to: HashSet<String>,
+    commander_no_units_values: HashSet<String>,
+}
+
+impl ReplayAnalysisSets {
+    fn new(data: &Sc2DictionaryData) -> Self {
+        let replay_data = &data.replay_analysis_data;
+        let mut commander_no_units_values = HashSet::new();
+        for units in replay_data.commander_no_units.values() {
+            commander_no_units_values.extend(units.iter().cloned());
+        }
+
+        Self {
+            do_not_count_kills: replay_data.do_not_count_kills.iter().cloned().collect(),
+            duplicating_units: replay_data.duplicating_units.iter().cloned().collect(),
+            skip_tokens: replay_data
+                .skip_strings
+                .iter()
+                .map(|value| value.to_lowercase())
+                .collect(),
+            dont_count_morphs: replay_data.dont_count_morphs.iter().cloned().collect(),
+            self_killing_units: replay_data.self_killing_units.iter().cloned().collect(),
+            aoe_units: replay_data.aoe_units.iter().cloned().collect(),
+            tychus_outlaws: replay_data.tychus_outlaws.iter().cloned().collect(),
+            units_killed_in_morph: replay_data.units_killed_in_morph.iter().cloned().collect(),
+            dont_include_units: replay_data.dont_include_units.iter().cloned().collect(),
+            icon_units: replay_data.icon_units.iter().cloned().collect(),
+            salvage_units: replay_data.salvage_units.iter().cloned().collect(),
+            unit_add_losses_to: replay_data.unit_add_losses_to.keys().cloned().collect(),
+            commander_no_units_values,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -309,10 +358,16 @@ impl ReplayAnalysisResources {
                 "failed to build protocol store: {error}"
             ))
         })?;
+        let analysis_sets = ReplayAnalysisSets::new(dictionary_data.as_ref());
+        let stats_counter_dictionaries = Arc::new(build_stats_counter_dictionaries(
+            &dictionary_data.cache_generation_data(),
+        ));
 
         Ok(Self {
             dictionary_data,
             hidden_created_lost,
+            analysis_sets,
+            stats_counter_dictionaries,
             protocol_store,
         })
     }
@@ -327,6 +382,14 @@ impl ReplayAnalysisResources {
 
     pub fn hidden_created_lost(&self) -> &HashSet<String> {
         &self.hidden_created_lost
+    }
+
+    fn analysis_sets(&self) -> &ReplayAnalysisSets {
+        &self.analysis_sets
+    }
+
+    fn stats_counter_dictionaries(&self) -> Arc<StatsCounterDictionaries> {
+        Arc::clone(&self.stats_counter_dictionaries)
     }
 
     pub fn protocol_store(&self) -> &ProtocolStore {
@@ -596,7 +659,7 @@ fn resolve_protocol_build(
 fn collect_user_leave_times(events: &[ReplayEvent]) -> IndexMap<i64, f64> {
     let mut user_leave_times = IndexMap::new();
     for event in events {
-        if event_name(event) != "NNet.Game.SGameUserLeaveEvent" {
+        if ReplayEventKind::from_event(event) != ReplayEventKind::GameUserLeave {
             continue;
         }
         let user = event_user_id(event)
@@ -631,6 +694,51 @@ fn parse_masteries(values: &[u32]) -> [u32; 6] {
 
 fn event_name(event: &ReplayEvent) -> &str {
     event._event()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ReplayEventKind {
+    GameUserLeave,
+    GameSelectionDelta,
+    GameTriggerDialogControl,
+    GameCommand,
+    GameCommandUpdateTargetUnit,
+    TrackerPlayerStats,
+    TrackerUpgrade,
+    TrackerUnitBorn,
+    TrackerUnitInit,
+    TrackerUnitTypeChange,
+    TrackerUnitOwnerChange,
+    TrackerUnitDied,
+    Other,
+}
+
+impl ReplayEventKind {
+    fn from_name(event_name: &str) -> Self {
+        match event_name {
+            "NNet.Game.SGameUserLeaveEvent" => Self::GameUserLeave,
+            "NNet.Game.SSelectionDeltaEvent" => Self::GameSelectionDelta,
+            "NNet.Game.STriggerDialogControlEvent" => Self::GameTriggerDialogControl,
+            "NNet.Game.SCmdEvent" => Self::GameCommand,
+            "NNet.Game.SCmdUpdateTargetUnitEvent" => Self::GameCommandUpdateTargetUnit,
+            "NNet.Replay.Tracker.SPlayerStatsEvent" => Self::TrackerPlayerStats,
+            "NNet.Replay.Tracker.SUpgradeEvent" => Self::TrackerUpgrade,
+            "NNet.Replay.Tracker.SUnitBornEvent" => Self::TrackerUnitBorn,
+            "NNet.Replay.Tracker.SUnitInitEvent" => Self::TrackerUnitInit,
+            "NNet.Replay.Tracker.SUnitTypeChangeEvent" => Self::TrackerUnitTypeChange,
+            "NNet.Replay.Tracker.SUnitOwnerChangeEvent" => Self::TrackerUnitOwnerChange,
+            "NNet.Replay.Tracker.SUnitDiedEvent" => Self::TrackerUnitDied,
+            _ => Self::Other,
+        }
+    }
+
+    fn from_event(event: &ReplayEvent) -> Self {
+        Self::from_name(event_name(event))
+    }
+
+    fn needed_for_detailed_analysis_name(event_name: &str) -> bool {
+        !matches!(Self::from_name(event_name), Self::Other)
+    }
 }
 
 fn event_gameloop(event: &ReplayEvent) -> i64 {
@@ -717,7 +825,7 @@ fn supported_legacy_protocol(build: i64) -> bool {
 fn get_last_deselect_event(events: &[ReplayEvent]) -> Option<ReplayNumericValue> {
     let mut last_event = None;
     for event in events {
-        if event_name(event) == "NNet.Game.SSelectionDeltaEvent" {
+        if ReplayEventKind::from_event(event) == ReplayEventKind::GameSelectionDelta {
             last_event = Some(ReplayNumericValue::Float(
                 event_gameloop(event) as f64 / 16.0 - 2.0,
             ));
@@ -729,9 +837,8 @@ fn get_last_deselect_event(events: &[ReplayEvent]) -> Option<ReplayNumericValue>
 fn get_start_time(events: &[ReplayEvent]) -> ReplayNumericValue {
     for event in events {
         if let ReplayEvent::Tracker(event) = event {
-            if event.event == "NNet.Replay.Tracker.SPlayerStatsEvent"
-                && event.m_player_id == Some(1)
-            {
+            let kind = ReplayEventKind::from_name(&event.event);
+            if kind == ReplayEventKind::TrackerPlayerStats && event.m_player_id == Some(1) {
                 let minerals = event
                     .m_stats
                     .as_ref()
@@ -742,9 +849,7 @@ fn get_start_time(events: &[ReplayEvent]) -> ReplayNumericValue {
                 }
             }
 
-            if event.event == "NNet.Replay.Tracker.SUpgradeEvent"
-                && matches!(event.m_player_id, Some(1 | 2))
-            {
+            if kind == ReplayEventKind::TrackerUpgrade && matches!(event.m_player_id, Some(1 | 2)) {
                 let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
                 if upgrade_name.contains("Spray") {
                     return ReplayNumericValue::Float(event.game_loop as f64 / 16.0);
@@ -790,7 +895,9 @@ fn identify_mutators_for_replay(
             let ReplayEvent::Tracker(event) = event else {
                 continue;
             };
-            if event.event != "NNet.Replay.Tracker.SUpgradeEvent" || event.m_player_id != Some(0) {
+            if ReplayEventKind::from_name(&event.event) != ReplayEventKind::TrackerUpgrade
+                || event.m_player_id != Some(0)
+            {
                 continue;
             }
             let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
@@ -843,10 +950,10 @@ fn identify_mutators_for_replay(
 
         for event in events {
             let gameloop = event_gameloop(event);
-            let name = event_name(event);
+            let kind = ReplayEventKind::from_event(event);
 
             if gameloop == 0
-                && name == "NNet.Game.STriggerDialogControlEvent"
+                && kind == ReplayEventKind::GameTriggerDialogControl
                 && event_event_type(event) == Some(3)
             {
                 let contains_selection_changed = matches!(
@@ -867,7 +974,7 @@ fn identify_mutators_for_replay(
 
             if gameloop > 0
                 && Some(gameloop) != last_gameloop
-                && name == "NNet.Game.STriggerDialogControlEvent"
+                && kind == ReplayEventKind::GameTriggerDialogControl
                 && event_user_id(event) == Some(0)
             {
                 let contains_none = matches!(
@@ -885,7 +992,7 @@ fn identify_mutators_for_replay(
             }
 
             if let ReplayEvent::Tracker(event) = event {
-                if event.event == "NNet.Replay.Tracker.SUpgradeEvent"
+                if kind == ReplayEventKind::TrackerUpgrade
                     && matches!(event.m_player_id, Some(1 | 2))
                 {
                     let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
@@ -2059,11 +2166,15 @@ impl ReplayParsedInputBundle {
         replay_path: &Path,
         resources: &ReplayAnalysisResources,
     ) -> Result<Self, DetailedReplayAnalysisError> {
-        let events = parse_ordered_events_with_store(replay_path, resources.protocol_store())
-            .map_err(|error| DetailedReplayAnalysisError::ReplayParse {
-                path: replay_path.display().to_string(),
-                message: error.to_string(),
-            })?;
+        let events = parse_ordered_events_with_store_filtered(
+            replay_path,
+            resources.protocol_store(),
+            ReplayEventKind::needed_for_detailed_analysis_name,
+        )
+        .map_err(|error| DetailedReplayAnalysisError::ReplayParse {
+            path: replay_path.display().to_string(),
+            message: error.to_string(),
+        })?;
         self.apply_event_derived_fields(events, resources.cache_generation_data());
         Ok(self)
     }
@@ -2623,7 +2734,13 @@ pub fn analyze_replay_file_with_resources(
 ) -> Result<ReplayReport, DetailedReplayAnalysisError> {
     let dictionaries = resources.cache_generation_data();
     let parsed = ReplayParsedInputBundle::parse_detailed_required(replay_path, resources)?;
-    analyze_replay_file_impl(main_player_handles, parsed, &dictionaries)
+    analyze_replay_file_impl(
+        main_player_handles,
+        parsed,
+        &dictionaries,
+        resources.analysis_sets(),
+        resources.stats_counter_dictionaries(),
+    )
 }
 
 pub fn analyze_replay_file_with_cache_entry_with_resources(
@@ -2655,7 +2772,13 @@ fn analyze_parsed_replay_with_cache_entry(
         .cloned()
         .unwrap_or_else(|| parsed.cache_entry());
     let cache_persistable = parsed.is_saved_cache_candidate();
-    let report = analyze_replay_file_impl(main_player_handles, parsed, &dictionaries)?;
+    let report = analyze_replay_file_impl(
+        main_player_handles,
+        parsed,
+        &dictionaries,
+        resources.analysis_sets(),
+        resources.stats_counter_dictionaries(),
+    )?;
     let cache_entry = CacheReplayEntry::from_report_with_basic(
         &report,
         Some(&fallback_basic),
@@ -2673,6 +2796,8 @@ fn analyze_replay_file_impl(
     main_player_handles: &HashSet<String>,
     parsed: ReplayParsedInputBundle,
     dictionaries: &CacheGenerationData<'_>,
+    analysis_sets: &ReplayAnalysisSets,
+    counter_dicts: Arc<StatsCounterDictionaries>,
 ) -> Result<ReplayReport, DetailedReplayAnalysisError> {
     let ReplayParsedInputBundle {
         mut parser,
@@ -2708,7 +2833,6 @@ fn analyze_replay_file_impl(
         .map(|player| player.masteries)
         .unwrap_or([0_u32; 6]);
 
-    let counter_dicts = build_stats_counter_dictionaries(&dictionaries);
     let mut vespene_drone_identifier =
         ReplayDroneIdentifierCore::new(main_commander.clone(), ally_commander.clone());
     let mut main_stats_counter =
@@ -2720,94 +2844,19 @@ fn analyze_replay_file_impl(
         ally_stats_counter.set_enable_updates(true);
     }
 
-    let do_not_count_kills_set = dictionaries
-        .replay_analysis_data
-        .do_not_count_kills
-        .iter()
-        .cloned()
-        .collect::<HashSet<String>>();
-    let duplicating_units_set = dictionaries
-        .replay_analysis_data
-        .duplicating_units
-        .iter()
-        .cloned()
-        .collect::<HashSet<String>>();
-    let skip_tokens = dictionaries
-        .replay_analysis_data
-        .skip_strings
-        .iter()
-        .map(|value| value.to_lowercase())
-        .collect::<Vec<String>>();
-    let dont_count_morphs_set = dictionaries
-        .replay_analysis_data
-        .dont_count_morphs
-        .iter()
-        .cloned()
-        .collect::<HashSet<String>>();
-    let self_killing_units_set = dictionaries
-        .replay_analysis_data
-        .self_killing_units
-        .iter()
-        .cloned()
-        .collect::<HashSet<String>>();
-    let aoe_units_set = dictionaries
-        .replay_analysis_data
-        .aoe_units
-        .iter()
-        .cloned()
-        .collect::<HashSet<String>>();
-    let tychus_outlaws_set = dictionaries
-        .replay_analysis_data
-        .tychus_outlaws
-        .iter()
-        .cloned()
-        .collect::<HashSet<String>>();
-    let units_killed_in_morph_set = dictionaries
-        .replay_analysis_data
-        .units_killed_in_morph
-        .iter()
-        .cloned()
-        .collect::<HashSet<String>>();
-    let dont_include_units_set = dictionaries
-        .replay_analysis_data
-        .dont_include_units
-        .iter()
-        .cloned()
-        .collect::<HashSet<String>>();
-    let icon_units_set = dictionaries
-        .replay_analysis_data
-        .icon_units
-        .iter()
-        .cloned()
-        .collect::<HashSet<String>>();
-    let _dont_show_created_lost_set = dictionaries
-        .replay_analysis_data
-        .dont_show_created_lost
-        .iter()
-        .cloned()
-        .collect::<HashSet<String>>();
-    let salvage_units_set = dictionaries
-        .replay_analysis_data
-        .salvage_units
-        .iter()
-        .cloned()
-        .collect::<HashSet<String>>();
-    let unit_add_losses_to_set = dictionaries
-        .replay_analysis_data
-        .unit_add_losses_to
-        .keys()
-        .cloned()
-        .collect::<HashSet<String>>();
-    let mut commander_no_units_values_set = HashSet::new();
-    for units in dictionaries
-        .replay_analysis_data
-        .commander_no_units
-        .values()
-    {
-        for unit in units {
-            commander_no_units_values_set.insert(unit.clone());
-        }
-    }
+    let do_not_count_kills_set = &analysis_sets.do_not_count_kills;
+    let duplicating_units_set = &analysis_sets.duplicating_units;
+    let skip_tokens = &analysis_sets.skip_tokens;
+    let dont_count_morphs_set = &analysis_sets.dont_count_morphs;
+    let self_killing_units_set = &analysis_sets.self_killing_units;
+    let aoe_units_set = &analysis_sets.aoe_units;
+    let tychus_outlaws_set = &analysis_sets.tychus_outlaws;
+    let units_killed_in_morph_set = &analysis_sets.units_killed_in_morph;
+    let dont_include_units_set = &analysis_sets.dont_include_units;
+    let icon_units_set = &analysis_sets.icon_units;
+    let salvage_units_set = &analysis_sets.salvage_units;
+    let unit_add_losses_to_set = &analysis_sets.unit_add_losses_to;
+    let commander_no_units_values_set = &analysis_sets.commander_no_units_values;
 
     let mut amon_player_ids_set: HashSet<i64> = HashSet::from([3_i64, 4_i64]);
     for (mission_name, player_ids) in dictionaries.amon_player_ids.iter() {
@@ -2853,9 +2902,9 @@ fn analyze_replay_file_impl(
     let mut ally_icons_base = BTreeMap::<String, u64>::new();
 
     for event in &events {
-        let current_event_name = event_name(event);
+        let current_event_kind = ReplayEventKind::from_event(event);
 
-        if current_event_name == "NNet.Game.SGameUserLeaveEvent" {
+        if current_event_kind == ReplayEventKind::GameUserLeave {
             let user_id = event_user_id(event).unwrap_or_default();
             let gameloop = event_gameloop(event) as f64;
             replay_handle_game_user_leave_event_fields(user_id, gameloop, &mut user_leave_times);
@@ -2865,12 +2914,18 @@ fn analyze_replay_file_impl(
             continue;
         }
 
-        if let ReplayEvent::Game(game_event) = event {
+        if matches!(
+            current_event_kind,
+            ReplayEventKind::GameCommand | ReplayEventKind::GameCommandUpdateTargetUnit
+        ) {
+            let ReplayEvent::Game(game_event) = event else {
+                continue;
+            };
             vespene_drone_identifier.event(game_event);
         }
 
         if let ReplayEvent::Tracker(event) = event {
-            if current_event_name == "NNet.Replay.Tracker.SPlayerStatsEvent" {
+            if current_event_kind == ReplayEventKind::TrackerPlayerStats {
                 let player = event.m_player_id.unwrap_or_default();
                 if let Some(stats) = event.m_stats.as_ref() {
                     let supply_used = stats.m_score_value_food_used.unwrap_or_default() / 4096.0;
@@ -2913,7 +2968,7 @@ fn analyze_replay_file_impl(
                 }
             }
 
-            if current_event_name == "NNet.Replay.Tracker.SUpgradeEvent"
+            if current_event_kind == ReplayEventKind::TrackerUpgrade
                 && matches!(event.m_player_id, Some(1 | 2))
             {
                 let upg_name = event.m_upgrade_type_name.clone().unwrap_or_default();
@@ -2996,9 +3051,10 @@ fn analyze_replay_file_impl(
             }
         }
 
-        if current_event_name == "NNet.Replay.Tracker.SUnitBornEvent"
-            || current_event_name == "NNet.Replay.Tracker.SUnitInitEvent"
-        {
+        if matches!(
+            current_event_kind,
+            ReplayEventKind::TrackerUnitBorn | ReplayEventKind::TrackerUnitInit
+        ) {
             let ReplayEvent::Tracker(event) = event else {
                 continue;
             };
@@ -3033,7 +3089,7 @@ fn analyze_replay_file_impl(
                 last_biomass_position,
                 &dictionaries.replay_analysis_data.revival_types,
                 &dictionaries.replay_analysis_data.primal_combat_predecessors,
-                &tychus_outlaws_set,
+                tychus_outlaws_set,
                 &dictionaries.units_in_waves,
             );
             unit_id = update.unit_id;
@@ -3051,7 +3107,7 @@ fn analyze_replay_file_impl(
             }
         }
 
-        if current_event_name == "NNet.Replay.Tracker.SUnitInitEvent" {
+        if current_event_kind == ReplayEventKind::TrackerUnitInit {
             let ReplayEvent::Tracker(event) = event else {
                 continue;
             };
@@ -3066,7 +3122,7 @@ fn analyze_replay_file_impl(
             ReplayEvent::Tracker(event) => replay_unitid_from_event(event, false, false),
             ReplayEvent::Game(_) => None,
         };
-        if current_event_name == "NNet.Replay.Tracker.SUnitTypeChangeEvent"
+        if current_event_kind == ReplayEventKind::TrackerUnitTypeChange
             && event_unit_id
                 .map(|value| unit_dict.contains_key(&value))
                 .unwrap_or(false)
@@ -3097,10 +3153,10 @@ fn analyze_replay_file_impl(
                 &mut zagaras_dummy_zerglings,
                 &broodlord_broodlings,
                 research_vessel_landed_timing,
-                &units_killed_in_morph_set,
+                units_killed_in_morph_set,
                 &dictionaries.unit_name_dict,
-                &unit_add_losses_to_set,
-                &dont_count_morphs_set,
+                unit_add_losses_to_set,
+                dont_count_morphs_set,
             );
             research_vessel_landed_timing = update.landed_timing;
 
@@ -3116,7 +3172,7 @@ fn analyze_replay_file_impl(
             }
         }
 
-        if current_event_name == "NNet.Replay.Tracker.SUnitOwnerChangeEvent"
+        if current_event_kind == ReplayEventKind::TrackerUnitOwnerChange
             && event_unit_id
                 .map(|value| unit_dict.contains_key(&value))
                 .unwrap_or(false)
@@ -3155,7 +3211,7 @@ fn analyze_replay_file_impl(
             }
         }
 
-        if current_event_name == "NNet.Replay.Tracker.SUnitDiedEvent" {
+        if current_event_kind == ReplayEventKind::TrackerUnitDied {
             let ReplayEvent::Tracker(event) = event else {
                 continue;
             };
@@ -3188,12 +3244,12 @@ fn analyze_replay_file_impl(
                 end_time,
                 &mut last_aoe_unit_killed,
                 ally_kills_counted_toward_main,
-                &do_not_count_kills_set,
-                &aoe_units_set,
+                do_not_count_kills_set,
+                aoe_units_set,
             );
         }
 
-        if current_event_name == "NNet.Replay.Tracker.SUnitDiedEvent"
+        if current_event_kind == ReplayEventKind::TrackerUnitDied
             && event_unit_id
                 .map(|value| unit_dict.contains_key(&value))
                 .unwrap_or(false)
@@ -3238,13 +3294,13 @@ fn analyze_replay_file_impl(
                     &zagaras_dummy_zerglings,
                     &last_aoe_unit_killed,
                     &dictionaries.replay_analysis_data.commander_no_units,
-                    &commander_no_units_values_set,
+                    commander_no_units_values_set,
                     &dictionaries.hfts_units,
                     &dictionaries.tus_units,
-                    &do_not_count_kills_set,
-                    &self_killing_units_set,
-                    &duplicating_units_set,
-                    &salvage_units_set,
+                    do_not_count_kills_set,
+                    self_killing_units_set,
+                    duplicating_units_set,
+                    salvage_units_set,
                 );
                 unit_id = update.current_unit_id;
 
@@ -3320,8 +3376,8 @@ fn analyze_replay_file_impl(
         &dictionaries.unit_name_dict,
         &dictionaries.unit_add_kills_to,
         &dictionaries.replay_analysis_data.unit_add_losses_to,
-        &dont_include_units_set,
-        &icon_units_set,
+        dont_include_units_set,
+        icon_units_set,
     );
     let (ally_units, mut ally_icons) = fill_unit_kills_and_icons(
         &ally_icons_base,
@@ -3333,8 +3389,8 @@ fn analyze_replay_file_impl(
         &dictionaries.unit_name_dict,
         &dictionaries.unit_add_kills_to,
         &dictionaries.replay_analysis_data.unit_add_losses_to,
-        &dont_include_units_set,
-        &icon_units_set,
+        dont_include_units_set,
+        icon_units_set,
     );
 
     let main_killbot_feed = count_for_pid(&killbot_feed, main_player);
@@ -3353,8 +3409,8 @@ fn analyze_replay_file_impl(
         &dictionaries.unit_name_dict,
         &dictionaries.unit_add_kills_to,
         &dictionaries.replay_analysis_data.unit_add_losses_to,
-        &dont_include_units_set,
-        &skip_tokens,
+        dont_include_units_set,
+        skip_tokens,
     );
 
     let mut detailed_input = ReplayReportDetailedInput::from_parser(parser);

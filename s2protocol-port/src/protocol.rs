@@ -10,6 +10,7 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct ProtocolStore {
     protocols: HashMap<u32, ProtocolDefinition>,
+    builds: Arc<[u32]>,
     latest: u32,
 }
 
@@ -105,8 +106,12 @@ impl ProtocolStore {
             map.insert(build, build_def);
         }
 
+        let mut builds = map.keys().copied().collect::<Vec<u32>>();
+        builds.sort_unstable();
+
         Ok(ProtocolStore {
             protocols: map,
+            builds: builds.into(),
             latest,
         })
     }
@@ -124,22 +129,24 @@ impl ProtocolStore {
     }
 
     pub fn closest_build(&self, target: u32) -> Option<u32> {
-        if self.protocols.is_empty() {
+        if self.builds.is_empty() {
             return None;
         }
 
-        let mut closest = None;
-        let mut best_distance = u32::MAX;
-
-        for build in self.protocols.keys() {
-            let distance = build.abs_diff(target);
-            if distance < best_distance {
-                best_distance = distance;
-                closest = Some(*build);
+        match self.builds.binary_search(&target) {
+            Ok(index) => self.builds.get(index).copied(),
+            Err(0) => self.builds.first().copied(),
+            Err(index) if index >= self.builds.len() => self.builds.last().copied(),
+            Err(index) => {
+                let lower = self.builds[index - 1];
+                let upper = self.builds[index];
+                if lower.abs_diff(target) <= upper.abs_diff(target) {
+                    Some(lower)
+                } else {
+                    Some(upper)
+                }
             }
         }
-
-        closest
     }
 
     pub fn build_or_closest(&self, target: u32) -> Option<&ProtocolDefinition> {
@@ -152,15 +159,15 @@ impl ProtocolStore {
     }
 
     pub fn known_builds(&self) -> Vec<u32> {
-        let mut builds: Vec<u32> = self.protocols.keys().copied().collect();
-        builds.sort_unstable();
-        builds
+        self.builds.to_vec()
     }
 
     pub fn known_builds_range(&self, min: u32, max: u32) -> Vec<u32> {
-        let mut builds = self.known_builds();
-        builds.retain(|build| *build >= min && *build <= max);
-        builds
+        self.builds
+            .iter()
+            .copied()
+            .filter(|build| *build >= min && *build <= max)
+            .collect()
     }
 }
 

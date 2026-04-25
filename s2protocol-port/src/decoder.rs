@@ -724,6 +724,18 @@ impl ProtocolDefinition {
         game_contents: &[u8],
         tracker_contents: Option<&[u8]>,
     ) -> Result<Vec<ReplayEvent>, DecodeError> {
+        self.decode_replay_ordered_events_filtered(game_contents, tracker_contents, |_| true)
+    }
+
+    pub fn decode_replay_ordered_events_filtered<F>(
+        &self,
+        game_contents: &[u8],
+        tracker_contents: Option<&[u8]>,
+        include_event: F,
+    ) -> Result<Vec<ReplayEvent>, DecodeError>
+    where
+        F: Fn(&str) -> bool,
+    {
         let mut game_reader = EventStreamReader::<_, GameEvent>::new(
             BitPackedDecoder::new(game_contents, Arc::clone(&self.typeinfos)),
             &self.game_event_typeinfos,
@@ -740,10 +752,10 @@ impl ProtocolDefinition {
             _ => None,
         };
 
-        let mut next_game = game_reader.next_event()?;
+        let mut next_game = game_reader.next_matching_event(&include_event)?;
         let mut next_tracker = tracker_reader
             .as_mut()
-            .map(EventStreamReader::next_event)
+            .map(|reader| reader.next_matching_event(&include_event))
             .transpose()?
             .flatten();
         let mut events = Vec::new();
@@ -762,14 +774,14 @@ impl ProtocolDefinition {
                 if let Some(event) = next_game.take() {
                     events.push(ReplayEvent::Game(event));
                 }
-                next_game = game_reader.next_event()?;
+                next_game = game_reader.next_matching_event(&include_event)?;
             } else {
                 if let Some(event) = next_tracker.take() {
                     events.push(ReplayEvent::Tracker(event));
                 }
                 next_tracker = tracker_reader
                     .as_mut()
-                    .map(EventStreamReader::next_event)
+                    .map(|reader| reader.next_matching_event(&include_event))
                     .transpose()?
                     .flatten();
             }
@@ -925,6 +937,12 @@ pub trait TypeDecoder {
         Self: Sized,
         K: Copy,
         F: FnMut(&mut Self, K, &TypeInfo) -> Result<(), DecodeError>;
+    fn skip_event_fields_from_plan<K>(
+        &mut self,
+        plan: &EventDecodePlan<K>,
+    ) -> Result<(), DecodeError>
+    where
+        Self: Sized;
 }
 
 trait HeaderIntegerDecoder {
@@ -1729,6 +1747,25 @@ impl<'a> BitPackedDecoder<'a> {
         Ok(())
     }
 
+    fn skip_ordered_event_fields<K>(
+        &mut self,
+        plan: &[OrderedEventFieldPlan<K>],
+    ) -> Result<(), DecodeError> {
+        for step in plan {
+            match step {
+                OrderedEventFieldPlan::Decode { typeinfo, .. }
+                | OrderedEventFieldPlan::Skip { typeinfo } => {
+                    self.skip_from_typeinfo(typeinfo)?;
+                }
+                OrderedEventFieldPlan::Nested(nested) => {
+                    self.skip_ordered_event_fields(nested.as_ref())?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     fn skip_value(&mut self, typeinfo: &TypeInfo) -> Result<(), DecodeError> {
         match typeinfo.op() {
             TypeOp::Array => {
@@ -2119,6 +2156,21 @@ impl TypeDecoder for BitPackedDecoder<'_> {
             EventDecodePlan::Ordered(steps) => {
                 self.decode_ordered_event_fields(steps.as_ref(), on_field)
             }
+            EventDecodePlan::Tagged(_) => Err(DecodeError::UnexpectedType(
+                "bitpacked event plan expects ordered struct fields".into(),
+            )),
+        }
+    }
+
+    fn skip_event_fields_from_plan<K>(
+        &mut self,
+        plan: &EventDecodePlan<K>,
+    ) -> Result<(), DecodeError>
+    where
+        Self: Sized,
+    {
+        match plan {
+            EventDecodePlan::Ordered(steps) => self.skip_ordered_event_fields(steps.as_ref()),
             EventDecodePlan::Tagged(_) => Err(DecodeError::UnexpectedType(
                 "bitpacked event plan expects ordered struct fields".into(),
             )),
@@ -2877,6 +2929,21 @@ impl TypeDecoder for VersionedDecoder<'_> {
             EventDecodePlan::Tagged(plan) => self.decode_tagged_event_fields(plan, on_field),
         }
     }
+
+    fn skip_event_fields_from_plan<K>(
+        &mut self,
+        plan: &EventDecodePlan<K>,
+    ) -> Result<(), DecodeError>
+    where
+        Self: Sized,
+    {
+        match plan {
+            EventDecodePlan::Ordered(_) => Err(DecodeError::UnexpectedType(
+                "versioned event plan expects tagged struct fields".into(),
+            )),
+            EventDecodePlan::Tagged(_) => self.skip_instance(),
+        }
+    }
 }
 
 impl HeaderIntegerDecoder for VersionedDecoder<'_> {
@@ -2950,63 +3017,80 @@ where
     }
 
     fn next_event(&mut self) -> Result<Option<T>, DecodeError> {
-        if self.finished || self.decoder.done() {
-            self.finished = true;
-            return Ok(None);
-        }
+        self.next_matching_event(&|_| true)
+    }
 
-        let start_bits = self.decoder.used_bits();
+    fn next_matching_event<F>(&mut self, include_event: &F) -> Result<Option<T>, DecodeError>
+    where
+        F: Fn(&str) -> bool,
+    {
+        loop {
+            if self.finished || self.decoder.done() {
+                self.finished = true;
+                return Ok(None);
+            }
 
-        let event_result = (|| -> Result<T, DecodeError> {
-            let delta = self
-                .decoder
-                .integer_from_plan(&self.header.gameloop_delta)?;
-            self.gameloop += delta;
+            let start_bits = self.decoder.used_bits();
 
-            let userid = if self.header.decode_user_id {
-                self.header
-                    .replay_userid_typeinfo
-                    .as_ref()
-                    .map(|typeinfo| decode_event_user_id(&mut self.decoder, typeinfo))
-                    .transpose()?
-                    .flatten()
-            } else {
-                None
+            let event_result = (|| -> Result<Option<T>, DecodeError> {
+                let delta = self
+                    .decoder
+                    .integer_from_plan(&self.header.gameloop_delta)?;
+                self.gameloop += delta;
+
+                let userid = if self.header.decode_user_id {
+                    self.header
+                        .replay_userid_typeinfo
+                        .as_ref()
+                        .map(|typeinfo| decode_event_user_id(&mut self.decoder, typeinfo))
+                        .transpose()?
+                        .flatten()
+                } else {
+                    None
+                };
+
+                let eventid = u32::try_from(self.decoder.integer_from_plan(&self.header.eventid)?)
+                    .map_err(|_| DecodeError::Corrupted("invalid event id".into()))?;
+
+                let event_typeinfo = usize::try_from(eventid)
+                    .ok()
+                    .and_then(|index| self.event_typeinfos.get(index))
+                    .and_then(|value| value.as_ref())
+                    .ok_or_else(|| DecodeError::Corrupted(format!("eventid({eventid}) unknown")))?;
+                let plan = event_typeinfo.decode_plan().ok_or_else(|| {
+                    DecodeError::Corrupted(format!("eventid({eventid}) missing decode plan"))
+                })?;
+
+                if !include_event(event_typeinfo.name()) {
+                    self.decoder.skip_event_fields_from_plan(plan)?;
+                    return Ok(None);
+                }
+
+                let mut event =
+                    T::new_decoded(event_typeinfo.name(), eventid, self.gameloop, userid);
+                event.decode_fields_from_plan(&mut self.decoder, plan)?;
+
+                event.set_decoded_bits((self.decoder.used_bits() - start_bits) as i128);
+                Ok(Some(event))
+            })();
+
+            let event = match event_result {
+                Ok(event) => event,
+                Err(error) => {
+                    if self.header.tolerant && self.produced_any {
+                        self.finished = true;
+                        return Ok(None);
+                    } else {
+                        return Err(error);
+                    }
+                }
             };
 
-            let eventid = u32::try_from(self.decoder.integer_from_plan(&self.header.eventid)?)
-                .map_err(|_| DecodeError::Corrupted("invalid event id".into()))?;
-
-            let event_typeinfo = usize::try_from(eventid)
-                .ok()
-                .and_then(|index| self.event_typeinfos.get(index))
-                .and_then(|value| value.as_ref())
-                .ok_or_else(|| DecodeError::Corrupted(format!("eventid({eventid}) unknown")))?;
-
-            let mut event = T::new_decoded(event_typeinfo.name(), eventid, self.gameloop, userid);
-            let plan = event_typeinfo.decode_plan().ok_or_else(|| {
-                DecodeError::Corrupted(format!("eventid({eventid}) missing decode plan"))
-            })?;
-            event.decode_fields_from_plan(&mut self.decoder, plan)?;
-
-            event.set_decoded_bits((self.decoder.used_bits() - start_bits) as i128);
-            Ok(event)
-        })();
-
-        let event = match event_result {
-            Ok(event) => event,
-            Err(error) => {
-                if self.header.tolerant && self.produced_any {
-                    self.finished = true;
-                    return Ok(None);
-                } else {
-                    return Err(error);
-                }
+            self.decoder.byte_align();
+            self.produced_any = true;
+            if event.is_some() {
+                return Ok(event);
             }
-        };
-
-        self.decoder.byte_align();
-        self.produced_any = true;
-        Ok(Some(event))
+        }
     }
 }

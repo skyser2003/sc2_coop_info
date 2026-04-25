@@ -1,6 +1,7 @@
 use s2protocol_port::{
     build_protocol_store, parse_file_with_store, parse_file_with_store_ordered_events,
-    parse_ordered_events_with_store, ReplayEvent, ReplayParseMode,
+    parse_ordered_events_with_store, parse_ordered_events_with_store_filtered, ReplayEvent,
+    ReplayParseMode,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -176,5 +177,55 @@ fn events_only_parse_matches_ordered_replay_events() {
 
     let expected = ordered.events().iter().map(ordered_key).collect::<Vec<_>>();
     let actual = events_only.iter().map(ordered_key).collect::<Vec<_>>();
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn filtered_events_only_parse_matches_filtered_ordered_replay_events() {
+    let Some(account_dir) = resolve_account_dir() else {
+        eprintln!(
+            "skipping filtered events-only regression test: no SC2 account directory configured"
+        );
+        return;
+    };
+    let Some(replay_path) = find_replay(&account_dir, "잘못된 전쟁 (63).SC2Replay") else {
+        eprintln!(
+            "skipping filtered events-only regression test: replay not found under {}",
+            account_dir.display()
+        );
+        return;
+    };
+
+    let include_event = |event: &str| {
+        matches!(
+            event,
+            "NNet.Game.SGameUserLeaveEvent"
+                | "NNet.Game.SSelectionDeltaEvent"
+                | "NNet.Game.STriggerDialogControlEvent"
+                | "NNet.Game.SCmdEvent"
+                | "NNet.Game.SCmdUpdateTargetUnitEvent"
+                | "NNet.Replay.Tracker.SPlayerStatsEvent"
+                | "NNet.Replay.Tracker.SUpgradeEvent"
+                | "NNet.Replay.Tracker.SUnitBornEvent"
+                | "NNet.Replay.Tracker.SUnitInitEvent"
+                | "NNet.Replay.Tracker.SUnitTypeChangeEvent"
+                | "NNet.Replay.Tracker.SUnitOwnerChangeEvent"
+                | "NNet.Replay.Tracker.SUnitDiedEvent"
+        )
+    };
+
+    let store = build_protocol_store().expect("protocol store should build");
+    let ordered = parse_file_with_store_ordered_events(&replay_path, &store)
+        .expect("ordered replay parser should read the replay");
+    let filtered = parse_ordered_events_with_store_filtered(&replay_path, &store, include_event)
+        .expect("filtered events-only replay parser should read the replay");
+
+    let expected = ordered
+        .events()
+        .iter()
+        .filter(|event| include_event(event._event()))
+        .map(ordered_key)
+        .collect::<Vec<_>>();
+    let actual = filtered.iter().map(ordered_key).collect::<Vec<_>>();
     assert_eq!(actual, expected);
 }
