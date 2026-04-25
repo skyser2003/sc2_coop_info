@@ -14,15 +14,14 @@ use winreg::RegKey;
 
 use crate::{
     overlay_info::{
-        normalize_hotkey, OverlayPlacement, ResolvedHotkeyBinding, RuntimeFlags,
+        OverlayInfoOps, OverlayPlacement, ResolvedHotkeyBinding, RuntimeFlags,
         OVERLAY_HOTKEY_BINDINGS, OVERLAY_HOTKEY_DEFAULTS,
     },
     path_manager,
     performance_overlay::PerformanceGeometry,
     replay_analysis::ReplayAnalysis,
-    sanitize_replay_text,
     shared_types::OverlayInitColorsDurationPayload,
-    windows_startup_command_value,
+    TauriOverlayOps,
 };
 
 pub type RandomizerChoices = BTreeMap<String, bool>;
@@ -101,7 +100,7 @@ impl AppSettings {
     }
 
     pub fn from_saved_file() -> Self {
-        let path = path_manager::get_settings_path();
+        let path = path_manager::PathManagerOps::get_settings_path();
 
         Self::read_saved_settings_file_from_path(&path, !cfg!(test))
     }
@@ -159,7 +158,7 @@ impl AppSettings {
     }
 
     pub fn write_saved_settings_file(&self) -> Result<Self, String> {
-        let path = path_manager::get_settings_path();
+        let path = path_manager::PathManagerOps::get_settings_path();
 
         self.write_saved_settings_file_to_path(&path)
     }
@@ -388,196 +387,214 @@ impl AppSettings {
     }
 }
 
-fn get_system_language() -> String {
-    let default = "en";
-    let locale = sys_locale::get_locale();
+pub struct AppSettingsOps;
 
-    let language = if let Some(locale) = locale.as_ref() {
-        locale
-            .split("-")
-            .next()
-            .filter(|language| !language.is_empty())
-            .unwrap_or(default)
-    } else {
-        "en"
-    };
+impl AppSettingsOps {
+    fn get_system_language() -> String {
+        let default = "en";
+        let locale = sys_locale::get_locale();
 
-    language.to_string()
-}
-
-#[cfg(target_os = "windows")]
-fn get_default_accounts_folder() -> String {
-    if let Ok(sc2_key) = RegKey::predef(HKEY_CURRENT_USER)
-        .open_subkey(r"Software\Blizzard Entertainment\StarCraft II")
-    {
-        if let Ok(path) = sc2_key.get_value::<String, &str>("InstallPath") {
-            let accounts_folder = Path::new(&path).join("Accounts");
-            if let Some(accounts_str) = accounts_folder.to_str() {
-                return accounts_str.to_string();
-            }
-        }
-    }
-
-    if let Ok(shell_folders) = RegKey::predef(HKEY_CURRENT_USER)
-        .open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders")
-    {
-        if let Ok(documents) = shell_folders.get_value::<String, &str>("Personal") {
-            let accounts_folder = Path::new(&documents).join("StarCraft II").join("Accounts");
-            if let Some(accounts_str) = accounts_folder.to_str() {
-                return accounts_str.to_string();
-            }
-        }
-    }
-
-    String::new()
-}
-
-#[cfg(not(target_os = "windows"))]
-fn get_default_accounts_folder() -> String {
-    String::new()
-}
-
-#[cfg(target_os = "windows")]
-fn sync_windows_startup_registration(enabled: bool) -> Result<(), String> {
-    if enabled {
-        let executable_path = std::env::current_exe()
-            .map_err(|error| format!("Failed to resolve executable path: {error}"))?;
-        let command_value = windows_startup_command_value(&executable_path);
-        let status = std::process::Command::new("reg")
-            .args([
-                "add",
-                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
-                "/v",
-                "SCO Overlay",
-                "/t",
-                "REG_SZ",
-                "/d",
-                &command_value,
-                "/f",
-            ])
-            .status()
-            .map_err(|error| format!("Failed to update Windows startup entry: {error}"))?;
-        if status.success() {
-            Ok(())
+        let language = if let Some(locale) = locale.as_ref() {
+            locale
+                .split("-")
+                .next()
+                .filter(|language| !language.is_empty())
+                .unwrap_or(default)
         } else {
-            Err(format!(
-                "reg add exited with status {}",
-                status
-                    .code()
-                    .map_or_else(|| "unknown".to_string(), |code| code.to_string())
-            ))
-        }
-    } else {
-        let status = std::process::Command::new("reg")
-            .args([
-                "delete",
-                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
-                "/v",
-                "SCO Overlay",
-                "/f",
-            ])
-            .status()
-            .map_err(|error| format!("Failed to remove Windows startup entry: {error}"))?;
-        if status.success() || status.code() == Some(1) {
-            Ok(())
-        } else {
-            Err(format!(
-                "reg delete exited with status {}",
-                status
-                    .code()
-                    .map_or_else(|| "unknown".to_string(), |code| code.to_string())
-            ))
-        }
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn sync_windows_startup_registration(_enabled: bool) -> Result<(), String> {
-    Ok(())
-}
-
-fn extract_account_handles_from_folder(account_root: &str) -> HashSet<String> {
-    let mut handles = HashSet::new();
-    let root = PathBuf::from(account_root);
-    if !root.exists() || !root.is_dir() {
-        return handles;
-    }
-
-    let mut stack = vec![root];
-    while let Some(current) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&current) else {
-            continue;
+            "en"
         };
-        for entry in entries.filter_map(Result::ok) {
-            let path = entry.path();
-            let Ok(meta) = entry.metadata() else {
+
+        language.to_string()
+    }
+}
+
+impl AppSettingsOps {
+    #[cfg(target_os = "windows")]
+    fn get_default_accounts_folder() -> String {
+        if let Ok(sc2_key) = RegKey::predef(HKEY_CURRENT_USER)
+            .open_subkey(r"Software\Blizzard Entertainment\StarCraft II")
+        {
+            if let Ok(path) = sc2_key.get_value::<String, &str>("InstallPath") {
+                let accounts_folder = Path::new(&path).join("Accounts");
+                if let Some(accounts_str) = accounts_folder.to_str() {
+                    return accounts_str.to_string();
+                }
+            }
+        }
+
+        if let Ok(shell_folders) = RegKey::predef(HKEY_CURRENT_USER)
+            .open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders")
+        {
+            if let Ok(documents) = shell_folders.get_value::<String, &str>("Personal") {
+                let accounts_folder = Path::new(&documents).join("StarCraft II").join("Accounts");
+                if let Some(accounts_str) = accounts_folder.to_str() {
+                    return accounts_str.to_string();
+                }
+            }
+        }
+
+        String::new()
+    }
+}
+
+impl AppSettingsOps {
+    #[cfg(not(target_os = "windows"))]
+    fn get_default_accounts_folder() -> String {
+        String::new()
+    }
+}
+
+impl AppSettingsOps {
+    #[cfg(target_os = "windows")]
+    fn sync_windows_startup_registration(enabled: bool) -> Result<(), String> {
+        if enabled {
+            let executable_path = std::env::current_exe()
+                .map_err(|error| format!("Failed to resolve executable path: {error}"))?;
+            let command_value = TauriOverlayOps::windows_startup_command_value(&executable_path);
+            let status = std::process::Command::new("reg")
+                .args([
+                    "add",
+                    r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+                    "/v",
+                    "SCO Overlay",
+                    "/t",
+                    "REG_SZ",
+                    "/d",
+                    &command_value,
+                    "/f",
+                ])
+                .status()
+                .map_err(|error| format!("Failed to update Windows startup entry: {error}"))?;
+            if status.success() {
+                Ok(())
+            } else {
+                Err(format!(
+                    "reg add exited with status {}",
+                    status
+                        .code()
+                        .map_or_else(|| "unknown".to_string(), |code| code.to_string())
+                ))
+            }
+        } else {
+            let status = std::process::Command::new("reg")
+                .args([
+                    "delete",
+                    r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+                    "/v",
+                    "SCO Overlay",
+                    "/f",
+                ])
+                .status()
+                .map_err(|error| format!("Failed to remove Windows startup entry: {error}"))?;
+            if status.success() || status.code() == Some(1) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "reg delete exited with status {}",
+                    status
+                        .code()
+                        .map_or_else(|| "unknown".to_string(), |code| code.to_string())
+                ))
+            }
+        }
+    }
+}
+
+impl AppSettingsOps {
+    #[cfg(not(target_os = "windows"))]
+    fn sync_windows_startup_registration(_enabled: bool) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+impl AppSettingsOps {
+    fn extract_account_handles_from_folder(account_root: &str) -> HashSet<String> {
+        let mut handles = HashSet::new();
+        let root = PathBuf::from(account_root);
+        if !root.exists() || !root.is_dir() {
+            return handles;
+        }
+
+        let mut stack = vec![root];
+        while let Some(current) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&current) else {
                 continue;
             };
-            if meta.is_dir() {
-                if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
-                    let normalized = ReplayAnalysis::normalized_handle_key(name);
-                    if !normalized.is_empty() {
-                        handles.insert(normalized);
+            for entry in entries.filter_map(Result::ok) {
+                let path = entry.path();
+                let Ok(meta) = entry.metadata() else {
+                    continue;
+                };
+                if meta.is_dir() {
+                    if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+                        let normalized = ReplayAnalysis::normalized_handle_key(name);
+                        if !normalized.is_empty() {
+                            handles.insert(normalized);
+                        }
                     }
+                    stack.push(path);
                 }
-                stack.push(path);
             }
         }
+        handles
     }
-    handles
 }
 
-fn build_replay_root_candidates(raw: &str) -> Vec<PathBuf> {
-    let trimmed = raw.trim().trim_matches(&['"', '\''][..]).to_string();
-    if trimmed.is_empty() {
-        return Vec::new();
-    }
-
-    let mut candidates = Vec::with_capacity(3);
-    let primary = PathBuf::from(&trimmed);
-    candidates.push(primary.clone());
-
-    let swapped = if trimmed.contains('\\') {
-        trimmed.replace('\\', "/")
-    } else {
-        trimmed.replace('/', "\\")
-    };
-    if !swapped.is_empty() {
-        let swapped_path = PathBuf::from(&swapped);
-        if swapped_path != primary {
-            candidates.push(swapped_path);
+impl AppSettingsOps {
+    fn build_replay_root_candidates(raw: &str) -> Vec<PathBuf> {
+        let trimmed = raw.trim().trim_matches(&['"', '\''][..]).to_string();
+        if trimmed.is_empty() {
+            return Vec::new();
         }
-    }
 
-    let drive_prefix = trimmed.chars().nth(1) == Some(':');
-    if drive_prefix {
-        let windows_drive = trimmed
-            .chars()
-            .next()
-            .unwrap_or('C')
-            .to_ascii_lowercase()
-            .to_string();
-        let rest = trimmed[2..].trim_start_matches(['\\', '/'].as_ref());
-        let wsl = format!(
-            "/mnt/{}/{}",
-            windows_drive,
-            rest.replace('\\', "/").trim_start_matches('/')
-        );
-        let wsl_path = PathBuf::from(&wsl);
-        if wsl_path != primary {
-            candidates.push(wsl_path);
+        let mut candidates = Vec::with_capacity(3);
+        let primary = PathBuf::from(&trimmed);
+        candidates.push(primary.clone());
+
+        let swapped = if trimmed.contains('\\') {
+            trimmed.replace('\\', "/")
+        } else {
+            trimmed.replace('/', "\\")
+        };
+        if !swapped.is_empty() {
+            let swapped_path = PathBuf::from(&swapped);
+            if swapped_path != primary {
+                candidates.push(swapped_path);
+            }
         }
+
+        let drive_prefix = trimmed.chars().nth(1) == Some(':');
+        if drive_prefix {
+            let windows_drive = trimmed
+                .chars()
+                .next()
+                .unwrap_or('C')
+                .to_ascii_lowercase()
+                .to_string();
+            let rest = trimmed[2..].trim_start_matches(['\\', '/'].as_ref());
+            let wsl = format!(
+                "/mnt/{}/{}",
+                windows_drive,
+                rest.replace('\\', "/").trim_start_matches('/')
+            );
+            let wsl_path = PathBuf::from(&wsl);
+            if wsl_path != primary {
+                candidates.push(wsl_path);
+            }
+        }
+        candidates
     }
-    candidates
 }
 
-fn as_u32(value: u64) -> u32 {
-    u32::try_from(value).unwrap_or(u32::MAX)
+impl AppSettingsOps {
+    fn as_u32(value: u64) -> u32 {
+        u32::try_from(value).unwrap_or(u32::MAX)
+    }
 }
 
 impl AppSettings {
     pub(crate) fn sync_start_with_windows_registration(&self) -> Result<(), String> {
-        sync_windows_startup_registration(self.start_with_windows)
+        AppSettingsOps::sync_windows_startup_registration(self.start_with_windows)
     }
 
     pub fn update_player_note(&mut self, handle: &str, note_value: &str) -> Result<(), String> {
@@ -591,7 +608,11 @@ impl AppSettings {
             .keys()
             .find(|key| ReplayAnalysis::normalized_handle_key(key) == normalized_handle)
             .cloned()
-            .unwrap_or_else(|| sanitize_replay_text(handle).trim().to_string());
+            .unwrap_or_else(|| {
+                TauriOverlayOps::sanitize_replay_text(handle)
+                    .trim()
+                    .to_string()
+            });
 
         let trimmed_note = note_value.trim();
         if trimmed_note.is_empty() {
@@ -672,13 +693,13 @@ impl AppSettings {
         if account_root.is_empty() {
             return HashSet::new();
         }
-        extract_account_handles_from_folder(account_root)
+        AppSettingsOps::extract_account_handles_from_folder(account_root)
     }
 
     pub(crate) fn resolve_replay_root(&self) -> Option<PathBuf> {
         let account_folder = self.account_folder.trim();
         if !account_folder.is_empty() {
-            let candidates = build_replay_root_candidates(account_folder);
+            let candidates = AppSettingsOps::build_replay_root_candidates(account_folder);
             if let Some(path) = candidates.iter().find(|path| path.is_dir()) {
                 return Some(path.clone());
             }
@@ -693,7 +714,7 @@ impl AppSettings {
             return None;
         }
 
-        build_replay_root_candidates(account_folder)
+        AppSettingsOps::build_replay_root_candidates(account_folder)
             .into_iter()
             .find(|candidate| candidate.is_dir())
     }
@@ -735,11 +756,11 @@ impl AppSettings {
                 None => OVERLAY_HOTKEY_DEFAULTS
                     .iter()
                     .find(|(default_path, _)| *default_path == path)
-                    .and_then(|(_, default_value)| normalize_hotkey(default_value)),
+                    .and_then(|(_, default_value)| OverlayInfoOps::normalize_hotkey(default_value)),
                 Some(Value::Null) => OVERLAY_HOTKEY_DEFAULTS
                     .iter()
                     .find(|(default_path, _)| *default_path == path)
-                    .and_then(|(_, default_value)| normalize_hotkey(default_value)),
+                    .and_then(|(_, default_value)| OverlayInfoOps::normalize_hotkey(default_value)),
                 Some(Value::Bool(false)) => {
                     crate::sco_log!("[SCO/hotkey] '{path}' disabled by settings.");
                     None
@@ -756,7 +777,7 @@ impl AppSettings {
                         crate::sco_log!("[SCO/hotkey] '{path}' is empty, disabled by settings.");
                         None
                     } else {
-                        normalize_hotkey(raw)
+                        OverlayInfoOps::normalize_hotkey(raw)
                     }
                 }
                 Some(_) => {
@@ -900,8 +921,8 @@ impl AppSettings {
             show_charts: self.overlay_show_charts(),
             show_session: self.overlay_show_session(),
             hide_nicknames_in_overlay: self.overlay_hide_nicknames(),
-            session_victory: as_u32(session_victories),
-            session_defeat: as_u32(session_defeats),
+            session_victory: AppSettingsOps::as_u32(session_victories),
+            session_defeat: AppSettingsOps::as_u32(session_defeats),
             language: self.overlay_language().to_string(),
         })
         .unwrap_or_else(|_| Value::Object(Default::default()))
@@ -949,7 +970,7 @@ impl Default for AppSettings {
             show_session: true,
             show_charts: true,
             hide_nicknames_in_overlay: false,
-            account_folder: get_default_accounts_folder(),
+            account_folder: AppSettingsOps::get_default_accounts_folder(),
             screenshot_folder: String::new(),
             color_player1: "#0080F8".to_string(),
             color_player2: "#00D532".to_string(),
@@ -963,7 +984,7 @@ impl Default for AppSettings {
             hotkey_winrates: None,
             enable_logging: true,
             dark_theme: true,
-            language: get_system_language(),
+            language: AppSettingsOps::get_system_language(),
             monitor: 1,
             performance_show: false,
             performance_hotkey: None,

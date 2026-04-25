@@ -2,8 +2,8 @@ use crate::bitstream::BitPackedBuffer;
 use crate::{
     error::DecodeError,
     events::{
-        decode_user_id as decode_event_user_id, AbilityData, CmdEventData, DirectEventDecode,
-        GameEvent, GameEventField, MessageEvent, MessageEventField, PlayerStatsData, ReplayEvent,
+        AbilityData, CmdEventData, DirectEventDecode, EventUserIdDecoder, GameEvent,
+        GameEventField, MessageEvent, MessageEventField, PlayerStatsData, ReplayEvent,
         SnapshotPoint, SnapshotPointValue, TargetUnitData, TrackerEvent, TrackerEventField,
         TriggerEventData,
     },
@@ -185,39 +185,51 @@ impl TypeInfo {
     ) -> Result<Self, DecodeError> {
         let op = TypeOp::parse(op_name)?;
         let int_bounds = if op == TypeOp::Int {
-            Some(parse_int_bounds(args.first(), "_int bounds")?)
+            Some(TypeInfoJsonParser::parse_int_bounds(
+                args.first(),
+                "_int bounds",
+            )?)
         } else {
             None
         };
         let length_bounds = match op {
-            TypeOp::Array | TypeOp::BitArray | TypeOp::Blob => {
-                Some(parse_int_bounds(args.first(), "length bounds")?)
-            }
+            TypeOp::Array | TypeOp::BitArray | TypeOp::Blob => Some(
+                TypeInfoJsonParser::parse_int_bounds(args.first(), "length bounds")?,
+            ),
             _ => None,
         };
         let child_typeid = match op {
-            TypeOp::Array => Some(parse_typeid_arg(args.get(1), "_array typeid")?),
-            TypeOp::Optional => Some(parse_typeid_arg(args.first(), "_optional typeid")?),
+            TypeOp::Array => Some(TypeInfoJsonParser::parse_typeid_arg(
+                args.get(1),
+                "_array typeid",
+            )?),
+            TypeOp::Optional => Some(TypeInfoJsonParser::parse_typeid_arg(
+                args.first(),
+                "_optional typeid",
+            )?),
             _ => None,
         };
         let choice_tag_bounds = if op == TypeOp::Choice {
-            Some(parse_int_bounds(args.first(), "_choice bounds")?)
+            Some(TypeInfoJsonParser::parse_int_bounds(
+                args.first(),
+                "_choice bounds",
+            )?)
         } else {
             None
         };
         let choice_fields = if op == TypeOp::Choice {
-            parse_choice_fields(&args)?
+            TypeInfoJsonParser::parse_choice_fields(&args)?
         } else {
             None
         };
         let struct_fields = if op == TypeOp::Struct {
-            Some(Arc::from(parse_struct_fields(&args)?))
+            Some(Arc::from(TypeInfoJsonParser::parse_struct_fields(&args)?))
         } else {
             None
         };
         let struct_fields_by_tag = struct_fields
             .as_deref()
-            .map(build_struct_field_tag_lookup)
+            .map(TypeInfoJsonParser::build_struct_field_tag_lookup)
             .transpose()?
             .flatten();
 
@@ -344,123 +356,132 @@ impl StructField {
     }
 }
 
-fn parse_choice_fields(args: &[JsonValue]) -> Result<Option<TagLookup<ChoiceField>>, DecodeError> {
-    let map = args
-        .get(1)
-        .and_then(JsonValue::as_object)
-        .ok_or_else(|| DecodeError::Corrupted("_choice map".into()))?;
+struct TypeInfoJsonParser;
 
-    let entries = map
-        .iter()
-        .map(|(tag, field)| -> Result<(i128, ChoiceField), DecodeError> {
-            let parsed_tag = tag
-                .parse::<i128>()
-                .map_err(|_| DecodeError::Corrupted("_choice key".into()))?;
-            let choice_field = parse_choice_field(field)?;
-            Ok((parsed_tag, choice_field))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+impl TypeInfoJsonParser {
+    fn parse_choice_fields(
+        args: &[JsonValue],
+    ) -> Result<Option<TagLookup<ChoiceField>>, DecodeError> {
+        let map = args
+            .get(1)
+            .and_then(JsonValue::as_object)
+            .ok_or_else(|| DecodeError::Corrupted("_choice map".into()))?;
 
-    TagLookup::new(entries, "duplicate _choice tag")
-}
+        let entries = map
+            .iter()
+            .map(|(tag, field)| -> Result<(i128, ChoiceField), DecodeError> {
+                let parsed_tag = tag
+                    .parse::<i128>()
+                    .map_err(|_| DecodeError::Corrupted("_choice key".into()))?;
+                let choice_field = Self::parse_choice_field(field)?;
+                Ok((parsed_tag, choice_field))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
-fn parse_choice_field(value: &JsonValue) -> Result<ChoiceField, DecodeError> {
-    let field = value
-        .as_array()
-        .ok_or_else(|| DecodeError::Corrupted("_choice value".into()))?;
-
-    let field_name = field
-        .first()
-        .and_then(JsonValue::as_str)
-        .ok_or_else(|| DecodeError::Corrupted("_choice field name".into()))?;
-    let typeid = field
-        .get(1)
-        .and_then(JsonValue::as_u64)
-        .ok_or_else(|| DecodeError::Corrupted("_choice field typeid".into()))?
-        as usize;
-
-    Ok(ChoiceField::new(field_name.to_string(), typeid))
-}
-
-fn parse_struct_fields(args: &[JsonValue]) -> Result<Vec<StructField>, DecodeError> {
-    let fields = args
-        .first()
-        .and_then(JsonValue::as_array)
-        .ok_or_else(|| DecodeError::Corrupted("_struct fields".into()))?;
-
-    fields
-        .iter()
-        .map(parse_struct_field)
-        .collect::<Result<Vec<_>, _>>()
-}
-
-fn build_struct_field_tag_lookup(
-    fields: &[StructField],
-) -> Result<Option<TagLookup<StructField>>, DecodeError> {
-    let entries = fields
-        .iter()
-        .filter_map(|field| field.tag().map(|tag| (tag, field.clone())))
-        .collect::<Vec<_>>();
-
-    TagLookup::new(entries, "duplicate _struct tag")
-}
-
-fn parse_struct_field(value: &JsonValue) -> Result<StructField, DecodeError> {
-    let field = value
-        .as_array()
-        .ok_or_else(|| DecodeError::Corrupted("_struct field".into()))?;
-
-    if field.len() < 2 {
-        return Err(DecodeError::Corrupted("_struct field len".into()));
+        TagLookup::new(entries, "duplicate _choice tag")
     }
 
-    let field_name = field
-        .first()
-        .and_then(JsonValue::as_str)
-        .ok_or_else(|| DecodeError::Corrupted("_struct field name".into()))?;
-    let typeid = field
-        .get(1)
-        .and_then(JsonValue::as_u64)
-        .ok_or_else(|| DecodeError::Corrupted("_struct field typeid".into()))?
-        as usize;
-    let tag = field.get(2).map(json_to_i128).transpose()?;
+    fn parse_choice_field(value: &JsonValue) -> Result<ChoiceField, DecodeError> {
+        let field = value
+            .as_array()
+            .ok_or_else(|| DecodeError::Corrupted("_choice value".into()))?;
 
-    Ok(StructField::new(field_name.to_string(), typeid, tag))
-}
+        let field_name = field
+            .first()
+            .and_then(JsonValue::as_str)
+            .ok_or_else(|| DecodeError::Corrupted("_choice field name".into()))?;
+        let typeid = field
+            .get(1)
+            .and_then(JsonValue::as_u64)
+            .ok_or_else(|| DecodeError::Corrupted("_choice field typeid".into()))?
+            as usize;
 
-fn json_to_i128(value: &JsonValue) -> Result<i128, DecodeError> {
-    value
-        .as_i64()
-        .map(i128::from)
-        .or_else(|| value.as_u64().map(i128::from))
-        .ok_or_else(|| DecodeError::Corrupted("expected integer json value".into()))
-}
-
-fn parse_int_bounds(value: Option<&JsonValue>, context: &str) -> Result<IntBounds, DecodeError> {
-    let bounds = value
-        .and_then(JsonValue::as_array)
-        .ok_or_else(|| DecodeError::Corrupted(context.into()))?;
-    if bounds.len() != 2 {
-        return Err(DecodeError::Corrupted(format!("{context} len")));
+        Ok(ChoiceField::new(field_name.to_string(), typeid))
     }
 
-    let min = bounds[0]
-        .as_i64()
-        .or_else(|| bounds[0].as_u64().map(|value| value as i64))
-        .ok_or_else(|| DecodeError::Corrupted(format!("{context} min")))?;
-    let bits = bounds[1]
-        .as_u64()
-        .and_then(|value| usize::try_from(value).ok())
-        .ok_or_else(|| DecodeError::Corrupted(format!("{context} bits")))?;
+    fn parse_struct_fields(args: &[JsonValue]) -> Result<Vec<StructField>, DecodeError> {
+        let fields = args
+            .first()
+            .and_then(JsonValue::as_array)
+            .ok_or_else(|| DecodeError::Corrupted("_struct fields".into()))?;
 
-    Ok(IntBounds { min, bits })
-}
+        fields
+            .iter()
+            .map(Self::parse_struct_field)
+            .collect::<Result<Vec<_>, _>>()
+    }
 
-fn parse_typeid_arg(value: Option<&JsonValue>, context: &str) -> Result<usize, DecodeError> {
-    value
-        .and_then(JsonValue::as_u64)
-        .and_then(|value| usize::try_from(value).ok())
-        .ok_or_else(|| DecodeError::Corrupted(context.into()))
+    fn build_struct_field_tag_lookup(
+        fields: &[StructField],
+    ) -> Result<Option<TagLookup<StructField>>, DecodeError> {
+        let entries = fields
+            .iter()
+            .filter_map(|field| field.tag().map(|tag| (tag, field.clone())))
+            .collect::<Vec<_>>();
+
+        TagLookup::new(entries, "duplicate _struct tag")
+    }
+
+    fn parse_struct_field(value: &JsonValue) -> Result<StructField, DecodeError> {
+        let field = value
+            .as_array()
+            .ok_or_else(|| DecodeError::Corrupted("_struct field".into()))?;
+
+        if field.len() < 2 {
+            return Err(DecodeError::Corrupted("_struct field len".into()));
+        }
+
+        let field_name = field
+            .first()
+            .and_then(JsonValue::as_str)
+            .ok_or_else(|| DecodeError::Corrupted("_struct field name".into()))?;
+        let typeid = field
+            .get(1)
+            .and_then(JsonValue::as_u64)
+            .ok_or_else(|| DecodeError::Corrupted("_struct field typeid".into()))?
+            as usize;
+        let tag = field.get(2).map(Self::json_to_i128).transpose()?;
+
+        Ok(StructField::new(field_name.to_string(), typeid, tag))
+    }
+
+    fn json_to_i128(value: &JsonValue) -> Result<i128, DecodeError> {
+        value
+            .as_i64()
+            .map(i128::from)
+            .or_else(|| value.as_u64().map(i128::from))
+            .ok_or_else(|| DecodeError::Corrupted("expected integer json value".into()))
+    }
+
+    fn parse_int_bounds(
+        value: Option<&JsonValue>,
+        context: &str,
+    ) -> Result<IntBounds, DecodeError> {
+        let bounds = value
+            .and_then(JsonValue::as_array)
+            .ok_or_else(|| DecodeError::Corrupted(context.into()))?;
+        if bounds.len() != 2 {
+            return Err(DecodeError::Corrupted(format!("{context} len")));
+        }
+
+        let min = bounds[0]
+            .as_i64()
+            .or_else(|| bounds[0].as_u64().map(|value| value as i64))
+            .ok_or_else(|| DecodeError::Corrupted(format!("{context} min")))?;
+        let bits = bounds[1]
+            .as_u64()
+            .and_then(|value| usize::try_from(value).ok())
+            .ok_or_else(|| DecodeError::Corrupted(format!("{context} bits")))?;
+
+        Ok(IntBounds { min, bits })
+    }
+
+    fn parse_typeid_arg(value: Option<&JsonValue>, context: &str) -> Result<usize, DecodeError> {
+        value
+            .and_then(JsonValue::as_u64)
+            .and_then(|value| usize::try_from(value).ok())
+            .ok_or_else(|| DecodeError::Corrupted(context.into()))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -561,7 +582,8 @@ impl IntegerDecodePlan {
             TypeOp::Choice => {
                 let mut fields = Vec::new();
                 typeinfo.choice_fields()?.visit(|tag, field| {
-                    let child_typeinfo = lookup_typeinfo(typeinfos, field.typeid())?;
+                    let child_typeinfo =
+                        EventPlanCompiler::lookup_typeinfo(typeinfos, field.typeid())?;
                     let child_plan = Self::compile(child_typeinfo, typeinfos)?;
                     fields.push((tag, child_plan));
                     Ok(())
@@ -592,13 +614,13 @@ impl EventHeaderDecodePlan {
         decode_user_id: bool,
         tolerant: bool,
     ) -> Result<Self, DecodeError> {
-        let eventid_typeinfo = lookup_typeinfo(typeinfos, eventid_typeid)?;
-        let svaruint32_typeinfo = lookup_typeinfo(typeinfos, svaruint32_typeid)?;
+        let eventid_typeinfo = EventPlanCompiler::lookup_typeinfo(typeinfos, eventid_typeid)?;
+        let svaruint32_typeinfo = EventPlanCompiler::lookup_typeinfo(typeinfos, svaruint32_typeid)?;
         let eventid = IntegerDecodePlan::compile(eventid_typeinfo, typeinfos)?;
         let gameloop_delta = IntegerDecodePlan::compile(svaruint32_typeinfo, typeinfos)?;
         let replay_userid_typeinfo = if decode_user_id {
             replay_userid_typeid
-                .map(|typeid| lookup_typeinfo(typeinfos, typeid))
+                .map(|typeid| EventPlanCompiler::lookup_typeinfo(typeinfos, typeid))
                 .transpose()?
                 .cloned()
         } else {
@@ -684,7 +706,7 @@ impl ProtocolDefinition {
         contents: &[u8],
     ) -> Result<Vec<GameEvent>, DecodeError> {
         let decoder = BitPackedDecoder::new(contents, Arc::clone(&self.typeinfos));
-        decode_event_stream::<_, GameEvent>(
+        EventStreamDecoder::decode::<_, GameEvent>(
             decoder,
             &self.game_event_typeinfos,
             &self.game_event_header,
@@ -696,7 +718,7 @@ impl ProtocolDefinition {
         contents: &[u8],
     ) -> Result<Vec<MessageEvent>, DecodeError> {
         let decoder = BitPackedDecoder::new(contents, Arc::clone(&self.typeinfos));
-        decode_event_stream::<_, MessageEvent>(
+        EventStreamDecoder::decode::<_, MessageEvent>(
             decoder,
             &self.message_event_typeinfos,
             &self.message_event_header,
@@ -712,7 +734,7 @@ impl ProtocolDefinition {
         };
 
         let decoder = VersionedDecoder::new(contents, Arc::clone(&self.typeinfos));
-        decode_event_stream::<_, TrackerEvent>(
+        EventStreamDecoder::decode::<_, TrackerEvent>(
             decoder,
             &self.tracker_event_typeinfos,
             tracker_event_header,
@@ -881,7 +903,7 @@ pub trait TypeDecoder {
     fn typeinfos(&self) -> Arc<[TypeInfo]>;
     fn instance(&mut self, typeid: usize) -> Result<Value, DecodeError> {
         let typeinfos = self.typeinfos();
-        let typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
+        let typeinfo = EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), typeid)?;
         self.instance_from_typeinfo(typeinfo)
     }
     fn instance_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError>;
@@ -954,77 +976,89 @@ pub struct BitPackedDecoder<'a> {
     typeinfos: Arc<[TypeInfo]>,
 }
 
-fn lookup_typeinfo(typeinfos: &[TypeInfo], typeid: usize) -> Result<&TypeInfo, DecodeError> {
-    typeinfos
-        .get(typeid)
-        .ok_or_else(|| DecodeError::Corrupted(format!("typeid {typeid} out of range")))
-}
+pub(crate) struct EventPlanCompiler;
 
-pub(crate) fn compile_event_decode_plan<F, S>(
-    typeinfo: &TypeInfo,
-    typeinfos: &[TypeInfo],
-    plan_kind: EventPlanKind,
-    select_field: &mut S,
-) -> Result<Option<EventDecodePlan<F>>, DecodeError>
-where
-    F: Copy,
-    S: FnMut(&str) -> Option<F>,
-{
-    if typeinfo.op() != TypeOp::Struct {
-        return Ok(None);
+impl EventPlanCompiler {
+    fn lookup_typeinfo(typeinfos: &[TypeInfo], typeid: usize) -> Result<&TypeInfo, DecodeError> {
+        typeinfos
+            .get(typeid)
+            .ok_or_else(|| DecodeError::Corrupted(format!("typeid {typeid} out of range")))
     }
 
-    match plan_kind {
-        EventPlanKind::Ordered => {
-            compile_ordered_event_decode_plan(typeinfo, typeinfos, select_field)
-                .map(|plan| plan.map(EventDecodePlan::Ordered))
+    pub(crate) fn compile<F, S>(
+        typeinfo: &TypeInfo,
+        typeinfos: &[TypeInfo],
+        plan_kind: EventPlanKind,
+        select_field: &mut S,
+    ) -> Result<Option<EventDecodePlan<F>>, DecodeError>
+    where
+        F: Copy,
+        S: FnMut(&str) -> Option<F>,
+    {
+        if typeinfo.op() != TypeOp::Struct {
+            return Ok(None);
         }
-        EventPlanKind::Tagged => {
-            compile_tagged_event_decode_plan(typeinfo, typeinfos, select_field)
-                .map(|plan| plan.map(EventDecodePlan::Tagged))
+
+        match plan_kind {
+            EventPlanKind::Ordered => Self::compile_ordered(typeinfo, typeinfos, select_field)
+                .map(|plan| plan.map(EventDecodePlan::Ordered)),
+            EventPlanKind::Tagged => Self::compile_tagged(typeinfo, typeinfos, select_field)
+                .map(|plan| plan.map(EventDecodePlan::Tagged)),
         }
     }
-}
 
-fn compile_ordered_event_decode_plan<F, S>(
-    typeinfo: &TypeInfo,
-    typeinfos: &[TypeInfo],
-    select_field: &mut S,
-) -> Result<Option<Arc<[OrderedEventFieldPlan<F>]>>, DecodeError>
-where
-    F: Copy,
-    S: FnMut(&str) -> Option<F>,
-{
-    if typeinfo.op() != TypeOp::Struct {
-        return Ok(None);
-    }
+    fn compile_ordered<F, S>(
+        typeinfo: &TypeInfo,
+        typeinfos: &[TypeInfo],
+        select_field: &mut S,
+    ) -> Result<Option<Arc<[OrderedEventFieldPlan<F>]>>, DecodeError>
+    where
+        F: Copy,
+        S: FnMut(&str) -> Option<F>,
+    {
+        if typeinfo.op() != TypeOp::Struct {
+            return Ok(None);
+        }
 
-    let fields = typeinfo.struct_fields()?;
-    let mut plans = Vec::with_capacity(fields.len());
-    for field in fields {
-        let child_typeinfo = lookup_typeinfo(typeinfos, field.typeid())?.clone();
-        if field.is_parent() {
-            if child_typeinfo.op() == TypeOp::Struct {
-                let Some(parent_plan) =
-                    compile_ordered_event_decode_plan(&child_typeinfo, typeinfos, select_field)?
-                else {
-                    if fields.len() == 1 {
-                        return Ok(None);
-                    }
+        let fields = typeinfo.struct_fields()?;
+        let mut plans = Vec::with_capacity(fields.len());
+        for field in fields {
+            let child_typeinfo = Self::lookup_typeinfo(typeinfos, field.typeid())?.clone();
+            if field.is_parent() {
+                if child_typeinfo.op() == TypeOp::Struct {
+                    let Some(parent_plan) =
+                        Self::compile_ordered(&child_typeinfo, typeinfos, select_field)?
+                    else {
+                        if fields.len() == 1 {
+                            return Ok(None);
+                        }
+                        plans.push(OrderedEventFieldPlan::Skip {
+                            typeinfo: child_typeinfo,
+                        });
+                        continue;
+                    };
+                    plans.push(OrderedEventFieldPlan::Nested(parent_plan));
+                    continue;
+                }
+
+                if fields.len() == 1 {
+                    return Ok(None);
+                }
+
+                if let Some(selected_field) = select_field("__parent") {
+                    plans.push(OrderedEventFieldPlan::Decode {
+                        field: selected_field,
+                        typeinfo: child_typeinfo,
+                    });
+                } else {
                     plans.push(OrderedEventFieldPlan::Skip {
                         typeinfo: child_typeinfo,
                     });
-                    continue;
-                };
-                plans.push(OrderedEventFieldPlan::Nested(parent_plan));
+                }
                 continue;
             }
 
-            if fields.len() == 1 {
-                return Ok(None);
-            }
-
-            if let Some(selected_field) = select_field("__parent") {
+            if let Some(selected_field) = select_field(field.name()) {
                 plans.push(OrderedEventFieldPlan::Decode {
                     field: selected_field,
                     typeinfo: child_typeinfo,
@@ -1034,499 +1068,496 @@ where
                     typeinfo: child_typeinfo,
                 });
             }
-            continue;
         }
 
-        if let Some(selected_field) = select_field(field.name()) {
-            plans.push(OrderedEventFieldPlan::Decode {
-                field: selected_field,
-                typeinfo: child_typeinfo,
-            });
-        } else {
-            plans.push(OrderedEventFieldPlan::Skip {
-                typeinfo: child_typeinfo,
-            });
+        Ok(Some(Arc::from(plans)))
+    }
+
+    fn compile_tagged<F, S>(
+        typeinfo: &TypeInfo,
+        typeinfos: &[TypeInfo],
+        select_field: &mut S,
+    ) -> Result<Option<Arc<TaggedEventDecodePlan<F>>>, DecodeError>
+    where
+        F: Copy,
+        S: FnMut(&str) -> Option<F>,
+    {
+        if typeinfo.op() != TypeOp::Struct {
+            return Ok(None);
         }
-    }
 
-    Ok(Some(Arc::from(plans)))
-}
+        let fields = typeinfo.struct_fields()?;
+        let mut entries = Vec::new();
+        for field in fields {
+            let Some(tag) = field.tag() else {
+                continue;
+            };
 
-fn compile_tagged_event_decode_plan<F, S>(
-    typeinfo: &TypeInfo,
-    typeinfos: &[TypeInfo],
-    select_field: &mut S,
-) -> Result<Option<Arc<TaggedEventDecodePlan<F>>>, DecodeError>
-where
-    F: Copy,
-    S: FnMut(&str) -> Option<F>,
-{
-    if typeinfo.op() != TypeOp::Struct {
-        return Ok(None);
-    }
-
-    let fields = typeinfo.struct_fields()?;
-    let mut entries = Vec::new();
-    for field in fields {
-        let Some(tag) = field.tag() else {
-            continue;
-        };
-
-        let child_typeinfo = lookup_typeinfo(typeinfos, field.typeid())?.clone();
-        let plan = if field.is_parent() {
-            if child_typeinfo.op() == TypeOp::Struct {
-                match compile_tagged_event_decode_plan(&child_typeinfo, typeinfos, select_field)? {
-                    Some(parent_plan) => TaggedEventFieldPlan::Nested(parent_plan),
-                    None if fields.len() == 1 => return Ok(None),
-                    None => TaggedEventFieldPlan::Skip,
+            let child_typeinfo = Self::lookup_typeinfo(typeinfos, field.typeid())?.clone();
+            let plan = if field.is_parent() {
+                if child_typeinfo.op() == TypeOp::Struct {
+                    match Self::compile_tagged(&child_typeinfo, typeinfos, select_field)? {
+                        Some(parent_plan) => TaggedEventFieldPlan::Nested(parent_plan),
+                        None if fields.len() == 1 => return Ok(None),
+                        None => TaggedEventFieldPlan::Skip,
+                    }
+                } else if fields.len() == 1 {
+                    return Ok(None);
+                } else if let Some(selected_field) = select_field("__parent") {
+                    TaggedEventFieldPlan::Decode {
+                        field: selected_field,
+                        typeinfo: child_typeinfo,
+                    }
+                } else {
+                    TaggedEventFieldPlan::Skip
                 }
-            } else if fields.len() == 1 {
-                return Ok(None);
-            } else if let Some(selected_field) = select_field("__parent") {
+            } else if let Some(selected_field) = select_field(field.name()) {
                 TaggedEventFieldPlan::Decode {
                     field: selected_field,
                     typeinfo: child_typeinfo,
                 }
             } else {
                 TaggedEventFieldPlan::Skip
-            }
-        } else if let Some(selected_field) = select_field(field.name()) {
-            TaggedEventFieldPlan::Decode {
-                field: selected_field,
-                typeinfo: child_typeinfo,
-            }
-        } else {
-            TaggedEventFieldPlan::Skip
+            };
+
+            entries.push((tag, plan));
+        }
+
+        let Some(fields_by_tag) = TagLookup::new(entries, "duplicate event plan tag")? else {
+            return Ok(None);
         };
-
-        entries.push((tag, plan));
-    }
-
-    let Some(fields_by_tag) = TagLookup::new(entries, "duplicate event plan tag")? else {
-        return Ok(None);
-    };
-    Ok(Some(Arc::new(TaggedEventDecodePlan { fields_by_tag })))
-}
-
-fn mark_trigger_text(result: &mut TriggerEventData, text: &str) {
-    if text.contains("SelectionChanged") {
-        result.contains_selection_changed = true;
-    }
-    if text.contains("None") {
-        result.contains_none = true;
+        Ok(Some(Arc::new(TaggedEventDecodePlan { fields_by_tag })))
     }
 }
 
-fn scan_trigger_event_data<D: TypeDecoder>(
-    decoder: &mut D,
-    typeinfo: &TypeInfo,
-    result: &mut TriggerEventData,
-) -> Result<(), DecodeError> {
-    #[derive(Clone, Copy)]
-    enum TriggerFieldMarker {
-        Other,
-        SelectionChanged,
-        None,
+pub(crate) struct EventSpecialDataDecoder;
+
+impl EventSpecialDataDecoder {
+    fn mark_trigger_text(result: &mut TriggerEventData, text: &str) {
+        if text.contains("SelectionChanged") {
+            result.contains_selection_changed = true;
+        }
+        if text.contains("None") {
+            result.contains_none = true;
+        }
     }
 
-    if result.contains_selection_changed && result.contains_none {
-        decoder.skip_from_typeinfo(typeinfo)?;
-        return Ok(());
-    }
+    fn scan_trigger_event_data<D: TypeDecoder>(
+        decoder: &mut D,
+        typeinfo: &TypeInfo,
+        result: &mut TriggerEventData,
+    ) -> Result<(), DecodeError> {
+        #[derive(Clone, Copy)]
+        enum TriggerFieldMarker {
+            Other,
+            SelectionChanged,
+            None,
+        }
 
-    match typeinfo.op() {
-        TypeOp::Null => {
+        if result.contains_selection_changed && result.contains_none {
             decoder.skip_from_typeinfo(typeinfo)?;
-            Ok(())
+            return Ok(());
         }
-        TypeOp::Optional => {
-            decoder.visit_optional_child_from_typeinfo(
-                typeinfo,
-                &mut |decoder, child_typeinfo| {
-                    scan_trigger_event_data(decoder, child_typeinfo, result)
-                },
-            )?;
-            Ok(())
-        }
-        TypeOp::Struct => decoder.visit_struct_fields_from_typeinfo(
-            typeinfo,
-            &mut |field_name| {
-                Some(match field_name {
-                    "SelectionChanged" => TriggerFieldMarker::SelectionChanged,
-                    "None" => TriggerFieldMarker::None,
-                    _ => TriggerFieldMarker::Other,
-                })
-            },
-            &mut |decoder, marker, child_typeinfo| {
-                match marker {
-                    TriggerFieldMarker::SelectionChanged => {
-                        result.contains_selection_changed = true;
-                    }
-                    TriggerFieldMarker::None => {
-                        result.contains_none = true;
-                    }
-                    TriggerFieldMarker::Other => {}
-                }
-                scan_trigger_event_data(decoder, child_typeinfo, result)
-            },
-        ),
-        TypeOp::Choice => decoder.visit_choice_field_from_typeinfo(
-            typeinfo,
-            &mut |field_name| {
-                Some(match field_name {
-                    "SelectionChanged" => TriggerFieldMarker::SelectionChanged,
-                    "None" => TriggerFieldMarker::None,
-                    _ => TriggerFieldMarker::Other,
-                })
-            },
-            &mut |decoder, marker, child_typeinfo| {
-                match marker {
-                    TriggerFieldMarker::SelectionChanged => {
-                        result.contains_selection_changed = true;
-                    }
-                    TriggerFieldMarker::None => {
-                        result.contains_none = true;
-                    }
-                    TriggerFieldMarker::Other => {}
-                }
-                scan_trigger_event_data(decoder, child_typeinfo, result)
-            },
-        ),
-        TypeOp::Array => decoder
-            .visit_array_elements_from_typeinfo(typeinfo, &mut |decoder, child_typeinfo| {
-                scan_trigger_event_data(decoder, child_typeinfo, result)
-            }),
-        TypeOp::Blob | TypeOp::Fourcc => {
-            if let Some(text) = decoder.string_from_typeinfo(typeinfo)? {
-                mark_trigger_text(result, &text);
+
+        match typeinfo.op() {
+            TypeOp::Null => {
+                decoder.skip_from_typeinfo(typeinfo)?;
+                Ok(())
             }
-            Ok(())
-        }
-        _ => decoder.skip_from_typeinfo(typeinfo),
-    }
-}
-
-pub(crate) fn decode_trigger_event_data_from_typeinfo<D: TypeDecoder>(
-    decoder: &mut D,
-    typeinfo: &TypeInfo,
-) -> Result<TriggerEventData, DecodeError> {
-    let mut result = TriggerEventData::default();
-    scan_trigger_event_data(decoder, typeinfo, &mut result)?;
-    Ok(result)
-}
-
-fn decode_ability_data_inner<D: TypeDecoder>(
-    decoder: &mut D,
-    typeinfo: &TypeInfo,
-    ability: &mut AbilityData,
-    found: &mut bool,
-) -> Result<(), DecodeError> {
-    match typeinfo.op() {
-        TypeOp::Null => {
-            decoder.skip_from_typeinfo(typeinfo)?;
-            Ok(())
-        }
-        TypeOp::Optional => {
-            decoder.visit_optional_child_from_typeinfo(
-                typeinfo,
-                &mut |decoder, child_typeinfo| {
-                    decode_ability_data_inner(decoder, child_typeinfo, ability, found)
-                },
-            )?;
-            Ok(())
-        }
-        TypeOp::Struct => decoder.visit_struct_fields_from_typeinfo(
-            typeinfo,
-            &mut |field_name| (field_name == "m_abilLink").then_some(()),
-            &mut |decoder, (), field_typeinfo| {
-                ability.m_abilLink = decoder
-                    .i64_from_typeinfo(field_typeinfo)?
-                    .unwrap_or_default();
-                *found = true;
+            TypeOp::Optional => {
+                decoder.visit_optional_child_from_typeinfo(
+                    typeinfo,
+                    &mut |decoder, child_typeinfo| {
+                        Self::scan_trigger_event_data(decoder, child_typeinfo, result)
+                    },
+                )?;
                 Ok(())
-            },
-        ),
-        _ => {
-            if let Some(value) = decoder.i64_from_typeinfo(typeinfo)? {
-                ability.m_abilLink = value;
-                *found = true;
             }
-            Ok(())
-        }
-    }
-}
-
-pub(crate) fn decode_ability_data_from_typeinfo<D: TypeDecoder>(
-    decoder: &mut D,
-    typeinfo: &TypeInfo,
-) -> Result<Option<AbilityData>, DecodeError> {
-    let mut ability = AbilityData::default();
-    let mut found = false;
-    decode_ability_data_inner(decoder, typeinfo, &mut ability, &mut found)?;
-    Ok(found.then_some(ability))
-}
-
-fn collect_snapshot_point_values<D: TypeDecoder>(
-    decoder: &mut D,
-    typeinfo: &TypeInfo,
-    values: &mut Vec<SnapshotPointValue>,
-) -> Result<(), DecodeError> {
-    match typeinfo.op() {
-        TypeOp::Null => {
-            decoder.skip_from_typeinfo(typeinfo)?;
-            Ok(())
-        }
-        TypeOp::Optional => {
-            decoder.visit_optional_child_from_typeinfo(
+            TypeOp::Struct => decoder.visit_struct_fields_from_typeinfo(
                 typeinfo,
-                &mut |decoder, child_typeinfo| {
-                    collect_snapshot_point_values(decoder, child_typeinfo, values)
+                &mut |field_name| {
+                    Some(match field_name {
+                        "SelectionChanged" => TriggerFieldMarker::SelectionChanged,
+                        "None" => TriggerFieldMarker::None,
+                        _ => TriggerFieldMarker::Other,
+                    })
                 },
-            )?;
-            Ok(())
-        }
-        TypeOp::Int => {
-            if let Some(value) = decoder.i64_from_typeinfo(typeinfo)? {
-                values.push(SnapshotPointValue::Int(value));
-            }
-            Ok(())
-        }
-        TypeOp::Real32 | TypeOp::Real64 => {
-            if let Some(value) = decoder.f64_from_typeinfo(typeinfo)? {
-                values.push(SnapshotPointValue::Float(value));
-            }
-            Ok(())
-        }
-        TypeOp::Struct => decoder.visit_struct_fields_from_typeinfo(
-            typeinfo,
-            &mut |_| Some(()),
-            &mut |decoder, (), field_typeinfo| {
-                collect_snapshot_point_values(decoder, field_typeinfo, values)
-            },
-        ),
-        TypeOp::Choice => decoder.visit_choice_field_from_typeinfo(
-            typeinfo,
-            &mut |_| Some(()),
-            &mut |decoder, (), field_typeinfo| {
-                collect_snapshot_point_values(decoder, field_typeinfo, values)
-            },
-        ),
-        TypeOp::Array => {
-            decoder.visit_array_elements_from_typeinfo(typeinfo, &mut |decoder, child_typeinfo| {
-                collect_snapshot_point_values(decoder, child_typeinfo, values)
-            })
-        }
-        _ => decoder.skip_from_typeinfo(typeinfo),
-    }
-}
-
-pub(crate) fn decode_snapshot_point_from_typeinfo<D: TypeDecoder>(
-    decoder: &mut D,
-    typeinfo: &TypeInfo,
-) -> Result<Option<SnapshotPoint>, DecodeError> {
-    let mut values = Vec::new();
-    collect_snapshot_point_values(decoder, typeinfo, &mut values)?;
-    if values.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(SnapshotPoint { values }))
-    }
-}
-
-fn decode_target_unit_data_inner<D: TypeDecoder>(
-    decoder: &mut D,
-    typeinfo: &TypeInfo,
-    data: &mut TargetUnitData,
-    found: &mut bool,
-) -> Result<(), DecodeError> {
-    match typeinfo.op() {
-        TypeOp::Null => {
-            decoder.skip_from_typeinfo(typeinfo)?;
-            Ok(())
-        }
-        TypeOp::Optional => {
-            decoder.visit_optional_child_from_typeinfo(
-                typeinfo,
-                &mut |decoder, child_typeinfo| {
-                    decode_target_unit_data_inner(decoder, child_typeinfo, data, found)
-                },
-            )?;
-            Ok(())
-        }
-        TypeOp::Struct => decoder.visit_struct_fields_from_typeinfo(
-            typeinfo,
-            &mut |field_name| (field_name == "m_snapshotPoint").then_some(()),
-            &mut |decoder, (), field_typeinfo| {
-                data.m_snapshotPoint =
-                    decode_snapshot_point_from_typeinfo(decoder, field_typeinfo)?;
-                *found = true;
-                Ok(())
-            },
-        ),
-        TypeOp::Choice => decoder.visit_choice_field_from_typeinfo(
-            typeinfo,
-            &mut |field_name| (field_name == "m_snapshotPoint").then_some(()),
-            &mut |decoder, (), field_typeinfo| {
-                data.m_snapshotPoint =
-                    decode_snapshot_point_from_typeinfo(decoder, field_typeinfo)?;
-                *found = true;
-                Ok(())
-            },
-        ),
-        _ => decoder.skip_from_typeinfo(typeinfo),
-    }
-}
-
-pub(crate) fn decode_target_unit_data_from_typeinfo<D: TypeDecoder>(
-    decoder: &mut D,
-    typeinfo: &TypeInfo,
-) -> Result<Option<TargetUnitData>, DecodeError> {
-    let mut data = TargetUnitData::default();
-    let mut found = false;
-    decode_target_unit_data_inner(decoder, typeinfo, &mut data, &mut found)?;
-    Ok(found.then_some(data))
-}
-
-fn decode_cmd_event_data_inner<D: TypeDecoder>(
-    decoder: &mut D,
-    typeinfo: &TypeInfo,
-    data: &mut CmdEventData,
-    found: &mut bool,
-) -> Result<(), DecodeError> {
-    match typeinfo.op() {
-        TypeOp::Null => {
-            decoder.skip_from_typeinfo(typeinfo)?;
-            Ok(())
-        }
-        TypeOp::Optional => {
-            decoder.visit_optional_child_from_typeinfo(
-                typeinfo,
-                &mut |decoder, child_typeinfo| {
-                    decode_cmd_event_data_inner(decoder, child_typeinfo, data, found)
-                },
-            )?;
-            Ok(())
-        }
-        TypeOp::Struct => decoder.visit_struct_fields_from_typeinfo(
-            typeinfo,
-            &mut |field_name| (field_name == "TargetUnit").then_some(()),
-            &mut |decoder, (), field_typeinfo| {
-                data.TargetUnit = decode_target_unit_data_from_typeinfo(decoder, field_typeinfo)?;
-                *found = true;
-                Ok(())
-            },
-        ),
-        TypeOp::Choice => decoder.visit_choice_field_from_typeinfo(
-            typeinfo,
-            &mut |field_name| (field_name == "TargetUnit").then_some(()),
-            &mut |decoder, (), field_typeinfo| {
-                data.TargetUnit = decode_target_unit_data_from_typeinfo(decoder, field_typeinfo)?;
-                *found = true;
-                Ok(())
-            },
-        ),
-        _ => decoder.skip_from_typeinfo(typeinfo),
-    }
-}
-
-pub(crate) fn decode_cmd_event_data_from_typeinfo<D: TypeDecoder>(
-    decoder: &mut D,
-    typeinfo: &TypeInfo,
-) -> Result<Option<CmdEventData>, DecodeError> {
-    let mut data = CmdEventData::default();
-    let mut found = false;
-    decode_cmd_event_data_inner(decoder, typeinfo, &mut data, &mut found)?;
-    Ok(found.then_some(data))
-}
-
-fn decode_player_stats_inner<D: TypeDecoder>(
-    decoder: &mut D,
-    typeinfo: &TypeInfo,
-    stats: &mut PlayerStatsData,
-    found: &mut bool,
-) -> Result<(), DecodeError> {
-    match typeinfo.op() {
-        TypeOp::Null => {
-            decoder.skip_from_typeinfo(typeinfo)?;
-            Ok(())
-        }
-        TypeOp::Optional => {
-            decoder.visit_optional_child_from_typeinfo(
-                typeinfo,
-                &mut |decoder, child_typeinfo| {
-                    decode_player_stats_inner(decoder, child_typeinfo, stats, found)
-                },
-            )?;
-            Ok(())
-        }
-        TypeOp::Struct => decoder.visit_struct_fields_from_typeinfo(
-            typeinfo,
-            &mut |field_name| match field_name {
-                "m_scoreValueFoodUsed" => Some(0u8),
-                "m_scoreValueMineralsCollectionRate" => Some(1u8),
-                "m_scoreValueVespeneCollectionRate" => Some(2u8),
-                _ => None,
-            },
-            &mut |decoder, field, field_typeinfo| {
-                match field {
-                    0 => {
-                        stats.m_score_value_food_used =
-                            decoder.f64_from_typeinfo(field_typeinfo)?;
+                &mut |decoder, marker, child_typeinfo| {
+                    match marker {
+                        TriggerFieldMarker::SelectionChanged => {
+                            result.contains_selection_changed = true;
+                        }
+                        TriggerFieldMarker::None => {
+                            result.contains_none = true;
+                        }
+                        TriggerFieldMarker::Other => {}
                     }
-                    1 => {
-                        stats.m_score_value_minerals_collection_rate =
-                            decoder.f64_from_typeinfo(field_typeinfo)?;
+                    Self::scan_trigger_event_data(decoder, child_typeinfo, result)
+                },
+            ),
+            TypeOp::Choice => decoder.visit_choice_field_from_typeinfo(
+                typeinfo,
+                &mut |field_name| {
+                    Some(match field_name {
+                        "SelectionChanged" => TriggerFieldMarker::SelectionChanged,
+                        "None" => TriggerFieldMarker::None,
+                        _ => TriggerFieldMarker::Other,
+                    })
+                },
+                &mut |decoder, marker, child_typeinfo| {
+                    match marker {
+                        TriggerFieldMarker::SelectionChanged => {
+                            result.contains_selection_changed = true;
+                        }
+                        TriggerFieldMarker::None => {
+                            result.contains_none = true;
+                        }
+                        TriggerFieldMarker::Other => {}
                     }
-                    2 => {
-                        stats.m_score_value_vespene_collection_rate =
-                            decoder.f64_from_typeinfo(field_typeinfo)?;
-                    }
-                    _ => unreachable!("invalid selected player stats field"),
+                    Self::scan_trigger_event_data(decoder, child_typeinfo, result)
+                },
+            ),
+            TypeOp::Array => decoder.visit_array_elements_from_typeinfo(
+                typeinfo,
+                &mut |decoder, child_typeinfo| {
+                    Self::scan_trigger_event_data(decoder, child_typeinfo, result)
+                },
+            ),
+            TypeOp::Blob | TypeOp::Fourcc => {
+                if let Some(text) = decoder.string_from_typeinfo(typeinfo)? {
+                    Self::mark_trigger_text(result, &text);
                 }
-                *found = true;
                 Ok(())
-            },
-        ),
-        TypeOp::Choice => decoder.visit_choice_field_from_typeinfo(
-            typeinfo,
-            &mut |field_name| match field_name {
-                "m_scoreValueFoodUsed" => Some(0u8),
-                "m_scoreValueMineralsCollectionRate" => Some(1u8),
-                "m_scoreValueVespeneCollectionRate" => Some(2u8),
-                _ => None,
-            },
-            &mut |decoder, field, field_typeinfo| {
-                match field {
-                    0 => {
-                        stats.m_score_value_food_used =
-                            decoder.f64_from_typeinfo(field_typeinfo)?;
-                    }
-                    1 => {
-                        stats.m_score_value_minerals_collection_rate =
-                            decoder.f64_from_typeinfo(field_typeinfo)?;
-                    }
-                    2 => {
-                        stats.m_score_value_vespene_collection_rate =
-                            decoder.f64_from_typeinfo(field_typeinfo)?;
-                    }
-                    _ => unreachable!("invalid selected player stats field"),
-                }
-                *found = true;
-                Ok(())
-            },
-        ),
-        _ => decoder.skip_from_typeinfo(typeinfo),
+            }
+            _ => decoder.skip_from_typeinfo(typeinfo),
+        }
     }
-}
 
-pub(crate) fn decode_player_stats_from_typeinfo<D: TypeDecoder>(
-    decoder: &mut D,
-    typeinfo: &TypeInfo,
-) -> Result<Option<PlayerStatsData>, DecodeError> {
-    let mut stats = PlayerStatsData::default();
-    let mut found = false;
-    decode_player_stats_inner(decoder, typeinfo, &mut stats, &mut found)?;
-    Ok(found.then_some(stats))
+    pub(crate) fn decode_trigger_event_data_from_typeinfo<D: TypeDecoder>(
+        decoder: &mut D,
+        typeinfo: &TypeInfo,
+    ) -> Result<TriggerEventData, DecodeError> {
+        let mut result = TriggerEventData::default();
+        Self::scan_trigger_event_data(decoder, typeinfo, &mut result)?;
+        Ok(result)
+    }
+
+    fn decode_ability_data_inner<D: TypeDecoder>(
+        decoder: &mut D,
+        typeinfo: &TypeInfo,
+        ability: &mut AbilityData,
+        found: &mut bool,
+    ) -> Result<(), DecodeError> {
+        match typeinfo.op() {
+            TypeOp::Null => {
+                decoder.skip_from_typeinfo(typeinfo)?;
+                Ok(())
+            }
+            TypeOp::Optional => {
+                decoder.visit_optional_child_from_typeinfo(
+                    typeinfo,
+                    &mut |decoder, child_typeinfo| {
+                        Self::decode_ability_data_inner(decoder, child_typeinfo, ability, found)
+                    },
+                )?;
+                Ok(())
+            }
+            TypeOp::Struct => decoder.visit_struct_fields_from_typeinfo(
+                typeinfo,
+                &mut |field_name| (field_name == "m_abilLink").then_some(()),
+                &mut |decoder, (), field_typeinfo| {
+                    ability.m_abilLink = decoder
+                        .i64_from_typeinfo(field_typeinfo)?
+                        .unwrap_or_default();
+                    *found = true;
+                    Ok(())
+                },
+            ),
+            _ => {
+                if let Some(value) = decoder.i64_from_typeinfo(typeinfo)? {
+                    ability.m_abilLink = value;
+                    *found = true;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    pub(crate) fn decode_ability_data_from_typeinfo<D: TypeDecoder>(
+        decoder: &mut D,
+        typeinfo: &TypeInfo,
+    ) -> Result<Option<AbilityData>, DecodeError> {
+        let mut ability = AbilityData::default();
+        let mut found = false;
+        Self::decode_ability_data_inner(decoder, typeinfo, &mut ability, &mut found)?;
+        Ok(found.then_some(ability))
+    }
+
+    fn collect_snapshot_point_values<D: TypeDecoder>(
+        decoder: &mut D,
+        typeinfo: &TypeInfo,
+        values: &mut Vec<SnapshotPointValue>,
+    ) -> Result<(), DecodeError> {
+        match typeinfo.op() {
+            TypeOp::Null => {
+                decoder.skip_from_typeinfo(typeinfo)?;
+                Ok(())
+            }
+            TypeOp::Optional => {
+                decoder.visit_optional_child_from_typeinfo(
+                    typeinfo,
+                    &mut |decoder, child_typeinfo| {
+                        Self::collect_snapshot_point_values(decoder, child_typeinfo, values)
+                    },
+                )?;
+                Ok(())
+            }
+            TypeOp::Int => {
+                if let Some(value) = decoder.i64_from_typeinfo(typeinfo)? {
+                    values.push(SnapshotPointValue::Int(value));
+                }
+                Ok(())
+            }
+            TypeOp::Real32 | TypeOp::Real64 => {
+                if let Some(value) = decoder.f64_from_typeinfo(typeinfo)? {
+                    values.push(SnapshotPointValue::Float(value));
+                }
+                Ok(())
+            }
+            TypeOp::Struct => decoder.visit_struct_fields_from_typeinfo(
+                typeinfo,
+                &mut |_| Some(()),
+                &mut |decoder, (), field_typeinfo| {
+                    Self::collect_snapshot_point_values(decoder, field_typeinfo, values)
+                },
+            ),
+            TypeOp::Choice => decoder.visit_choice_field_from_typeinfo(
+                typeinfo,
+                &mut |_| Some(()),
+                &mut |decoder, (), field_typeinfo| {
+                    Self::collect_snapshot_point_values(decoder, field_typeinfo, values)
+                },
+            ),
+            TypeOp::Array => decoder.visit_array_elements_from_typeinfo(
+                typeinfo,
+                &mut |decoder, child_typeinfo| {
+                    Self::collect_snapshot_point_values(decoder, child_typeinfo, values)
+                },
+            ),
+            _ => decoder.skip_from_typeinfo(typeinfo),
+        }
+    }
+
+    pub(crate) fn decode_snapshot_point_from_typeinfo<D: TypeDecoder>(
+        decoder: &mut D,
+        typeinfo: &TypeInfo,
+    ) -> Result<Option<SnapshotPoint>, DecodeError> {
+        let mut values = Vec::new();
+        Self::collect_snapshot_point_values(decoder, typeinfo, &mut values)?;
+        if values.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(SnapshotPoint { values }))
+        }
+    }
+
+    fn decode_target_unit_data_inner<D: TypeDecoder>(
+        decoder: &mut D,
+        typeinfo: &TypeInfo,
+        data: &mut TargetUnitData,
+        found: &mut bool,
+    ) -> Result<(), DecodeError> {
+        match typeinfo.op() {
+            TypeOp::Null => {
+                decoder.skip_from_typeinfo(typeinfo)?;
+                Ok(())
+            }
+            TypeOp::Optional => {
+                decoder.visit_optional_child_from_typeinfo(
+                    typeinfo,
+                    &mut |decoder, child_typeinfo| {
+                        Self::decode_target_unit_data_inner(decoder, child_typeinfo, data, found)
+                    },
+                )?;
+                Ok(())
+            }
+            TypeOp::Struct => decoder.visit_struct_fields_from_typeinfo(
+                typeinfo,
+                &mut |field_name| (field_name == "m_snapshotPoint").then_some(()),
+                &mut |decoder, (), field_typeinfo| {
+                    data.m_snapshotPoint =
+                        Self::decode_snapshot_point_from_typeinfo(decoder, field_typeinfo)?;
+                    *found = true;
+                    Ok(())
+                },
+            ),
+            TypeOp::Choice => decoder.visit_choice_field_from_typeinfo(
+                typeinfo,
+                &mut |field_name| (field_name == "m_snapshotPoint").then_some(()),
+                &mut |decoder, (), field_typeinfo| {
+                    data.m_snapshotPoint =
+                        Self::decode_snapshot_point_from_typeinfo(decoder, field_typeinfo)?;
+                    *found = true;
+                    Ok(())
+                },
+            ),
+            _ => decoder.skip_from_typeinfo(typeinfo),
+        }
+    }
+
+    pub(crate) fn decode_target_unit_data_from_typeinfo<D: TypeDecoder>(
+        decoder: &mut D,
+        typeinfo: &TypeInfo,
+    ) -> Result<Option<TargetUnitData>, DecodeError> {
+        let mut data = TargetUnitData::default();
+        let mut found = false;
+        Self::decode_target_unit_data_inner(decoder, typeinfo, &mut data, &mut found)?;
+        Ok(found.then_some(data))
+    }
+
+    fn decode_cmd_event_data_inner<D: TypeDecoder>(
+        decoder: &mut D,
+        typeinfo: &TypeInfo,
+        data: &mut CmdEventData,
+        found: &mut bool,
+    ) -> Result<(), DecodeError> {
+        match typeinfo.op() {
+            TypeOp::Null => {
+                decoder.skip_from_typeinfo(typeinfo)?;
+                Ok(())
+            }
+            TypeOp::Optional => {
+                decoder.visit_optional_child_from_typeinfo(
+                    typeinfo,
+                    &mut |decoder, child_typeinfo| {
+                        Self::decode_cmd_event_data_inner(decoder, child_typeinfo, data, found)
+                    },
+                )?;
+                Ok(())
+            }
+            TypeOp::Struct => decoder.visit_struct_fields_from_typeinfo(
+                typeinfo,
+                &mut |field_name| (field_name == "TargetUnit").then_some(()),
+                &mut |decoder, (), field_typeinfo| {
+                    data.TargetUnit =
+                        Self::decode_target_unit_data_from_typeinfo(decoder, field_typeinfo)?;
+                    *found = true;
+                    Ok(())
+                },
+            ),
+            TypeOp::Choice => decoder.visit_choice_field_from_typeinfo(
+                typeinfo,
+                &mut |field_name| (field_name == "TargetUnit").then_some(()),
+                &mut |decoder, (), field_typeinfo| {
+                    data.TargetUnit =
+                        Self::decode_target_unit_data_from_typeinfo(decoder, field_typeinfo)?;
+                    *found = true;
+                    Ok(())
+                },
+            ),
+            _ => decoder.skip_from_typeinfo(typeinfo),
+        }
+    }
+
+    pub(crate) fn decode_cmd_event_data_from_typeinfo<D: TypeDecoder>(
+        decoder: &mut D,
+        typeinfo: &TypeInfo,
+    ) -> Result<Option<CmdEventData>, DecodeError> {
+        let mut data = CmdEventData::default();
+        let mut found = false;
+        Self::decode_cmd_event_data_inner(decoder, typeinfo, &mut data, &mut found)?;
+        Ok(found.then_some(data))
+    }
+
+    fn decode_player_stats_inner<D: TypeDecoder>(
+        decoder: &mut D,
+        typeinfo: &TypeInfo,
+        stats: &mut PlayerStatsData,
+        found: &mut bool,
+    ) -> Result<(), DecodeError> {
+        match typeinfo.op() {
+            TypeOp::Null => {
+                decoder.skip_from_typeinfo(typeinfo)?;
+                Ok(())
+            }
+            TypeOp::Optional => {
+                decoder.visit_optional_child_from_typeinfo(
+                    typeinfo,
+                    &mut |decoder, child_typeinfo| {
+                        Self::decode_player_stats_inner(decoder, child_typeinfo, stats, found)
+                    },
+                )?;
+                Ok(())
+            }
+            TypeOp::Struct => decoder.visit_struct_fields_from_typeinfo(
+                typeinfo,
+                &mut |field_name| match field_name {
+                    "m_scoreValueFoodUsed" => Some(0u8),
+                    "m_scoreValueMineralsCollectionRate" => Some(1u8),
+                    "m_scoreValueVespeneCollectionRate" => Some(2u8),
+                    _ => None,
+                },
+                &mut |decoder, field, field_typeinfo| {
+                    match field {
+                        0 => {
+                            stats.m_score_value_food_used =
+                                decoder.f64_from_typeinfo(field_typeinfo)?;
+                        }
+                        1 => {
+                            stats.m_score_value_minerals_collection_rate =
+                                decoder.f64_from_typeinfo(field_typeinfo)?;
+                        }
+                        2 => {
+                            stats.m_score_value_vespene_collection_rate =
+                                decoder.f64_from_typeinfo(field_typeinfo)?;
+                        }
+                        _ => unreachable!("invalid selected player stats field"),
+                    }
+                    *found = true;
+                    Ok(())
+                },
+            ),
+            TypeOp::Choice => decoder.visit_choice_field_from_typeinfo(
+                typeinfo,
+                &mut |field_name| match field_name {
+                    "m_scoreValueFoodUsed" => Some(0u8),
+                    "m_scoreValueMineralsCollectionRate" => Some(1u8),
+                    "m_scoreValueVespeneCollectionRate" => Some(2u8),
+                    _ => None,
+                },
+                &mut |decoder, field, field_typeinfo| {
+                    match field {
+                        0 => {
+                            stats.m_score_value_food_used =
+                                decoder.f64_from_typeinfo(field_typeinfo)?;
+                        }
+                        1 => {
+                            stats.m_score_value_minerals_collection_rate =
+                                decoder.f64_from_typeinfo(field_typeinfo)?;
+                        }
+                        2 => {
+                            stats.m_score_value_vespene_collection_rate =
+                                decoder.f64_from_typeinfo(field_typeinfo)?;
+                        }
+                        _ => unreachable!("invalid selected player stats field"),
+                    }
+                    *found = true;
+                    Ok(())
+                },
+            ),
+            _ => decoder.skip_from_typeinfo(typeinfo),
+        }
+    }
+
+    pub(crate) fn decode_player_stats_from_typeinfo<D: TypeDecoder>(
+        decoder: &mut D,
+        typeinfo: &TypeInfo,
+    ) -> Result<Option<PlayerStatsData>, DecodeError> {
+        let mut stats = PlayerStatsData::default();
+        let mut found = false;
+        Self::decode_player_stats_inner(decoder, typeinfo, &mut stats, &mut found)?;
+        Ok(found.then_some(stats))
+    }
 }
 
 impl<'a> BitPackedDecoder<'a> {
@@ -1549,7 +1580,8 @@ impl<'a> BitPackedDecoder<'a> {
     fn array(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
         let length = self.int(typeinfo.length_bounds()?)? as usize;
         let typeinfos = Arc::clone(&self.typeinfos);
-        let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
+        let child_typeinfo =
+            EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
 
         let mut values = Vec::with_capacity(length);
         for _ in 0..length {
@@ -1602,7 +1634,8 @@ impl<'a> BitPackedDecoder<'a> {
         let fields = typeinfo.struct_fields()?;
         let typeinfos = Arc::clone(&self.typeinfos);
         for field in fields {
-            let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+            let child_typeinfo =
+                EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
             if field.is_parent() {
                 let parent_typeinfo = child_typeinfo;
                 if parent_typeinfo.op() == TypeOp::Struct {
@@ -1660,7 +1693,8 @@ impl<'a> BitPackedDecoder<'a> {
             .get(&tag)
             .ok_or_else(|| DecodeError::Corrupted(format!("invalid choice tag {tag}")))?;
         let typeinfos = Arc::clone(&self.typeinfos);
-        let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+        let child_typeinfo =
+            EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
         if let Some(selected_field) = select_field(field.name()) {
             on_field(self, selected_field, child_typeinfo)?;
         } else {
@@ -1687,7 +1721,8 @@ impl<'a> BitPackedDecoder<'a> {
 
         let length = self.int(typeinfo.length_bounds()?)? as usize;
         let typeinfos = Arc::clone(&self.typeinfos);
-        let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
+        let child_typeinfo =
+            EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
         for _ in 0..length {
             on_element(self, child_typeinfo)?;
         }
@@ -1716,7 +1751,8 @@ impl<'a> BitPackedDecoder<'a> {
         }
 
         let typeinfos = Arc::clone(&self.typeinfos);
-        let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
+        let child_typeinfo =
+            EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
         on_child(self, child_typeinfo)?;
         Ok(true)
     }
@@ -1772,7 +1808,8 @@ impl<'a> BitPackedDecoder<'a> {
                 let length = self.int(typeinfo.length_bounds()?)? as usize;
                 let typeid = typeinfo.child_typeid()?;
                 let typeinfos = Arc::clone(&self.typeinfos);
-                let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
+                let child_typeinfo =
+                    EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), typeid)?;
                 for _ in 0..length {
                     self.skip_from_typeinfo(child_typeinfo)?;
                 }
@@ -1798,7 +1835,8 @@ impl<'a> BitPackedDecoder<'a> {
                     .get(&tag)
                     .ok_or_else(|| DecodeError::Corrupted(format!("invalid choice tag {tag}")))?;
                 let typeinfos = Arc::clone(&self.typeinfos);
-                let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+                let child_typeinfo =
+                    EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
                 self.skip_from_typeinfo(child_typeinfo)
             }
             TypeOp::Fourcc => {
@@ -1818,7 +1856,8 @@ impl<'a> BitPackedDecoder<'a> {
 
                 let typeid = typeinfo.child_typeid()?;
                 let typeinfos = Arc::clone(&self.typeinfos);
-                let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
+                let child_typeinfo =
+                    EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), typeid)?;
                 self.skip_from_typeinfo(child_typeinfo)
             }
             TypeOp::Real32 => {
@@ -1833,7 +1872,8 @@ impl<'a> BitPackedDecoder<'a> {
                 let fields = typeinfo.struct_fields()?;
                 for field in fields {
                     let typeinfos = Arc::clone(&self.typeinfos);
-                    let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+                    let child_typeinfo =
+                        EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
                     self.skip_from_typeinfo(child_typeinfo)?;
                 }
                 Ok(())
@@ -1849,7 +1889,8 @@ impl<'a> BitPackedDecoder<'a> {
             .ok_or_else(|| DecodeError::Corrupted(format!("invalid choice tag {tag}")))?;
 
         let typeinfos = Arc::clone(&self.typeinfos);
-        let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+        let child_typeinfo =
+            EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
         let value = self.instance_from_typeinfo(child_typeinfo)?;
         let mut object = BTreeMap::new();
         object.insert(field.name().to_string(), value);
@@ -1865,7 +1906,8 @@ impl<'a> BitPackedDecoder<'a> {
         let exists = self.optional_exists()?;
         if exists {
             let typeinfos = Arc::clone(&self.typeinfos);
-            let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
+            let child_typeinfo =
+                EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
             self.instance_from_typeinfo(child_typeinfo)
         } else {
             Ok(Value::Null)
@@ -1896,7 +1938,8 @@ impl<'a> BitPackedDecoder<'a> {
         let mut map = BTreeMap::new();
         for field in fields {
             if field.is_parent() {
-                let parent_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+                let parent_typeinfo =
+                    EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
                 if parent_typeinfo.op() == TypeOp::Struct {
                     let parent_map = self.object(parent_typeinfo)?;
                     if fields.len() == 1 {
@@ -1930,7 +1973,8 @@ impl<'a> BitPackedDecoder<'a> {
                     }
                 }
             } else {
-                let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+                let child_typeinfo =
+                    EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
                 map.insert(
                     field.name().to_string(),
                     self.instance_from_typeinfo(child_typeinfo)?,
@@ -2003,7 +2047,8 @@ impl TypeDecoder for BitPackedDecoder<'_> {
                     .get(&tag)
                     .ok_or_else(|| DecodeError::Corrupted(format!("invalid choice tag {tag}")))?;
                 let typeinfos = Arc::clone(&self.typeinfos);
-                let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+                let child_typeinfo =
+                    EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
                 self.integer_from_typeinfo(child_typeinfo)
             }
             _ => Err(DecodeError::Corrupted(format!(
@@ -2025,7 +2070,8 @@ impl TypeDecoder for BitPackedDecoder<'_> {
 
                 let typeid = typeinfo.child_typeid()?;
                 let typeinfos = Arc::clone(&self.typeinfos);
-                let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
+                let child_typeinfo =
+                    EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), typeid)?;
                 self.i64_from_typeinfo(child_typeinfo)
             }
             TypeOp::Real32 => Ok(self.real32()?.as_f64().map(|value| value as i64)),
@@ -2045,7 +2091,8 @@ impl TypeDecoder for BitPackedDecoder<'_> {
 
                 let typeid = typeinfo.child_typeid()?;
                 let typeinfos = Arc::clone(&self.typeinfos);
-                let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
+                let child_typeinfo =
+                    EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), typeid)?;
                 self.f64_from_typeinfo(child_typeinfo)
             }
             TypeOp::Real32 => Ok(self.real32()?.as_f64()),
@@ -2065,7 +2112,8 @@ impl TypeDecoder for BitPackedDecoder<'_> {
 
                 let typeid = typeinfo.child_typeid()?;
                 let typeinfos = Arc::clone(&self.typeinfos);
-                let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
+                let child_typeinfo =
+                    EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), typeid)?;
                 self.string_from_typeinfo(child_typeinfo)
             }
             TypeOp::Blob => {
@@ -2299,7 +2347,8 @@ impl<'a> VersionedDecoder<'a> {
         self.expect_skip(0)?;
         let length = self.vint()? as usize;
         let typeinfos = Arc::clone(&self.typeinfos);
-        let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
+        let child_typeinfo =
+            EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
 
         let mut values = Vec::with_capacity(length);
         for _ in 0..length {
@@ -2349,7 +2398,8 @@ impl<'a> VersionedDecoder<'a> {
         let tag = self.vint()?;
         if let Some(field) = typeinfo.choice_fields()?.get(&tag) {
             let typeinfos = Arc::clone(&self.typeinfos);
-            let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+            let child_typeinfo =
+                EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
             let value = self.instance_from_typeinfo(child_typeinfo)?;
             let mut object = BTreeMap::new();
             object.insert(field.name().to_string(), value);
@@ -2378,7 +2428,8 @@ impl<'a> VersionedDecoder<'a> {
         }
 
         let typeinfos = Arc::clone(&self.typeinfos);
-        let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
+        let child_typeinfo =
+            EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
         self.instance_from_typeinfo(child_typeinfo)
     }
 
@@ -2430,7 +2481,8 @@ impl<'a> VersionedDecoder<'a> {
             };
 
             if field.is_parent() {
-                let parent_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+                let parent_typeinfo =
+                    EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
                 if parent_typeinfo.op() == TypeOp::Struct {
                     self.visit_struct_fields(parent_typeinfo, select_field, on_field)?;
                     continue;
@@ -2450,7 +2502,8 @@ impl<'a> VersionedDecoder<'a> {
                     self.skip_instance()?;
                 }
             } else {
-                let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+                let child_typeinfo =
+                    EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
                 if let Some(selected_field) = select_field(field.name()) {
                     on_field(self, selected_field, child_typeinfo)?;
                 } else {
@@ -2488,7 +2541,8 @@ impl<'a> VersionedDecoder<'a> {
             return Ok(());
         };
         let typeinfos = Arc::clone(&self.typeinfos);
-        let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+        let child_typeinfo =
+            EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
         if let Some(selected_field) = select_field(field.name()) {
             on_field(self, selected_field, child_typeinfo)?;
         } else {
@@ -2516,7 +2570,8 @@ impl<'a> VersionedDecoder<'a> {
         self.expect_skip(0)?;
         let length = self.vint()? as usize;
         let typeinfos = Arc::clone(&self.typeinfos);
-        let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
+        let child_typeinfo =
+            EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
         for _ in 0..length {
             on_element(self, child_typeinfo)?;
         }
@@ -2546,7 +2601,8 @@ impl<'a> VersionedDecoder<'a> {
         }
 
         let typeinfos = Arc::clone(&self.typeinfos);
-        let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
+        let child_typeinfo =
+            EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), typeinfo.child_typeid()?)?;
         on_child(self, child_typeinfo)?;
         Ok(true)
     }
@@ -2613,7 +2669,8 @@ impl<'a> VersionedDecoder<'a> {
             };
 
             if field.is_parent() {
-                let parent_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+                let parent_typeinfo =
+                    EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
                 if parent_typeinfo.op() == TypeOp::Struct {
                     let parent_map = self.object(parent_typeinfo)?;
                     if fields.len() == 1 {
@@ -2647,7 +2704,8 @@ impl<'a> VersionedDecoder<'a> {
                     }
                 }
             } else {
-                let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+                let child_typeinfo =
+                    EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
                 result.insert(
                     field.name().to_string(),
                     self.instance_from_typeinfo(child_typeinfo)?,
@@ -2762,7 +2820,8 @@ impl TypeDecoder for VersionedDecoder<'_> {
                     .get(&tag)
                     .ok_or_else(|| DecodeError::Corrupted(format!("invalid choice tag {tag}")))?;
                 let typeinfos = Arc::clone(&self.typeinfos);
-                let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
+                let child_typeinfo =
+                    EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), field.typeid())?;
                 self.integer_from_typeinfo(child_typeinfo)
             }
             _ => Err(DecodeError::Corrupted(format!(
@@ -2785,7 +2844,8 @@ impl TypeDecoder for VersionedDecoder<'_> {
 
                 let typeid = typeinfo.child_typeid()?;
                 let typeinfos = Arc::clone(&self.typeinfos);
-                let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
+                let child_typeinfo =
+                    EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), typeid)?;
                 self.i64_from_typeinfo(child_typeinfo)
             }
             TypeOp::Real32 => Ok(self.real32()?.as_f64().map(|value| value as i64)),
@@ -2806,7 +2866,8 @@ impl TypeDecoder for VersionedDecoder<'_> {
 
                 let typeid = typeinfo.child_typeid()?;
                 let typeinfos = Arc::clone(&self.typeinfos);
-                let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
+                let child_typeinfo =
+                    EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), typeid)?;
                 self.f64_from_typeinfo(child_typeinfo)
             }
             TypeOp::Real32 => Ok(self.real32()?.as_f64()),
@@ -2827,7 +2888,8 @@ impl TypeDecoder for VersionedDecoder<'_> {
 
                 let typeid = typeinfo.child_typeid()?;
                 let typeinfos = Arc::clone(&self.typeinfos);
-                let child_typeinfo = lookup_typeinfo(typeinfos.as_ref(), typeid)?;
+                let child_typeinfo =
+                    EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), typeid)?;
                 self.string_from_typeinfo(child_typeinfo)
             }
             TypeOp::Blob => {
@@ -2965,22 +3027,26 @@ impl HeaderIntegerDecoder for VersionedDecoder<'_> {
     }
 }
 
-fn decode_event_stream<'a, D, T>(
-    decoder: D,
-    event_typeinfos: &'a [Option<EventTypeInfo<T::Field>>],
-    header: &'a EventHeaderDecodePlan,
-) -> Result<Vec<T>, DecodeError>
-where
-    D: TypeDecoder + HeaderIntegerDecoder,
-    T: DirectEventDecode,
-{
-    let mut reader = EventStreamReader::<_, T>::new(decoder, event_typeinfos, header);
-    let mut events = Vec::new();
-    while let Some(event) = reader.next_event()? {
-        events.push(event);
-    }
+struct EventStreamDecoder;
 
-    Ok(events)
+impl EventStreamDecoder {
+    fn decode<'a, D, T>(
+        decoder: D,
+        event_typeinfos: &'a [Option<EventTypeInfo<T::Field>>],
+        header: &'a EventHeaderDecodePlan,
+    ) -> Result<Vec<T>, DecodeError>
+    where
+        D: TypeDecoder + HeaderIntegerDecoder,
+        T: DirectEventDecode,
+    {
+        let mut reader = EventStreamReader::<_, T>::new(decoder, event_typeinfos, header);
+        let mut events = Vec::new();
+        while let Some(event) = reader.next_event()? {
+            events.push(event);
+        }
+
+        Ok(events)
+    }
 }
 
 struct EventStreamReader<'a, D, T>
@@ -3042,7 +3108,7 @@ where
                     self.header
                         .replay_userid_typeinfo
                         .as_ref()
-                        .map(|typeinfo| decode_event_user_id(&mut self.decoder, typeinfo))
+                        .map(|typeinfo| EventUserIdDecoder::decode(&mut self.decoder, typeinfo))
                         .transpose()?
                         .flatten()
                 } else {

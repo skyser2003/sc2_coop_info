@@ -1,7 +1,7 @@
 #![cfg(not(windows))]
 
 use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
-use sco_tauri_overlay::test_helper::{canonicalize_map_id, test_replay_path};
+use sco_tauri_overlay::test_helper::TestHelperOps;
 use sco_tauri_overlay::{BackendState, ReplayInfo, ReplayPlayerInfo, StatsState};
 use serde_json::json;
 use serde_json::Value;
@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 #[test]
 fn sync_replay_cache_slots_uses_cached_entries_and_sets_selected_file() {
-    let replay_path = test_replay_path("example.SC2Replay");
+    let replay_path = TestHelperOps::test_replay_path("example.SC2Replay");
     let state = BackendState::new();
     {
         let replay_state = state.get_replay_state();
@@ -41,8 +41,9 @@ fn sync_replay_cache_slots_uses_cached_entries_and_sets_selected_file() {
 fn sync_detailed_analysis_status_from_replays_reports_cached_progress() {
     let mut stats = StatsState::default();
     let mut detailed_replay = ReplayInfo::default();
-    detailed_replay.set_file(test_replay_path("detailed.SC2Replay"));
-    detailed_replay.set_map(canonicalize_map_id("Void Launch").expect("map id should resolve"));
+    detailed_replay.set_file(TestHelperOps::test_replay_path("detailed.SC2Replay"));
+    detailed_replay
+        .set_map(TestHelperOps::canonicalize_map_id("Void Launch").expect("map id should resolve"));
     detailed_replay.set_result("Victory");
     detailed_replay.set_player_stats(
         vec![
@@ -54,8 +55,9 @@ fn sync_detailed_analysis_status_from_replays_reports_cached_progress() {
         0,
     );
     let mut simple_replay = ReplayInfo::default();
-    simple_replay.set_file(test_replay_path("simple.SC2Replay"));
-    simple_replay.set_map(canonicalize_map_id("Void Launch").expect("map id should resolve"));
+    simple_replay.set_file(TestHelperOps::test_replay_path("simple.SC2Replay"));
+    simple_replay
+        .set_map(TestHelperOps::canonicalize_map_id("Void Launch").expect("map id should resolve"));
     simple_replay.set_result("Victory");
 
     stats.sync_detailed_analysis_status_from_replays(&[detailed_replay, simple_replay]);
@@ -75,7 +77,7 @@ fn should_include_detailed_stats_response_uses_cached_detailed_replays() {
         }
     });
     let mut cached_replay = ReplayInfo::default();
-    cached_replay.set_file(test_replay_path("cached_detailed.SC2Replay"));
+    cached_replay.set_file(TestHelperOps::test_replay_path("cached_detailed.SC2Replay"));
     cached_replay.set_player_stats(
         vec![
             ReplayPlayerInfo::default().with_units(json!({

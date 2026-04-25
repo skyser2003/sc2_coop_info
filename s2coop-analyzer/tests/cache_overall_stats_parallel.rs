@@ -2,7 +2,7 @@ mod common;
 
 use s2coop_analyzer::cache_overall_stats_generator::CacheReplayEntry;
 use s2coop_analyzer::detailed_replay_analysis::{
-    analyze_full_detailed, GenerateCacheConfig, GenerateCacheRuntimeOptions,
+    DetailedReplayAnalyzer, GenerateCacheConfig, GenerateCacheRuntimeOptions,
 };
 use std::fs;
 use std::path::Path;
@@ -38,11 +38,13 @@ fn generate_cache_parallel_runs_are_deterministic() {
 
     let runtime = GenerateCacheRuntimeOptions::default();
     let first_config = GenerateCacheConfig::new(account_dir.clone(), first_output.clone());
-    let first_summary = analyze_full_detailed(&first_config, &resources, None, &runtime)
-        .expect("first cache generation should succeed");
+    let first_summary =
+        DetailedReplayAnalyzer::analyze_full_detailed(&first_config, &resources, None, &runtime)
+            .expect("first cache generation should succeed");
     let second_config = GenerateCacheConfig::new(account_dir, second_output.clone());
-    let second_summary = analyze_full_detailed(&second_config, &resources, None, &runtime)
-        .expect("second cache generation should succeed");
+    let second_summary =
+        DetailedReplayAnalyzer::analyze_full_detailed(&second_config, &resources, None, &runtime)
+            .expect("second cache generation should succeed");
 
     assert_eq!(first_summary.scanned_replays(), 0);
     assert_eq!(second_summary.scanned_replays(), 0);

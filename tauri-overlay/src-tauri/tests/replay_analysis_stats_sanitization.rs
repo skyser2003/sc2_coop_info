@@ -1,7 +1,5 @@
 use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
-use sco_tauri_overlay::test_helper::{
-    canonicalize_map_id, rebuild_analysis_payload, rebuild_weeklies_rows,
-};
+use sco_tauri_overlay::test_helper::TestHelperOps;
 use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo};
 use serde_json::{json, Value};
 
@@ -29,7 +27,8 @@ fn sanitized_stats_replay() -> ReplayInfo {
     );
     replay.set_file("fixtures/replays/example.SC2Replay");
     replay.set_date(1_741_510_400);
-    replay.set_map(canonicalize_map_id("Void Launch").expect("map id should resolve"));
+    replay
+        .set_map(TestHelperOps::canonicalize_map_id("Void Launch").expect("map id should resolve"));
     replay.set_result("Victory");
     replay.set_difficulty("<b>Brutal</b>");
     replay.set_enemy("<span>Zerg</span>");
@@ -43,7 +42,7 @@ fn sanitized_stats_replay() -> ReplayInfo {
 fn rebuild_analysis_payload_sanitizes_output_without_full_replay_clone() {
     let replay = sanitized_stats_replay();
 
-    let payload = rebuild_analysis_payload(&[replay], false);
+    let payload = TestHelperOps::rebuild_analysis_payload(&[replay], false);
     let analysis = payload
         .get("analysis")
         .and_then(Value::as_object)
@@ -91,7 +90,7 @@ fn rebuild_player_rows_fast_sanitizes_fields_without_full_replay_clone() {
 fn rebuild_weeklies_rows_sanitizes_fields_without_full_replay_clone() {
     let replay = sanitized_stats_replay();
 
-    let rows = rebuild_weeklies_rows(&[replay]);
+    let rows = TestHelperOps::rebuild_weeklies_rows(&[replay]);
     let row = rows
         .iter()
         .find(|row| row.mutation == "Mutation #1")

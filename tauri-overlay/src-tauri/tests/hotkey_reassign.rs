@@ -4,15 +4,15 @@ use serde_json::json;
 #[test]
 fn normalize_hotkey_accepts_shifted_symbol_variants() {
     assert_eq!(
-        overlay_info::normalize_hotkey("Ctrl+Shift+&"),
+        overlay_info::OverlayInfoOps::normalize_hotkey("Ctrl+Shift+&"),
         Some("control+shift+7".to_string())
     );
     assert_eq!(
-        overlay_info::normalize_hotkey("Meta+P"),
+        overlay_info::OverlayInfoOps::normalize_hotkey("Meta+P"),
         Some("super+p".to_string())
     );
     assert_eq!(
-        overlay_info::normalize_hotkey("Ctrl+Shift+?"),
+        overlay_info::OverlayInfoOps::normalize_hotkey("Ctrl+Shift+?"),
         Some("control+shift+/".to_string())
     );
 }

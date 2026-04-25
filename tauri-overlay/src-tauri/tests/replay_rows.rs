@@ -1,4 +1,4 @@
-use sco_tauri_overlay::test_helper::test_replay_path;
+use sco_tauri_overlay::test_helper::TestHelperOps;
 use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo};
 use serde_json::json;
 use std::collections::HashSet;
@@ -16,7 +16,7 @@ fn games_rows_keep_true_slot_order_when_main_player_is_slot_two() {
             .with_commander("Abathur"),
         0,
     );
-    replay.set_file(test_replay_path("example.SC2Replay"));
+    replay.set_file(TestHelperOps::test_replay_path("example.SC2Replay"));
     let main_names = HashSet::new();
     let main_handles = HashSet::from(["1-s2-1-222".to_string()]);
 

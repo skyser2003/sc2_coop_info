@@ -1,9 +1,9 @@
 use crate::cache_overall_stats_detailed_analysis::{
-    run_test_cache_overall_stats_detailed_analysis, TestCacheOverallStatsDetailedAnalysisArgs,
+    CacheOverallStatsDetailedAnalysis, TestCacheOverallStatsDetailedAnalysisArgs,
     TestCacheOverallStatsDetailedAnalysisError,
 };
 use crate::detailed_replay_analysis::{
-    analyze_full_detailed, GenerateCacheConfig, GenerateCacheError, GenerateCacheRuntimeOptions,
+    DetailedReplayAnalyzer, GenerateCacheConfig, GenerateCacheError, GenerateCacheRuntimeOptions,
     ReplayAnalysisResources,
 };
 use crate::dictionary_data::Sc2DictionaryData;
@@ -51,202 +51,212 @@ pub enum CliRunError {
     TestCacheOverallStatsDetailedAnalysis(#[from] TestCacheOverallStatsDetailedAnalysisError),
 }
 
-pub fn parse_cli_args(raw_args: &[String]) -> Result<Command, CliParseError> {
-    if raw_args.len() <= 1 {
-        return Ok(Command::Help);
-    }
+pub struct AnalyzerCli;
 
-    let command = raw_args[1].as_str();
-    match command {
-        "-h" | "--help" | "help" => Ok(Command::Help),
-        "generate-cache" => parse_generate_cache_args(&raw_args[2..]).map(Command::GenerateCache),
-        "test-cache-overall-stats-detailed-analysis" => {
-            parse_test_cache_overall_stats_detailed_analysis_args(&raw_args[2..])
-                .map(Command::TestCacheOverallStatsDetailedAnalysis)
+impl AnalyzerCli {
+    pub fn parse_args(raw_args: &[String]) -> Result<Command, CliParseError> {
+        if raw_args.len() <= 1 {
+            return Ok(Command::Help);
         }
-        other => Err(CliParseError::UnsupportedCommand(other.to_string())),
+
+        let command = raw_args[1].as_str();
+        match command {
+            "-h" | "--help" | "help" => Ok(Command::Help),
+            "generate-cache" => {
+                Self::parse_generate_cache_args(&raw_args[2..]).map(Command::GenerateCache)
+            }
+            "test-cache-overall-stats-detailed-analysis" => {
+                Self::parse_test_cache_overall_stats_detailed_analysis_args(&raw_args[2..])
+                    .map(Command::TestCacheOverallStatsDetailedAnalysis)
+            }
+            other => Err(CliParseError::UnsupportedCommand(other.to_string())),
+        }
     }
-}
 
-fn parse_generate_cache_args(args: &[String]) -> Result<GenerateCacheArgs, CliParseError> {
-    let mut account_dir: Option<PathBuf> = None;
-    let mut output_file: Option<PathBuf> = None;
-    let mut recent_replay_count: Option<usize> = None;
+    fn parse_generate_cache_args(args: &[String]) -> Result<GenerateCacheArgs, CliParseError> {
+        let mut account_dir: Option<PathBuf> = None;
+        let mut output_file: Option<PathBuf> = None;
+        let mut recent_replay_count: Option<usize> = None;
 
-    let mut index = 0_usize;
-    while index < args.len() {
-        let flag = args[index].as_str();
-        match flag {
-            "-h" | "--help" => {
-                return Ok(GenerateCacheArgs {
-                    account_dir: PathBuf::new(),
-                    output_file: PathBuf::new(),
-                    recent_replay_count: None,
-                });
-            }
-            "--account-dir" => {
-                let Some(value) = args.get(index + 1) else {
-                    return Err(CliParseError::MissingArgumentValue(flag.to_string()));
-                };
-                account_dir = Some(PathBuf::from(value));
-                index += 2;
-            }
-            "--output" => {
-                let Some(value) = args.get(index + 1) else {
-                    return Err(CliParseError::MissingArgumentValue(flag.to_string()));
-                };
-                output_file = Some(PathBuf::from(value));
-                index += 2;
-            }
-            "--recent-files" => {
-                let Some(value) = args.get(index + 1) else {
-                    return Err(CliParseError::MissingArgumentValue(flag.to_string()));
-                };
-                let parsed = value.parse::<usize>().map_err(|error| {
-                    CliParseError::InvalidArgumentValue(
-                        flag.to_string(),
-                        format!("expected a positive integer, got '{value}': {error}"),
-                    )
-                })?;
-                if parsed == 0 {
-                    return Err(CliParseError::InvalidArgumentValue(
-                        flag.to_string(),
-                        "expected a positive integer greater than zero".to_string(),
+        let mut index = 0_usize;
+        while index < args.len() {
+            let flag = args[index].as_str();
+            match flag {
+                "-h" | "--help" => {
+                    return Ok(GenerateCacheArgs {
+                        account_dir: PathBuf::new(),
+                        output_file: PathBuf::new(),
+                        recent_replay_count: None,
+                    });
+                }
+                "--account-dir" => {
+                    let Some(value) = args.get(index + 1) else {
+                        return Err(CliParseError::MissingArgumentValue(flag.to_string()));
+                    };
+                    account_dir = Some(PathBuf::from(value));
+                    index += 2;
+                }
+                "--output" => {
+                    let Some(value) = args.get(index + 1) else {
+                        return Err(CliParseError::MissingArgumentValue(flag.to_string()));
+                    };
+                    output_file = Some(PathBuf::from(value));
+                    index += 2;
+                }
+                "--recent-files" => {
+                    let Some(value) = args.get(index + 1) else {
+                        return Err(CliParseError::MissingArgumentValue(flag.to_string()));
+                    };
+                    let parsed = value.parse::<usize>().map_err(|error| {
+                        CliParseError::InvalidArgumentValue(
+                            flag.to_string(),
+                            format!("expected a positive integer, got '{value}': {error}"),
+                        )
+                    })?;
+                    if parsed == 0 {
+                        return Err(CliParseError::InvalidArgumentValue(
+                            flag.to_string(),
+                            "expected a positive integer greater than zero".to_string(),
+                        ));
+                    }
+                    recent_replay_count = Some(parsed);
+                    index += 2;
+                }
+                other => {
+                    return Err(CliParseError::UnknownGenerateCacheArgument(
+                        other.to_string(),
                     ));
                 }
-                recent_replay_count = Some(parsed);
-                index += 2;
-            }
-            other => {
-                return Err(CliParseError::UnknownGenerateCacheArgument(
-                    other.to_string(),
-                ));
             }
         }
+
+        let missing = [
+            ("--account-dir", account_dir.is_none()),
+            ("--output", output_file.is_none()),
+        ]
+        .into_iter()
+        .filter_map(|(name, is_missing)| is_missing.then_some(name))
+        .collect::<Vec<&str>>();
+
+        if !missing.is_empty() {
+            return Err(CliParseError::MissingRequiredArguments(missing.join(", ")));
+        }
+
+        Ok(GenerateCacheArgs {
+            account_dir: account_dir.expect("validated account_dir"),
+            output_file: output_file.expect("validated output_file"),
+            recent_replay_count,
+        })
     }
 
-    let missing = [
-        ("--account-dir", account_dir.is_none()),
-        ("--output", output_file.is_none()),
-    ]
-    .into_iter()
-    .filter_map(|(name, is_missing)| is_missing.then_some(name))
-    .collect::<Vec<&str>>();
+    fn parse_test_cache_overall_stats_detailed_analysis_args(
+        args: &[String],
+    ) -> Result<TestCacheOverallStatsDetailedAnalysisArgs, CliParseError> {
+        let mut parsed = TestCacheOverallStatsDetailedAnalysisArgs::default();
 
-    if !missing.is_empty() {
-        return Err(CliParseError::MissingRequiredArguments(missing.join(", ")));
-    }
-
-    Ok(GenerateCacheArgs {
-        account_dir: account_dir.expect("validated account_dir"),
-        output_file: output_file.expect("validated output_file"),
-        recent_replay_count,
-    })
-}
-
-fn parse_test_cache_overall_stats_detailed_analysis_args(
-    args: &[String],
-) -> Result<TestCacheOverallStatsDetailedAnalysisArgs, CliParseError> {
-    let mut parsed = TestCacheOverallStatsDetailedAnalysisArgs::default();
-
-    let mut index = 0_usize;
-    while index < args.len() {
-        let flag = args[index].as_str();
-        match flag {
-            "-h" | "--help" => {
-                parsed.help_requested = true;
-                return Ok(parsed);
-            }
-            "--account-dir" => {
-                let Some(value) = args.get(index + 1) else {
-                    return Err(CliParseError::MissingArgumentValue(flag.to_string()));
-                };
-                parsed.account_dir = Some(PathBuf::from(value));
-                index += 2;
-            }
-            "--output" => {
-                let Some(value) = args.get(index + 1) else {
-                    return Err(CliParseError::MissingArgumentValue(flag.to_string()));
-                };
-                parsed.output_file = Some(PathBuf::from(value));
-                index += 2;
-            }
-            "--original" => {
-                let Some(value) = args.get(index + 1) else {
-                    return Err(CliParseError::MissingArgumentValue(flag.to_string()));
-                };
-                parsed.original_output = Some(PathBuf::from(value));
-                index += 2;
-            }
-            other => {
-                return Err(
-                    CliParseError::UnknownTestCacheOverallStatsDetailedAnalysisArgument(
-                        other.to_string(),
-                    ),
-                );
+        let mut index = 0_usize;
+        while index < args.len() {
+            let flag = args[index].as_str();
+            match flag {
+                "-h" | "--help" => {
+                    parsed.help_requested = true;
+                    return Ok(parsed);
+                }
+                "--account-dir" => {
+                    let Some(value) = args.get(index + 1) else {
+                        return Err(CliParseError::MissingArgumentValue(flag.to_string()));
+                    };
+                    parsed.account_dir = Some(PathBuf::from(value));
+                    index += 2;
+                }
+                "--output" => {
+                    let Some(value) = args.get(index + 1) else {
+                        return Err(CliParseError::MissingArgumentValue(flag.to_string()));
+                    };
+                    parsed.output_file = Some(PathBuf::from(value));
+                    index += 2;
+                }
+                "--original" => {
+                    let Some(value) = args.get(index + 1) else {
+                        return Err(CliParseError::MissingArgumentValue(flag.to_string()));
+                    };
+                    parsed.original_output = Some(PathBuf::from(value));
+                    index += 2;
+                }
+                other => {
+                    return Err(
+                        CliParseError::UnknownTestCacheOverallStatsDetailedAnalysisArgument(
+                            other.to_string(),
+                        ),
+                    );
+                }
             }
         }
+
+        Ok(parsed)
     }
 
-    Ok(parsed)
-}
+    pub fn run(raw_args: &[String]) -> Result<String, CliRunError> {
+        Self::run_impl(raw_args, None)
+    }
 
-pub fn run_cli(raw_args: &[String]) -> Result<String, CliRunError> {
-    run_cli_impl(raw_args, None)
-}
+    pub fn run_with_logger(
+        raw_args: &[String],
+        logger: &(dyn Fn(String) + Send + Sync),
+    ) -> Result<String, CliRunError> {
+        Self::run_impl(raw_args, Some(logger))
+    }
 
-pub fn run_cli_with_logger(
-    raw_args: &[String],
-    logger: &(dyn Fn(String) + Send + Sync),
-) -> Result<String, CliRunError> {
-    run_cli_impl(raw_args, Some(logger))
-}
+    fn run_impl(
+        raw_args: &[String],
+        logger: Option<&(dyn Fn(String) + Send + Sync + '_)>,
+    ) -> Result<String, CliRunError> {
+        match Self::parse_args(raw_args)? {
+            Command::Help => Ok(Self::usage_text()),
+            Command::GenerateCache(args) => {
+                if args.account_dir.as_os_str().is_empty()
+                    || args.output_file.as_os_str().is_empty()
+                {
+                    return Ok(Self::usage_text());
+                }
 
-fn run_cli_impl(
-    raw_args: &[String],
-    logger: Option<&(dyn Fn(String) + Send + Sync + '_)>,
-) -> Result<String, CliRunError> {
-    match parse_cli_args(raw_args)? {
-        Command::Help => Ok(usage_text()),
-        Command::GenerateCache(args) => {
-            if args.account_dir.as_os_str().is_empty() || args.output_file.as_os_str().is_empty() {
-                return Ok(usage_text());
-            }
-
-            let config = GenerateCacheConfig::new(args.account_dir, args.output_file)
-                .with_recent_replay_count(args.recent_replay_count);
-            let dictionary_data =
-                Arc::new(Sc2DictionaryData::load(None).map_err(|error| {
+                let config = GenerateCacheConfig::new(args.account_dir, args.output_file)
+                    .with_recent_replay_count(args.recent_replay_count);
+                let dictionary_data = Arc::new(Sc2DictionaryData::load(None).map_err(|error| {
                     GenerateCacheError::DetailedAnalysisConfig(error.to_string())
                 })?);
-            let resources = ReplayAnalysisResources::from_dictionary_data(dictionary_data)
-                .map_err(|error| GenerateCacheError::DetailedAnalysisConfig(error.to_string()))?;
-            let runtime = GenerateCacheRuntimeOptions::default();
-            let summary = analyze_full_detailed(&config, &resources, logger, &runtime)?;
+                let resources = ReplayAnalysisResources::from_dictionary_data(dictionary_data)
+                    .map_err(|error| {
+                        GenerateCacheError::DetailedAnalysisConfig(error.to_string())
+                    })?;
+                let runtime = GenerateCacheRuntimeOptions::default();
+                let summary = DetailedReplayAnalyzer::analyze_full_detailed(
+                    &config, &resources, logger, &runtime,
+                )?;
 
-            Ok(format!(
-                "Generated cache_overall_stats with {} replay entr{} at {}",
-                summary.scanned_replays(),
-                if summary.scanned_replays() == 1 {
-                    "y"
-                } else {
-                    "ies"
-                },
-                summary.output_file().display()
-            ))
-        }
-        Command::TestCacheOverallStatsDetailedAnalysis(args) => {
-            if args.help_requested {
-                return Ok(usage_text());
+                Ok(format!(
+                    "Generated cache_overall_stats with {} replay entr{} at {}",
+                    summary.scanned_replays(),
+                    if summary.scanned_replays() == 1 {
+                        "y"
+                    } else {
+                        "ies"
+                    },
+                    summary.output_file().display()
+                ))
             }
+            Command::TestCacheOverallStatsDetailedAnalysis(args) => {
+                if args.help_requested {
+                    return Ok(Self::usage_text());
+                }
 
-            run_test_cache_overall_stats_detailed_analysis(&args, logger).map_err(Into::into)
+                CacheOverallStatsDetailedAnalysis::run(&args, logger).map_err(Into::into)
+            }
         }
     }
-}
 
-pub fn usage_text() -> String {
-    [
+    pub fn usage_text() -> String {
+        [
         "Usage:",
         "  s2coop-analyzer-cli generate-cache --account-dir <DIR> --output <FILE> [--recent-files <COUNT>]",
         "  s2coop-analyzer-cli test-cache-overall-stats-detailed-analysis [--account-dir <DIR>] [--output <FILE>] [--original <FILE>]",
@@ -258,4 +268,5 @@ pub fn usage_text() -> String {
         "  - test-cache-overall-stats-detailed-analysis defaults to .env SC2 account paths and ../original/cache_overall_stats.",
     ]
     .join("\n")
+    }
 }

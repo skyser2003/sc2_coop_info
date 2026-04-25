@@ -12,7 +12,7 @@ fn unique_temp_path(name: &str) -> PathBuf {
 
 #[test]
 fn open_folder_rejects_empty_path() {
-    let error = overlay_info::open_folder_in_explorer("  ")
+    let error = overlay_info::OverlayInfoOps::open_folder_in_explorer("  ")
         .expect_err("empty folder path should be rejected");
     assert_eq!(error, "Folder path is empty");
 }
@@ -20,7 +20,7 @@ fn open_folder_rejects_empty_path() {
 #[test]
 fn open_folder_rejects_missing_folder() {
     let missing = unique_temp_path("missing");
-    let error = overlay_info::open_folder_in_explorer(&missing.to_string_lossy())
+    let error = overlay_info::OverlayInfoOps::open_folder_in_explorer(&missing.to_string_lossy())
         .expect_err("missing folder should be rejected");
     assert_eq!(error, "Folder does not exist");
 }

@@ -1,4 +1,4 @@
-use s2protocol_port::{build_protocol_store, parse_file_with_store, ReplayParseMode};
+use s2protocol_port::{ProtocolStoreBuilder, ReplayParseMode, ReplayParser};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -101,11 +101,12 @@ fn replay_parse_mode_controls_event_streams() {
         return;
     };
 
-    let store = build_protocol_store().expect("protocol store should build");
-    let simple = parse_file_with_store(&replay_path, &store, ReplayParseMode::Simple)
+    let store = ProtocolStoreBuilder::build().expect("protocol store should build");
+    let simple = ReplayParser::parse_file_with_store(&replay_path, &store, ReplayParseMode::Simple)
         .expect("simple replay parser should read the replay");
-    let detailed = parse_file_with_store(&replay_path, &store, ReplayParseMode::Detailed)
-        .expect("detailed replay parser should read the replay");
+    let detailed =
+        ReplayParser::parse_file_with_store(&replay_path, &store, ReplayParseMode::Detailed)
+            .expect("detailed replay parser should read the replay");
 
     assert!(simple.game_events().is_empty());
     assert!(simple.tracker_events().is_empty());

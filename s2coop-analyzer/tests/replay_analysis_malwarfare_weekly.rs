@@ -1,13 +1,13 @@
 mod common;
 
-use s2coop_analyzer::detailed_replay_analysis::analyze_single_detailed;
-use s2protocol_port::{build_protocol_store, parse_file_with_store, ReplayParseMode};
+use s2coop_analyzer::detailed_replay_analysis::DetailedReplayAnalyzer;
+use s2protocol_port::{ProtocolStoreBuilder, ReplayParseMode, ReplayParser};
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-use s2coop_analyzer::cache_overall_stats_detailed_analysis::repo_root;
+use s2coop_analyzer::cache_overall_stats_detailed_analysis::CacheAnalysisPaths;
 
 fn read_env_file_value(env_file: &Path, key: &str) -> Option<String> {
     let content = fs::read_to_string(env_file).ok()?;
@@ -45,7 +45,7 @@ fn resolve_account_dir() -> Option<PathBuf> {
         }
     }
 
-    let env_path = repo_root().join(".env");
+    let env_path = CacheAnalysisPaths::repo_root().join(".env");
     for key in [
         "SC2_ACCOUNT_PATH",
         "SC2_ACCOUNT_PATH_WINDOWS",
@@ -97,13 +97,15 @@ fn malwarfare_weekly_replay_with_korean_filename_builds_detailed_report() {
 
     let main_handles = HashSet::new();
     let resources = common::load_replay_resources();
-    let store = build_protocol_store().expect("protocol store should build");
-    let parsed = parse_file_with_store(&replay_path, &store, ReplayParseMode::Detailed)
-        .expect("detailed replay parser should read the replay");
+    let store = ProtocolStoreBuilder::build().expect("protocol store should build");
+    let parsed =
+        ReplayParser::parse_file_with_store(&replay_path, &store, ReplayParseMode::Detailed)
+            .expect("detailed replay parser should read the replay");
     assert!(!parsed.tracker_events().is_empty());
 
-    let result = analyze_single_detailed(&replay_path, &main_handles, &resources)
-        .unwrap_or_else(|error| panic!("replay analysis should succeed: {error}"));
+    let result =
+        DetailedReplayAnalyzer::analyze_single_detailed(&replay_path, &main_handles, &resources)
+            .unwrap_or_else(|error| panic!("replay analysis should succeed: {error}"));
     let report = result.report();
 
     assert!(report.replaydata);

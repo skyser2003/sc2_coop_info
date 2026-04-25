@@ -1,19 +1,14 @@
-use sco_tauri_overlay::path_manager::get_cache_path;
-use sco_tauri_overlay::replay_analysis::{
-    parse_replay_timestamp_seconds, sanitize_hidden_unit_stats_with_dictionary, ReplayAnalysis,
-};
-use sco_tauri_overlay::test_helper::{
-    build_rebuild_snapshot, collect_main_identity_lists, filter_replays_for_stats, load_dictionary,
-    stats_replays_for_response_from_path_with_identity,
-};
-use sco_tauri_overlay::{sanitize_unit_map, AppSettings, ReplayInfo, ReplayPlayerInfo};
+use sco_tauri_overlay::path_manager::PathManagerOps;
+use sco_tauri_overlay::replay_analysis::{ReplayAnalysis, ReplayAnalysisOps};
+use sco_tauri_overlay::test_helper::TestHelperOps;
+use sco_tauri_overlay::{AppSettings, ReplayInfo, ReplayPlayerInfo, TauriOverlayOps};
 use serde_json::json;
 use serde_json::Value;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
 fn test_map_id(raw: &str) -> String {
-    load_dictionary()
+    TestHelperOps::load_dictionary()
         .canonicalize_coop_map_id(raw)
         .expect("map id should resolve")
 }
@@ -41,7 +36,7 @@ fn sample_replay(
 }
 
 fn replay_analysis_fixture_paths() -> Option<(PathBuf, AppSettings)> {
-    let current_cache = get_cache_path();
+    let current_cache = PathManagerOps::get_cache_path();
     let settings_path = PathBuf::from("../settings.json");
     if !current_cache.is_file() || !settings_path.is_file() {
         return None;
@@ -80,7 +75,7 @@ fn collect_replay_paths_returns_empty_for_missing_root() {
 
 #[test]
 fn rebuild_snapshot_returns_empty_payload() {
-    let snapshot = build_rebuild_snapshot(&[], true);
+    let snapshot = TestHelperOps::build_rebuild_snapshot(&[], true);
     assert!(snapshot.ready());
     assert_eq!(snapshot.games(), 0);
     assert!(snapshot.main_players().is_empty());
@@ -99,7 +94,7 @@ fn rebuild_snapshot_without_detailed_data_uses_null_unit_data() {
         player("Ally", "", "Karax"),
     )];
 
-    let snapshot = build_rebuild_snapshot(&replays, false);
+    let snapshot = TestHelperOps::build_rebuild_snapshot(&replays, false);
 
     assert!(snapshot
         .analysis()
@@ -112,19 +107,20 @@ fn filter_replays_for_stats_excludes_unparsed_replays() {
     let mut replay = ReplayInfo::default();
     replay.set_result("Unparsed");
 
-    let filtered = filter_replays_for_stats("/config/stats", &[replay]);
+    let filtered = TestHelperOps::filter_replays_for_stats("/config/stats", &[replay]);
     assert!(filtered.is_empty());
 }
 
 #[test]
 fn sanitize_hidden_unit_stats_masks_created_and_lost_counts() {
-    let dictionary = load_dictionary();
+    let dictionary = TestHelperOps::load_dictionary();
     let payload = json!({
         "Karax's Top Bar": [1, 2, 3, 0.25],
         "Zealot": [4, 5, 6, 0.5]
     });
 
-    let sanitized = sanitize_hidden_unit_stats_with_dictionary(payload, &dictionary);
+    let sanitized =
+        ReplayAnalysisOps::sanitize_hidden_unit_stats_with_dictionary(payload, &dictionary);
 
     assert_eq!(sanitized["Karax's Top Bar"], json!(["-", "-", 3, 0.25]));
     assert_eq!(sanitized["Zealot"], json!([4, 5, 6, 0.5]));
@@ -136,14 +132,14 @@ fn sanitize_unit_map_preserves_negative_counts() {
         "Primal Hydralisk": [70, -4, 0, 0.0]
     });
 
-    let sanitized = sanitize_unit_map(&payload);
+    let sanitized = TauriOverlayOps::sanitize_unit_map(&payload);
 
     assert_eq!(sanitized["Primal Hydralisk"], json!([70, -4, 0, 0.0]));
 }
 
 #[test]
 fn map_times_use_accurate_length_like_wx_version() {
-    let dictionary = load_dictionary();
+    let dictionary = TestHelperOps::load_dictionary();
     let replays = vec![
         {
             let mut replay = sample_replay(
@@ -203,7 +199,7 @@ fn map_times_use_accurate_length_like_wx_version() {
 
 #[test]
 fn map_fastest_payload_includes_player_metadata() {
-    let dictionary = load_dictionary();
+    let dictionary = TestHelperOps::load_dictionary();
     let fastest_date = 1_700_000_000;
     let replays = vec![{
         let mut replay = sample_replay(
@@ -286,7 +282,7 @@ fn map_fastest_payload_includes_player_metadata() {
 
 #[test]
 fn map_fastest_prefers_oldest_replay_when_lengths_tie() {
-    let dictionary = load_dictionary();
+    let dictionary = TestHelperOps::load_dictionary();
     let replays = vec![
         {
             let mut replay = sample_replay(
@@ -297,7 +293,7 @@ fn map_fastest_prefers_oldest_replay_when_lengths_tie() {
                 player("Ally", "1-S2-1-222", "Karax").with_apm(98),
             );
             replay.set_date(
-                parse_replay_timestamp_seconds("2020:01:02:03:04:05")
+                ReplayAnalysisOps::parse_replay_timestamp_seconds("2020:01:02:03:04:05")
                     .expect("newer replay timestamp should parse"),
             );
             replay.set_enemy("Zerg");
@@ -313,7 +309,7 @@ fn map_fastest_prefers_oldest_replay_when_lengths_tie() {
                 player("Older Ally", "1-S2-1-444", "Swann").with_apm(66),
             );
             replay.set_date(
-                parse_replay_timestamp_seconds("2019:01:02:03:04:05")
+                ReplayAnalysisOps::parse_replay_timestamp_seconds("2019:01:02:03:04:05")
                     .expect("older replay timestamp should parse"),
             );
             replay.set_enemy("Terran");
@@ -341,7 +337,7 @@ fn map_fastest_prefers_oldest_replay_when_lengths_tie() {
 
     assert_eq!(
         fastest.get("date"),
-        Some(&json!(parse_replay_timestamp_seconds(
+        Some(&json!(ReplayAnalysisOps::parse_replay_timestamp_seconds(
             "2019:01:02:03:04:05"
         )
         .expect("older replay timestamp should parse")))
@@ -375,7 +371,8 @@ fn collect_main_identity_lists_tracks_p2_main_handle_for_fastest_maps() {
     let main_names = HashSet::new();
     let main_handles = HashSet::from(["1-s2-1-222".to_string()]);
 
-    let (players, handles) = collect_main_identity_lists(&replays, &main_names, &main_handles);
+    let (players, handles) =
+        TestHelperOps::collect_main_identity_lists(&replays, &main_names, &main_handles);
 
     assert_eq!(players, vec!["Main".to_string()]);
     assert_eq!(handles, vec!["1-S2-1-222".to_string()]);
@@ -392,14 +389,14 @@ fn miner_evacuation_fastest_payload_matches_reference_fastest_replay() {
 
     let main_names = settings.configured_main_names();
     let main_handles = settings.configured_main_handles();
-    let replays = stats_replays_for_response_from_path_with_identity(
+    let replays = TestHelperOps::stats_replays_for_response_from_path_with_identity(
         true,
         &[],
         &current_cache,
         &main_names,
         &main_handles,
     );
-    let snapshot = build_rebuild_snapshot(&replays, true);
+    let snapshot = TestHelperOps::build_rebuild_snapshot(&replays, true);
     let Some(fastest) = snapshot
         .analysis()
         .get("MapData")
@@ -420,7 +417,7 @@ fn miner_evacuation_fastest_payload_matches_reference_fastest_replay() {
     assert_eq!(fastest.get("enemy_race"), Some(&json!("테란")));
     assert_eq!(
         fastest.get("date"),
-        Some(&json!(parse_replay_timestamp_seconds(
+        Some(&json!(ReplayAnalysisOps::parse_replay_timestamp_seconds(
             "2018:09:30:22:12:24"
         )
         .expect("reference timestamp should parse")))
@@ -470,7 +467,7 @@ fn mastery_sum_filters_partition_existing_cache_replays() {
 
     let main_names = settings.configured_main_names();
     let main_handles = settings.configured_main_handles();
-    let replays = stats_replays_for_response_from_path_with_identity(
+    let replays = TestHelperOps::stats_replays_for_response_from_path_with_identity(
         true,
         &[],
         &current_cache,
@@ -478,25 +475,40 @@ fn mastery_sum_filters_partition_existing_cache_replays() {
         &main_handles,
     );
 
-    let total = filter_replays_for_stats("/config/stats", &replays).len();
-    let wins_only = filter_replays_for_stats("/config/stats?include_losses=0", &replays).len();
-    let losses_only = filter_replays_for_stats("/config/stats?include_wins=0", &replays).len();
-    let main_levels_1_14 = filter_replays_for_stats("/config/stats?over_15=0", &replays).len();
-    let main_levels_15_plus = filter_replays_for_stats("/config/stats?sub_15=0", &replays).len();
-    let ally_levels_1_14 = filter_replays_for_stats("/config/stats?ally_over_15=0", &replays).len();
+    let total = TestHelperOps::filter_replays_for_stats("/config/stats", &replays).len();
+    let wins_only =
+        TestHelperOps::filter_replays_for_stats("/config/stats?include_losses=0", &replays).len();
+    let losses_only =
+        TestHelperOps::filter_replays_for_stats("/config/stats?include_wins=0", &replays).len();
+    let main_levels_1_14 =
+        TestHelperOps::filter_replays_for_stats("/config/stats?over_15=0", &replays).len();
+    let main_levels_15_plus =
+        TestHelperOps::filter_replays_for_stats("/config/stats?sub_15=0", &replays).len();
+    let ally_levels_1_14 =
+        TestHelperOps::filter_replays_for_stats("/config/stats?ally_over_15=0", &replays).len();
     let ally_levels_15_plus =
-        filter_replays_for_stats("/config/stats?ally_sub_15=0", &replays).len();
+        TestHelperOps::filter_replays_for_stats("/config/stats?ally_sub_15=0", &replays).len();
     assert_eq!(total, wins_only + losses_only);
     assert_eq!(total, main_levels_1_14 + main_levels_15_plus);
     assert_eq!(total, ally_levels_1_14 + ally_levels_15_plus);
     assert_eq!(
         total,
-        filter_replays_for_stats("/config/stats?main_abnormal_mastery=0", &replays).len()
-            + filter_replays_for_stats("/config/stats?main_normal_mastery=0", &replays).len()
+        TestHelperOps::filter_replays_for_stats("/config/stats?main_abnormal_mastery=0", &replays)
+            .len()
+            + TestHelperOps::filter_replays_for_stats(
+                "/config/stats?main_normal_mastery=0",
+                &replays
+            )
+            .len()
     );
     assert_eq!(
         total,
-        filter_replays_for_stats("/config/stats?ally_abnormal_mastery=0", &replays).len()
-            + filter_replays_for_stats("/config/stats?ally_normal_mastery=0", &replays).len()
+        TestHelperOps::filter_replays_for_stats("/config/stats?ally_abnormal_mastery=0", &replays)
+            .len()
+            + TestHelperOps::filter_replays_for_stats(
+                "/config/stats?ally_normal_mastery=0",
+                &replays
+            )
+            .len()
     );
 }

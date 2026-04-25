@@ -1,10 +1,10 @@
-use sco_tauri_overlay::{window_close_action, AppSettings, BackendState, WindowCloseAction};
+use sco_tauri_overlay::{AppSettings, BackendState, TauriOverlayOps, WindowCloseAction};
 use serde_json::json;
 
 #[test]
 fn performance_close_hides_the_window() {
     assert_eq!(
-        window_close_action("performance", false, false),
+        TauriOverlayOps::window_close_action("performance", false, false),
         WindowCloseAction::HidePerformance
     );
 }
@@ -12,7 +12,7 @@ fn performance_close_hides_the_window() {
 #[test]
 fn overlay_close_hides_the_window() {
     assert_eq!(
-        window_close_action("overlay", false, false),
+        TauriOverlayOps::window_close_action("overlay", false, false),
         WindowCloseAction::HideWindow
     );
 }
@@ -20,7 +20,7 @@ fn overlay_close_hides_the_window() {
 #[test]
 fn config_close_hides_when_minimize_to_tray_is_enabled() {
     assert_eq!(
-        window_close_action("config", true, false),
+        TauriOverlayOps::window_close_action("config", true, false),
         WindowCloseAction::HideWindow
     );
 }
@@ -28,7 +28,7 @@ fn config_close_hides_when_minimize_to_tray_is_enabled() {
 #[test]
 fn config_close_exits_when_minimize_to_tray_is_disabled() {
     assert_eq!(
-        window_close_action("config", false, false),
+        TauriOverlayOps::window_close_action("config", false, false),
         WindowCloseAction::ExitApp
     );
 }
@@ -37,7 +37,7 @@ fn config_close_exits_when_minimize_to_tray_is_disabled() {
 fn shutdown_path_allows_windows_to_close() {
     for label in ["config", "overlay", "performance"] {
         assert_eq!(
-            window_close_action(label, true, true),
+            TauriOverlayOps::window_close_action(label, true, true),
             WindowCloseAction::AllowClose
         );
     }

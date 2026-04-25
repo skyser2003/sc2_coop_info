@@ -1,12 +1,12 @@
 mod common;
 
-use s2coop_analyzer::detailed_replay_analysis::analyze_single_detailed;
+use s2coop_analyzer::detailed_replay_analysis::DetailedReplayAnalyzer;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-use s2coop_analyzer::cache_overall_stats_detailed_analysis::repo_root;
+use s2coop_analyzer::cache_overall_stats_detailed_analysis::CacheAnalysisPaths;
 
 fn read_env_file_value(env_file: &Path, key: &str) -> Option<String> {
     let content = fs::read_to_string(env_file).ok()?;
@@ -44,7 +44,7 @@ fn resolve_account_dir() -> Option<PathBuf> {
         }
     }
 
-    let env_path = repo_root().join(".env");
+    let env_path = CacheAnalysisPaths::repo_root().join(".env");
     for key in [
         "SC2_ACCOUNT_PATH",
         "SC2_ACCOUNT_PATH_WINDOWS",
@@ -98,7 +98,11 @@ fn rust_only_path_can_build_report_from_real_replay() {
     let resources = common::load_replay_resources();
     for replay_path in replay_paths {
         attempted += 1;
-        let Ok(result) = analyze_single_detailed(&replay_path, &HashSet::new(), &resources) else {
+        let Ok(result) = DetailedReplayAnalyzer::analyze_single_detailed(
+            &replay_path,
+            &HashSet::new(),
+            &resources,
+        ) else {
             continue;
         };
         let report = result.report();

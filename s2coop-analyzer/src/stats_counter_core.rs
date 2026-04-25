@@ -136,36 +136,40 @@ impl TotalUnitCost {
     }
 }
 
-fn normalize_commander_name(commander: &str) -> String {
-    if commander == "Han & Horner" {
-        "Horner".to_string()
-    } else {
-        commander.to_string()
-    }
-}
+struct StatsCounterMath;
 
-fn remove_upward_spikes(values: &mut [f64]) {
-    if values.len() < 3 {
-        return;
-    }
-    for idx in 1..(values.len() - 1) {
-        if values[idx] > values[idx - 1] && values[idx] > values[idx + 1] {
-            values[idx] = (values[idx - 1] + values[idx + 1]) / 2.0;
+impl StatsCounterMath {
+    fn normalize_commander_name(commander: &str) -> String {
+        if commander == "Han & Horner" {
+            "Horner".to_string()
+        } else {
+            commander.to_string()
         }
     }
-}
 
-fn upward_spike_indices(values: &[f64]) -> HashSet<usize> {
-    let mut indices = HashSet::new();
-    if values.len() < 3 {
-        return indices;
-    }
-    for idx in 1..(values.len() - 1) {
-        if values[idx] > values[idx - 1] && values[idx] > values[idx + 1] {
-            indices.insert(idx);
+    fn remove_upward_spikes(values: &mut [f64]) {
+        if values.len() < 3 {
+            return;
+        }
+        for idx in 1..(values.len() - 1) {
+            if values[idx] > values[idx - 1] && values[idx] > values[idx + 1] {
+                values[idx] = (values[idx - 1] + values[idx + 1]) / 2.0;
+            }
         }
     }
-    indices
+
+    fn upward_spike_indices(values: &[f64]) -> HashSet<usize> {
+        let mut indices = HashSet::new();
+        if values.len() < 3 {
+            return indices;
+        }
+        for idx in 1..(values.len() - 1) {
+            if values[idx] > values[idx - 1] && values[idx] > values[idx + 1] {
+                indices.insert(idx);
+            }
+        }
+        indices
+    }
 }
 
 impl ReplayDroneIdentifierCore {
@@ -279,7 +283,7 @@ impl ReplayStatsCounterCore {
             dictionaries,
             masteries: parsed_masteries,
             unit_dict: HashMap::new(),
-            commander: normalize_commander_name(&commander.unwrap_or_default()),
+            commander: StatsCounterMath::normalize_commander_name(&commander.unwrap_or_default()),
             prestige: None,
             enable_updates: false,
             salvaged_units: Vec::new(),
@@ -638,7 +642,7 @@ impl ReplayStatsCounterCore {
     }
 
     pub fn update_commander(&mut self, commander: &str) {
-        let commander_name = normalize_commander_name(commander);
+        let commander_name = StatsCounterMath::normalize_commander_name(commander);
         if self.enable_updates && self.commander != commander_name {
             self.commander = commander_name;
             self.unit_costs_cache.clear();
@@ -778,8 +782,10 @@ impl ReplayStatsCounterCore {
     pub fn get_stats(&mut self, player_name: &str) -> AnalysisPlayerStatsSeries {
         let mut dehaka_changed_indices = BTreeSet::new();
         if self.commander == "Dehaka" {
-            dehaka_changed_indices = upward_spike_indices(&self.army_value).into_iter().collect();
-            remove_upward_spikes(&mut self.army_value);
+            dehaka_changed_indices = StatsCounterMath::upward_spike_indices(&self.army_value)
+                .into_iter()
+                .collect();
+            StatsCounterMath::remove_upward_spikes(&mut self.army_value);
         }
 
         let army = self
@@ -802,24 +808,26 @@ impl ReplayStatsCounterCore {
             killed: self.kills.iter().map(|value| *value as f64).collect(),
             army,
             supply: self.supply.clone(),
-            mining: rolling_average(&self.collection_rate),
+            mining: StatsCounterMath::rolling_average(&self.collection_rate),
             army_force_float_indices: dehaka_changed_indices,
         }
     }
 }
 
-fn rolling_average(values: &[f64]) -> Vec<f64> {
-    if values.is_empty() {
-        return Vec::new();
-    }
-
-    let mut out = Vec::with_capacity(values.len());
-    for (idx, value) in values.iter().enumerate() {
-        if idx == 0 {
-            out.push(*value);
-        } else {
-            out.push(0.5 * *value + 0.5 * values[idx - 1]);
+impl StatsCounterMath {
+    fn rolling_average(values: &[f64]) -> Vec<f64> {
+        if values.is_empty() {
+            return Vec::new();
         }
+
+        let mut out = Vec::with_capacity(values.len());
+        for (idx, value) in values.iter().enumerate() {
+            if idx == 0 {
+                out.push(*value);
+            } else {
+                out.push(0.5 * *value + 0.5 * values[idx - 1]);
+            }
+        }
+        out
     }
-    out
 }

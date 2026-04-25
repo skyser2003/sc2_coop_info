@@ -1,4 +1,4 @@
-use sco_tauri_overlay::replay_analysis::append_player_units_to_rollups;
+use sco_tauri_overlay::replay_analysis::ReplayAnalysisOps;
 use sco_tauri_overlay::CommanderUnitRollup;
 use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
@@ -13,7 +13,7 @@ fn append_player_units_to_rollups_routes_both_main_players_to_main_side() {
     let mut ally_rollup = empty_rollup();
     let main_handles = HashSet::from(["1-s2-1-111".to_string(), "1-s2-1-222".to_string()]);
 
-    append_player_units_to_rollups(
+    ReplayAnalysisOps::append_player_units_to_rollups(
         &mut main_rollup,
         &mut ally_rollup,
         "Dehaka",
@@ -24,7 +24,7 @@ fn append_player_units_to_rollups_routes_both_main_players_to_main_side() {
         "1-S2-1-111",
         &main_handles,
     );
-    append_player_units_to_rollups(
+    ReplayAnalysisOps::append_player_units_to_rollups(
         &mut main_rollup,
         &mut ally_rollup,
         "Abathur",
@@ -47,7 +47,7 @@ fn append_player_units_to_rollups_routes_unknown_handles_to_ally_side() {
     let mut ally_rollup = empty_rollup();
     let main_handles = HashSet::from(["1-s2-1-111".to_string()]);
 
-    append_player_units_to_rollups(
+    ReplayAnalysisOps::append_player_units_to_rollups(
         &mut main_rollup,
         &mut ally_rollup,
         "Dehaka",

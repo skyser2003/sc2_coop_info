@@ -1,5 +1,5 @@
 use crate::decoder::{
-    compile_event_decode_plan, EventPlanKind, EventTypeInfo, ProtocolDefinition, TypeInfo,
+    EventPlanCompiler, EventPlanKind, EventTypeInfo, ProtocolDefinition, TypeInfo,
 };
 use crate::error::DecodeError;
 use crate::events::{GameEventField, MessageEventField, TrackerEventField};
@@ -63,23 +63,25 @@ impl ProtocolStore {
                 typeinfos.push(TypeInfo::new(typeid, op_name, args)?);
             }
 
-            let game_event_types = parse_event_map(proto.get("game_event_types"))?;
-            let message_event_types = parse_event_map(proto.get("message_event_types"))?;
-            let tracker_event_types = parse_event_map(proto.get("tracker_event_types"))?;
+            let game_event_types = ProtocolJson::parse_event_map(proto.get("game_event_types"))?;
+            let message_event_types =
+                ProtocolJson::parse_event_map(proto.get("message_event_types"))?;
+            let tracker_event_types =
+                ProtocolJson::parse_event_map(proto.get("tracker_event_types"))?;
             let typeinfos: Arc<[TypeInfo]> = typeinfos.into();
-            let game_event_typeinfos = build_event_typeinfos(
+            let game_event_typeinfos = ProtocolJson::build_event_typeinfos(
                 &game_event_types,
                 typeinfos.as_ref(),
                 EventPlanKind::Ordered,
                 &mut GameEventField::from_key,
             )?;
-            let message_event_typeinfos = build_event_typeinfos(
+            let message_event_typeinfos = ProtocolJson::build_event_typeinfos(
                 &message_event_types,
                 typeinfos.as_ref(),
                 EventPlanKind::Ordered,
                 &mut MessageEventField::from_key,
             )?;
-            let tracker_event_typeinfos = build_event_typeinfos(
+            let tracker_event_typeinfos = ProtocolJson::build_event_typeinfos(
                 &tracker_event_types,
                 typeinfos.as_ref(),
                 EventPlanKind::Tagged,
@@ -92,14 +94,14 @@ impl ProtocolStore {
                 game_event_typeinfos,
                 message_event_typeinfos,
                 tracker_event_typeinfos,
-                to_usize(proto, "game_eventid_typeid")?,
-                to_usize(proto, "message_eventid_typeid")?,
-                to_usize_opt(proto, "tracker_eventid_typeid"),
-                to_usize(proto, "svaruint32_typeid")?,
-                to_usize_opt(proto, "replay_userid_typeid"),
-                to_usize(proto, "replay_header_typeid")?,
-                to_usize(proto, "game_details_typeid")?,
-                to_usize(proto, "replay_initdata_typeid")?,
+                ProtocolJson::to_usize(proto, "game_eventid_typeid")?,
+                ProtocolJson::to_usize(proto, "message_eventid_typeid")?,
+                ProtocolJson::to_usize_opt(proto, "tracker_eventid_typeid"),
+                ProtocolJson::to_usize(proto, "svaruint32_typeid")?,
+                ProtocolJson::to_usize_opt(proto, "replay_userid_typeid"),
+                ProtocolJson::to_usize(proto, "replay_header_typeid")?,
+                ProtocolJson::to_usize(proto, "game_details_typeid")?,
+                ProtocolJson::to_usize(proto, "replay_initdata_typeid")?,
             )?;
 
             latest = latest.max(build);
@@ -171,96 +173,104 @@ impl ProtocolStore {
     }
 }
 
-fn to_usize(proto: &JsonValue, field: &str) -> Result<usize, DecodeError> {
-    proto
-        .get(field)
-        .and_then(|v| v.as_u64())
-        .map(|v| v as usize)
-        .ok_or_else(|| DecodeError::Json(format!("missing {field}")))
-}
+struct ProtocolJson;
 
-fn to_usize_opt(proto: &JsonValue, field: &str) -> Option<usize> {
-    proto
-        .get(field)
-        .and_then(|v| v.as_u64())
-        .map(|v| v as usize)
-}
-
-fn parse_event_map(value: Option<&JsonValue>) -> Result<Vec<(u32, u32, String)>, DecodeError> {
-    let map_obj = value
-        .and_then(|v| v.as_object())
-        .ok_or_else(|| DecodeError::Json("event map missing".into()))?;
-
-    let mut entries = Vec::with_capacity(map_obj.len());
-    for (key, val) in map_obj {
-        let event_id = key
-            .parse::<u32>()
-            .map_err(|_| DecodeError::Json("invalid event map key".into()))?;
-
-        let tuple = val
-            .as_array()
-            .ok_or_else(|| DecodeError::Json("event map value should be list".into()))?;
-        if tuple.len() < 2 {
-            return Err(DecodeError::Json("event map tuple short".into()));
-        }
-        let typeid = tuple[0]
-            .as_u64()
-            .ok_or_else(|| DecodeError::Json("event map typeid missing".into()))?
-            as u32;
-        let name = tuple[1].as_str().unwrap_or("<unknown>").to_string();
-
-        entries.push((event_id, typeid, name));
+impl ProtocolJson {
+    fn to_usize(proto: &JsonValue, field: &str) -> Result<usize, DecodeError> {
+        proto
+            .get(field)
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize)
+            .ok_or_else(|| DecodeError::Json(format!("missing {field}")))
     }
 
-    Ok(entries)
-}
-
-fn build_event_typeinfos<F, S>(
-    event_types: &[(u32, u32, String)],
-    typeinfos: &[TypeInfo],
-    plan_kind: EventPlanKind,
-    select_field: &mut S,
-) -> Result<Arc<[Option<EventTypeInfo<F>>]>, DecodeError>
-where
-    F: Copy,
-    S: FnMut(&str) -> Option<F>,
-{
-    let max_event_id = event_types
-        .iter()
-        .map(|(event_id, _, _)| usize::try_from(*event_id))
-        .collect::<Result<Vec<usize>, _>>()
-        .map_err(|_| DecodeError::Json("event id does not fit in usize".into()))?
-        .into_iter()
-        .max();
-
-    let Some(max_event_id) = max_event_id else {
-        return Ok(Arc::from(Vec::<Option<EventTypeInfo<F>>>::new()));
-    };
-
-    let mut lookup = vec![None; max_event_id + 1];
-    for (event_id, typeid, name) in event_types {
-        let event_index = usize::try_from(*event_id)
-            .map_err(|_| DecodeError::Json("event id does not fit in usize".into()))?;
-        let type_index = usize::try_from(*typeid)
-            .map_err(|_| DecodeError::Json("event typeid does not fit in usize".into()))?;
-        let typeinfo = typeinfos
-            .get(type_index)
-            .cloned()
-            .ok_or_else(|| DecodeError::Json(format!("event typeid {type_index} out of range")))?;
-        let decode_plan = compile_event_decode_plan(&typeinfo, typeinfos, plan_kind, select_field)?;
-
-        if lookup[event_index].is_some() {
-            return Err(DecodeError::Json(format!(
-                "duplicate event id {event_index} in protocol map"
-            )));
-        }
-
-        lookup[event_index] = Some(EventTypeInfo::new(name.clone(), decode_plan));
+    fn to_usize_opt(proto: &JsonValue, field: &str) -> Option<usize> {
+        proto
+            .get(field)
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize)
     }
 
-    Ok(Arc::from(lookup))
+    fn parse_event_map(value: Option<&JsonValue>) -> Result<Vec<(u32, u32, String)>, DecodeError> {
+        let map_obj = value
+            .and_then(|v| v.as_object())
+            .ok_or_else(|| DecodeError::Json("event map missing".into()))?;
+
+        let mut entries = Vec::with_capacity(map_obj.len());
+        for (key, val) in map_obj {
+            let event_id = key
+                .parse::<u32>()
+                .map_err(|_| DecodeError::Json("invalid event map key".into()))?;
+
+            let tuple = val
+                .as_array()
+                .ok_or_else(|| DecodeError::Json("event map value should be list".into()))?;
+            if tuple.len() < 2 {
+                return Err(DecodeError::Json("event map tuple short".into()));
+            }
+            let typeid = tuple[0]
+                .as_u64()
+                .ok_or_else(|| DecodeError::Json("event map typeid missing".into()))?
+                as u32;
+            let name = tuple[1].as_str().unwrap_or("<unknown>").to_string();
+
+            entries.push((event_id, typeid, name));
+        }
+
+        Ok(entries)
+    }
+
+    fn build_event_typeinfos<F, S>(
+        event_types: &[(u32, u32, String)],
+        typeinfos: &[TypeInfo],
+        plan_kind: EventPlanKind,
+        select_field: &mut S,
+    ) -> Result<Arc<[Option<EventTypeInfo<F>>]>, DecodeError>
+    where
+        F: Copy,
+        S: FnMut(&str) -> Option<F>,
+    {
+        let max_event_id = event_types
+            .iter()
+            .map(|(event_id, _, _)| usize::try_from(*event_id))
+            .collect::<Result<Vec<usize>, _>>()
+            .map_err(|_| DecodeError::Json("event id does not fit in usize".into()))?
+            .into_iter()
+            .max();
+
+        let Some(max_event_id) = max_event_id else {
+            return Ok(Arc::from(Vec::<Option<EventTypeInfo<F>>>::new()));
+        };
+
+        let mut lookup = vec![None; max_event_id + 1];
+        for (event_id, typeid, name) in event_types {
+            let event_index = usize::try_from(*event_id)
+                .map_err(|_| DecodeError::Json("event id does not fit in usize".into()))?;
+            let type_index = usize::try_from(*typeid)
+                .map_err(|_| DecodeError::Json("event typeid does not fit in usize".into()))?;
+            let typeinfo = typeinfos.get(type_index).cloned().ok_or_else(|| {
+                DecodeError::Json(format!("event typeid {type_index} out of range"))
+            })?;
+            let decode_plan =
+                EventPlanCompiler::compile(&typeinfo, typeinfos, plan_kind, select_field)?;
+
+            if lookup[event_index].is_some() {
+                return Err(DecodeError::Json(format!(
+                    "duplicate event id {event_index} in protocol map"
+                )));
+            }
+
+            lookup[event_index] = Some(EventTypeInfo::new(name.clone(), decode_plan));
+        }
+
+        Ok(Arc::from(lookup))
+    }
 }
 
-pub fn build_protocol_store() -> Result<ProtocolStore, DecodeError> {
-    ProtocolStore::load()
+pub struct ProtocolStoreBuilder;
+
+impl ProtocolStoreBuilder {
+    pub fn build() -> Result<ProtocolStore, DecodeError> {
+        ProtocolStore::load()
+    }
 }

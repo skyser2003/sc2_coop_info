@@ -59,8 +59,9 @@ fn runtime_setting_diff_detects_hotkey_and_placement_changes() {
 
 #[test]
 fn overlay_window_bounds_use_target_size_for_right_alignment() {
-    let (size, position) =
-        overlay_info::overlay_window_bounds_for_monitor(100, 200, 1920, 1080, 0.7, 1.0, 12, -24, 1);
+    let (size, position) = overlay_info::OverlayInfoOps::overlay_window_bounds_for_monitor(
+        100, 200, 1920, 1080, 0.7, 1.0, 12, -24, 1,
+    );
 
     assert_eq!(size.width, 1344);
     assert_eq!(size.height, 1079);
@@ -70,8 +71,9 @@ fn overlay_window_bounds_use_target_size_for_right_alignment() {
 
 #[test]
 fn overlay_window_bounds_clamp_to_monitor_dimensions() {
-    let (size, position) =
-        overlay_info::overlay_window_bounds_for_monitor(-1920, 0, 1920, 1080, 2.0, 2.0, 0, 0, -500);
+    let (size, position) = overlay_info::OverlayInfoOps::overlay_window_bounds_for_monitor(
+        -1920, 0, 1920, 1080, 2.0, 2.0, 0, 0, -500,
+    );
 
     assert_eq!(size.width, 1920);
     assert_eq!(size.height, 1080);
@@ -81,10 +83,12 @@ fn overlay_window_bounds_clamp_to_monitor_dimensions() {
 
 #[test]
 fn overlay_window_position_uses_actual_applied_width_for_right_alignment() {
-    let requested =
-        overlay_info::overlay_window_bounds_for_monitor(-1080, 0, 1080, 1920, 0.7, 1.0, 0, 0, 1);
-    let actual_position =
-        overlay_info::overlay_window_position_for_monitor(-1080, 0, 1080, 492, 0, 0);
+    let requested = overlay_info::OverlayInfoOps::overlay_window_bounds_for_monitor(
+        -1080, 0, 1080, 1920, 0.7, 1.0, 0, 0, 1,
+    );
+    let actual_position = overlay_info::OverlayInfoOps::overlay_window_position_for_monitor(
+        -1080, 0, 1080, 492, 0, 0,
+    );
 
     assert_eq!(requested.0.width, 1080);
     assert_eq!(requested.0.height, 1919);
@@ -95,29 +99,35 @@ fn overlay_window_position_uses_actual_applied_width_for_right_alignment() {
 
 #[test]
 fn overlay_window_size_match_detects_runtime_monitor_switch_shrink() {
-    let requested =
-        overlay_info::overlay_window_bounds_for_monitor(-1080, 0, 1080, 1920, 0.7, 1.0, 0, 0, 1);
+    let requested = overlay_info::OverlayInfoOps::overlay_window_bounds_for_monitor(
+        -1080, 0, 1080, 1920, 0.7, 1.0, 0, 0, 1,
+    );
 
-    assert!(!overlay_info::overlay_window_size_matches_target(
-        tauri::PhysicalSize {
-            width: 492,
-            height: 1919,
-        },
-        requested.0,
-    ));
-    assert!(overlay_info::overlay_window_size_matches_target(
-        tauri::PhysicalSize {
-            width: 1080,
-            height: 1919,
-        },
-        requested.0,
-    ));
+    assert!(
+        !overlay_info::OverlayInfoOps::overlay_window_size_matches_target(
+            tauri::PhysicalSize {
+                width: 492,
+                height: 1919,
+            },
+            requested.0,
+        )
+    );
+    assert!(
+        overlay_info::OverlayInfoOps::overlay_window_size_matches_target(
+            tauri::PhysicalSize {
+                width: 1080,
+                height: 1919,
+            },
+            requested.0,
+        )
+    );
 }
 
 #[test]
 fn overlay_window_bounds_use_full_width_for_portrait_monitors() {
-    let (size, position) =
-        overlay_info::overlay_window_bounds_for_monitor(300, 100, 1080, 1920, 0.7, 1.0, 5, -12, 1);
+    let (size, position) = overlay_info::OverlayInfoOps::overlay_window_bounds_for_monitor(
+        300, 100, 1080, 1920, 0.7, 1.0, 5, -12, 1,
+    );
 
     assert_eq!(size.width, 1080);
     assert_eq!(size.height, 1919);

@@ -1,5 +1,5 @@
-use sco_tauri_overlay::test_helper::test_replay_path;
-use sco_tauri_overlay::{update_analysis_replay_cache_slots, ReplayInfo};
+use sco_tauri_overlay::test_helper::TestHelperOps;
+use sco_tauri_overlay::{ReplayInfo, TauriOverlayOps};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -9,10 +9,10 @@ use std::{
 fn update_analysis_replay_cache_slots_populates_shared_cache() {
     let replays = Arc::new(Mutex::new(HashMap::<String, ReplayInfo>::new()));
     let mut replay = ReplayInfo::default();
-    replay.set_file(test_replay_path("cached.SC2Replay"));
+    replay.set_file(TestHelperOps::test_replay_path("cached.SC2Replay"));
     replay.set_result("Victory");
 
-    update_analysis_replay_cache_slots(&[replay.clone()], &replays);
+    TauriOverlayOps::update_analysis_replay_cache_slots(&[replay.clone()], &replays);
 
     let shared_cache = replays
         .lock()

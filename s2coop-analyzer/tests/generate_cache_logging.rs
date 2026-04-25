@@ -1,4 +1,4 @@
-use s2coop_analyzer::cli::run_cli_with_logger;
+use s2coop_analyzer::cli::AnalyzerCli;
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -45,7 +45,7 @@ fn cli_generate_cache_emits_legacy_style_logs() {
             .push(message);
     };
 
-    let output = run_cli_with_logger(&args, &logger).expect("cli should run");
+    let output = AnalyzerCli::run_with_logger(&args, &logger).expect("cli should run");
     assert!(output.contains("Generated cache_overall_stats"));
     assert!(output_file.is_file());
 

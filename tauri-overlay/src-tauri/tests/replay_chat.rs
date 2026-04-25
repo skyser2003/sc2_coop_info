@@ -1,4 +1,4 @@
-use sco_tauri_overlay::test_helper::test_replay_path;
+use sco_tauri_overlay::test_helper::TestHelperOps;
 use sco_tauri_overlay::{ReplayChatMessage, ReplayInfo, ReplayPlayerInfo};
 
 #[test]
@@ -8,7 +8,7 @@ fn replay_chat_payload_uses_slot_names_and_sanitizes_messages() {
         ReplayPlayerInfo::default().with_name("Slot Two"),
         0,
     );
-    replay.set_file(test_replay_path("chat.SC2Replay"));
+    replay.set_file(TestHelperOps::test_replay_path("chat.SC2Replay"));
     replay.set_date(1_710_000_000);
     replay.set_map("Void Launch");
     replay.set_result("Victory");
@@ -39,7 +39,7 @@ fn replay_chat_payload_uses_slot_names_and_sanitizes_messages() {
 fn replay_chat_payload_returns_empty_slot_names_when_slot_names_are_missing() {
     let mut replay =
         ReplayInfo::with_players(ReplayPlayerInfo::default(), ReplayPlayerInfo::default(), 0);
-    replay.set_file(test_replay_path("fallback.SC2Replay"));
+    replay.set_file(TestHelperOps::test_replay_path("fallback.SC2Replay"));
     replay.set_messages(vec![ReplayChatMessage {
         player: 1,
         text: "ready".to_string(),

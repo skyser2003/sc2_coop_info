@@ -1,8 +1,4 @@
-use s2protocol_port::{
-    build_protocol_store, parse_file_with_store, parse_file_with_store_ordered_events,
-    parse_ordered_events_with_store, parse_ordered_events_with_store_filtered, ReplayEvent,
-    ReplayParseMode,
-};
+use s2protocol_port::{ProtocolStoreBuilder, ReplayEvent, ReplayParseMode, ReplayParser};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -130,10 +126,11 @@ fn ordered_event_parse_matches_split_detailed_events() {
         return;
     };
 
-    let store = build_protocol_store().expect("protocol store should build");
-    let split = parse_file_with_store(&replay_path, &store, ReplayParseMode::Detailed)
-        .expect("split detailed replay parser should read the replay");
-    let ordered = parse_file_with_store_ordered_events(&replay_path, &store)
+    let store = ProtocolStoreBuilder::build().expect("protocol store should build");
+    let split =
+        ReplayParser::parse_file_with_store(&replay_path, &store, ReplayParseMode::Detailed)
+            .expect("split detailed replay parser should read the replay");
+    let ordered = ReplayParser::parse_file_with_store_ordered_events(&replay_path, &store)
         .expect("ordered replay parser should read the replay");
 
     let mut expected = Vec::new();
@@ -169,10 +166,10 @@ fn events_only_parse_matches_ordered_replay_events() {
         return;
     };
 
-    let store = build_protocol_store().expect("protocol store should build");
-    let ordered = parse_file_with_store_ordered_events(&replay_path, &store)
+    let store = ProtocolStoreBuilder::build().expect("protocol store should build");
+    let ordered = ReplayParser::parse_file_with_store_ordered_events(&replay_path, &store)
         .expect("ordered replay parser should read the replay");
-    let events_only = parse_ordered_events_with_store(&replay_path, &store)
+    let events_only = ReplayParser::parse_ordered_events_with_store(&replay_path, &store)
         .expect("events-only replay parser should read the replay");
 
     let expected = ordered.events().iter().map(ordered_key).collect::<Vec<_>>();
@@ -214,11 +211,12 @@ fn filtered_events_only_parse_matches_filtered_ordered_replay_events() {
         )
     };
 
-    let store = build_protocol_store().expect("protocol store should build");
-    let ordered = parse_file_with_store_ordered_events(&replay_path, &store)
+    let store = ProtocolStoreBuilder::build().expect("protocol store should build");
+    let ordered = ReplayParser::parse_file_with_store_ordered_events(&replay_path, &store)
         .expect("ordered replay parser should read the replay");
-    let filtered = parse_ordered_events_with_store_filtered(&replay_path, &store, include_event)
-        .expect("filtered events-only replay parser should read the replay");
+    let filtered =
+        ReplayParser::parse_ordered_events_with_store_filtered(&replay_path, &store, include_event)
+            .expect("filtered events-only replay parser should read the replay");
 
     let expected = ordered
         .events()

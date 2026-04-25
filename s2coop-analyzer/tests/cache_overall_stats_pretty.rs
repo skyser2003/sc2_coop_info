@@ -1,8 +1,8 @@
 mod common;
 
-use s2coop_analyzer::cache_overall_stats_generator::pretty_output_path;
+use s2coop_analyzer::cache_overall_stats_generator::CacheOverallStatsFile;
 use s2coop_analyzer::detailed_replay_analysis::{
-    analyze_full_detailed, GenerateCacheConfig, GenerateCacheRuntimeOptions,
+    DetailedReplayAnalyzer, GenerateCacheConfig, GenerateCacheRuntimeOptions,
 };
 use std::fs;
 use std::path::Path;
@@ -32,10 +32,11 @@ fn generate_cache_writes_pretty_sibling_file() {
     let output_file = temp_dir.path().join("cache_overall_stats");
     let config = GenerateCacheConfig::new(account_dir, output_file.clone());
     let runtime = GenerateCacheRuntimeOptions::default();
-    let summary = analyze_full_detailed(&config, &resources, None, &runtime)
-        .expect("cache generation should succeed");
+    let summary =
+        DetailedReplayAnalyzer::analyze_full_detailed(&config, &resources, None, &runtime)
+            .expect("cache generation should succeed");
 
-    let pretty_file = pretty_output_path(summary.output_file());
+    let pretty_file = CacheOverallStatsFile::pretty_output_path(summary.output_file());
     assert!(pretty_file.is_file(), "pretty cache file should be created");
     assert_eq!(read_json(summary.output_file()), read_json(&pretty_file));
 

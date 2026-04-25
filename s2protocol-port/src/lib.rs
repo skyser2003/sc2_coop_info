@@ -12,11 +12,9 @@ pub use crate::events::{
     AbilityData, CmdEventData, GameEvent, MessageEvent, PlayerStatsData, ReplayEvent,
     SnapshotPoint, SnapshotPointValue, TargetUnitData, TrackerEvent, TriggerEventData,
 };
-pub use crate::protocol::{build_protocol_store, ProtocolStore};
+pub use crate::protocol::{ProtocolStore, ProtocolStoreBuilder};
 pub use crate::replay::{
-    cache_handle_uri, convert_fourcc, parse_file_with_store, parse_file_with_store_ordered_events,
-    parse_ordered_events_with_store, parse_ordered_events_with_store_filtered, unit_tag,
-    unit_tag_index, unit_tag_recycle, ParsedReplay, ParsedReplayWithEvents, ReplayParseMode,
+    ParsedReplay, ParsedReplayWithEvents, ReplayFormat, ReplayParseMode, ReplayParser, UnitTag,
 };
 pub use crate::replay_data::{
     ReplayAttributeScope, ReplayAttributeValue, ReplayAttributes, ReplayDetails,

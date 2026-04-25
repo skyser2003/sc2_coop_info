@@ -1,11 +1,11 @@
 use s2coop_analyzer::cache_overall_stats_detailed_analysis::TestCacheOverallStatsDetailedAnalysisArgs;
-use s2coop_analyzer::cli::{parse_cli_args, Command, GenerateCacheArgs};
+use s2coop_analyzer::cli::{AnalyzerCli, Command, GenerateCacheArgs};
 use std::path::PathBuf;
 
 #[test]
 fn parse_help_when_no_args() {
     let args = vec!["s2coop-analyzer-cli".to_string()];
-    let command = parse_cli_args(&args).expect("cli should parse");
+    let command = AnalyzerCli::parse_args(&args).expect("cli should parse");
     assert_eq!(command, Command::Help);
 }
 
@@ -20,7 +20,7 @@ fn parse_generate_cache_command() {
         "cache_overall_stats".to_string(),
     ];
 
-    let command = parse_cli_args(&args).expect("cli should parse");
+    let command = AnalyzerCli::parse_args(&args).expect("cli should parse");
     assert_eq!(
         command,
         Command::GenerateCache(GenerateCacheArgs {
@@ -44,7 +44,7 @@ fn parse_generate_cache_command_with_recent_files() {
         "100".to_string(),
     ];
 
-    let command = parse_cli_args(&args).expect("cli should parse");
+    let command = AnalyzerCli::parse_args(&args).expect("cli should parse");
     assert_eq!(
         command,
         Command::GenerateCache(GenerateCacheArgs {
@@ -68,7 +68,7 @@ fn parse_test_cache_overall_stats_detailed_analysis_command() {
         "..\\original\\cache_overall_stats".to_string(),
     ];
 
-    let command = parse_cli_args(&args).expect("cli should parse");
+    let command = AnalyzerCli::parse_args(&args).expect("cli should parse");
     assert_eq!(
         command,
         Command::TestCacheOverallStatsDetailedAnalysis(TestCacheOverallStatsDetailedAnalysisArgs {

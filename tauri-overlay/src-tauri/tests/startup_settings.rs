@@ -1,4 +1,4 @@
-use sco_tauri_overlay::{windows_startup_command_value, AppSettings};
+use sco_tauri_overlay::{AppSettings, TauriOverlayOps};
 use serde_json::json;
 use std::path::Path;
 
@@ -25,7 +25,8 @@ fn start_with_windows_setting_reads_boolean_value() {
 
 #[test]
 fn windows_startup_command_value_quotes_executable_path() {
-    let value = windows_startup_command_value(Path::new(r"fixtures\apps\SCO Overlay.exe"));
+    let value =
+        TauriOverlayOps::windows_startup_command_value(Path::new(r"fixtures\apps\SCO Overlay.exe"));
 
     assert_eq!(value, r#""fixtures\apps\SCO Overlay.exe""#);
 }

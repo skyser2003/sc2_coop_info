@@ -1,8 +1,8 @@
 use s2coop_analyzer::cache_overall_stats_generator::{
     CacheNumericValue, CachePlayer, CacheReplayEntry, ProtocolBuildValue, ReplayBuildInfo,
 };
-use sco_tauri_overlay::replay_analysis::replay_info_from_cache_entry;
-use sco_tauri_overlay::test_helper::build_rebuild_snapshot;
+use sco_tauri_overlay::replay_analysis::ReplayAnalysisOps;
+use sco_tauri_overlay::test_helper::TestHelperOps;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -82,14 +82,19 @@ fn sample_cache_entry(ext_difficulty: &str, difficulty_pair: (&str, &str)) -> Ca
 
 #[test]
 fn replay_info_from_cache_entry_preserves_mixed_difficulty_label() {
-    let mixed =
-        replay_info_from_cache_entry(&sample_cache_entry("Hard/Brutal", ("Hard", "Brutal")));
-    let brutal = replay_info_from_cache_entry(&sample_cache_entry("Brutal", ("Brutal", "Brutal")));
+    let mixed = ReplayAnalysisOps::replay_info_from_cache_entry(&sample_cache_entry(
+        "Hard/Brutal",
+        ("Hard", "Brutal"),
+    ));
+    let brutal = ReplayAnalysisOps::replay_info_from_cache_entry(&sample_cache_entry(
+        "Brutal",
+        ("Brutal", "Brutal"),
+    ));
 
     assert_eq!(mixed.difficulty(), "Hard/Brutal");
     assert_eq!(brutal.difficulty(), "Brutal");
 
-    let snapshot = build_rebuild_snapshot(&[mixed, brutal], false);
+    let snapshot = TestHelperOps::build_rebuild_snapshot(&[mixed, brutal], false);
     let difficulty_data = snapshot
         .analysis()
         .get("DifficultyData")

@@ -1,9 +1,9 @@
 #![cfg(not(windows))]
 
 use s2coop_analyzer::cache_overall_stats_generator::{
-    pretty_output_path, CacheNumericValue, CacheReplayEntry, ProtocolBuildValue, ReplayBuildInfo,
+    CacheNumericValue, CacheOverallStatsFile, CacheReplayEntry, ProtocolBuildValue, ReplayBuildInfo,
 };
-use sco_tauri_overlay::test_helper::{canonicalize_map_id, test_replay_path};
+use sco_tauri_overlay::test_helper::TestHelperOps;
 use sco_tauri_overlay::{
     persist_detailed_cache_entry_to_path, BackendState, ReplayInfo, ReplayPlayerInfo, StatsState,
 };
@@ -76,11 +76,11 @@ fn seed_replay_cache(state: &BackendState, entries: &[(&str, ReplayInfo)]) {
 fn upsert_replay_in_memory_cache_updates_replay_cache_and_current_files() {
     let state = test_backend_state();
     let mut existing_replay = ReplayInfo::default();
-    existing_replay.set_file(test_replay_path("existing.SC2Replay"));
+    existing_replay.set_file(TestHelperOps::test_replay_path("existing.SC2Replay"));
     existing_replay.set_date(100);
     existing_replay.set_result("Victory");
     let mut updated_replay = ReplayInfo::default();
-    updated_replay.set_file(test_replay_path("new.SC2Replay"));
+    updated_replay.set_file(TestHelperOps::test_replay_path("new.SC2Replay"));
     updated_replay.set_date(200);
     updated_replay.set_result("Defeat");
 
@@ -140,9 +140,12 @@ fn upsert_replay_in_memory_cache_refreshes_ready_stats_with_detailed_data() {
             .with_commander("Karax"),
         0,
     );
-    existing_replay.set_file(test_replay_path("existing_detailed.SC2Replay"));
+    existing_replay.set_file(TestHelperOps::test_replay_path(
+        "existing_detailed.SC2Replay",
+    ));
     existing_replay.set_date(100);
-    existing_replay.set_map(canonicalize_map_id("Void Launch").expect("map id should resolve"));
+    existing_replay
+        .set_map(TestHelperOps::canonicalize_map_id("Void Launch").expect("map id should resolve"));
     existing_replay.set_result("Victory");
     let mut updated_replay = ReplayInfo::with_players(
         ReplayPlayerInfo::default()
@@ -158,9 +161,10 @@ fn upsert_replay_in_memory_cache_refreshes_ready_stats_with_detailed_data() {
             .with_commander("Karax"),
         0,
     );
-    updated_replay.set_file(test_replay_path("new_detailed.SC2Replay"));
+    updated_replay.set_file(TestHelperOps::test_replay_path("new_detailed.SC2Replay"));
     updated_replay.set_date(200);
-    updated_replay.set_map(canonicalize_map_id("Void Launch").expect("map id should resolve"));
+    updated_replay
+        .set_map(TestHelperOps::canonicalize_map_id("Void Launch").expect("map id should resolve"));
     updated_replay.set_result("Victory");
 
     {
@@ -205,8 +209,8 @@ fn persist_detailed_cache_entry_to_path_writes_and_replaces_entry() {
     let root = unique_temp_path("persist_detailed_cache");
     std::fs::create_dir_all(&root).expect("temp root should be created");
     let cache_path = root.join("cache_overall_stats.json");
-    let pretty_path = pretty_output_path(&cache_path);
-    let replay_file = test_replay_path("persisted.SC2Replay");
+    let pretty_path = CacheOverallStatsFile::pretty_output_path(&cache_path);
+    let replay_file = TestHelperOps::test_replay_path("persisted.SC2Replay");
 
     let original = sample_cache_entry(&replay_file, "same-hash", "2025-01-01 00:00:00", "Defeat");
     let updated = sample_cache_entry(&replay_file, "same-hash", "2026-01-01 00:00:00", "Victory");

@@ -3,8 +3,12 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use ts_rs::TS;
 
-fn as_u32(value: u64) -> u32 {
-    u32::try_from(value).unwrap_or(u32::MAX)
+pub struct SharedTypesOps;
+
+impl SharedTypesOps {
+    fn as_u32(value: u64) -> u32 {
+        u32::try_from(value).unwrap_or(u32::MAX)
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, TS)]
@@ -302,117 +306,128 @@ pub struct OverlayPlayerStatsPayload {
     pub data: BTreeMap<String, OverlayPlayerStatsRow>,
 }
 
-pub fn unit_stats_map_from_value(value: &Value) -> UnitStatsMap {
-    let mut output = UnitStatsMap::new();
-    if let Value::Object(raw) = value {
-        for (key, raw_entry) in raw {
-            if key.is_empty() {
-                continue;
-            }
-            let Some(arr) = raw_entry.as_array() else {
-                continue;
-            };
-            let mut values = [0.0_f64; 4];
-            for (idx, item) in arr.iter().take(4).enumerate() {
-                let Some(number) = item.as_f64() else {
+impl SharedTypesOps {
+    pub fn unit_stats_map_from_value(value: &Value) -> UnitStatsMap {
+        let mut output = UnitStatsMap::new();
+        if let Value::Object(raw) = value {
+            for (key, raw_entry) in raw {
+                if key.is_empty() {
+                    continue;
+                }
+                let Some(arr) = raw_entry.as_array() else {
                     continue;
                 };
-                values[idx] = if idx < 3 {
-                    if number.is_finite() {
-                        number.round().max(0.0)
+                let mut values = [0.0_f64; 4];
+                for (idx, item) in arr.iter().take(4).enumerate() {
+                    let Some(number) = item.as_f64() else {
+                        continue;
+                    };
+                    values[idx] = if idx < 3 {
+                        if number.is_finite() {
+                            number.round().max(0.0)
+                        } else {
+                            0.0
+                        }
+                    } else if number.is_finite() {
+                        number.max(0.0)
                     } else {
                         0.0
-                    }
-                } else if number.is_finite() {
-                    number.max(0.0)
-                } else {
-                    0.0
-                };
-            }
-            output.insert(key.clone(), values);
-        }
-    }
-    output
-}
-
-pub fn overlay_icon_payload_from_value(value: &Value) -> OverlayIconPayload {
-    let mut output = OverlayIconPayload::new();
-    if let Value::Object(raw) = value {
-        for (key, raw_value) in raw {
-            if key.is_empty() {
-                continue;
-            }
-            if key == "outlaws" {
-                if let Some(items) = raw_value.as_array() {
-                    let outlaws = items
-                        .iter()
-                        .filter_map(Value::as_str)
-                        .map(ToString::to_string)
-                        .collect::<Vec<_>>();
-                    if !outlaws.is_empty() {
-                        output.insert(key.clone(), OverlayIconValue::Names(outlaws));
-                    }
+                    };
                 }
-                continue;
-            }
-            if let Some(count) = raw_value.as_u64() {
-                output.insert(key.clone(), OverlayIconValue::Count(as_u32(count)));
+                output.insert(key.clone(), values);
             }
         }
+        output
     }
-    output
 }
 
-pub fn replay_data_record_from_value(value: &Value) -> ReplayDataRecord {
-    let mut output = ReplayDataRecord::new();
-    if let Value::Object(players) = value {
-        for (key, raw_player) in players {
-            let Some(raw_player) = raw_player.as_object() else {
-                continue;
-            };
-            let sanitize_array = |entry: Option<&Vec<Value>>| -> Vec<f64> {
-                entry
-                    .map(|entries| {
-                        entries
+impl SharedTypesOps {
+    pub fn overlay_icon_payload_from_value(value: &Value) -> OverlayIconPayload {
+        let mut output = OverlayIconPayload::new();
+        if let Value::Object(raw) = value {
+            for (key, raw_value) in raw {
+                if key.is_empty() {
+                    continue;
+                }
+                if key == "outlaws" {
+                    if let Some(items) = raw_value.as_array() {
+                        let outlaws = items
                             .iter()
-                            .filter_map(Value::as_f64)
-                            .map(|value| if value.is_finite() { value } else { 0.0 })
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default()
-            };
-
-            output.insert(
-                key.clone(),
-                ReplayPlayerSeries {
-                    name: raw_player
-                        .get("name")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_string(),
-                    killed: sanitize_array(raw_player.get("killed").and_then(Value::as_array)),
-                    army: sanitize_array(raw_player.get("army").and_then(Value::as_array)),
-                    supply: sanitize_array(raw_player.get("supply").and_then(Value::as_array)),
-                    mining: sanitize_array(raw_player.get("mining").and_then(Value::as_array)),
-                },
-            );
+                            .filter_map(Value::as_str)
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>();
+                        if !outlaws.is_empty() {
+                            output.insert(key.clone(), OverlayIconValue::Names(outlaws));
+                        }
+                    }
+                    continue;
+                }
+                if let Some(count) = raw_value.as_u64() {
+                    output.insert(
+                        key.clone(),
+                        OverlayIconValue::Count(SharedTypesOps::as_u32(count)),
+                    );
+                }
+            }
         }
+        output
     }
-    output
 }
 
-pub fn swap_replay_data_record_sides(value: &mut Option<ReplayDataRecord>) {
-    let Some(record) = value.as_mut() else {
-        return;
-    };
+impl SharedTypesOps {
+    pub fn replay_data_record_from_value(value: &Value) -> ReplayDataRecord {
+        let mut output = ReplayDataRecord::new();
+        if let Value::Object(players) = value {
+            for (key, raw_player) in players {
+                let Some(raw_player) = raw_player.as_object() else {
+                    continue;
+                };
+                let sanitize_array = |entry: Option<&Vec<Value>>| -> Vec<f64> {
+                    entry
+                        .map(|entries| {
+                            entries
+                                .iter()
+                                .filter_map(Value::as_f64)
+                                .map(|value| if value.is_finite() { value } else { 0.0 })
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default()
+                };
 
-    let left = record.remove("1");
-    let right = record.remove("2");
-
-    if let Some(entry) = left {
-        record.insert("2".to_string(), entry);
+                output.insert(
+                    key.clone(),
+                    ReplayPlayerSeries {
+                        name: raw_player
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string(),
+                        killed: sanitize_array(raw_player.get("killed").and_then(Value::as_array)),
+                        army: sanitize_array(raw_player.get("army").and_then(Value::as_array)),
+                        supply: sanitize_array(raw_player.get("supply").and_then(Value::as_array)),
+                        mining: sanitize_array(raw_player.get("mining").and_then(Value::as_array)),
+                    },
+                );
+            }
+        }
+        output
     }
-    if let Some(entry) = right {
-        record.insert("1".to_string(), entry);
+}
+
+impl SharedTypesOps {
+    pub fn swap_replay_data_record_sides(value: &mut Option<ReplayDataRecord>) {
+        let Some(record) = value.as_mut() else {
+            return;
+        };
+
+        let left = record.remove("1");
+        let right = record.remove("2");
+
+        if let Some(entry) = left {
+            record.insert("2".to_string(), entry);
+        }
+        if let Some(entry) = right {
+            record.insert("1".to_string(), entry);
+        }
     }
 }

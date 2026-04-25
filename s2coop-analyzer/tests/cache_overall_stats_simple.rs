@@ -1,7 +1,7 @@
 mod common;
 
 use s2coop_analyzer::detailed_replay_analysis::{
-    analyze_full_simple, GenerateCacheConfig, GenerateCacheRuntimeOptions,
+    DetailedReplayAnalyzer, GenerateCacheConfig, GenerateCacheRuntimeOptions,
 };
 use std::fs;
 use tempfile::TempDir;
@@ -18,7 +18,7 @@ fn full_simple_analysis_writes_cache_for_empty_valid_set() {
     let output_file = temp_dir.path().join("cache_overall_stats");
     let config = GenerateCacheConfig::new(account_dir, output_file.clone());
     let runtime = GenerateCacheRuntimeOptions::default();
-    let summary = analyze_full_simple(&config, &resources, None, &runtime)
+    let summary = DetailedReplayAnalyzer::analyze_full_simple(&config, &resources, None, &runtime)
         .expect("simple analysis should succeed for invalid replay placeholders");
 
     assert_eq!(summary.scanned_replays(), 0);

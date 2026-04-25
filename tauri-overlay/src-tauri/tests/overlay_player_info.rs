@@ -1,5 +1,5 @@
-use sco_tauri_overlay::overlay_info::overlay_payload_from_replay;
-use sco_tauri_overlay::test_helper::{localized_prestige_text, test_replay_path};
+use sco_tauri_overlay::overlay_info::OverlayInfoOps;
+use sco_tauri_overlay::test_helper::TestHelperOps;
 use sco_tauri_overlay::{AppSettings, BackendState, ReplayInfo, ReplayPlayerInfo};
 use serde_json::json;
 
@@ -15,7 +15,7 @@ fn sample_replay() -> ReplayInfo {
             .with_prestige(2),
         0,
     );
-    replay.set_file(test_replay_path("example.SC2Replay"));
+    replay.set_file(TestHelperOps::test_replay_path("example.SC2Replay"));
     replay.set_result("Victory");
     replay
 }
@@ -54,7 +54,8 @@ fn cached_orientation_replay_with_reversed_player_stats() -> ReplayInfo {
 #[test]
 fn overlay_payload_omits_session_counts_when_disabled() {
     let state = BackendState::new();
-    let payload = overlay_payload_from_replay(&state, &sample_replay(), true, false, 4, 1);
+    let payload =
+        OverlayInfoOps::overlay_payload_from_replay(&state, &sample_replay(), true, false, 4, 1);
 
     assert_eq!(payload.victory, None);
     assert_eq!(payload.defeat, None);
@@ -64,7 +65,8 @@ fn overlay_payload_omits_session_counts_when_disabled() {
 #[test]
 fn overlay_payload_includes_session_counts_when_enabled() {
     let state = BackendState::new();
-    let payload = overlay_payload_from_replay(&state, &sample_replay(), false, true, 4, 1);
+    let payload =
+        OverlayInfoOps::overlay_payload_from_replay(&state, &sample_replay(), false, true, 4, 1);
 
     assert_eq!(payload.victory, Some(4));
     assert_eq!(payload.defeat, Some(1));
@@ -86,17 +88,23 @@ fn player_note_lookup_matches_case_insensitive_names() {
 #[test]
 fn overlay_prestige_text_uses_selected_language() {
     assert_eq!(
-        localized_prestige_text("Abathur", 1, "en"),
+        TestHelperOps::localized_prestige_text("Abathur", 1, "en"),
         "Essence Hoarder"
     );
-    assert_eq!(localized_prestige_text("Abathur", 1, "ko"), "정수 축적가");
-    assert_eq!(localized_prestige_text("Swann", 2, "ko"), "노련한 기계공");
+    assert_eq!(
+        TestHelperOps::localized_prestige_text("Abathur", 1, "ko"),
+        "정수 축적가"
+    );
+    assert_eq!(
+        TestHelperOps::localized_prestige_text("Swann", 2, "ko"),
+        "노련한 기계공"
+    );
 }
 
 #[test]
 fn overlay_payload_exposes_semantic_player_stats_for_main_and_ally() {
     let state = BackendState::new();
-    let payload = overlay_payload_from_replay(
+    let payload = OverlayInfoOps::overlay_payload_from_replay(
         &state,
         &cached_orientation_replay_with_reversed_player_stats(),
         false,

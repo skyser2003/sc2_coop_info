@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use s2protocol_port::{build_protocol_store, parse_file_with_store, ReplayParseMode};
+use s2protocol_port::{ProtocolStoreBuilder, ReplayParseMode, ReplayParser};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -61,7 +61,7 @@ fn main() {
 
     files.sort();
 
-    let store = match build_protocol_store() {
+    let store = match ProtocolStoreBuilder::build() {
         Ok(store) => store,
         Err(err) => {
             eprintln!("failed to load protocol store: {err}");
@@ -84,7 +84,7 @@ fn main() {
             .and_then(|name: &std::ffi::OsStr| name.to_str())
             .unwrap_or("<unknown>");
         let start = Instant::now();
-        let result = parse_file_with_store(path, &store, ReplayParseMode::Simple);
+        let result = ReplayParser::parse_file_with_store(path, &store, ReplayParseMode::Simple);
         let elapsed = start.elapsed();
 
         match result {

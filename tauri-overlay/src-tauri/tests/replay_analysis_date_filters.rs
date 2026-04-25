@@ -2,10 +2,8 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     CacheCountValue, CachePlayer, CacheReplayEntry, CacheUnitStats, ProtocolBuildValue,
     ReplayBuildInfo,
 };
-use sco_tauri_overlay::replay_analysis::{
-    parse_replay_timestamp_seconds, replay_info_from_cache_entry,
-};
-use sco_tauri_overlay::test_helper::filter_replays_for_stats;
+use sco_tauri_overlay::replay_analysis::ReplayAnalysisOps;
+use sco_tauri_overlay::test_helper::TestHelperOps;
 use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -118,7 +116,9 @@ fn replay_for_date_filter(date: &str, file_suffix: &str) -> ReplayInfo {
         0,
     );
     replay.set_file(format!("fixtures/replays/{file_suffix}.SC2Replay"));
-    replay.set_date(parse_replay_timestamp_seconds(date).expect("date should parse"));
+    replay.set_date(
+        ReplayAnalysisOps::parse_replay_timestamp_seconds(date).expect("date should parse"),
+    );
     replay.set_map("Void Launch");
     replay.set_result("Victory");
     replay.set_difficulty("Brutal");
@@ -131,11 +131,11 @@ fn cache_entry_uses_recorded_replay_timestamp() {
     std::fs::write(&replay_path, []).expect("replay file should be created");
 
     let entry = sample_cache_entry(&replay_path, "2018:12:31:21:44:38");
-    let replay = replay_info_from_cache_entry(&entry);
+    let replay = ReplayAnalysisOps::replay_info_from_cache_entry(&entry);
 
     assert_eq!(
         replay.date(),
-        parse_replay_timestamp_seconds("2018:12:31:21:44:38")
+        ReplayAnalysisOps::parse_replay_timestamp_seconds("2018:12:31:21:44:38")
             .expect("recorded replay timestamp should parse")
     );
 
@@ -149,7 +149,7 @@ fn filter_replays_for_stats_uses_strict_maxdate_boundary() {
         replay_for_date_filter("2020:12:31:13:00:00", "excluded"),
     ];
 
-    let filtered = filter_replays_for_stats(
+    let filtered = TestHelperOps::filter_replays_for_stats(
         "/config/stats?mindate=2020-12-30&maxdate=2020-12-31",
         &replays,
     );

@@ -1,8 +1,4 @@
-use crate::decoder::{
-    decode_ability_data_from_typeinfo, decode_cmd_event_data_from_typeinfo,
-    decode_player_stats_from_typeinfo, decode_target_unit_data_from_typeinfo,
-    decode_trigger_event_data_from_typeinfo, EventDecodePlan, TypeDecoder, TypeInfo,
-};
+use crate::decoder::{EventDecodePlan, EventSpecialDataDecoder, TypeDecoder, TypeInfo};
 use crate::DecodeError;
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -260,19 +256,30 @@ impl DirectEventDecode for GameEvent {
                 self.m_event_type = decoder.i64_from_typeinfo(field_typeinfo)?;
             }
             GameEventField::EventData => {
-                self.m_event_data = Some(decode_trigger_event_data_from_typeinfo(
-                    decoder,
-                    field_typeinfo,
-                )?);
+                self.m_event_data = Some(
+                    EventSpecialDataDecoder::decode_trigger_event_data_from_typeinfo(
+                        decoder,
+                        field_typeinfo,
+                    )?,
+                );
             }
             GameEventField::Abil => {
-                self.m_abil = decode_ability_data_from_typeinfo(decoder, field_typeinfo)?;
+                self.m_abil = EventSpecialDataDecoder::decode_ability_data_from_typeinfo(
+                    decoder,
+                    field_typeinfo,
+                )?;
             }
             GameEventField::Data => {
-                self.m_data = decode_cmd_event_data_from_typeinfo(decoder, field_typeinfo)?;
+                self.m_data = EventSpecialDataDecoder::decode_cmd_event_data_from_typeinfo(
+                    decoder,
+                    field_typeinfo,
+                )?;
             }
             GameEventField::Target => {
-                self.m_target = decode_target_unit_data_from_typeinfo(decoder, field_typeinfo)?;
+                self.m_target = EventSpecialDataDecoder::decode_target_unit_data_from_typeinfo(
+                    decoder,
+                    field_typeinfo,
+                )?;
             }
         }
         Ok(())
@@ -361,7 +368,10 @@ impl DirectEventDecode for TrackerEvent {
                 self.m_count = decoder.i64_from_typeinfo(field_typeinfo)?;
             }
             TrackerEventField::Stats => {
-                self.m_stats = decode_player_stats_from_typeinfo(decoder, field_typeinfo)?;
+                self.m_stats = EventSpecialDataDecoder::decode_player_stats_from_typeinfo(
+                    decoder,
+                    field_typeinfo,
+                )?;
             }
             TrackerEventField::UnitTypeName => {
                 self.m_unit_type_name = decoder.string_from_typeinfo(field_typeinfo)?;
@@ -404,21 +414,25 @@ impl DirectEventDecode for TrackerEvent {
     }
 }
 
-pub(crate) fn decode_user_id<D: TypeDecoder>(
-    decoder: &mut D,
-    typeinfo: &TypeInfo,
-) -> Result<Option<i64>, DecodeError> {
-    let mut user_id = None;
-    match decoder.visit_struct_fields_from_typeinfo(
-        typeinfo,
-        &mut |key| if key == "m_userId" { Some(()) } else { None },
-        &mut |decoder, (), field_typeinfo| {
-            user_id = decoder.i64_from_typeinfo(field_typeinfo)?;
-            Ok(())
-        },
-    ) {
-        Ok(()) => Ok(user_id),
-        Err(DecodeError::UnexpectedType(_)) => decoder.i64_from_typeinfo(typeinfo),
-        Err(error) => Err(error),
+pub(crate) struct EventUserIdDecoder;
+
+impl EventUserIdDecoder {
+    pub(crate) fn decode<D: TypeDecoder>(
+        decoder: &mut D,
+        typeinfo: &TypeInfo,
+    ) -> Result<Option<i64>, DecodeError> {
+        let mut user_id = None;
+        match decoder.visit_struct_fields_from_typeinfo(
+            typeinfo,
+            &mut |key| if key == "m_userId" { Some(()) } else { None },
+            &mut |decoder, (), field_typeinfo| {
+                user_id = decoder.i64_from_typeinfo(field_typeinfo)?;
+                Ok(())
+            },
+        ) {
+            Ok(()) => Ok(user_id),
+            Err(DecodeError::UnexpectedType(_)) => decoder.i64_from_typeinfo(typeinfo),
+            Err(error) => Err(error),
+        }
     }
 }

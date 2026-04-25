@@ -1,5 +1,5 @@
-use sco_tauri_overlay::replay_analysis::append_units_to_rollup;
-use sco_tauri_overlay::test_helper::build_commander_unit_data;
+use sco_tauri_overlay::replay_analysis::ReplayAnalysisOps;
+use sco_tauri_overlay::test_helper::TestHelperOps;
 use sco_tauri_overlay::CommanderUnitRollup;
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 fn hidden_unit_rows_preserve_wx_made_and_mc_bonus_behavior() {
     let mut rollup = BTreeMap::<String, CommanderUnitRollup>::new();
 
-    append_units_to_rollup(
+    ReplayAnalysisOps::append_units_to_rollup(
         &mut rollup,
         "Karax",
         &json!({
@@ -29,7 +29,7 @@ fn hidden_unit_rows_preserve_wx_made_and_mc_bonus_behavior() {
 fn hidden_unit_rows_keep_created_and_lost_masked_in_unit_data() {
     let mut rollup = BTreeMap::<String, CommanderUnitRollup>::new();
 
-    append_units_to_rollup(
+    ReplayAnalysisOps::append_units_to_rollup(
         &mut rollup,
         "Karax",
         &json!({
@@ -38,7 +38,7 @@ fn hidden_unit_rows_keep_created_and_lost_masked_in_unit_data() {
         20,
     );
 
-    let unit_data = build_commander_unit_data(rollup);
+    let unit_data = TestHelperOps::build_commander_unit_data(rollup);
 
     assert_eq!(unit_data["Karax"]["Karax's Top Bar"]["created"], json!("-"));
     assert_eq!(unit_data["Karax"]["Karax's Top Bar"]["lost"], json!("-"));

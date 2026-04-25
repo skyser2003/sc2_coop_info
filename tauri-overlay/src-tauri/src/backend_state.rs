@@ -20,11 +20,9 @@ use crate::shared_types::{
     OverlayPlayerStatsPayload, OverlayPlayerStatsRow, ReplayScanProgressPayload,
 };
 use crate::{
-    apply_rebuild_snapshot,
     overlay_info::{ResolvedHotkeyBinding, RuntimeFlags},
     replay_analysis::ReplayAnalysis,
-    sanitize_replay_text, session_counter_delta, AnalysisMode, AppSettings, ReplayInfo, StatsState,
-    UNLIMITED_REPLAY_LIMIT,
+    AnalysisMode, AppSettings, ReplayInfo, StatsState, TauriOverlayOps, UNLIMITED_REPLAY_LIMIT,
 };
 
 #[derive(Default)]
@@ -35,24 +33,28 @@ enum CachedLoad<T> {
     Failed(String),
 }
 
-fn load_cached_state<T, F>(slot: &Mutex<CachedLoad<T>>, loader: F) -> Result<Arc<T>, String>
-where
-    F: FnOnce() -> Result<Arc<T>, String>,
-{
-    let mut slot = slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    match &*slot {
-        CachedLoad::Loaded(value) => Ok(value.clone()),
-        CachedLoad::Failed(error) => Err(error.clone()),
-        CachedLoad::Uninitialized => {
-            let loaded = loader();
-            match loaded {
-                Ok(value) => {
-                    *slot = CachedLoad::Loaded(value.clone());
-                    Ok(value)
-                }
-                Err(error) => {
-                    *slot = CachedLoad::Failed(error.clone());
-                    Err(error)
+pub struct BackendStateOps;
+
+impl BackendStateOps {
+    fn load_cached_state<T, F>(slot: &Mutex<CachedLoad<T>>, loader: F) -> Result<Arc<T>, String>
+    where
+        F: FnOnce() -> Result<Arc<T>, String>,
+    {
+        let mut slot = slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        match &*slot {
+            CachedLoad::Loaded(value) => Ok(value.clone()),
+            CachedLoad::Failed(error) => Err(error.clone()),
+            CachedLoad::Uninitialized => {
+                let loaded = loader();
+                match loaded {
+                    Ok(value) => {
+                        *slot = CachedLoad::Loaded(value.clone());
+                        Ok(value)
+                    }
+                    Err(error) => {
+                        *slot = CachedLoad::Failed(error.clone());
+                        Err(error)
+                    }
                 }
             }
         }
@@ -106,11 +108,13 @@ pub struct ReplayScanProgress {
     status: Mutex<String>,
 }
 
-fn now_millis() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
-        .unwrap_or(0)
+impl BackendStateOps {
+    fn now_millis() -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
+            .unwrap_or(0)
+    }
 }
 
 impl Default for ReplayScanProgress {
@@ -172,7 +176,8 @@ impl ReplayScanProgress {
         self.completed.store(0, Ordering::Release);
         self.failed.store(0, Ordering::Release);
         self.parse_skipped.store(0, Ordering::Release);
-        self.started_at_ms.store(now_millis(), Ordering::Release);
+        self.started_at_ms
+            .store(BackendStateOps::now_millis(), Ordering::Release);
         self.elapsed_ms.store(0, Ordering::Release);
         if let Ok(mut value) = self.stage.lock() {
             *value = stage.to_string();
@@ -195,7 +200,7 @@ impl ReplayScanProgress {
         if status == "Completed" {
             let started_at = self.started_at_ms.load(Ordering::Acquire);
             if started_at > 0 {
-                let elapsed = now_millis().saturating_sub(started_at);
+                let elapsed = BackendStateOps::now_millis().saturating_sub(started_at);
                 self.elapsed_ms.store(elapsed, Ordering::Release);
             }
         }
@@ -234,7 +239,7 @@ impl ReplayScanProgress {
         let started_at = self.started_at_ms.load(Ordering::Acquire);
         let stored_elapsed = self.elapsed_ms.load(Ordering::Acquire);
         let elapsed_ms = if status == "Parsing" && started_at > 0 {
-            now_millis().saturating_sub(started_at)
+            BackendStateOps::now_millis().saturating_sub(started_at)
         } else {
             stored_elapsed
         };
@@ -265,137 +270,149 @@ impl ReplayScanProgress {
     }
 }
 
-fn replay_cache_snapshot(cache: &HashMap<String, ReplayInfo>) -> Vec<ReplayInfo> {
-    let mut replays = cache.values().cloned().collect::<Vec<_>>();
-    ReplayInfo::sort_replays(&mut replays);
-    replays
+impl BackendStateOps {
+    fn replay_cache_snapshot(cache: &HashMap<String, ReplayInfo>) -> Vec<ReplayInfo> {
+        let mut replays = cache.values().cloned().collect::<Vec<_>>();
+        ReplayInfo::sort_replays(&mut replays);
+        replays
+    }
 }
 
-fn upsert_replay_map(
-    cache: &mut HashMap<String, ReplayInfo>,
-    replay_hash: &str,
-    replay: &ReplayInfo,
-) {
-    if replay_hash.is_empty() {
-        return;
-    }
-
-    cache.retain(|hash, entry| hash == replay_hash || entry.file != replay.file);
-
-    match cache.get(replay_hash) {
-        Some(existing)
-            if ReplayInfo::should_keep_existing_detailed_variant(
-                existing.is_detailed,
-                replay.is_detailed,
-            ) => {}
-        Some(_) => {
-            cache.insert(replay_hash.to_string(), replay.clone());
+impl BackendStateOps {
+    fn upsert_replay_map(
+        cache: &mut HashMap<String, ReplayInfo>,
+        replay_hash: &str,
+        replay: &ReplayInfo,
+    ) {
+        if replay_hash.is_empty() {
+            return;
         }
-        None => {
-            cache.insert(replay_hash.to_string(), replay.clone());
-        }
-    }
-}
 
-fn as_u32(value: u64) -> u32 {
-    u32::try_from(value).unwrap_or(u32::MAX)
-}
+        cache.retain(|hash, entry| hash == replay_hash || entry.file != replay.file);
 
-fn select_other_player_for_stats(
-    replay: &ReplayInfo,
-    main_names: &HashSet<String>,
-    main_handles: &HashSet<String>,
-) -> Option<(String, String)> {
-    let p1 = replay.main().name.trim();
-    let p2 = replay.ally().name.trim();
-
-    if p1.is_empty() && p2.is_empty() {
-        return None;
-    }
-
-    let p1_handle = replay.main().handle.clone();
-    let p2_handle = replay.ally().handle.clone();
-
-    let p1_is_main = ReplayAnalysis::is_main_player_identity(
-        &replay.main().name,
-        &replay.main().handle,
-        main_names,
-        main_handles,
-    );
-    let p2_is_main = ReplayAnalysis::is_main_player_identity(
-        &replay.ally().name,
-        &replay.ally().handle,
-        main_names,
-        main_handles,
-    );
-
-    match (p1_is_main, p2_is_main) {
-        (true, false) => (!p2.is_empty()).then_some((p2_handle, p2.to_string())),
-        (false, true) => (!p1.is_empty()).then_some((p1_handle, p1.to_string())),
-        _ => {
-            if !p2.is_empty() {
-                Some((p2_handle, p2.to_string()))
-            } else if !p1.is_empty() {
-                Some((p1_handle, p1.to_string()))
-            } else {
-                None
+        match cache.get(replay_hash) {
+            Some(existing)
+                if ReplayInfo::should_keep_existing_detailed_variant(
+                    existing.is_detailed,
+                    replay.is_detailed,
+                ) => {}
+            Some(_) => {
+                cache.insert(replay_hash.to_string(), replay.clone());
+            }
+            None => {
+                cache.insert(replay_hash.to_string(), replay.clone());
             }
         }
     }
 }
 
-fn lookup_player_stats_row(
-    player_data: &Map<String, Value>,
-    player_name: &str,
-) -> Option<(String, Map<String, Value>)> {
-    if let Some(value) = player_data.get(player_name).and_then(Value::as_object) {
-        return Some((player_name.to_string(), value.clone()));
+impl BackendStateOps {
+    fn as_u32(value: u64) -> u32 {
+        u32::try_from(value).unwrap_or(u32::MAX)
     }
-
-    let player_key = ReplayAnalysis::normalized_player_key(player_name);
-    player_data.iter().find_map(|(name, value)| {
-        if ReplayAnalysis::normalized_player_key(name) != player_key {
-            return None;
-        }
-        value
-            .as_object()
-            .map(|entry| (name.to_string(), entry.clone()))
-    })
 }
 
-fn relative_last_seen_text(last_seen: u64) -> String {
-    if last_seen == 0 {
-        return String::new();
-    }
+impl BackendStateOps {
+    fn select_other_player_for_stats(
+        replay: &ReplayInfo,
+        main_names: &HashSet<String>,
+        main_handles: &HashSet<String>,
+    ) -> Option<(String, String)> {
+        let p1 = replay.main().name.trim();
+        let p2 = replay.ally().name.trim();
 
-    let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(delta) => delta.as_secs(),
-        Err(_) => return String::new(),
-    };
-    let mut delta = now.saturating_sub(last_seen);
+        if p1.is_empty() && p2.is_empty() {
+            return None;
+        }
 
-    let years = delta / 31_557_600;
-    delta %= 31_557_600;
-    let days = delta / 86_400;
-    delta %= 86_400;
-    let hours = delta / 3_600;
-    delta %= 3_600;
-    let minutes = delta / 60;
+        let p1_handle = replay.main().handle.clone();
+        let p2_handle = replay.ally().handle.clone();
 
-    let mut parts = Vec::<String>::new();
-    if years > 0 {
-        parts.push(format!("{years} years"));
+        let p1_is_main = ReplayAnalysis::is_main_player_identity(
+            &replay.main().name,
+            &replay.main().handle,
+            main_names,
+            main_handles,
+        );
+        let p2_is_main = ReplayAnalysis::is_main_player_identity(
+            &replay.ally().name,
+            &replay.ally().handle,
+            main_names,
+            main_handles,
+        );
+
+        match (p1_is_main, p2_is_main) {
+            (true, false) => (!p2.is_empty()).then_some((p2_handle, p2.to_string())),
+            (false, true) => (!p1.is_empty()).then_some((p1_handle, p1.to_string())),
+            _ => {
+                if !p2.is_empty() {
+                    Some((p2_handle, p2.to_string()))
+                } else if !p1.is_empty() {
+                    Some((p1_handle, p1.to_string()))
+                } else {
+                    None
+                }
+            }
+        }
     }
-    if days > 0 {
-        parts.push(format!("{days} days"));
+}
+
+impl BackendStateOps {
+    fn lookup_player_stats_row(
+        player_data: &Map<String, Value>,
+        player_name: &str,
+    ) -> Option<(String, Map<String, Value>)> {
+        if let Some(value) = player_data.get(player_name).and_then(Value::as_object) {
+            return Some((player_name.to_string(), value.clone()));
+        }
+
+        let player_key = ReplayAnalysis::normalized_player_key(player_name);
+        player_data.iter().find_map(|(name, value)| {
+            if ReplayAnalysis::normalized_player_key(name) != player_key {
+                return None;
+            }
+            value
+                .as_object()
+                .map(|entry| (name.to_string(), entry.clone()))
+        })
     }
-    if hours > 0 {
-        parts.push(format!("{hours} hours"));
+}
+
+impl BackendStateOps {
+    fn relative_last_seen_text(last_seen: u64) -> String {
+        if last_seen == 0 {
+            return String::new();
+        }
+
+        let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(delta) => delta.as_secs(),
+            Err(_) => return String::new(),
+        };
+        let mut delta = now.saturating_sub(last_seen);
+
+        let years = delta / 31_557_600;
+        delta %= 31_557_600;
+        let days = delta / 86_400;
+        delta %= 86_400;
+        let hours = delta / 3_600;
+        delta %= 3_600;
+        let minutes = delta / 60;
+
+        let mut parts = Vec::<String>::new();
+        if years > 0 {
+            parts.push(format!("{years} years"));
+        }
+        if days > 0 {
+            parts.push(format!("{days} days"));
+        }
+        if hours > 0 {
+            parts.push(format!("{hours} hours"));
+        }
+        if minutes > 0 || parts.is_empty() {
+            parts.push(format!("{minutes} minutes"));
+        }
+        format!("{} ago", parts.join(" "))
     }
-    if minutes > 0 || parts.is_empty() {
-        parts.push(format!("{minutes} minutes"));
-    }
-    format!("{} ago", parts.join(" "))
 }
 
 impl Default for BackendState {
@@ -436,7 +453,7 @@ impl BackendState {
                 replays: Arc::new(Mutex::new(HashMap::new())),
                 selected_replay_file: Arc::new(Mutex::new(None)),
             })),
-            analyzer_data_dir: crate::path_manager::get_json_data_dir(),
+            analyzer_data_dir: crate::path_manager::PathManagerOps::get_json_data_dir(),
             dictionary_data: Arc::new(Mutex::new(CachedLoad::Uninitialized)),
             replay_analysis_resources: Arc::new(Mutex::new(CachedLoad::Uninitialized)),
         }
@@ -470,7 +487,7 @@ impl BackendState {
     }
 
     pub fn dictionary_data(&self) -> Result<Arc<Sc2DictionaryData>, String> {
-        load_cached_state(&self.dictionary_data, || {
+        BackendStateOps::load_cached_state(&self.dictionary_data, || {
             Sc2DictionaryData::load(Some(self.analyzer_data_dir()))
                 .map(Arc::new)
                 .map_err(|error| format!("Failed to load dictionary data: {error}"))
@@ -478,7 +495,7 @@ impl BackendState {
     }
 
     pub fn replay_analysis_resources(&self) -> Result<Arc<ReplayAnalysisResources>, String> {
-        load_cached_state(&self.replay_analysis_resources, || {
+        BackendStateOps::load_cached_state(&self.replay_analysis_resources, || {
             let dictionary_data = self.dictionary_data()?;
             ReplayAnalysisResources::from_dictionary_data(dictionary_data)
                 .map(Arc::new)
@@ -510,7 +527,7 @@ impl BackendState {
             return;
         }
 
-        if let Err(error) = crate::logging::append_line(message) {
+        if let Err(error) = crate::logging::LoggingOps::append_line(message) {
             eprintln!("[SCO/log] {error}");
         }
     }
@@ -753,7 +770,7 @@ impl BackendState {
         let main_names = self.configured_main_names();
         let main_handles = self.configured_main_handles();
         let player_stats_target =
-            select_other_player_for_stats(&selected, &main_names, &main_handles)
+            BackendStateOps::select_other_player_for_stats(&selected, &main_names, &main_handles)
                 .or_else(|| {
                     let ally = selected.ally().name.trim();
                     if !ally.is_empty() {
@@ -796,7 +813,7 @@ impl BackendState {
                     .cloned()
             });
 
-        let input_name = sanitize_replay_text(player_name);
+        let input_name = TauriOverlayOps::sanitize_replay_text(player_name);
         let fallback_name = if input_name.trim().is_empty() {
             "Unknown".to_string()
         } else {
@@ -806,7 +823,7 @@ impl BackendState {
         let mut data = std::collections::BTreeMap::new();
         let resolved = player_data
             .as_ref()
-            .and_then(|rows| lookup_player_stats_row(rows, &fallback_name));
+            .and_then(|rows| BackendStateOps::lookup_player_stats_row(rows, &fallback_name));
 
         let (display_name, value) = if let Some((resolved_name, row)) = resolved {
             let wins = row.get("wins").and_then(Value::as_u64).unwrap_or(0);
@@ -823,16 +840,16 @@ impl BackendState {
             let frequency = row.get("frequency").and_then(Value::as_f64).unwrap_or(0.0);
             let kills = row.get("kills").and_then(Value::as_f64).unwrap_or(0.0);
             let last_seen = row.get("last_seen").and_then(Value::as_u64).unwrap_or(0);
-            let relative_last_seen = relative_last_seen_text(last_seen);
+            let relative_last_seen = BackendStateOps::relative_last_seen_text(last_seen);
 
             let note = settings.player_note(player_handle);
             (
-                sanitize_replay_text(&resolved_name),
+                TauriOverlayOps::sanitize_replay_text(&resolved_name),
                 OverlayPlayerStatsRow::Stats {
-                    wins: as_u32(wins),
-                    losses: as_u32(losses),
-                    apm: as_u32(apm as u64),
-                    commander: sanitize_replay_text(commander),
+                    wins: BackendStateOps::as_u32(wins),
+                    losses: BackendStateOps::as_u32(losses),
+                    apm: BackendStateOps::as_u32(apm as u64),
+                    commander: TauriOverlayOps::sanitize_replay_text(commander),
                     frequency,
                     kills,
                     last_seen_relative: relative_last_seen,
@@ -862,7 +879,7 @@ impl BackendState {
                     .replays
                     .lock()
                     .ok()
-                    .map(|replays| replay_cache_snapshot(&replays))
+                    .map(|replays| BackendStateOps::replay_cache_snapshot(&replays))
             })
             .unwrap_or_default()
     }
@@ -948,7 +965,7 @@ impl BackendState {
     }
 
     pub fn record_session_result(&self, result: &str) {
-        let (victories, defeats) = session_counter_delta(result);
+        let (victories, defeats) = TauriOverlayOps::session_counter_delta(result);
         if victories > 0 {
             self.session_victories
                 .fetch_add(victories, Ordering::AcqRel);
@@ -1009,7 +1026,7 @@ impl BackendState {
                             let replay_hash = ReplayFileIdentity::calculate_hash(
                                 &std::path::PathBuf::from(&replay.file),
                             );
-                            upsert_replay_map(&mut cache, &replay_hash, &replay);
+                            BackendStateOps::upsert_replay_map(&mut cache, &replay_hash, &replay);
                         }
                     } else {
                         crate::sco_log!("[SCO/players] failed to update player replay cache");
@@ -1071,7 +1088,7 @@ impl BackendState {
                 message: "Dictionary data is unavailable.".to_string(),
                 ..crate::StatsSnapshot::default()
             });
-        apply_rebuild_snapshot(&mut stats, snapshot, mode);
+        TauriOverlayOps::apply_rebuild_snapshot(&mut stats, snapshot, mode);
         if !include_detailed {
             if let Some(dictionary) = dictionary.as_deref() {
                 stats.sync_detailed_analysis_status_from_replays_with_dictionary(
@@ -1186,14 +1203,14 @@ impl ReplayState {
         let cached = self
             .replays
             .lock()
-            .map(|replays| replay_cache_snapshot(&replays))
+            .map(|replays| BackendStateOps::replay_cache_snapshot(&replays))
             .unwrap_or_default();
 
         let replays = if cached.is_empty() {
             let from_detailed_analysis = resources
                 .map(|resources| {
                     ReplayAnalysis::load_detailed_analysis_replays_snapshot_from_path_with_dictionary(
-                        &crate::path_manager::get_cache_path(),
+                        &crate::path_manager::PathManagerOps::get_cache_path(),
                         UNLIMITED_REPLAY_LIMIT,
                         main_names,
                         main_handles,
@@ -1227,7 +1244,7 @@ impl ReplayState {
                 for replay in &loaded {
                     let replay_hash =
                         ReplayFileIdentity::calculate_hash(&std::path::PathBuf::from(&replay.file));
-                    upsert_replay_map(&mut cache, &replay_hash, replay);
+                    BackendStateOps::upsert_replay_map(&mut cache, &replay_hash, replay);
                 }
             }
             loaded
@@ -1305,7 +1322,7 @@ impl ReplayState {
         let _ = self
             .replays
             .lock()
-            .map(|mut cache| upsert_replay_map(&mut cache, replay_hash, replay));
+            .map(|mut cache| BackendStateOps::upsert_replay_map(&mut cache, replay_hash, replay));
     }
 
     pub fn cached_replay_by_hash(&self, replay_hash: &str) -> Option<ReplayInfo> {

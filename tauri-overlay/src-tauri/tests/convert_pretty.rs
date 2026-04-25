@@ -1,4 +1,4 @@
-use sco_tauri_overlay::path_manager::{get_cache_path, get_pretty_cache_path};
+use sco_tauri_overlay::path_manager::PathManagerOps;
 use std::path::{Path, PathBuf};
 
 struct FileRestoreGuard {
@@ -33,8 +33,8 @@ impl Drop for FileRestoreGuard {
 
 #[test]
 fn convert_to_pretty_json() {
-    let original_path = get_cache_path();
-    let pretty_path = get_pretty_cache_path();
+    let original_path = PathManagerOps::get_cache_path();
+    let pretty_path = PathManagerOps::get_pretty_cache_path();
     let _restore_original = FileRestoreGuard::capture(&original_path);
     let _restore_pretty = FileRestoreGuard::capture(&pretty_path);
 

@@ -142,65 +142,70 @@ pub enum PrettyCacheError {
     WriteFailed(PathBuf, #[source] io::Error),
 }
 
-pub fn pretty_output_path(path: &Path) -> PathBuf {
-    let extension = path.extension();
-    let file_name = path
-        .file_stem()
-        .and_then(|name| name.to_str())
-        .unwrap_or("cache_overall_stats");
+pub struct CacheOverallStatsFile;
 
-    path.with_file_name(format!(
-        "{file_name}_pretty.{}",
-        extension.and_then(|s| s.to_str()).unwrap_or("json")
-    ))
-}
+impl CacheOverallStatsFile {
+    pub fn pretty_output_path(path: &Path) -> PathBuf {
+        let extension = path.extension();
+        let file_name = path
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .unwrap_or("cache_overall_stats");
 
-pub fn write_pretty_cache_file(
-    minified_path: &Path,
-    pretty_path: Option<&Path>,
-) -> Result<PathBuf, PrettyCacheError> {
-    let payload = fs::read(minified_path)
-        .map_err(|error| PrettyCacheError::ReadFailed(minified_path.to_path_buf(), error))?;
-    let parsed: JsonValue = serde_json::from_slice(&payload)
-        .map_err(|error| PrettyCacheError::ParseFailed(minified_path.to_path_buf(), error))?;
-    let target_path = pretty_path
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| pretty_output_path(minified_path));
-    let pretty_text = serde_json::to_string_pretty(&parsed)
-        .map_err(|error| PrettyCacheError::SerializeFailed(minified_path.to_path_buf(), error))?;
-    fs::write(&target_path, format!("{pretty_text}\n"))
-        .map_err(|error| PrettyCacheError::WriteFailed(target_path.clone(), error))?;
-    Ok(target_path)
-}
-
-pub(crate) fn normalized_path_string(path: &Path) -> String {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        normalized.push(component.as_os_str());
+        path.with_file_name(format!(
+            "{file_name}_pretty.{}",
+            extension.and_then(|s| s.to_str()).unwrap_or("json")
+        ))
     }
-    normalized.display().to_string()
-}
 
-pub(crate) fn duration_to_u64(value: f64) -> u64 {
-    if !value.is_finite() || value <= 0.0 {
-        0
-    } else {
-        value.round_ties_even() as u64
+    pub fn write_pretty_cache_file(
+        minified_path: &Path,
+        pretty_path: Option<&Path>,
+    ) -> Result<PathBuf, PrettyCacheError> {
+        let payload = fs::read(minified_path)
+            .map_err(|error| PrettyCacheError::ReadFailed(minified_path.to_path_buf(), error))?;
+        let parsed: JsonValue = serde_json::from_slice(&payload)
+            .map_err(|error| PrettyCacheError::ParseFailed(minified_path.to_path_buf(), error))?;
+        let target_path = pretty_path
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| Self::pretty_output_path(minified_path));
+        let pretty_text = serde_json::to_string_pretty(&parsed).map_err(|error| {
+            PrettyCacheError::SerializeFailed(minified_path.to_path_buf(), error)
+        })?;
+        fs::write(&target_path, format!("{pretty_text}\n"))
+            .map_err(|error| PrettyCacheError::WriteFailed(target_path.clone(), error))?;
+        Ok(target_path)
     }
-}
 
-fn normalize_json_float(value: f64) -> f64 {
-    if !value.is_finite() {
-        return value;
+    pub(crate) fn normalized_path_string(path: &Path) -> String {
+        let mut normalized = PathBuf::new();
+        for component in path.components() {
+            normalized.push(component.as_os_str());
+        }
+        normalized.display().to_string()
     }
-    if value == 0.0 {
-        return 0.0;
+
+    pub(crate) fn duration_to_u64(value: f64) -> u64 {
+        if !value.is_finite() || value <= 0.0 {
+            0
+        } else {
+            value.round_ties_even() as u64
+        }
     }
-    let rounded = (value * 1_000_000.0).round() / 1_000_000.0;
-    if rounded == 0.0 {
-        0.0
-    } else {
-        rounded
+
+    fn normalize_json_float(value: f64) -> f64 {
+        if !value.is_finite() {
+            return value;
+        }
+        if value == 0.0 {
+            return 0.0;
+        }
+        let rounded = (value * 1_000_000.0).round() / 1_000_000.0;
+        if rounded == 0.0 {
+            0.0
+        } else {
+            rounded
+        }
     }
 }
 
@@ -271,7 +276,7 @@ impl CacheStatValue {
             return Self::Integer(0);
         }
         if value.fract().abs() < 1e-9 {
-            Self::Integer(duration_to_u64(value))
+            Self::Integer(CacheOverallStatsFile::duration_to_u64(value))
         } else {
             Self::Float(value)
         }
@@ -285,7 +290,7 @@ impl CacheNumericValue {
         } else if !value.is_finite() || value <= 0.0 {
             Self::Integer(0)
         } else if value.fract().abs() < 1e-9 {
-            Self::Integer(duration_to_u64(value))
+            Self::Integer(CacheOverallStatsFile::duration_to_u64(value))
         } else {
             Self::Float(value)
         }
@@ -312,7 +317,7 @@ impl CachePlayerStatsSeries {
             killed: stats
                 .killed
                 .iter()
-                .map(|value| duration_to_u64(*value))
+                .map(|value| CacheOverallStatsFile::duration_to_u64(*value))
                 .collect(),
         }
     }
@@ -416,7 +421,7 @@ impl CacheReplayEntry {
         enemy_race_present: bool,
         detailed_fallback: bool,
     ) -> Self {
-        let accurate_length = normalize_json_float(parser.accurate_length);
+        let accurate_length = CacheOverallStatsFile::normalize_json_float(parser.accurate_length);
         let accurate_length = if detailed_fallback {
             CacheNumericValue::Float(accurate_length)
         } else {
@@ -440,7 +445,7 @@ impl CacheReplayEntry {
             enemy_race,
             ext_difficulty: parser.ext_difficulty.clone(),
             extension: parser.extension,
-            file: normalized_path_string(Path::new(&parser.file)),
+            file: CacheOverallStatsFile::normalized_path_string(Path::new(&parser.file)),
             form_alength: parser.form_alength.clone(),
             detailed_analysis: false,
             hash: parser.hash.clone().unwrap_or_default(),
@@ -698,7 +703,9 @@ impl CacheReplayEntry {
             JsonValue::Null | JsonValue::Bool(_) | JsonValue::String(_) => value,
             JsonValue::Number(number) => {
                 if number.is_f64() {
-                    let normalized = normalize_json_float(number.as_f64().unwrap_or_default());
+                    let normalized = CacheOverallStatsFile::normalize_json_float(
+                        number.as_f64().unwrap_or_default(),
+                    );
                     match Number::from_f64(normalized) {
                         Some(value) => JsonValue::Number(value),
                         None => JsonValue::Null,

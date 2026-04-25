@@ -1,4 +1,4 @@
-use sco_tauri_overlay::monitor_settings::{resolve_monitor_descriptors, MonitorDescriptor};
+use sco_tauri_overlay::monitor_settings::{MonitorDescriptor, MonitorSettingsOps};
 
 #[test]
 fn resolved_monitor_descriptors_keep_runtime_geometry_for_monitor_one_alignment() {
@@ -11,7 +11,8 @@ fn resolved_monitor_descriptors_keep_runtime_geometry_for_monitor_one_alignment(
         MonitorDescriptor::new("Primary", 0, 0, 2560, 1440),
     ];
 
-    let resolved = resolve_monitor_descriptors(runtime_monitors, named_monitors);
+    let resolved =
+        MonitorSettingsOps::resolve_monitor_descriptors(runtime_monitors, named_monitors);
 
     assert_eq!(resolved.len(), 2);
     assert_eq!(resolved[0].name(), "Portrait");
@@ -30,7 +31,7 @@ fn resolved_monitor_descriptors_fall_back_to_display_info_when_runtime_is_missin
         MonitorDescriptor::new("Primary", 0, 0, 2560, 1440),
     ];
 
-    let resolved = resolve_monitor_descriptors(Vec::new(), named_monitors);
+    let resolved = MonitorSettingsOps::resolve_monitor_descriptors(Vec::new(), named_monitors);
 
     assert_eq!(resolved.len(), 2);
     assert_eq!(resolved[0].name(), "Portrait");

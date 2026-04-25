@@ -3,10 +3,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     ProtocolBuildValue, ReplayBuildInfo,
 };
 use sco_tauri_overlay::replay_analysis::ReplayAnalysis;
-use sco_tauri_overlay::test_helper::{
-    canonicalize_map_id, load_detailed_analysis_replays_snapshot_from_path_with_identity,
-    stats_replays_for_response_from_path_with_identity,
-};
+use sco_tauri_overlay::test_helper::TestHelperOps;
 use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo, UNLIMITED_REPLAY_LIMIT};
 use serde_json::json;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -14,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn test_map_id(raw: &str) -> String {
-    canonicalize_map_id(raw).expect("map id should resolve")
+    TestHelperOps::canonicalize_map_id(raw).expect("map id should resolve")
 }
 
 fn player(name: &str, handle: &str, commander: &str) -> ReplayPlayerInfo {
@@ -156,12 +153,13 @@ fn merge_cached_detailed_replays_from_path(
         return Vec::new();
     }
 
-    let detailed_replays = load_detailed_analysis_replays_snapshot_from_path_with_identity(
-        cache_path,
-        UNLIMITED_REPLAY_LIMIT,
-        main_names,
-        main_handles,
-    );
+    let detailed_replays =
+        TestHelperOps::load_detailed_analysis_replays_snapshot_from_path_with_identity(
+            cache_path,
+            UNLIMITED_REPLAY_LIMIT,
+            main_names,
+            main_handles,
+        );
     if detailed_replays.is_empty() {
         return replays.to_vec();
     }
@@ -203,7 +201,7 @@ fn stats_response_prefers_detailed_analysis_cache_when_unit_data_is_enabled() {
     );
 
     let stale_replays = [stale_replay];
-    let replays = stats_replays_for_response_from_path_with_identity(
+    let replays = TestHelperOps::stats_replays_for_response_from_path_with_identity(
         true,
         &stale_replays,
         &cache_path,

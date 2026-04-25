@@ -1,8 +1,8 @@
 mod common;
 
-use s2coop_analyzer::cache_overall_stats_generator::pretty_output_path;
+use s2coop_analyzer::cache_overall_stats_generator::CacheOverallStatsFile;
 use s2coop_analyzer::detailed_replay_analysis::{
-    analyze_full_detailed, GenerateCacheConfig, GenerateCacheRuntimeOptions,
+    DetailedReplayAnalyzer, GenerateCacheConfig, GenerateCacheRuntimeOptions,
 };
 use std::fs;
 use tempfile::TempDir;
@@ -19,8 +19,9 @@ fn generate_cache_skips_invalid_replay_candidates() {
     let output_file = temp_dir.path().join("cache_overall_stats");
     let config = GenerateCacheConfig::new(account_dir, output_file.clone());
     let runtime = GenerateCacheRuntimeOptions::default();
-    let summary = analyze_full_detailed(&config, &resources, None, &runtime)
-        .expect("cache generation should succeed for invalid replay placeholders");
+    let summary =
+        DetailedReplayAnalyzer::analyze_full_detailed(&config, &resources, None, &runtime)
+            .expect("cache generation should succeed for invalid replay placeholders");
 
     assert_eq!(summary.scanned_replays(), 0);
     assert!(output_file.is_file(), "cache output should be written");
@@ -29,7 +30,7 @@ fn generate_cache_skips_invalid_replay_candidates() {
         "[]"
     );
 
-    let pretty_output = pretty_output_path(&output_file);
+    let pretty_output = CacheOverallStatsFile::pretty_output_path(&output_file);
     assert!(
         pretty_output.is_file(),
         "pretty cache output should be written"

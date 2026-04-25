@@ -1,5 +1,5 @@
-use sco_tauri_overlay::test_helper::test_config_path;
-use sco_tauri_overlay::{session_counter_delta, AppSettings};
+use sco_tauri_overlay::test_helper::TestHelperOps;
+use sco_tauri_overlay::{AppSettings, TauriOverlayOps};
 use serde_json::json;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -44,15 +44,15 @@ fn logging_setting_respects_boolean_flag() {
 
 #[test]
 fn logs_file_path_stays_next_to_settings_file() {
-    let settings_path = test_config_path("settings.json");
+    let settings_path = TestHelperOps::test_config_path("settings.json");
     let path = logs_file_path_from_settings_path(Path::new(&settings_path));
 
-    assert_eq!(path, test_config_path("logs.txt"));
+    assert_eq!(path, TestHelperOps::test_config_path("logs.txt"));
 }
 
 #[test]
 fn session_counter_delta_only_tracks_victory_and_defeat() {
-    assert_eq!(session_counter_delta("Victory"), (1, 0));
-    assert_eq!(session_counter_delta("defeat"), (0, 1));
-    assert_eq!(session_counter_delta("Unknown"), (0, 0));
+    assert_eq!(TauriOverlayOps::session_counter_delta("Victory"), (1, 0));
+    assert_eq!(TauriOverlayOps::session_counter_delta("defeat"), (0, 1));
+    assert_eq!(TauriOverlayOps::session_counter_delta("Unknown"), (0, 0));
 }

@@ -1,16 +1,16 @@
 use sco_tauri_overlay::{
-    parse_detailed_analysis_progress_counts, prepare_startup_analysis_request, AppSettings,
-    BackendState, StartupAnalysisRequestOutcome, StartupAnalysisTrigger, StatsState,
+    AppSettings, BackendState, StartupAnalysisRequestOutcome, StartupAnalysisTrigger, StatsState,
+    TauriOverlayOps,
 };
 
 #[test]
 fn parse_detailed_analysis_progress_counts_reads_running_line() {
     assert_eq!(
-        parse_detailed_analysis_progress_counts("Running... 12/34 (35%)"),
+        TauriOverlayOps::parse_detailed_analysis_progress_counts("Running... 12/34 (35%)"),
         Some((12, 34))
     );
     assert_eq!(
-        parse_detailed_analysis_progress_counts(
+        TauriOverlayOps::parse_detailed_analysis_progress_counts(
             "Estimated remaining time: 01:02:03\nRunning... 56/78 (71%)"
         ),
         Some((56, 78))
@@ -20,7 +20,9 @@ fn parse_detailed_analysis_progress_counts_reads_running_line() {
 #[test]
 fn parse_detailed_analysis_progress_counts_reads_completion_line() {
     assert_eq!(
-        parse_detailed_analysis_progress_counts("Detailed analysis completed! 90/90 | 100%"),
+        TauriOverlayOps::parse_detailed_analysis_progress_counts(
+            "Detailed analysis completed! 90/90 | 100%"
+        ),
         Some((90, 90))
     );
 }
@@ -29,7 +31,10 @@ fn parse_detailed_analysis_progress_counts_reads_completion_line() {
 fn prepare_startup_analysis_request_marks_once_and_preserves_existing_status() {
     let mut stats = StatsState::default().with_detailed_analysis_atstart(true);
 
-    let first = prepare_startup_analysis_request(&mut stats, StartupAnalysisTrigger::Setup);
+    let first = TauriOverlayOps::prepare_startup_analysis_request(
+        &mut stats,
+        StartupAnalysisTrigger::Setup,
+    );
 
     assert_eq!(
         first,
@@ -46,8 +51,10 @@ fn prepare_startup_analysis_request_marks_once_and_preserves_existing_status() {
 
     stats.set_message("Detailed analysis: generating cache.");
 
-    let second =
-        prepare_startup_analysis_request(&mut stats, StartupAnalysisTrigger::FrontendReady);
+    let second = TauriOverlayOps::prepare_startup_analysis_request(
+        &mut stats,
+        StartupAnalysisTrigger::FrontendReady,
+    );
 
     assert_eq!(
         second,
