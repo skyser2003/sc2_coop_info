@@ -55,6 +55,31 @@ impl<T> TagLookup<T> {
             Self::Sparse(map) => map.get(tag),
         }
     }
+
+    fn visit<F>(&self, mut visitor: F) -> Result<(), DecodeError>
+    where
+        F: FnMut(i128, &T) -> Result<(), DecodeError>,
+    {
+        match self {
+            Self::Dense { min_tag, entries } => {
+                for (index, entry) in entries.iter().enumerate() {
+                    if let Some(value) = entry {
+                        let tag = min_tag
+                            .checked_add(index as i128)
+                            .ok_or_else(|| DecodeError::Corrupted("tag out of range".into()))?;
+                        visitor(tag, value)?;
+                    }
+                }
+            }
+            Self::Sparse(map) => {
+                for (tag, value) in map.iter() {
+                    visitor(*tag, value)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl<T: Clone> TagLookup<T> {
@@ -499,14 +524,95 @@ pub struct ProtocolDefinition {
     game_event_typeinfos: Arc<[Option<EventTypeInfo<GameEventField>>]>,
     message_event_typeinfos: Arc<[Option<EventTypeInfo<MessageEventField>>]>,
     tracker_event_typeinfos: Arc<[Option<EventTypeInfo<TrackerEventField>>]>,
-    game_eventid_typeid: usize,
-    message_eventid_typeid: usize,
-    tracker_eventid_typeid: Option<usize>,
-    svaruint32_typeid: usize,
-    replay_userid_typeid: Option<usize>,
+    game_event_header: EventHeaderDecodePlan,
+    message_event_header: EventHeaderDecodePlan,
+    tracker_event_header: Option<EventHeaderDecodePlan>,
     replay_header_typeid: usize,
     game_details_typeid: usize,
     replay_initdata_typeid: usize,
+}
+
+#[derive(Debug, Clone)]
+struct EventHeaderDecodePlan {
+    eventid: IntegerDecodePlan,
+    gameloop_delta: IntegerDecodePlan,
+    replay_userid_typeinfo: Option<TypeInfo>,
+    decode_user_id: bool,
+    tolerant: bool,
+}
+
+#[derive(Debug, Clone)]
+enum IntegerDecodePlan {
+    Int {
+        bitpacked_bounds: IntBounds,
+    },
+    Choice {
+        bitpacked_tag_bounds: IntBounds,
+        fields: TagLookup<IntegerDecodePlan>,
+    },
+}
+
+impl IntegerDecodePlan {
+    fn compile(typeinfo: &TypeInfo, typeinfos: &[TypeInfo]) -> Result<Self, DecodeError> {
+        match typeinfo.op() {
+            TypeOp::Int => Ok(Self::Int {
+                bitpacked_bounds: typeinfo.int_bounds()?,
+            }),
+            TypeOp::Choice => {
+                let mut fields = Vec::new();
+                typeinfo.choice_fields()?.visit(|tag, field| {
+                    let child_typeinfo = lookup_typeinfo(typeinfos, field.typeid())?;
+                    let child_plan = Self::compile(child_typeinfo, typeinfos)?;
+                    fields.push((tag, child_plan));
+                    Ok(())
+                })?;
+                let fields = TagLookup::new(fields, "integer choice duplicate tag")?
+                    .ok_or_else(|| DecodeError::Corrupted("integer choice has no fields".into()))?;
+
+                Ok(Self::Choice {
+                    bitpacked_tag_bounds: typeinfo.choice_tag_bounds()?,
+                    fields,
+                })
+            }
+            _ => Err(DecodeError::Corrupted(format!(
+                "typeid={} op={} does not decode to integer",
+                typeinfo.typeid(),
+                typeinfo.op_name()
+            ))),
+        }
+    }
+}
+
+impl EventHeaderDecodePlan {
+    fn new(
+        typeinfos: &[TypeInfo],
+        eventid_typeid: usize,
+        svaruint32_typeid: usize,
+        replay_userid_typeid: Option<usize>,
+        decode_user_id: bool,
+        tolerant: bool,
+    ) -> Result<Self, DecodeError> {
+        let eventid_typeinfo = lookup_typeinfo(typeinfos, eventid_typeid)?;
+        let svaruint32_typeinfo = lookup_typeinfo(typeinfos, svaruint32_typeid)?;
+        let eventid = IntegerDecodePlan::compile(eventid_typeinfo, typeinfos)?;
+        let gameloop_delta = IntegerDecodePlan::compile(svaruint32_typeinfo, typeinfos)?;
+        let replay_userid_typeinfo = if decode_user_id {
+            replay_userid_typeid
+                .map(|typeid| lookup_typeinfo(typeinfos, typeid))
+                .transpose()?
+                .cloned()
+        } else {
+            None
+        };
+
+        Ok(Self {
+            eventid,
+            gameloop_delta,
+            replay_userid_typeinfo,
+            decode_user_id,
+            tolerant,
+        })
+    }
 }
 
 impl ProtocolDefinition {
@@ -524,22 +630,49 @@ impl ProtocolDefinition {
         replay_header_typeid: usize,
         game_details_typeid: usize,
         replay_initdata_typeid: usize,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, DecodeError> {
+        let game_event_header = EventHeaderDecodePlan::new(
+            typeinfos.as_ref(),
+            game_eventid_typeid,
+            svaruint32_typeid,
+            replay_userid_typeid,
+            true,
+            false,
+        )?;
+        let message_event_header = EventHeaderDecodePlan::new(
+            typeinfos.as_ref(),
+            message_eventid_typeid,
+            svaruint32_typeid,
+            replay_userid_typeid,
+            true,
+            false,
+        )?;
+        let tracker_event_header = tracker_eventid_typeid
+            .map(|eventid_typeid| {
+                EventHeaderDecodePlan::new(
+                    typeinfos.as_ref(),
+                    eventid_typeid,
+                    svaruint32_typeid,
+                    replay_userid_typeid,
+                    false,
+                    true,
+                )
+            })
+            .transpose()?;
+
+        Ok(Self {
             build,
             typeinfos,
             game_event_typeinfos,
             message_event_typeinfos,
             tracker_event_typeinfos,
-            game_eventid_typeid,
-            message_eventid_typeid,
-            tracker_eventid_typeid,
-            svaruint32_typeid,
-            replay_userid_typeid,
+            game_event_header,
+            message_event_header,
+            tracker_event_header,
             replay_header_typeid,
             game_details_typeid,
             replay_initdata_typeid,
-        }
+        })
     }
 
     pub fn build(&self) -> u32 {
@@ -554,11 +687,7 @@ impl ProtocolDefinition {
         decode_event_stream::<_, GameEvent>(
             decoder,
             &self.game_event_typeinfos,
-            Some(self.game_eventid_typeid),
-            true,
-            self.replay_userid_typeid,
-            self.svaruint32_typeid,
-            false,
+            &self.game_event_header,
         )
     }
 
@@ -570,11 +699,7 @@ impl ProtocolDefinition {
         decode_event_stream::<_, MessageEvent>(
             decoder,
             &self.message_event_typeinfos,
-            Some(self.message_eventid_typeid),
-            true,
-            self.replay_userid_typeid,
-            self.svaruint32_typeid,
-            false,
+            &self.message_event_header,
         )
     }
 
@@ -582,18 +707,15 @@ impl ProtocolDefinition {
         &self,
         contents: &[u8],
     ) -> Result<Vec<TrackerEvent>, DecodeError> {
-        let Some(eventid_typeid) = self.tracker_eventid_typeid else {
+        let Some(tracker_event_header) = self.tracker_event_header.as_ref() else {
             return Ok(Vec::new());
         };
 
         let decoder = VersionedDecoder::new(contents, Arc::clone(&self.typeinfos));
-        decode_event_stream_tolerant::<_, TrackerEvent>(
+        decode_event_stream::<_, TrackerEvent>(
             decoder,
             &self.tracker_event_typeinfos,
-            Some(eventid_typeid),
-            false,
-            self.replay_userid_typeid,
-            self.svaruint32_typeid,
+            tracker_event_header,
         )
     }
 
@@ -605,23 +727,15 @@ impl ProtocolDefinition {
         let mut game_reader = EventStreamReader::<_, GameEvent>::new(
             BitPackedDecoder::new(game_contents, Arc::clone(&self.typeinfos)),
             &self.game_event_typeinfos,
-            self.game_eventid_typeid,
-            true,
-            self.replay_userid_typeid,
-            self.svaruint32_typeid,
-            false,
-        )?;
-        let mut tracker_reader = match (self.tracker_eventid_typeid, tracker_contents) {
-            (Some(eventid_typeid), Some(contents)) => {
+            &self.game_event_header,
+        );
+        let mut tracker_reader = match (self.tracker_event_header.as_ref(), tracker_contents) {
+            (Some(tracker_event_header), Some(contents)) => {
                 Some(EventStreamReader::<_, TrackerEvent>::new(
                     VersionedDecoder::new(contents, Arc::clone(&self.typeinfos)),
                     &self.tracker_event_typeinfos,
-                    eventid_typeid,
-                    false,
-                    self.replay_userid_typeid,
-                    self.svaruint32_typeid,
-                    true,
-                )?)
+                    tracker_event_header,
+                ))
             }
             _ => None,
         };
@@ -811,6 +925,10 @@ pub trait TypeDecoder {
         Self: Sized,
         K: Copy,
         F: FnMut(&mut Self, K, &TypeInfo) -> Result<(), DecodeError>;
+}
+
+trait HeaderIntegerDecoder {
+    fn integer_from_plan(&mut self, plan: &IntegerDecodePlan) -> Result<i128, DecodeError>;
 }
 
 pub struct BitPackedDecoder<'a> {
@@ -2008,6 +2126,24 @@ impl TypeDecoder for BitPackedDecoder<'_> {
     }
 }
 
+impl HeaderIntegerDecoder for BitPackedDecoder<'_> {
+    fn integer_from_plan(&mut self, plan: &IntegerDecodePlan) -> Result<i128, DecodeError> {
+        match plan {
+            IntegerDecodePlan::Int { bitpacked_bounds } => self.int(*bitpacked_bounds),
+            IntegerDecodePlan::Choice {
+                bitpacked_tag_bounds,
+                fields,
+            } => {
+                let tag = self.int(*bitpacked_tag_bounds)?;
+                let child_plan = fields
+                    .get(&tag)
+                    .ok_or_else(|| DecodeError::Corrupted(format!("invalid choice tag {tag}")))?;
+                self.integer_from_plan(child_plan)
+            }
+        }
+    }
+}
+
 pub struct VersionedDecoder<'a> {
     buffer: BitPackedBuffer<'a>,
     typeinfos: Arc<[TypeInfo]>,
@@ -2743,32 +2879,35 @@ impl TypeDecoder for VersionedDecoder<'_> {
     }
 }
 
+impl HeaderIntegerDecoder for VersionedDecoder<'_> {
+    fn integer_from_plan(&mut self, plan: &IntegerDecodePlan) -> Result<i128, DecodeError> {
+        match plan {
+            IntegerDecodePlan::Int { .. } => {
+                self.expect_skip(9)?;
+                self.vint()
+            }
+            IntegerDecodePlan::Choice { fields, .. } => {
+                self.expect_skip(3)?;
+                let tag = self.vint()?;
+                let child_plan = fields
+                    .get(&tag)
+                    .ok_or_else(|| DecodeError::Corrupted(format!("invalid choice tag {tag}")))?;
+                self.integer_from_plan(child_plan)
+            }
+        }
+    }
+}
+
 fn decode_event_stream<'a, D, T>(
     decoder: D,
     event_typeinfos: &'a [Option<EventTypeInfo<T::Field>>],
-    eventid_typeid: Option<usize>,
-    decode_user_id: bool,
-    replay_userid_typeid: Option<usize>,
-    svaruint32_typeid: usize,
-    tolerant: bool,
+    header: &'a EventHeaderDecodePlan,
 ) -> Result<Vec<T>, DecodeError>
 where
-    D: TypeDecoder,
+    D: TypeDecoder + HeaderIntegerDecoder,
     T: DirectEventDecode,
 {
-    let Some(eventid_typeid) = eventid_typeid else {
-        return Ok(Vec::new());
-    };
-
-    let mut reader = EventStreamReader::<_, T>::new(
-        decoder,
-        event_typeinfos,
-        eventid_typeid,
-        decode_user_id,
-        replay_userid_typeid,
-        svaruint32_typeid,
-        tolerant,
-    )?;
+    let mut reader = EventStreamReader::<_, T>::new(decoder, event_typeinfos, header);
     let mut events = Vec::new();
     while let Some(event) = reader.next_event()? {
         events.push(event);
@@ -2779,16 +2918,12 @@ where
 
 struct EventStreamReader<'a, D, T>
 where
-    D: TypeDecoder,
+    D: TypeDecoder + HeaderIntegerDecoder,
     T: DirectEventDecode,
 {
     decoder: D,
     event_typeinfos: &'a [Option<EventTypeInfo<T::Field>>],
-    decode_user_id: bool,
-    tolerant: bool,
-    svaruint32_typeinfo: TypeInfo,
-    eventid_typeinfo: TypeInfo,
-    replay_userid_typeinfo: Option<TypeInfo>,
+    header: &'a EventHeaderDecodePlan,
     gameloop: i128,
     produced_any: bool,
     finished: bool,
@@ -2796,38 +2931,22 @@ where
 
 impl<'a, D, T> EventStreamReader<'a, D, T>
 where
-    D: TypeDecoder,
+    D: TypeDecoder + HeaderIntegerDecoder,
     T: DirectEventDecode,
 {
     fn new(
         decoder: D,
         event_typeinfos: &'a [Option<EventTypeInfo<T::Field>>],
-        eventid_typeid: usize,
-        decode_user_id: bool,
-        replay_userid_typeid: Option<usize>,
-        svaruint32_typeid: usize,
-        tolerant: bool,
-    ) -> Result<Self, DecodeError> {
-        let typeinfos = decoder.typeinfos();
-        let svaruint32_typeinfo = lookup_typeinfo(typeinfos.as_ref(), svaruint32_typeid)?.clone();
-        let eventid_typeinfo = lookup_typeinfo(typeinfos.as_ref(), eventid_typeid)?.clone();
-        let replay_userid_typeinfo = replay_userid_typeid
-            .map(|typeid| lookup_typeinfo(typeinfos.as_ref(), typeid))
-            .transpose()?
-            .cloned();
-
-        Ok(Self {
+        header: &'a EventHeaderDecodePlan,
+    ) -> Self {
+        Self {
             decoder,
             event_typeinfos,
-            decode_user_id,
-            tolerant,
-            svaruint32_typeinfo,
-            eventid_typeinfo,
-            replay_userid_typeinfo,
+            header,
             gameloop: 0,
             produced_any: false,
             finished: false,
-        })
+        }
     }
 
     fn next_event(&mut self) -> Result<Option<T>, DecodeError> {
@@ -2841,11 +2960,12 @@ where
         let event_result = (|| -> Result<T, DecodeError> {
             let delta = self
                 .decoder
-                .integer_from_typeinfo(&self.svaruint32_typeinfo)?;
+                .integer_from_plan(&self.header.gameloop_delta)?;
             self.gameloop += delta;
 
-            let userid = if self.decode_user_id {
-                self.replay_userid_typeinfo
+            let userid = if self.header.decode_user_id {
+                self.header
+                    .replay_userid_typeinfo
                     .as_ref()
                     .map(|typeinfo| decode_event_user_id(&mut self.decoder, typeinfo))
                     .transpose()?
@@ -2854,9 +2974,8 @@ where
                 None
             };
 
-            let eventid =
-                u32::try_from(self.decoder.integer_from_typeinfo(&self.eventid_typeinfo)?)
-                    .map_err(|_| DecodeError::Corrupted("invalid event id".into()))?;
+            let eventid = u32::try_from(self.decoder.integer_from_plan(&self.header.eventid)?)
+                .map_err(|_| DecodeError::Corrupted("invalid event id".into()))?;
 
             let event_typeinfo = usize::try_from(eventid)
                 .ok()
@@ -2877,7 +2996,7 @@ where
         let event = match event_result {
             Ok(event) => event,
             Err(error) => {
-                if self.tolerant && self.produced_any {
+                if self.header.tolerant && self.produced_any {
                     self.finished = true;
                     return Ok(None);
                 } else {
@@ -2890,27 +3009,4 @@ where
         self.produced_any = true;
         Ok(Some(event))
     }
-}
-
-fn decode_event_stream_tolerant<'a, D, T>(
-    decoder: D,
-    event_typeinfos: &'a [Option<EventTypeInfo<T::Field>>],
-    eventid_typeid: Option<usize>,
-    decode_user_id: bool,
-    replay_userid_typeid: Option<usize>,
-    svaruint32_typeid: usize,
-) -> Result<Vec<T>, DecodeError>
-where
-    D: TypeDecoder,
-    T: DirectEventDecode,
-{
-    decode_event_stream(
-        decoder,
-        event_typeinfos,
-        eventid_typeid,
-        decode_user_id,
-        replay_userid_typeid,
-        svaruint32_typeid,
-        true,
-    )
 }

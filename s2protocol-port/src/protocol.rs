@@ -99,7 +99,7 @@ impl ProtocolStore {
                 to_usize(proto, "replay_header_typeid")?,
                 to_usize(proto, "game_details_typeid")?,
                 to_usize(proto, "replay_initdata_typeid")?,
-            );
+            )?;
 
             latest = latest.max(build);
             map.insert(build, build_def);
