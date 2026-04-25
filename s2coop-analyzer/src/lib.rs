@@ -5,5 +5,6 @@ pub mod detailed_replay_analysis;
 pub mod dictionary_data;
 pub mod sc2_dictionary_data;
 pub mod stats_counter_core;
+mod stats_counter_math;
 pub mod tauri_replay_analysis_impl;
 pub mod weekly_mutation_manager;

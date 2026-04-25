@@ -1,5 +1,5 @@
 use crate::error::DecodeError;
-use crate::replay::ReplayFormat;
+use crate::replay_format::ReplayFormat;
 use crate::value::Value;
 use std::collections::{BTreeMap, HashMap};
 

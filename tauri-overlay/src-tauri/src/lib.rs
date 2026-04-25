@@ -6,9 +6,9 @@ use s2coop_analyzer::detailed_replay_analysis::{
     GenerateCacheStopController, ReplayAnalysisResources, ReplayFileIdentity,
 };
 use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{self, Map, Value};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
@@ -16,13 +16,14 @@ use std::sync::{mpsc, Arc, Mutex, TryLockError};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri_plugin_updater::UpdaterExt;
-use ts_rs::TS;
 
 use tauri::{tray::TrayIconBuilder, AppHandle, Emitter, Manager, State, Wry};
 
 mod app_settings;
 mod backend_state;
+mod command_payloads;
 mod game_launch_detector;
+mod live_game;
 pub mod logging;
 pub mod monitor_settings;
 pub mod overlay_info;
@@ -30,11 +31,28 @@ pub mod path_manager;
 mod performance_overlay;
 pub mod randomizer;
 pub mod replay_analysis;
+mod replay_info;
 pub mod shared_types;
+mod stats_state;
 pub mod test_helper;
 pub use app_settings::AppSettings;
 pub use backend_state::BackendState;
+pub use command_payloads::{
+    AnalysisCompletedPayload, ConfigChatPayload, ConfigPayload, ConfigPlayersPayload,
+    ConfigReplaysPayload, ConfigWeekliesPayload, OverlayActionResponse, OverlayActionResult,
+    StatsActionPayload, StatsStatePayload,
+};
 pub use game_launch_detector::{GameLaunchDetector, GameLaunchStatus};
+pub(crate) use replay_info::{
+    Aggregate, CommanderAggregate, MapAggregate, PlayerAggregate, RegionAggregate,
+};
+pub use replay_info::{
+    CommanderUnitRollup, GamesRowPayload, ReplayChatMessage, ReplayChatPayload, ReplayInfo,
+    ReplayPlayerInfo, UnitStatsRollup,
+};
+pub use stats_state::{
+    AnalysisMode, StartupAnalysisRequestOutcome, StartupAnalysisTrigger, StatsSnapshot, StatsState,
+};
 
 #[macro_export]
 macro_rules! sco_log {
@@ -44,9 +62,11 @@ macro_rules! sco_log {
 }
 
 use crate::backend_state::ReplayState;
+use crate::live_game::LiveGamePlayer;
 use crate::path_manager::PathManagerOps;
 use crate::replay_analysis::ReplayAnalysis;
 use crate::shared_types::{LocalizedLabels, ReplayScanProgressPayload};
+use crate::stats_state::AnalysisOutcome;
 
 pub const UNLIMITED_REPLAY_LIMIT: usize = 0;
 const SCO_REPLAY_SCAN_PROGRESS_EVENT: &str = "sco://replay-scan-progress";
@@ -55,24 +75,6 @@ const SCO_ANALYSIS_COMPLETED_EVENT: &str = "sco://analysis-completed";
 #[derive(Default)]
 struct TrayState {
     tray_icon: Mutex<Option<tauri::tray::TrayIcon<Wry>>>,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
-#[ts(export, export_to = "../src/bindings/overlay.ts")]
-pub struct OverlayActionResult {
-    pub ok: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub path: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, TS)]
-#[ts(export, export_to = "../src/bindings/overlay.ts")]
-pub struct OverlayActionResponse {
-    pub status: &'static str,
-    pub result: OverlayActionResult,
-    pub message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub randomizer: Option<randomizer::RandomizerResult>,
 }
 
 impl OverlayActionResponse {
@@ -131,91 +133,6 @@ impl TauriOverlayOps {
     fn to_json_value<T: Serialize>(value: T) -> Value {
         serde_json::to_value(value).unwrap_or_else(|_| Value::Object(Default::default()))
     }
-}
-
-#[derive(Clone, Debug, Serialize, TS)]
-#[ts(export, export_to = "../src/bindings/overlay.ts")]
-pub struct ConfigPayload {
-    pub status: &'static str,
-    pub settings: AppSettings,
-    pub active_settings: AppSettings,
-    pub randomizer_catalog: shared_types::OverlayRandomizerCatalog,
-    pub monitor_catalog: Vec<shared_types::MonitorOption>,
-}
-
-#[derive(Clone, Debug, Serialize, TS)]
-#[ts(export, export_to = "../src/bindings/overlay.ts")]
-pub struct ConfigReplaysPayload {
-    pub status: &'static str,
-    pub replays: Vec<GamesRowPayload>,
-    #[ts(type = "number")]
-    pub total_replays: usize,
-    pub selected_replay_file: Option<String>,
-}
-
-#[derive(Clone, Debug, Serialize, TS)]
-#[ts(export, export_to = "../src/bindings/overlay.ts")]
-pub struct ConfigPlayersPayload {
-    pub status: &'static str,
-    pub players: Vec<replay_analysis::PlayerRowPayload>,
-    pub loading: bool,
-}
-
-#[derive(Clone, Debug, Serialize, TS)]
-#[ts(export, export_to = "../src/bindings/overlay.ts")]
-pub struct ConfigWeekliesPayload {
-    pub status: &'static str,
-    pub weeklies: Vec<replay_analysis::WeeklyRowPayload>,
-}
-
-#[derive(Clone, Serialize, TS)]
-#[ts(export, export_to = "../src/bindings/overlay.ts")]
-pub struct ConfigChatPayload {
-    pub status: &'static str,
-    pub chat: ReplayChatPayload,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, TS)]
-#[ts(export, export_to = "../src/bindings/overlay.ts")]
-pub struct StatsStatePayload {
-    pub ready: bool,
-    #[ts(type = "number")]
-    pub games: u64,
-    #[ts(type = "number")]
-    pub detailed_parsed_count: u64,
-    #[ts(type = "number")]
-    pub total_valid_files: u64,
-    #[ts(type = "Record<string, any> | null")]
-    #[ts(optional)]
-    pub analysis: Option<Value>,
-    pub main_players: Vec<String>,
-    pub main_handles: Vec<String>,
-    pub analysis_running: bool,
-    #[ts(optional)]
-    pub analysis_running_mode: Option<String>,
-    pub simple_analysis_status: String,
-    pub detailed_analysis_status: String,
-    pub detailed_analysis_atstart: bool,
-    pub prestige_names: std::collections::BTreeMap<String, LocalizedLabels>,
-    pub message: String,
-    pub scan_progress: ReplayScanProgressPayload,
-}
-
-#[derive(Clone, Debug, Serialize, TS)]
-#[ts(export, export_to = "../src/bindings/overlay.ts")]
-pub struct StatsActionPayload {
-    pub status: &'static str,
-    pub result: OverlayActionResult,
-    pub message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub stats: Option<StatsStatePayload>,
-}
-
-#[derive(Clone, Debug, Serialize, TS)]
-#[ts(export, export_to = "../src/bindings/overlay.ts")]
-pub struct AnalysisCompletedPayload {
-    pub mode: String,
-    pub message: String,
 }
 
 impl TauriOverlayOps {
@@ -478,105 +395,6 @@ impl TauriOverlayOps {
             obj.insert("2".to_string(), v1);
         }
     }
-}
-
-#[derive(Clone, Serialize, Default, PartialEq, TS)]
-#[ts(export, export_to = "../src/bindings/overlay.ts")]
-pub struct ReplayChatMessage {
-    pub player: u8,
-    pub text: String,
-    pub time: f64,
-}
-
-#[derive(Clone, Serialize, Default, PartialEq, TS)]
-#[ts(export, export_to = "../src/bindings/overlay.ts")]
-pub struct ReplayChatPayload {
-    pub file: String,
-    #[ts(type = "number")]
-    pub date: u64,
-    pub map: String,
-    pub result: String,
-    pub slot1_name: String,
-    pub slot2_name: String,
-    pub messages: Vec<ReplayChatMessage>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
-#[ts(export, export_to = "../src/bindings/overlay.ts")]
-pub struct GamesRowPayload {
-    pub file: String,
-    #[ts(type = "number")]
-    pub date: u64,
-    pub map: String,
-    pub result: String,
-    pub difficulty: String,
-    pub p1: String,
-    pub p2: String,
-    pub slot1_commander: String,
-    pub slot2_commander: String,
-    pub enemy: String,
-    pub main_commander: String,
-    pub ally_commander: String,
-    #[ts(type = "number")]
-    pub length: u64,
-    #[ts(type = "number")]
-    pub main_apm: u64,
-    #[ts(type = "number")]
-    pub ally_apm: u64,
-    #[ts(type = "number")]
-    pub main_kills: u64,
-    #[ts(type = "number")]
-    pub ally_kills: u64,
-    pub extension: bool,
-    #[ts(type = "number")]
-    pub brutal_plus: u64,
-    pub weekly: bool,
-    #[ts(optional)]
-    pub weekly_name: Option<String>,
-    pub mutators: Vec<shared_types::UiMutatorRow>,
-    pub is_mutation: bool,
-}
-
-#[derive(Clone, Default)]
-pub struct ReplayInfo {
-    file: String,
-    date: u64,
-    map: String,
-    result: String,
-    difficulty: String,
-    enemy: String,
-    length: u64,
-    accurate_length: f64,
-    slot1: ReplayPlayerInfo,
-    slot2: ReplayPlayerInfo,
-    main_slot: usize,
-    amon_units: Value,
-    player_stats: Value,
-    extension: bool,
-    brutal_plus: u64,
-    weekly: bool,
-    weekly_name: Option<String>,
-    mutators: Vec<String>,
-    comp: String,
-    bonus: Vec<u64>,
-    bonus_total: Option<u64>,
-    messages: Vec<ReplayChatMessage>,
-    is_detailed: bool,
-}
-
-#[derive(Clone, Default)]
-pub struct ReplayPlayerInfo {
-    name: String,
-    handle: String,
-    apm: u64,
-    kills: u64,
-    commander: String,
-    commander_level: u64,
-    mastery_level: u64,
-    prestige: u64,
-    masteries: Vec<u64>,
-    units: Value,
-    icons: Value,
 }
 
 impl ReplayPlayerInfo {
@@ -1386,76 +1204,6 @@ impl TauriOverlayOps {
     }
 }
 
-#[derive(Default)]
-struct Aggregate {
-    wins: u64,
-    losses: u64,
-}
-
-#[derive(Default)]
-struct RegionAggregate {
-    wins: u64,
-    losses: u64,
-    max_asc: u64,
-    max_com: HashSet<String>,
-    prestiges: HashMap<String, u64>,
-}
-
-#[derive(Default)]
-struct CommanderAggregate {
-    wins: u64,
-    losses: u64,
-    apm_values: Vec<u64>,
-    kill_fractions: Vec<f64>,
-    mastery_counts: [f64; 6],
-    mastery_by_prestige_counts: [[f64; 6]; 4],
-    prestige_counts: [u64; 4],
-    detailed_count: u64,
-}
-
-#[derive(Default)]
-struct PlayerAggregate {
-    wins: u64,
-    losses: u64,
-    apm_values: Vec<u64>,
-    kill_fractions: Vec<f64>,
-    last_seen: u64,
-    handles: BTreeSet<String>,
-    names: HashMap<String, u64>,
-    commander: String,
-    commander_counts: HashMap<String, u64>,
-}
-
-#[derive(Default)]
-struct MapAggregate {
-    wins: u64,
-    losses: u64,
-    victory_length_sum: f64,
-    victory_games: u64,
-    bonus_fraction_sum: f64,
-    bonus_games: u64,
-    fastest_length: f64,
-    fastest_file: String,
-    fastest_p1: String,
-    fastest_p2: String,
-    fastest_p1_handle: String,
-    fastest_p2_handle: String,
-    fastest_p1_commander: String,
-    fastest_p2_commander: String,
-    fastest_p1_apm: u64,
-    fastest_p2_apm: u64,
-    fastest_p1_mastery_level: u64,
-    fastest_p2_mastery_level: u64,
-    fastest_p1_masteries: Vec<u64>,
-    fastest_p2_masteries: Vec<u64>,
-    fastest_p1_prestige: u64,
-    fastest_p2_prestige: u64,
-    fastest_date: u64,
-    fastest_difficulty: String,
-    fastest_enemy_race: String,
-    detailed_count: u64,
-}
-
 impl TauriOverlayOps {
     pub fn canonicalize_coop_map_id(raw: &str) -> Option<String> {
         let trimmed = raw.trim();
@@ -1478,23 +1226,6 @@ impl TauriOverlayOps {
             trimmed.to_string()
         }
     }
-}
-
-#[derive(Default, Clone)]
-pub struct UnitStatsRollup {
-    pub created: i64,
-    pub created_hidden: bool,
-    pub made: u64,
-    pub lost: i64,
-    pub lost_hidden: bool,
-    pub kills: i64,
-    pub kill_percentages: Vec<f64>,
-}
-
-#[derive(Default)]
-pub struct CommanderUnitRollup {
-    pub count: u64,
-    pub units: HashMap<String, UnitStatsRollup>,
 }
 
 impl TauriOverlayOps {
@@ -2150,12 +1881,6 @@ impl TauriOverlayOps {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StartupAnalysisTrigger {
-    Setup,
-    FrontendReady,
-}
-
 impl StartupAnalysisTrigger {
     fn label(self) -> &'static str {
         match self {
@@ -2163,18 +1888,6 @@ impl StartupAnalysisTrigger {
             Self::FrontendReady => "frontend_ready",
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct StartupAnalysisRequestOutcome {
-    pub include_detailed: bool,
-    pub started: bool,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AnalysisMode {
-    Simple,
-    Detailed,
 }
 
 impl AnalysisMode {
@@ -2569,13 +2282,6 @@ impl TauriOverlayOps {
         });
         result
     }
-}
-
-struct AnalysisOutcome {
-    reported_replay_count: usize,
-    replays: Vec<ReplayInfo>,
-    final_cache_entries: Vec<CacheReplayEntry>,
-    analysis_completed: bool,
 }
 
 impl TauriOverlayOps {
@@ -3962,14 +3668,6 @@ impl TauriOverlayOps {
     }
 }
 
-#[derive(Debug, Clone)]
-struct LiveGamePlayer {
-    id: u64,
-    name: String,
-    kind: String,
-    handle: String,
-}
-
 impl TauriOverlayOps {
     fn value_as_u64_lossy(value: Option<&Value>) -> Option<u64> {
         value
@@ -4427,34 +4125,6 @@ impl TauriOverlayOps {
 
         app.exit(exit_code);
     }
-}
-
-#[derive(Debug)]
-pub struct StatsState {
-    ready: bool,
-    analysis: Option<Value>,
-    games: u64,
-    main_players: Vec<String>,
-    main_handles: Vec<String>,
-    startup_analysis_requested: bool,
-    analysis_running: bool,
-    analysis_running_mode: Option<AnalysisMode>,
-    simple_analysis_status: String,
-    detailed_analysis_status: String,
-    detailed_analysis_atstart: bool,
-    prestige_names: std::collections::BTreeMap<String, LocalizedLabels>,
-    message: String,
-}
-
-#[derive(Debug, Default)]
-pub struct StatsSnapshot {
-    ready: bool,
-    games: u64,
-    main_players: Vec<String>,
-    main_handles: Vec<String>,
-    analysis: Value,
-    prestige_names: std::collections::BTreeMap<String, LocalizedLabels>,
-    message: String,
 }
 
 impl Default for StatsState {

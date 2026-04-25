@@ -1,5 +1,6 @@
 use crate::cache_overall_stats_generator::AnalysisPlayerStatsSeries;
 use crate::dictionary_data::UnitBaseCostsJson;
+use crate::stats_counter_math::{StatsCounterMath, TotalUnitCost};
 use s2protocol_port::{GameEvent, SnapshotPoint, SnapshotPointValue, TrackerEvent};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
@@ -41,135 +42,6 @@ pub struct ReplayStatsCounterCore {
     army_value: Vec<f64>,
     supply: Vec<f64>,
     collection_rate: Vec<f64>,
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-struct UnitCost {
-    mineral: f64,
-    gas: f64,
-}
-
-impl UnitCost {
-    fn zero() -> Self {
-        Self {
-            mineral: 0.0,
-            gas: 0.0,
-        }
-    }
-
-    fn new(mineral: f64, gas: f64) -> Self {
-        Self { mineral, gas }
-    }
-
-    fn sum(self) -> f64 {
-        self.mineral + self.gas
-    }
-
-    fn scaled(self, min_mult: f64, gas_mult: f64) -> Self {
-        Self {
-            mineral: self.mineral * min_mult,
-            gas: self.gas * gas_mult,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-struct TotalUnitCost {
-    values: Vec<UnitCost>,
-}
-
-impl TotalUnitCost {
-    fn zero() -> Self {
-        Self {
-            values: vec![UnitCost::zero()],
-        }
-    }
-
-    fn from_slice(values: &[f64]) -> Self {
-        let values = values
-            .chunks_exact(2)
-            .map(|chunk| UnitCost::new(chunk[0], chunk[1]))
-            .collect::<Vec<UnitCost>>();
-        if values.is_empty() {
-            Self::zero()
-        } else {
-            Self { values }
-        }
-    }
-
-    fn len(&self) -> usize {
-        self.values.len()
-    }
-
-    fn first(&self) -> UnitCost {
-        self.values.first().copied().unwrap_or_else(UnitCost::zero)
-    }
-
-    fn get(&self, index: usize) -> UnitCost {
-        self.values
-            .get(index)
-            .copied()
-            .unwrap_or_else(UnitCost::zero)
-    }
-
-    fn sum(&self) -> f64 {
-        self.values.iter().map(|value| value.sum()).sum()
-    }
-
-    fn scaled(&self, min_mult: f64, gas_mult: f64) -> Self {
-        Self {
-            values: self
-                .values
-                .iter()
-                .copied()
-                .map(|value| value.scaled(min_mult, gas_mult))
-                .collect(),
-        }
-    }
-
-    fn scaled_mineral(&self, min_mult: f64) -> Self {
-        self.scaled(min_mult, 1.0)
-    }
-
-    fn scaled_gas(&self, gas_mult: f64) -> Self {
-        self.scaled(1.0, gas_mult)
-    }
-}
-
-struct StatsCounterMath;
-
-impl StatsCounterMath {
-    fn normalize_commander_name(commander: &str) -> String {
-        if commander == "Han & Horner" {
-            "Horner".to_string()
-        } else {
-            commander.to_string()
-        }
-    }
-
-    fn remove_upward_spikes(values: &mut [f64]) {
-        if values.len() < 3 {
-            return;
-        }
-        for idx in 1..(values.len() - 1) {
-            if values[idx] > values[idx - 1] && values[idx] > values[idx + 1] {
-                values[idx] = (values[idx - 1] + values[idx + 1]) / 2.0;
-            }
-        }
-    }
-
-    fn upward_spike_indices(values: &[f64]) -> HashSet<usize> {
-        let mut indices = HashSet::new();
-        if values.len() < 3 {
-            return indices;
-        }
-        for idx in 1..(values.len() - 1) {
-            if values[idx] > values[idx - 1] && values[idx] > values[idx + 1] {
-                indices.insert(idx);
-            }
-        }
-        indices
-    }
 }
 
 impl ReplayDroneIdentifierCore {
@@ -811,23 +683,5 @@ impl ReplayStatsCounterCore {
             mining: StatsCounterMath::rolling_average(&self.collection_rate),
             army_force_float_indices: dehaka_changed_indices,
         }
-    }
-}
-
-impl StatsCounterMath {
-    fn rolling_average(values: &[f64]) -> Vec<f64> {
-        if values.is_empty() {
-            return Vec::new();
-        }
-
-        let mut out = Vec::with_capacity(values.len());
-        for (idx, value) in values.iter().enumerate() {
-            if idx == 0 {
-                out.push(*value);
-            } else {
-                out.push(0.5 * *value + 0.5 * values[idx - 1]);
-            }
-        }
-        out
     }
 }
