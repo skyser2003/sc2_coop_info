@@ -253,6 +253,7 @@ function buildIconNodes(iconPayload: IconPayload): ReactNode[] {
                 "deadofnight",
                 "minesweeper",
                 "missilecommand",
+                "parts",
             ].includes(key) && key !== "killbots"
                 ? String(count)
                 : `${textPrefix}${count}`;

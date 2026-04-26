@@ -83,9 +83,371 @@ const CUSTOM_KILL_ICON_KEYS: [&str; 10] = [
     "shuttles",
 ];
 
+const PART_PICKUP_ICON_KEY: &str = "parts";
+const PART_PICKUP_SOURCE_MAX_LOOP_DELTA: i64 = 1;
+const PART_PICKUP_SOURCE_MAX_COORD_DELTA: i64 = 1;
+const PART_PICKUP_PLAYER_COUNT_LIMIT: usize = 18;
+
 type UnitStats = (i64, i64, i64, f64);
 
 pub struct DetailedReplayAnalyzer;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ReplayPoint {
+    x: i64,
+    y: i64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PartPickupBirth {
+    game_loop: i64,
+    point: ReplayPoint,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PartDropSource {
+    game_loop: i64,
+    player_id: i64,
+    point: ReplayPoint,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PartLiveUnit {
+    control_player_id: i64,
+    unit_type: String,
+    point: ReplayPoint,
+}
+
+#[derive(Clone, Debug)]
+struct PartPickupAttributionTracker {
+    enabled: bool,
+    unit_id_by_index: BTreeMap<i64, i64>,
+    live_units: HashMap<i64, PartLiveUnit>,
+    part_births: HashMap<i64, PartPickupBirth>,
+    drop_sources: Vec<PartDropSource>,
+    counts_by_player: Vec<i64>,
+}
+
+impl ReplayPoint {
+    fn new(x: i64, y: i64) -> Self {
+        Self { x, y }
+    }
+
+    fn x(&self) -> i64 {
+        self.x
+    }
+
+    fn y(&self) -> i64 {
+        self.y
+    }
+
+    fn manhattan_distance(&self, other: &ReplayPoint) -> i64 {
+        (self.x - other.x).abs() + (self.y - other.y).abs()
+    }
+
+    fn squared_distance(&self, other: &ReplayPoint) -> i64 {
+        let x_delta = self.x - other.x;
+        let y_delta = self.y - other.y;
+        x_delta * x_delta + y_delta * y_delta
+    }
+}
+
+impl PartPickupBirth {
+    fn new(game_loop: i64, point: ReplayPoint) -> Self {
+        Self { game_loop, point }
+    }
+
+    fn game_loop(&self) -> i64 {
+        self.game_loop
+    }
+
+    fn point(&self) -> ReplayPoint {
+        self.point
+    }
+}
+
+impl PartDropSource {
+    fn new(game_loop: i64, player_id: i64, point: ReplayPoint) -> Self {
+        Self {
+            game_loop,
+            player_id,
+            point,
+        }
+    }
+
+    fn game_loop(&self) -> i64 {
+        self.game_loop
+    }
+
+    fn player_id(&self) -> i64 {
+        self.player_id
+    }
+
+    fn point(&self) -> ReplayPoint {
+        self.point
+    }
+}
+
+impl PartLiveUnit {
+    fn new(control_player_id: i64, unit_type: String, point: ReplayPoint) -> Self {
+        Self {
+            control_player_id,
+            unit_type,
+            point,
+        }
+    }
+
+    fn control_player_id(&self) -> i64 {
+        self.control_player_id
+    }
+
+    fn point(&self) -> ReplayPoint {
+        self.point
+    }
+
+    fn unit_type(&self) -> &str {
+        self.unit_type.as_str()
+    }
+
+    fn is_player_unit(&self) -> bool {
+        matches!(self.control_player_id, 1 | 2)
+    }
+
+    fn is_part_pickup(&self) -> bool {
+        PartPickupAttributionTracker::is_part_pickup(self.unit_type.as_str())
+    }
+
+    fn set_control_player_id(&mut self, control_player_id: i64) {
+        self.control_player_id = control_player_id;
+    }
+
+    fn set_unit_type(&mut self, unit_type: String) {
+        self.unit_type = unit_type;
+    }
+
+    fn set_point(&mut self, point: ReplayPoint) {
+        self.point = point;
+    }
+}
+
+impl PartPickupAttributionTracker {
+    fn new(enabled: bool) -> Self {
+        Self {
+            enabled,
+            unit_id_by_index: BTreeMap::new(),
+            live_units: HashMap::new(),
+            part_births: HashMap::new(),
+            drop_sources: Vec::new(),
+            counts_by_player: vec![0; PART_PICKUP_PLAYER_COUNT_LIMIT],
+        }
+    }
+
+    fn is_part_pickup(unit_type: &str) -> bool {
+        matches!(unit_type, "PartsPickup" | "PartsPickup2" | "PartsPickup3")
+    }
+
+    fn handle_unit_born_or_init(&mut self, event: &TrackerEvent) {
+        if !self.enabled {
+            return;
+        }
+        let Some(unit_id) = DetailedReplayAnalyzer::replay_event_unitid(event) else {
+            return;
+        };
+        if let Some(unit_index) = event.m_unit_tag_index {
+            self.unit_id_by_index.insert(unit_index, unit_id);
+        }
+
+        let unit_type = event.m_unit_type_name.clone().unwrap_or_default();
+        let point = Self::event_point(event);
+        self.live_units.insert(
+            unit_id,
+            PartLiveUnit::new(
+                event.m_control_player_id.unwrap_or_default(),
+                unit_type.clone(),
+                point,
+            ),
+        );
+        if Self::is_part_pickup(unit_type.as_str()) {
+            self.part_births
+                .insert(unit_id, PartPickupBirth::new(event.game_loop, point));
+        }
+    }
+
+    fn handle_unit_type_change(&mut self, event: &TrackerEvent) {
+        if !self.enabled {
+            return;
+        }
+        let Some(unit_id) = DetailedReplayAnalyzer::replay_event_unitid(event) else {
+            return;
+        };
+        let Some(unit_type) = event.m_unit_type_name.clone() else {
+            return;
+        };
+        let mut point = Self::event_point(event);
+        if let Some(live_unit) = self.live_units.get_mut(&unit_id) {
+            point = live_unit.point();
+            live_unit.set_unit_type(unit_type.clone());
+        }
+        if Self::is_part_pickup(unit_type.as_str()) {
+            self.part_births
+                .entry(unit_id)
+                .or_insert_with(|| PartPickupBirth::new(event.game_loop, point));
+        }
+    }
+
+    fn handle_unit_owner_change(&mut self, event: &TrackerEvent) {
+        if !self.enabled {
+            return;
+        }
+        let Some(unit_id) = DetailedReplayAnalyzer::replay_event_unitid(event) else {
+            return;
+        };
+        let Some(control_player_id) = event.m_control_player_id else {
+            return;
+        };
+        if let Some(live_unit) = self.live_units.get_mut(&unit_id) {
+            live_unit.set_control_player_id(control_player_id);
+        }
+    }
+
+    fn handle_unit_positions(&mut self, event: &TrackerEvent) {
+        if !self.enabled {
+            return;
+        }
+        let Some(mut unit_index) = event.m_first_unit_index else {
+            return;
+        };
+        for chunk in event.m_position_items.chunks_exact(3) {
+            unit_index += chunk[0];
+            let Some(unit_id) = self.unit_id_by_index.get(&unit_index).copied() else {
+                continue;
+            };
+            if let Some(live_unit) = self.live_units.get_mut(&unit_id) {
+                live_unit.set_point(ReplayPoint::new(chunk[1], chunk[2]));
+            }
+        }
+    }
+
+    fn handle_unit_died(&mut self, event: &TrackerEvent) {
+        if !self.enabled {
+            return;
+        }
+        let Some(unit_id) = DetailedReplayAnalyzer::replay_event_unitid(event) else {
+            return;
+        };
+        let unit_type = event
+            .m_unit_type_name
+            .as_deref()
+            .map(str::to_string)
+            .or_else(|| {
+                self.live_units
+                    .get(&unit_id)
+                    .map(|live_unit| live_unit.unit_type().to_string())
+            })
+            .unwrap_or_default();
+
+        if Self::is_part_pickup(unit_type.as_str()) {
+            let birth = self
+                .part_births
+                .remove(&unit_id)
+                .unwrap_or_else(|| PartPickupBirth::new(event.game_loop, Self::event_point(event)));
+            if let Some(player_id) = self.score_screen_player_for_part(&birth) {
+                self.increment_player_count(player_id);
+            }
+        } else if let Some(player_id @ (1 | 2)) = event.m_killer_player_id {
+            self.drop_sources.push(PartDropSource::new(
+                event.game_loop,
+                player_id,
+                Self::event_point(event),
+            ));
+        }
+
+        self.live_units.remove(&unit_id);
+    }
+
+    fn player_count(&self, player_id: i64) -> i64 {
+        usize::try_from(player_id)
+            .ok()
+            .and_then(|index| self.counts_by_player.get(index))
+            .copied()
+            .unwrap_or_default()
+    }
+
+    fn event_point(event: &TrackerEvent) -> ReplayPoint {
+        ReplayPoint::new(event.m_x.unwrap_or_default(), event.m_y.unwrap_or_default())
+    }
+
+    fn score_screen_player_for_part(&self, birth: &PartPickupBirth) -> Option<i64> {
+        self.source_player_for_part(birth)
+            .or_else(|| self.nearest_live_player_for_part(birth))
+            .map(Self::score_screen_player_from_tracker_player)
+    }
+
+    fn source_player_for_part(&self, birth: &PartPickupBirth) -> Option<i64> {
+        let mut best: Option<(i64, i64, i64)> = None;
+        let birth_point = birth.point();
+        for source in &self.drop_sources {
+            let loop_delta = birth.game_loop() - source.game_loop();
+            if !(0..=PART_PICKUP_SOURCE_MAX_LOOP_DELTA).contains(&loop_delta) {
+                continue;
+            }
+            let x_delta = (birth_point.x() - source.point().x()).abs();
+            let y_delta = (birth_point.y() - source.point().y()).abs();
+            if x_delta > PART_PICKUP_SOURCE_MAX_COORD_DELTA
+                || y_delta > PART_PICKUP_SOURCE_MAX_COORD_DELTA
+            {
+                continue;
+            }
+            let candidate = (
+                loop_delta,
+                birth_point.manhattan_distance(&source.point()),
+                source.player_id(),
+            );
+            if best.is_none_or(|current| candidate < current) {
+                best = Some(candidate);
+            }
+        }
+        best.map(|(_, _, player_id)| player_id)
+    }
+
+    fn nearest_live_player_for_part(&self, birth: &PartPickupBirth) -> Option<i64> {
+        let mut best: Option<(i64, i64)> = None;
+        let birth_point = birth.point();
+        for live_unit in self.live_units.values() {
+            if !live_unit.is_player_unit() || live_unit.is_part_pickup() {
+                continue;
+            }
+            let candidate = (
+                birth_point.squared_distance(&live_unit.point()),
+                live_unit.control_player_id(),
+            );
+            if best.is_none_or(|current| candidate < current) {
+                best = Some(candidate);
+            }
+        }
+        best.map(|(_, player_id)| player_id)
+    }
+
+    fn score_screen_player_from_tracker_player(player_id: i64) -> i64 {
+        // Part pickups self-destruct as neutral units. The matching source-death bucket is
+        // opposite the player bucket used by the Part and Parcel score screen statistic.
+        match player_id {
+            1 => 2,
+            2 => 1,
+            _ => player_id,
+        }
+    }
+
+    fn increment_player_count(&mut self, player_id: i64) {
+        let Ok(index) = usize::try_from(player_id) else {
+            return;
+        };
+        let Some(count) = self.counts_by_player.get_mut(index) else {
+            return;
+        };
+        *count += 1;
+    }
+}
 
 #[derive(Clone)]
 pub struct ReplayAnalysisResources {
@@ -784,11 +1146,12 @@ enum ReplayEventKind {
     TrackerUnitInit,
     TrackerUnitTypeChange,
     TrackerUnitOwnerChange,
+    TrackerUnitPositions,
     TrackerUnitDied,
     Other,
 }
 
-const REPLAY_EVENT_KIND_TIMING_COUNT_NAMES: [&str; 13] = [
+const REPLAY_EVENT_KIND_TIMING_COUNT_NAMES: [&str; 14] = [
     "count.game_user_leave",
     "count.game_selection_delta",
     "count.game_trigger_dialog_control",
@@ -800,6 +1163,7 @@ const REPLAY_EVENT_KIND_TIMING_COUNT_NAMES: [&str; 13] = [
     "count.tracker_unit_init",
     "count.tracker_unit_type_change",
     "count.tracker_unit_owner_change",
+    "count.tracker_unit_positions",
     "count.tracker_unit_died",
     "count.other",
 ];
@@ -818,6 +1182,7 @@ impl ReplayEventKind {
             "NNet.Replay.Tracker.SUnitInitEvent" => Self::TrackerUnitInit,
             "NNet.Replay.Tracker.SUnitTypeChangeEvent" => Self::TrackerUnitTypeChange,
             "NNet.Replay.Tracker.SUnitOwnerChangeEvent" => Self::TrackerUnitOwnerChange,
+            "NNet.Replay.Tracker.SUnitPositionsEvent" => Self::TrackerUnitPositions,
             "NNet.Replay.Tracker.SUnitDiedEvent" => Self::TrackerUnitDied,
             _ => Self::Other,
         }
@@ -843,6 +1208,7 @@ impl ReplayEventKind {
                 | Self::TrackerUnitInit
                 | Self::TrackerUnitTypeChange
                 | Self::TrackerUnitOwnerChange
+                | Self::TrackerUnitPositions
                 | Self::TrackerUnitDied
         )
     }
@@ -860,8 +1226,9 @@ impl ReplayEventKind {
             Self::TrackerUnitInit => 8,
             Self::TrackerUnitTypeChange => 9,
             Self::TrackerUnitOwnerChange => 10,
-            Self::TrackerUnitDied => 11,
-            Self::Other => 12,
+            Self::TrackerUnitPositions => 11,
+            Self::TrackerUnitDied => 12,
+            Self::Other => 13,
         }
     }
 }
@@ -871,7 +1238,7 @@ struct ReplayAnalysisTimingCollector {
     label: String,
     started: Instant,
     spans: BTreeMap<&'static str, Duration>,
-    event_counts: [usize; 13],
+    event_counts: [usize; 14],
     extra_counts: BTreeMap<&'static str, usize>,
 }
 
@@ -909,7 +1276,7 @@ impl ReplayAnalysisTiming for ReplayAnalysisTimingCollector {
             label: label.to_owned(),
             started: Instant::now(),
             spans: BTreeMap::new(),
-            event_counts: [0; 13],
+            event_counts: [0; 14],
             extra_counts: BTreeMap::new(),
         }
     }
@@ -3149,6 +3516,8 @@ impl DetailedReplayAnalyzer {
         }
         let map_flags = ReplayMapAnalysisFlags::new(parser.map_name.as_str());
         let event_string_sets = &analysis_sets.event_string_sets;
+        let mut part_pickup_tracker =
+            PartPickupAttributionTracker::new(map_flags.is_part_and_parcel());
 
         let mut unit_type_dict_main: UnitTypeCountMap = IndexMap::new();
         let mut unit_type_dict_ally: UnitTypeCountMap = IndexMap::new();
@@ -3373,6 +3742,7 @@ impl DetailedReplayAnalyzer {
                     let ReplayEvent::Tracker(event) = event else {
                         continue;
                     };
+                    part_pickup_tracker.handle_unit_born_or_init(event);
                     let handler_started = timings.start();
                     let event_fields = UnitBornOrInitEventFields::new(
                         event.m_unit_type_name.as_deref().unwrap_or_default(),
@@ -3441,6 +3811,7 @@ impl DetailedReplayAnalyzer {
                     let ReplayEvent::Tracker(event) = event else {
                         continue;
                     };
+                    part_pickup_tracker.handle_unit_type_change(event);
                     let event_unit_id_started = timings.start();
                     let event_unit_id = DetailedReplayAnalyzer::replay_event_unitid(event);
                     let event_unit_in_dict = event_unit_id
@@ -3499,6 +3870,7 @@ impl DetailedReplayAnalyzer {
                     let ReplayEvent::Tracker(event) = event else {
                         continue;
                     };
+                    part_pickup_tracker.handle_unit_owner_change(event);
                     let event_unit_id_started = timings.start();
                     let event_unit_id = DetailedReplayAnalyzer::replay_event_unitid(event);
                     let event_unit_in_dict = event_unit_id
@@ -3547,10 +3919,19 @@ impl DetailedReplayAnalyzer {
                     }
                     timings.finish("event.unit_owner_change", handler_started);
                 }
+                ReplayEventKind::TrackerUnitPositions => {
+                    let ReplayEvent::Tracker(event) = event else {
+                        continue;
+                    };
+                    let handler_started = timings.start();
+                    part_pickup_tracker.handle_unit_positions(event);
+                    timings.finish("event.unit_positions", handler_started);
+                }
                 ReplayEventKind::TrackerUnitDied => {
                     let ReplayEvent::Tracker(event) = event else {
                         continue;
                     };
+                    part_pickup_tracker.handle_unit_died(event);
                     let event_unit_id_started = timings.start();
                     let event_unit_id = DetailedReplayAnalyzer::replay_event_unitid(event);
                     let killed_snapshot = event_unit_id.and_then(|value| unit_dict.get(&value));
@@ -3759,6 +4140,21 @@ impl DetailedReplayAnalyzer {
             DetailedReplayAnalyzer::set_icon_count(&mut ally_icons, "killbots", ally_killbot_feed);
         }
         timings.finish("post.killbot_icons", killbot_icons_started);
+
+        let parts_icons_started = timings.start();
+        if map_flags.is_part_and_parcel() {
+            DetailedReplayAnalyzer::set_icon_count(
+                &mut main_icons,
+                PART_PICKUP_ICON_KEY,
+                part_pickup_tracker.player_count(main_player),
+            );
+            DetailedReplayAnalyzer::set_icon_count(
+                &mut ally_icons,
+                PART_PICKUP_ICON_KEY,
+                part_pickup_tracker.player_count(ally_player),
+            );
+        }
+        timings.finish("post.parts_icons", parts_icons_started);
 
         let amon_units_started = timings.start();
         let amon_units = DetailedReplayAnalyzer::fill_amon_units(
