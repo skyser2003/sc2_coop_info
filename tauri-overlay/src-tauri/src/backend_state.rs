@@ -1021,7 +1021,6 @@ impl BackendState {
             match replay_state.lock() {
                 Ok(state) => {
                     if let Ok(mut cache) = state.replays.lock() {
-                        cache.clear();
                         for replay in replays {
                             let replay_hash = ReplayFileIdentity::calculate_hash(
                                 &std::path::PathBuf::from(&replay.file),

@@ -2166,7 +2166,6 @@ impl TauriOverlayOps {
         replays_slot: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
     ) {
         if let Ok(mut cache) = replays_slot.lock() {
-            cache.clear();
             for replay in replays {
                 let replay_hash = ReplayFileIdentity::calculate_hash(&PathBuf::from(&replay.file));
                 if replay_hash.is_empty() {
@@ -4144,50 +4143,32 @@ async fn config_players_get(
     state.log_request("get", &path, &None);
     let limit = TauriOverlayOps::parse_query_usize(&path, "limit", 500);
     let replay_state = state.get_replay_state();
-    let replays = match replay_state.try_lock() {
-        Ok(replay_state) => match replay_state.replays_handle().try_lock() {
-            Ok(replays) if !replays.is_empty() => {
-                let mut replays = replays.values().cloned().collect::<Vec<_>>();
-                ReplayInfo::sort_replays(&mut replays);
-                replays
-            }
-            Ok(_) => {
-                crate::sco_log!(
-                    "[SCO/players] replay cache empty, starting background scan for players"
-                );
-                state.spawn_players_scan_task(limit);
-                Vec::new()
-            }
-            Err(error) => match error {
-                TryLockError::WouldBlock => {
-                    crate::sco_log!(
-                        "[SCO/players] replay cache busy, starting background scan for players"
-                    );
-                    state.spawn_players_scan_task(limit);
-                    Vec::new()
-                }
-                TryLockError::Poisoned(_) => {
-                    return Err("Failed to access replay cache: mutex is poisoned".to_string());
-                }
-            },
-        },
-        Err(error) => match error {
-            TryLockError::WouldBlock => {
-                crate::sco_log!(
-                    "[SCO/players] replay state busy, starting background scan for players"
-                );
-                state.spawn_players_scan_task(limit);
-                Vec::new()
-            }
-            TryLockError::Poisoned(_) => {
-                return Err("Failed to access replay state: mutex is poisoned".to_string());
-            }
-        },
-    };
+    let main_names = state.configured_main_names();
+    let main_handles = state.configured_main_handles();
+    let settings = state.read_settings_memory();
+    let resources = state.replay_analysis_resources().ok();
+
+    let replays = tauri::async_runtime::spawn_blocking(move || {
+        replay_state
+            .lock()
+            .map(|state| {
+                state.sync_replay_cache_slots_with_resources(
+                    limit,
+                    &settings,
+                    &main_names,
+                    &main_handles,
+                    resources.as_deref(),
+                )
+            })
+            .unwrap_or_default()
+    })
+    .await
+    .map_err(|error| format!("Failed to load /config/players: {error}"))?;
+
     Ok(ConfigPlayersPayload {
         status: "ok",
         players: ReplayAnalysis::rebuild_player_rows_fast(&replays),
-        loading: replays.is_empty(),
+        loading: false,
     })
 }
 
