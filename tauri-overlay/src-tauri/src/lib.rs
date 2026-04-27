@@ -30,6 +30,7 @@ mod performance_overlay;
 mod randomizer;
 mod replay_analysis;
 mod replay_info;
+mod replay_visual;
 mod shared_types;
 mod stats_state;
 mod test_helper;
@@ -37,8 +38,8 @@ pub use app_settings::{AppSettings, PlayerNotes, RandomizerChoices};
 pub use backend_state::BackendState;
 pub use command_payloads::{
     AnalysisCompletedPayload, ConfigChatPayload, ConfigPayload, ConfigPlayersPayload,
-    ConfigReplaysPayload, ConfigWeekliesPayload, OverlayActionResponse, OverlayActionResult,
-    StatsActionPayload, StatsStatePayload,
+    ConfigReplayVisualPayload, ConfigReplaysPayload, ConfigWeekliesPayload, OverlayActionResponse,
+    OverlayActionResult, StatsActionPayload, StatsStatePayload,
 };
 pub use game_launch_detector::{GameLaunchDetector, GameLaunchStatus};
 pub use logging::LoggingOps;
@@ -50,6 +51,11 @@ pub use replay_analysis::{PlayerRowPayload, ReplayAnalysis, ReplayAnalysisOps, W
 pub use replay_info::{
     CommanderUnitRollup, GamesRowPayload, ReplayChatMessage, ReplayChatPayload, ReplayInfo,
     ReplayPlayerInfo, UnitStatsRollup,
+};
+pub use replay_visual::{
+    ReplayVisualAssault, ReplayVisualBuildInput, ReplayVisualContext, ReplayVisualDictionaries,
+    ReplayVisualFrame, ReplayVisualOps, ReplayVisualOwnerKind, ReplayVisualPayload,
+    ReplayVisualPlayer, ReplayVisualUnit, ReplayVisualUnitCount, ReplayVisualUnitGroup,
 };
 pub use shared_types::*;
 pub use stats_state::{
@@ -2866,6 +2872,23 @@ impl TauriOverlayOps {
 }
 
 impl TauriOverlayOps {
+    fn replay_visual_context_from_replay(replay: &ReplayInfo) -> ReplayVisualContext {
+        let main_player_id = if replay.main_index() == 0 { 1 } else { 2 };
+        let duration_seconds =
+            if replay.accurate_length().is_finite() && replay.accurate_length() > 0.0 {
+                replay.accurate_length().round() as u64
+            } else {
+                replay.length()
+            };
+        ReplayVisualContext::new(
+            replay.file(),
+            replay.map(),
+            replay.result(),
+            duration_seconds,
+            main_player_id,
+        )
+    }
+
     fn replay_chat_payload_from_slots(
         replay_state: Arc<Mutex<ReplayState>>,
         settings: AppSettings,
@@ -2917,6 +2940,65 @@ impl TauriOverlayOps {
             .as_deref()
             .map(|dictionary| replay.chat_payload_with_dictionary(dictionary))
             .unwrap_or_else(|| replay.chat_payload_with_dictionary(resources.dictionary_data())))
+    }
+
+    fn replay_visual_payload_from_slots(
+        replay_state: Arc<Mutex<ReplayState>>,
+        settings: AppSettings,
+        main_names: HashSet<String>,
+        main_handles: HashSet<String>,
+        file: &str,
+        dictionary: Arc<Sc2DictionaryData>,
+        resources: Arc<ReplayAnalysisResources>,
+    ) -> Result<ReplayVisualPayload, String> {
+        let requested_file = file.trim();
+        if requested_file.is_empty() {
+            return Err("No replay file specified.".to_string());
+        }
+
+        let replays = replay_state
+            .lock()
+            .map(|state| {
+                state.sync_replay_cache_slots_with_resources(
+                    UNLIMITED_REPLAY_LIMIT,
+                    &settings,
+                    &main_names,
+                    &main_handles,
+                    Some(resources.as_ref()),
+                )
+            })
+            .unwrap_or_default();
+
+        let replay_path = Path::new(requested_file);
+        if !replay_path.exists() {
+            return Err(format!("Replay file not found: {requested_file}"));
+        }
+
+        if let Some(replay) = replays
+            .iter()
+            .find(|replay| replay.file() == requested_file)
+        {
+            let context = Self::replay_visual_context_from_replay(replay);
+            return ReplayVisualOps::payload_from_file(
+                replay_path,
+                resources.as_ref(),
+                dictionary.as_ref(),
+                &context,
+            );
+        }
+
+        let (replay, _) = ReplayAnalysis::summarize_replay_with_cache_entry_with_resources(
+            replay_path,
+            resources.as_ref(),
+        )
+        .ok_or_else(|| format!("Failed to parse replay file: {requested_file}"))?;
+        let context = Self::replay_visual_context_from_replay(&replay);
+        ReplayVisualOps::payload_from_file(
+            replay_path,
+            resources.as_ref(),
+            dictionary.as_ref(),
+            &context,
+        )
     }
 }
 
@@ -4332,6 +4414,47 @@ async fn config_replay_chat(
 }
 
 #[tauri::command]
+async fn config_replay_visual(
+    _app: tauri::AppHandle<Wry>,
+    file: String,
+    state: State<'_, BackendState>,
+) -> Result<ConfigReplayVisualPayload, String> {
+    let body = Some(TauriOverlayOps::to_json_value(
+        serde_json::json!({ "file": file }),
+    ));
+    state.log_request("post", "/config/replays/visual", &body);
+    let requested_file = body
+        .as_ref()
+        .and_then(|payload| payload.get("file"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let replay_state = state.get_replay_state();
+    let settings = state.read_settings_memory();
+    let main_names = state.configured_main_names();
+    let main_handles = state.configured_main_handles();
+    let dictionary = state.dictionary_data()?;
+    let resources = state.replay_analysis_resources()?;
+    let visual = tauri::async_runtime::spawn_blocking(move || {
+        TauriOverlayOps::replay_visual_payload_from_slots(
+            replay_state,
+            settings,
+            main_names,
+            main_handles,
+            &requested_file,
+            dictionary,
+            resources,
+        )
+    })
+    .await
+    .map_err(|error| format!("Failed to load /config/replays/visual: {error}"))??;
+    Ok(ConfigReplayVisualPayload {
+        status: "ok",
+        visual,
+    })
+}
+
+#[tauri::command]
 async fn config_replay_move(
     app: tauri::AppHandle<Wry>,
     delta: i64,
@@ -4958,6 +5081,7 @@ pub fn run() {
             config_stats_get,
             config_replay_show,
             config_replay_chat,
+            config_replay_visual,
             config_replay_move,
             config_action,
             config_stats_action,

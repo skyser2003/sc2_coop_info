@@ -9,6 +9,7 @@ import type {
     ConfigChatPayload,
     ConfigPayload,
     ConfigPlayersPayload,
+    ConfigReplayVisualPayload,
     ConfigReplaysPayload,
     ConfigWeekliesPayload,
     GamesRowPayload,
@@ -23,6 +24,7 @@ import type {
     StatsActionPayload,
     StatsStatePayload,
     ReplayChatPayload,
+    ReplayVisualPayload,
     WeeklyRowPayload,
 } from "../../bindings/overlay";
 
@@ -58,6 +60,7 @@ type GamesRows = readonly GamesRowPayload[];
 type PlayerRows = readonly PlayerRowPayload[];
 type WeekliesRows = readonly WeeklyRowPayload[];
 type GamesChatPayload = ReplayChatPayload | null;
+type GamesVisualPayload = ReplayVisualPayload | null;
 type GamesPayload = {
     rows: GamesRows;
     totalRows: number;
@@ -919,6 +922,17 @@ async function loadReplayChatRequest(file: string): Promise<ConfigChatPayload> {
     return invokeConfigCommand<ConfigChatPayload>("config_replay_chat", {
         file,
     });
+}
+
+async function loadReplayVisualRequest(
+    file: string,
+): Promise<ConfigReplayVisualPayload> {
+    return invokeConfigCommand<ConfigReplayVisualPayload>(
+        "config_replay_visual",
+        {
+            file,
+        },
+    );
 }
 
 async function moveReplayRequest(
@@ -1997,6 +2011,14 @@ function SettingsEditor({
         return (result.chat as GamesChatPayload) || null;
     }
 
+    async function loadReplayVisual(file: string): Promise<GamesVisualPayload> {
+        if (!file) {
+            return null;
+        }
+        const result = await loadReplayVisualRequest(file);
+        return (result.visual as GamesVisualPayload) || null;
+    }
+
     async function revealReplayByFile(file: string): Promise<void> {
         if (!file) {
             return;
@@ -2703,6 +2725,7 @@ function SettingsEditor({
                     moveReplay,
                     showReplay: showReplayByFile,
                     loadChat: loadReplayChat,
+                    loadVisual: loadReplayVisual,
                     revealFile: revealReplayByFile,
                 },
             })

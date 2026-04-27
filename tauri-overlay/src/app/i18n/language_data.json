@@ -691,6 +691,14 @@
         "en": "Loading...",
         "ko": "불러오는 중..."
     },
+    "ui_common_play": {
+        "en": "Play",
+        "ko": "재생"
+    },
+    "ui_common_pause": {
+        "en": "Pause",
+        "ko": "일시정지"
+    },
     "ui_common_previous": {
         "en": "Previous",
         "ko": "이전"
@@ -735,6 +743,10 @@
         "en": "Overlay",
         "ko": "오버레이"
     },
+    "ui_games_action_visual": {
+        "en": "Visual",
+        "ko": "시각화"
+    },
     "ui_games_action_chat": {
         "en": "Chat",
         "ko": "채팅"
@@ -762,6 +774,90 @@
     "ui_games_chat_failed": {
         "en": "Failed to load chat.",
         "ko": "채팅을 불러오지 못했습니다."
+    },
+    "ui_games_visual_title": {
+        "en": "Replay Player",
+        "ko": "리플레이 플레이어"
+    },
+    "ui_games_visual_loading": {
+        "en": "Loading replay player",
+        "ko": "리플레이 플레이어를 불러오는 중"
+    },
+    "ui_games_visual_failed": {
+        "en": "Failed to load replay player.",
+        "ko": "리플레이 플레이어를 불러오지 못했습니다."
+    },
+    "ui_games_visual_no_data": {
+        "en": "No visual replay data available.",
+        "ko": "사용할 수 있는 리플레이 시각화 데이터가 없습니다."
+    },
+    "ui_games_visual_no_frames": {
+        "en": "No visual frames were found in this replay.",
+        "ko": "이 리플레이에서 시각화 프레임을 찾지 못했습니다."
+    },
+    "ui_games_visual_canvas_label": {
+        "en": "Replay map canvas",
+        "ko": "리플레이 맵 캔버스"
+    },
+    "ui_games_visual_time": {
+        "en": "Time",
+        "ko": "시간"
+    },
+    "ui_games_visual_units": {
+        "en": "Units",
+        "ko": "유닛"
+    },
+    "ui_games_visual_units_short": {
+        "en": "units",
+        "ko": "유닛"
+    },
+    "ui_games_visual_assaults": {
+        "en": "Assaults",
+        "ko": "공세"
+    },
+    "ui_games_visual_map_size": {
+        "en": "Map size",
+        "ko": "맵 크기"
+    },
+    "ui_games_visual_group_buildings": {
+        "en": "Buildings",
+        "ko": "건물"
+    },
+    "ui_games_visual_group_attack_units": {
+        "en": "Attack units",
+        "ko": "공격 유닛"
+    },
+    "ui_games_visual_group_defense_buildings": {
+        "en": "Defense buildings",
+        "ko": "방어 건물"
+    },
+    "ui_games_visual_group_enemy_assaults": {
+        "en": "Enemy assaults",
+        "ko": "적 공세"
+    },
+    "ui_games_visual_current_assault": {
+        "en": "Current assault",
+        "ko": "현재 공세"
+    },
+    "ui_games_visual_no_assault": {
+        "en": "No assault reached yet.",
+        "ko": "아직 도달한 공세가 없습니다."
+    },
+    "ui_games_visual_top_units": {
+        "en": "Visible units",
+        "ko": "표시 중인 유닛"
+    },
+    "ui_games_visual_no_units": {
+        "en": "No units visible.",
+        "ko": "표시 중인 유닛이 없습니다."
+    },
+    "ui_games_visual_timeline": {
+        "en": "Replay timeline",
+        "ko": "리플레이 타임라인"
+    },
+    "ui_games_visual_speed": {
+        "en": "Speed",
+        "ko": "속도"
     },
     "ui_games_player_1_fallback": {
         "en": "Player 1",

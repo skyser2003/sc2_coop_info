@@ -1,4 +1,5 @@
 use crate::replay_info::{GamesRowPayload, ReplayChatPayload};
+use crate::replay_visual::ReplayVisualPayload;
 use crate::{
     AppSettings, LocalizedLabels, MonitorOption, OverlayRandomizerCatalog, PlayerRowPayload,
     RandomizerResult, ReplayScanProgressPayload, WeeklyRowPayload,
@@ -65,6 +66,13 @@ pub struct ConfigWeekliesPayload {
 pub struct ConfigChatPayload {
     pub status: &'static str,
     pub chat: ReplayChatPayload,
+}
+
+#[derive(Clone, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct ConfigReplayVisualPayload {
+    pub status: &'static str,
+    pub visual: ReplayVisualPayload,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, TS)]

@@ -10,6 +10,8 @@ export type ConfigPayload = { status: string, settings: AppSettings, active_sett
 
 export type ConfigPlayersPayload = { status: string, players: Array<PlayerRowPayload>, loading: boolean, };
 
+export type ConfigReplayVisualPayload = { status: string, visual: ReplayVisualPayload, };
+
 export type ConfigReplaysPayload = { status: string, replays: Array<GamesRowPayload>, total_replays: number, selected_replay_file: string | null, };
 
 export type ConfigWeekliesPayload = { status: string, weeklies: Array<WeeklyRowPayload>, };
@@ -69,6 +71,22 @@ export type ReplayChatPayload = { file: string, date: number, map: string, resul
 export type ReplayPlayerSeries = { name: string, army: Array<number>, supply: Array<number>, killed: Array<number>, mining: Array<number>, };
 
 export type ReplayScanProgressPayload = { stage: string, status: string, parsing_status: string, total: number, total_replay_files: number, cache_hits: number, files_already_cached: number, to_parse: number, completed: number, newly_parsed: number, newly_parsed_files: number, failed: number, parse_failed_files: number, parse_skipped: number, parse_skipped_files: number, elapsed_ms: number, total_time_taken_ms: number, };
+
+export type ReplayVisualAssault = { id: string, game_loop: number, seconds: number, x: number, y: number, unit_count: number, units: Array<ReplayVisualUnitCount>, };
+
+export type ReplayVisualFrame = { game_loop: number, seconds: number, units: Array<ReplayVisualUnit>, };
+
+export type ReplayVisualOwnerKind = "main" | "ally" | "amon" | "neutral" | "other";
+
+export type ReplayVisualPayload = { file: string, map: string, result: string, duration_seconds: number, map_width: number, map_height: number, players: Array<ReplayVisualPlayer>, frames: Array<ReplayVisualFrame>, assaults: Array<ReplayVisualAssault>, };
+
+export type ReplayVisualPlayer = { player_id: number, label: string, owner_kind: ReplayVisualOwnerKind, color: string, };
+
+export type ReplayVisualUnit = { id: string, unit_type: string, display_name: string, owner_player_id: number, owner_kind: ReplayVisualOwnerKind, group: ReplayVisualUnitGroup, x: number, y: number, radius: number, };
+
+export type ReplayVisualUnitCount = { unit_type: string, display_name: string, count: number, };
+
+export type ReplayVisualUnitGroup = "buildings" | "attack_units" | "defense_buildings" | "enemy_assaults";
 
 export type StatsActionPayload = { status: string, result: OverlayActionResult, message: string, stats: StatsStatePayload | null, };
 

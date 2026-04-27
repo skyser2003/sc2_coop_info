@@ -724,6 +724,197 @@
     overflow: auto;
 }
 
+.configPage .visualModal {
+    max-width: min(1180px, calc(100vw - 48px));
+    max-height: min(88vh, 920px);
+}
+
+.configPage .visualModalContent {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 14px;
+    min-height: 0;
+}
+
+.configPage .visualPlayer {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem);
+    gap: 16px;
+    min-height: 0;
+}
+
+.configPage .visualStage {
+    min-width: 0;
+    align-self: start;
+    min-height: 0;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    background: #07111f;
+    overflow: hidden;
+}
+
+.configPage .visualCanvas {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+    min-block-size: 0;
+}
+
+.configPage .visualSidePanel {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow: auto;
+}
+
+.configPage .visualMetaGrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.configPage .visualMetaGrid div,
+.configPage .visualAssaultBox,
+.configPage .visualTopUnits,
+.configPage .visualCounts {
+    border: 1px solid #334155;
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.72);
+    padding: 10px;
+}
+
+.configPage .visualMetaGrid span,
+.configPage .visualCountRow span {
+    color: #cbd5e1;
+    font-size: 12px;
+}
+
+.configPage .visualMetaGrid strong {
+    display: block;
+    margin-top: 4px;
+    color: #f8fafc;
+    font-size: 15px;
+}
+
+.configPage .visualLayerGrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.configPage .visualLayerToggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    background: rgba(30, 41, 59, 0.62);
+    color: #e2e8f0;
+    font-size: 13px;
+}
+
+.configPage .visualLayerToggle span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.configPage .visualCounts {
+    display: grid;
+    gap: 8px;
+}
+
+.configPage .visualCountRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.configPage .visualCountRow strong {
+    color: #f8fafc;
+    font-variant-numeric: tabular-nums;
+}
+
+.configPage .visualAssaultBox h4,
+.configPage .visualTopUnits h4 {
+    margin: 0 0 8px;
+    color: #f8fafc;
+    font-size: 14px;
+}
+
+.configPage .visualAssaultBox p,
+.configPage .visualTopUnits p {
+    margin: 0;
+    color: #cbd5e1;
+    font-size: 13px;
+}
+
+.configPage .visualUnitTags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.configPage .visualUnitTags span {
+    max-width: 100%;
+    padding: 4px 7px;
+    border-radius: 6px;
+    background: rgba(51, 65, 85, 0.9);
+    color: #e2e8f0;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+
+.configPage .visualTopUnits {
+    display: grid;
+    gap: 7px;
+}
+
+.configPage .visualControls {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+}
+
+.configPage .visualControls input[type="range"] {
+    width: 100%;
+}
+
+.configPage .visualFrameLabel {
+    color: #cbd5e1;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    min-inline-size: 8.5rem;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.configPage .visualSpeedControl {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #cbd5e1;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.configPage .visualSpeedControl select {
+    min-inline-size: 4.5rem;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    background: #0f172a;
+    color: #f8fafc;
+    padding: 6px 8px;
+    font: inherit;
+}
+
 .configPage .chatLog {
     display: grid;
     gap: 8px;
@@ -2215,6 +2406,18 @@
         margin-bottom: 10px;
         max-inline-size: none;
     }
+
+    .configPage .visualPlayer {
+        grid-template-columns: 1fr;
+    }
+
+    .configPage .visualControls {
+        grid-template-columns: 1fr;
+    }
+
+    .configPage .visualFrameLabel {
+        text-align: left;
+    }
 }
 
 .configPage.configPage .card,
@@ -2226,6 +2429,11 @@
 .configPage.configPage .randomizerPane,
 .configPage.configPage .chatRow,
 .configPage.configPage .chatModal,
+.configPage.configPage .visualMetaGrid div,
+.configPage.configPage .visualAssaultBox,
+.configPage.configPage .visualTopUnits,
+.configPage.configPage .visualCounts,
+.configPage.configPage .visualLayerToggle,
 .configPage.configPage .performanceTabCard,
 .configPage.configPage .gamesPanel,
 .configPage.configPage .statsRoot,
@@ -2290,6 +2498,12 @@
 .configPage.configPage .randomizerMutatorCard,
 .configPage.configPage .gamesIconBtn,
 .configPage.configPage .gamesRowBtn,
+.configPage.configPage .visualStage,
+.configPage.configPage .visualMetaGrid div,
+.configPage.configPage .visualAssaultBox,
+.configPage.configPage .visualTopUnits,
+.configPage.configPage .visualCounts,
+.configPage.configPage .visualLayerToggle,
 .configPage.configPage .statsPaneRight,
 .configPage.configPage .statsCommanderHero,
 .configPage.configPage .randomizerResultPreview,
@@ -2307,6 +2521,12 @@
 .configPage.configPage .tablePaginationSummary,
 .configPage.configPage .gamesFilterLabel,
 .configPage.configPage .chatEmpty,
+.configPage.configPage .visualMetaGrid span,
+.configPage.configPage .visualCountRow span,
+.configPage.configPage .visualAssaultBox p,
+.configPage.configPage .visualTopUnits p,
+.configPage.configPage .visualFrameLabel,
+.configPage.configPage .visualSpeedControl,
 .configPage.configPage .statsUnitColumn h4,
 .configPage.configPage .weekliesMutatorDescription,
 .configPage.configPage .randomizerMutatorDescription {

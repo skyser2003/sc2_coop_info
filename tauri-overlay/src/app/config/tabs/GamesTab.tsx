@@ -3,10 +3,12 @@ import type {
     GamesRowPayload,
     LocalizedText,
     ReplayChatPayload,
+    ReplayVisualPayload,
     UiMutatorRow,
 } from "../../../bindings/overlay";
 import type { LanguageManager } from "../../i18n/languageManager";
 import styles from "../page.module.css";
+import ReplayVisualPlayer from "./ReplayVisualPlayer";
 import {
     nextSortState,
     sortIndicator,
@@ -40,6 +42,7 @@ type GamesTabState = {
     refresh: () => void;
     showReplay: (file: string) => void;
     loadChat: (file: string) => Promise<ReplayChatPayload | null>;
+    loadVisual: (file: string) => Promise<ReplayVisualPayload | null>;
     revealFile: (file: string) => void;
 };
 
@@ -221,6 +224,13 @@ export default function GamesTab({
     const [chatPayload, setChatPayload] =
         React.useState<ReplayChatPayload | null>(null);
     const chatRequestSeq = React.useRef<number>(0);
+    const [visualModalOpen, setVisualModalOpen] =
+        React.useState<boolean>(false);
+    const [visualLoading, setVisualLoading] = React.useState<boolean>(false);
+    const [visualError, setVisualError] = React.useState<string>("");
+    const [visualPayload, setVisualPayload] =
+        React.useState<ReplayVisualPayload | null>(null);
+    const visualRequestSeq = React.useRef<number>(0);
 
     const formatReplayTime = (value: DisplayValue) => {
         const num = Number(value);
@@ -281,6 +291,13 @@ export default function GamesTab({
         setChatPayload(null);
     };
 
+    const closeVisualModal = () => {
+        setVisualModalOpen(false);
+        setVisualLoading(false);
+        setVisualError("");
+        setVisualPayload(null);
+    };
+
     const openChatModal = async (file: string) => {
         if (!file) {
             return;
@@ -321,6 +338,46 @@ export default function GamesTab({
         }
     };
 
+    const openVisualModal = async (file: string) => {
+        if (!file) {
+            return;
+        }
+        state.setSelectedReplayFile(file);
+        const requestSeq = visualRequestSeq.current + 1;
+        visualRequestSeq.current = requestSeq;
+        setVisualModalOpen(true);
+        setVisualLoading(true);
+        setVisualError("");
+        setVisualPayload(null);
+
+        try {
+            const payload = await state.loadVisual(file);
+            if (visualRequestSeq.current !== requestSeq) {
+                return;
+            }
+            if (payload === null) {
+                setVisualError(t("ui_games_visual_no_data"));
+                setVisualPayload(null);
+                return;
+            }
+            setVisualPayload(payload);
+        } catch (error) {
+            if (visualRequestSeq.current !== requestSeq) {
+                return;
+            }
+            const message =
+                error instanceof Error
+                    ? error.message
+                    : t("ui_games_visual_failed");
+            setVisualError(message);
+            setVisualPayload(null);
+        } finally {
+            if (visualRequestSeq.current === requestSeq) {
+                setVisualLoading(false);
+            }
+        }
+    };
+
     React.useEffect(() => {
         if (!chatModalOpen) {
             return undefined;
@@ -333,6 +390,19 @@ export default function GamesTab({
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
     }, [chatModalOpen]);
+
+    React.useEffect(() => {
+        if (!visualModalOpen) {
+            return undefined;
+        }
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === "Escape") {
+                closeVisualModal();
+            }
+        };
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, [visualModalOpen]);
 
     const filtered = React.useMemo(
         () =>
@@ -851,6 +921,26 @@ export default function GamesTab({
                                                     disabled={!file}
                                                     onClick={(event) => {
                                                         event.stopPropagation();
+                                                        void openVisualModal(
+                                                            file,
+                                                        );
+                                                    }}
+                                                >
+                                                    {t(
+                                                        "ui_games_action_visual",
+                                                    )}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className={[
+                                                        styles.gamesRowBtn,
+                                                        styles.buttonNormal,
+                                                    ]
+                                                        .filter(Boolean)
+                                                        .join(" ")}
+                                                    disabled={!file}
+                                                    onClick={(event) => {
+                                                        event.stopPropagation();
                                                         void openChatModal(
                                                             file,
                                                         );
@@ -976,6 +1066,78 @@ export default function GamesTab({
                                         ),
                                     )}
                                 </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            ) : null}
+            {visualModalOpen ? (
+                <div
+                    className={styles.chatModalBackdrop}
+                    onClick={closeVisualModal}
+                    role="presentation"
+                >
+                    <div
+                        className={[styles.chatModal, styles.visualModal]
+                            .filter(Boolean)
+                            .join(" ")}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="visual-modal-title"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <div className={styles.chatModalHeader}>
+                            <div className={styles.chatModalHeading}>
+                                <h3 id="visual-modal-title">
+                                    {t("ui_games_visual_title")}
+                                </h3>
+                                <p className={styles.chatModalMeta}>
+                                    {visualPayload
+                                        ? `${asTableValue(visualPayload.map) || t("ui_games_unknown_map")} | ${asTableValue(visualPayload.result) || t("ui_games_unknown_result")} | ${formatDurationSeconds(visualPayload.duration_seconds)}`
+                                        : t("ui_games_visual_loading")}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                className={[
+                                    styles.gamesRowBtn,
+                                    styles.chatModalClose,
+                                    styles.buttonNormal,
+                                ]
+                                    .filter(Boolean)
+                                    .join(" ")}
+                                onClick={closeVisualModal}
+                            >
+                                {t("ui_common_close")}
+                            </button>
+                        </div>
+                        <div className={styles.chatModalBody}>
+                            {visualLoading ? (
+                                <p className={styles.chatEmpty}>
+                                    {t("ui_common_loading")}
+                                </p>
+                            ) : visualError ? (
+                                <p className={styles.chatEmpty}>
+                                    {visualError}
+                                </p>
+                            ) : !visualPayload ||
+                              !Array.isArray(visualPayload.frames) ||
+                              visualPayload.frames.length === 0 ? (
+                                <p className={styles.chatEmpty}>
+                                    {t("ui_games_visual_no_frames")}
+                                </p>
+                            ) : (
+                                <ReplayVisualPlayer
+                                    payload={visualPayload}
+                                    t={t}
+                                    asTableValue={asTableValue}
+                                    localizeUnitName={(value) =>
+                                        languageManager.localizeUnitName(value)
+                                    }
+                                    formatDurationSeconds={
+                                        formatDurationSeconds
+                                    }
+                                />
                             )}
                         </div>
                     </div>
