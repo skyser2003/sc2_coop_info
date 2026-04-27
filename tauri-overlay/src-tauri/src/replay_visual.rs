@@ -127,6 +127,7 @@ pub struct ReplayVisualDictionaries {
     unit_names: HashMap<String, String>,
     units_in_waves: HashSet<String>,
     amon_player_ids: HashSet<i64>,
+    omitted_unit_types: HashSet<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -229,16 +230,32 @@ impl ReplayVisualDictionaries {
         units_in_waves: HashSet<String>,
         amon_player_ids: HashSet<i64>,
     ) -> Self {
+        Self::new_with_omitted_units(unit_names, units_in_waves, amon_player_ids, HashSet::new())
+    }
+
+    pub fn new_with_omitted_units(
+        unit_names: HashMap<String, String>,
+        units_in_waves: HashSet<String>,
+        amon_player_ids: HashSet<i64>,
+        omitted_unit_types: HashSet<String>,
+    ) -> Self {
         Self {
             unit_names,
             units_in_waves,
             amon_player_ids,
+            omitted_unit_types,
         }
     }
 
     fn from_dictionary(dictionary: &Sc2DictionaryData, map_name: &str) -> Self {
         let unit_names = Self::clone_unit_names(&dictionary.unit_name_dict);
         let units_in_waves = dictionary.units_in_waves.clone();
+        let omitted_unit_types = dictionary
+            .replay_analysis_data
+            .dont_include_units
+            .iter()
+            .cloned()
+            .collect();
         let mut amon_player_ids = HashSet::from([3_i64, 4_i64]);
         for (mission_name, player_ids) in dictionary.amon_player_ids.iter() {
             if !ReplayVisualOps::map_name_has_amon_override(map_name, mission_name) {
@@ -248,7 +265,12 @@ impl ReplayVisualDictionaries {
             break;
         }
 
-        Self::new(unit_names, units_in_waves, amon_player_ids)
+        Self::new_with_omitted_units(
+            unit_names,
+            units_in_waves,
+            amon_player_ids,
+            omitted_unit_types,
+        )
     }
 
     fn clone_unit_names(unit_names: &UnitNamesJson) -> HashMap<String, String> {
@@ -272,6 +294,11 @@ impl ReplayVisualDictionaries {
 
     fn is_wave_unit(&self, unit_type: &str) -> bool {
         self.units_in_waves.contains(unit_type)
+    }
+
+    fn should_omit_unit(&self, unit_type: &str, display_name: &str) -> bool {
+        self.omitted_unit_types.contains(unit_type)
+            || ReplayVisualOps::should_skip_unit_type(unit_type, display_name)
     }
 }
 
@@ -454,15 +481,21 @@ impl ReplayVisualTimelineBuilder {
         let Some(unit_id) = ReplayVisualOps::replay_event_unit_id(event) else {
             return;
         };
-        if let Some(tag_index) = event.m_unit_tag_index {
-            self.unit_id_by_tag_index.insert(tag_index, unit_id);
-        }
         let live_unit = ReplayVisualLiveUnit::from_event(
             event,
             unit_id,
             &self.dictionaries,
             self.input.main_player_id,
         );
+        if self.dictionaries.should_omit_unit(
+            live_unit.unit_type.as_str(),
+            live_unit.display_name.as_str(),
+        ) {
+            return;
+        }
+        if let Some(tag_index) = event.m_unit_tag_index {
+            self.unit_id_by_tag_index.insert(tag_index, unit_id);
+        }
         self.track_assault_unit(event.game_loop, &live_unit);
         self.live_units.insert(unit_id, live_unit);
         self.frame_dirty = true;
@@ -475,9 +508,17 @@ impl ReplayVisualTimelineBuilder {
         let Some(unit_type) = event.m_unit_type_name.clone() else {
             return;
         };
+        let mut should_remove = false;
         if let Some(live_unit) = self.live_units.get_mut(&unit_id) {
             live_unit.set_unit_type(unit_type, &self.dictionaries);
+            should_remove = self.dictionaries.should_omit_unit(
+                live_unit.unit_type.as_str(),
+                live_unit.display_name.as_str(),
+            );
             self.frame_dirty = true;
+        }
+        if should_remove {
+            self.remove_live_unit(unit_id);
         }
     }
 
@@ -518,6 +559,10 @@ impl ReplayVisualTimelineBuilder {
         let Some(unit_id) = ReplayVisualOps::replay_event_unit_id(event) else {
             return;
         };
+        self.remove_live_unit(unit_id);
+    }
+
+    fn remove_live_unit(&mut self, unit_id: i64) {
         if let Some(live_unit) = self.live_units.remove(&unit_id) {
             if self.unit_id_by_tag_index.get(&live_unit.tag_index) == Some(&unit_id) {
                 self.unit_id_by_tag_index.remove(&live_unit.tag_index);
@@ -644,7 +689,9 @@ impl ReplayVisualTimelineBuilder {
         let units = self
             .live_units
             .values()
-            .filter(|unit| ReplayVisualOps::should_render_unit(unit, &self.input))
+            .filter(|unit| {
+                ReplayVisualOps::should_render_unit(unit, &self.input, &self.dictionaries)
+            })
             .map(ReplayVisualLiveUnit::as_payload)
             .collect::<Vec<_>>();
         self.frames.push(ReplayVisualFrame {
@@ -938,14 +985,18 @@ impl ReplayVisualOps {
         }
     }
 
-    fn should_render_unit(unit: &ReplayVisualLiveUnit, input: &ReplayVisualBuildInput) -> bool {
+    fn should_render_unit(
+        unit: &ReplayVisualLiveUnit,
+        input: &ReplayVisualBuildInput,
+        dictionaries: &ReplayVisualDictionaries,
+    ) -> bool {
         if !unit.x.is_finite() || !unit.y.is_finite() {
             return false;
         }
         if unit.x < 0.0 || unit.y < 0.0 || unit.x > input.map_width || unit.y > input.map_height {
             return false;
         }
-        if Self::should_skip_unit_type(unit.unit_type.as_str(), unit.display_name.as_str()) {
+        if dictionaries.should_omit_unit(unit.unit_type.as_str(), unit.display_name.as_str()) {
             return false;
         }
         !matches!(
@@ -963,6 +1014,9 @@ impl ReplayVisualOps {
         if lower_type.starts_with("beacon") {
             return true;
         }
+        if lower_type.starts_with("coopcaster") || lower_type.starts_with("soacaster") {
+            return true;
+        }
         let skip_terms = [
             "mineralfield",
             "vespenegeyser",
@@ -974,6 +1028,7 @@ impl ReplayVisualOps {
             "cocoon",
             "egg",
             "larva",
+            "top bar",
         ];
         skip_terms
             .iter()

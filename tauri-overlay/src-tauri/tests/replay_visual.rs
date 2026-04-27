@@ -45,9 +45,34 @@ fn visual_dictionaries() -> ReplayVisualDictionaries {
             ("CommandCenter".to_string(), "Command Center".to_string()),
             ("PhotonCannon".to_string(), "Photon Cannon".to_string()),
             ("Marine".to_string(), "Marine".to_string()),
+            (
+                "CoopCasterAbathur".to_string(),
+                "Abathur's Top Bar".to_string(),
+            ),
+            (
+                "CoopCasterAlarak".to_string(),
+                "Photon Overcharge".to_string(),
+            ),
+            (
+                "FenixManaDummy1".to_string(),
+                "Fenix Mana Dummy".to_string(),
+            ),
+            ("SuperWarpGate".to_string(), "Super Warp Gate".to_string()),
         ]),
         HashSet::from(["Marine".to_string()]),
         HashSet::from([3_i64, 4_i64]),
+    )
+}
+
+fn visual_dictionaries_with_omitted_units() -> ReplayVisualDictionaries {
+    ReplayVisualDictionaries::new_with_omitted_units(
+        HashMap::from([
+            ("Marine".to_string(), "Marine".to_string()),
+            ("SuperWarpGate".to_string(), "Super Warp Gate".to_string()),
+        ]),
+        HashSet::from(["Marine".to_string()]),
+        HashSet::from([3_i64, 4_i64]),
+        HashSet::from(["SuperWarpGate".to_string()]),
     )
 }
 
@@ -145,4 +170,45 @@ fn visual_payload_groups_enemy_assaults_from_wave_units() {
             .count(),
         6
     );
+}
+
+#[test]
+fn visual_payload_omits_dummy_and_top_bar_units_before_rendering() {
+    let events = vec![
+        unit_born(0, 1, 1, "CoopCasterAbathur", 1, 0, 0),
+        unit_born(0, 2, 1, "CoopCasterAlarak", 1, 0, 0),
+        unit_born(0, 3, 1, "FenixManaDummy1", 1, 0, 0),
+        unit_born(0, 4, 1, "Marine", 1, 30, 20),
+        unit_positions(80, 1, vec![0, 5, 5, 1, 6, 6, 1, 7, 7, 1, 31, 21]),
+    ];
+
+    let payload =
+        ReplayVisualOps::payload_from_events(visual_input(), visual_dictionaries(), &events);
+    let final_frame = payload.frames.last().expect("visual frame");
+
+    assert_eq!(final_frame.units.len(), 1);
+    assert_eq!(final_frame.units[0].unit_type, "Marine");
+    assert_eq!(final_frame.units[0].x, 31.0);
+    assert_eq!(final_frame.units[0].y, 21.0);
+}
+
+#[test]
+fn visual_payload_omits_dictionary_excluded_units_before_rendering() {
+    let events = vec![
+        unit_born(0, 1, 1, "SuperWarpGate", 3, 0, 0),
+        unit_born(0, 2, 1, "Marine", 3, 30, 20),
+        unit_positions(80, 1, vec![0, 5, 5, 1, 31, 21]),
+    ];
+
+    let payload = ReplayVisualOps::payload_from_events(
+        visual_input(),
+        visual_dictionaries_with_omitted_units(),
+        &events,
+    );
+    let final_frame = payload.frames.last().expect("visual frame");
+
+    assert_eq!(final_frame.units.len(), 1);
+    assert_eq!(final_frame.units[0].unit_type, "Marine");
+    assert_eq!(final_frame.units[0].x, 31.0);
+    assert_eq!(final_frame.units[0].y, 21.0);
 }
