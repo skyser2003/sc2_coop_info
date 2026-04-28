@@ -49,6 +49,7 @@ type GamesTabState = {
 type GamesTabProps = {
     rows: readonly GamesRowPayload[] | null;
     state: GamesTabState;
+    isDev: boolean;
     asTableValue: (value: DisplayValue) => string;
     formatDurationSeconds: (value: DisplayValue) => string;
     languageManager: LanguageManager;
@@ -180,6 +181,7 @@ function difficultyDisplayLabel(
 export default function GamesTab({
     rows,
     state,
+    isDev,
     asTableValue = asTableValueCompat,
     formatDurationSeconds = formatDurationSecondsCompat,
     languageManager,
@@ -339,7 +341,7 @@ export default function GamesTab({
     };
 
     const openVisualModal = async (file: string) => {
-        if (!file) {
+        if (!isDev || !file) {
             return;
         }
         state.setSelectedReplayFile(file);
@@ -910,26 +912,28 @@ export default function GamesTab({
                                                         "ui_games_action_overlay",
                                                     )}
                                                 </button>
-                                                <button
-                                                    type="button"
-                                                    className={[
-                                                        styles.gamesRowBtn,
-                                                        styles.buttonNormal,
-                                                    ]
-                                                        .filter(Boolean)
-                                                        .join(" ")}
-                                                    disabled={!file}
-                                                    onClick={(event) => {
-                                                        event.stopPropagation();
-                                                        void openVisualModal(
-                                                            file,
-                                                        );
-                                                    }}
-                                                >
-                                                    {t(
-                                                        "ui_games_action_visual",
-                                                    )}
-                                                </button>
+                                                {isDev ? (
+                                                    <button
+                                                        type="button"
+                                                        className={[
+                                                            styles.gamesRowBtn,
+                                                            styles.buttonNormal,
+                                                        ]
+                                                            .filter(Boolean)
+                                                            .join(" ")}
+                                                        disabled={!file}
+                                                        onClick={(event) => {
+                                                            event.stopPropagation();
+                                                            void openVisualModal(
+                                                                file,
+                                                            );
+                                                        }}
+                                                    >
+                                                        {t(
+                                                            "ui_games_action_visual",
+                                                        )}
+                                                    </button>
+                                                ) : null}
                                                 <button
                                                     type="button"
                                                     className={[
@@ -1071,7 +1075,7 @@ export default function GamesTab({
                     </div>
                 </div>
             ) : null}
-            {visualModalOpen ? (
+            {isDev && visualModalOpen ? (
                 <div
                     className={styles.chatModalBackdrop}
                     onClick={closeVisualModal}

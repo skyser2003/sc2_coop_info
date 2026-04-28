@@ -116,6 +116,7 @@ type GenericTabValue =
     | null;
 type ExtraState = {
     tabData: TabDataState;
+    isDev: boolean;
     isBusy: boolean;
     settingsActions: SettingsTabActions;
     refreshPlayers: () => void;
@@ -971,6 +972,7 @@ function renderGamesTab(
     rows: GamesPayload | React.ComponentProps<typeof GamesTab>["rows"],
     state: GamesTabState,
     languageManager: LanguageManagerInstance,
+    isDev: boolean,
 ): React.ReactNode {
     const gameRows = Array.isArray(rows)
         ? rows
@@ -981,6 +983,7 @@ function renderGamesTab(
         <GamesTab
             rows={gameRows}
             state={state}
+            isDev={isDev}
             asTableValue={asTableValue}
             formatDurationSeconds={formatDurationSeconds}
             languageManager={languageManager}
@@ -1119,6 +1122,7 @@ function renderTabContent(
             extraState.tabData.games,
             extraState.gamesState,
             extraState.languageManager,
+            extraState.isDev,
         );
     }
     if (tab.id === "players") {
@@ -2487,6 +2491,7 @@ function SettingsEditor({
         ) : (
             renderTabContent(active, draft, settings, updateField, {
                 tabData,
+                isDev,
                 isBusy,
                 settingsActions: {
                     isBusy,
