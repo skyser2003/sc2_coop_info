@@ -82,7 +82,7 @@ export type ReplayVisualPayload = { file: string, map: string, result: string, d
 
 export type ReplayVisualPlayer = { player_id: number, label: string, owner_kind: ReplayVisualOwnerKind, color: string, };
 
-export type ReplayVisualUnit = { id: string, unit_type: string, display_name: string, owner_player_id: number, owner_kind: ReplayVisualOwnerKind, group: ReplayVisualUnitGroup, x: number, y: number, radius: number, };
+export type ReplayVisualUnit = { id: string, unit_type: string, display_name: string, owner_player_id: number, owner_kind: ReplayVisualOwnerKind, group: ReplayVisualUnitGroup, x: number, y: number, radius: number, interpolate_from_previous: boolean, };
 
 export type ReplayVisualUnitCount = { unit_type: string, display_name: string, count: number, };
 

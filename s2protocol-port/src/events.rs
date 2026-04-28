@@ -11,6 +11,8 @@ pub struct TriggerEventData {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct AbilityData {
     pub m_abilLink: i64,
+    pub m_abilCmdIndex: Option<i64>,
+    pub m_abilCmdData: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -33,7 +35,24 @@ pub struct TargetUnitData {
 #[allow(non_snake_case)]
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct CmdEventData {
+    pub TargetPoint: Option<SnapshotPoint>,
     pub TargetUnit: Option<TargetUnitData>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub enum SelectionRemoveMask {
+    #[default]
+    None,
+    Mask(Vec<bool>),
+    OneIndices(Vec<i64>),
+    ZeroIndices(Vec<i64>),
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SelectionDeltaData {
+    pub m_subgroup_index: Option<i64>,
+    pub m_remove_mask: SelectionRemoveMask,
+    pub m_add_unit_tags: Vec<i64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -53,9 +72,14 @@ pub struct GameEvent {
     pub m_control_id: Option<i64>,
     pub m_event_type: Option<i64>,
     pub m_event_data: Option<TriggerEventData>,
+    pub m_cmd_flags: Option<i64>,
     pub m_abil: Option<AbilityData>,
     pub m_data: Option<CmdEventData>,
+    pub m_sequence: Option<i64>,
+    pub m_other_unit: Option<i64>,
+    pub m_unit_group: Option<i64>,
     pub m_target: Option<TargetUnitData>,
+    pub m_delta: Option<SelectionDeltaData>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -107,7 +131,12 @@ pub(crate) enum GameEventField {
     EventData,
     Abil,
     Data,
+    CmdFlags,
+    Sequence,
+    OtherUnit,
+    UnitGroup,
     Target,
+    Delta,
 }
 
 impl GameEventField {
@@ -116,9 +145,14 @@ impl GameEventField {
             "m_controlId" => Some(Self::ControlId),
             "m_eventType" => Some(Self::EventType),
             "m_eventData" => Some(Self::EventData),
+            "m_cmdFlags" => Some(Self::CmdFlags),
             "m_abil" => Some(Self::Abil),
             "m_data" => Some(Self::Data),
+            "m_sequence" => Some(Self::Sequence),
+            "m_otherUnit" => Some(Self::OtherUnit),
+            "m_unitGroup" => Some(Self::UnitGroup),
             "m_target" => Some(Self::Target),
+            "m_delta" => Some(Self::Delta),
             _ => None,
         }
     }
@@ -238,9 +272,14 @@ impl DirectEventDecode for GameEvent {
             m_control_id: None,
             m_event_type: None,
             m_event_data: None,
+            m_cmd_flags: None,
             m_abil: None,
             m_data: None,
+            m_sequence: None,
+            m_other_unit: None,
+            m_unit_group: None,
             m_target: None,
+            m_delta: None,
         }
     }
 
@@ -269,6 +308,9 @@ impl DirectEventDecode for GameEvent {
                     )?,
                 );
             }
+            GameEventField::CmdFlags => {
+                self.m_cmd_flags = decoder.i64_from_typeinfo(field_typeinfo)?;
+            }
             GameEventField::Abil => {
                 self.m_abil = EventSpecialDataDecoder::decode_ability_data_from_typeinfo(
                     decoder,
@@ -281,8 +323,23 @@ impl DirectEventDecode for GameEvent {
                     field_typeinfo,
                 )?;
             }
+            GameEventField::Sequence => {
+                self.m_sequence = decoder.i64_from_typeinfo(field_typeinfo)?;
+            }
+            GameEventField::OtherUnit => {
+                self.m_other_unit = decoder.i64_from_typeinfo(field_typeinfo)?;
+            }
+            GameEventField::UnitGroup => {
+                self.m_unit_group = decoder.i64_from_typeinfo(field_typeinfo)?;
+            }
             GameEventField::Target => {
                 self.m_target = EventSpecialDataDecoder::decode_target_unit_data_from_typeinfo(
+                    decoder,
+                    field_typeinfo,
+                )?;
+            }
+            GameEventField::Delta => {
+                self.m_delta = EventSpecialDataDecoder::decode_selection_delta_data_from_typeinfo(
                     decoder,
                     field_typeinfo,
                 )?;

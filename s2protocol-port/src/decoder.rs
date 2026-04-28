@@ -4,8 +4,8 @@ use crate::{
     events::{
         AbilityData, CmdEventData, DirectEventDecode, EventUserIdDecoder, GameEvent,
         GameEventField, MessageEvent, MessageEventField, PlayerStatsData, ReplayEvent,
-        SnapshotPoint, SnapshotPointValue, TargetUnitData, TrackerEvent, TrackerEventField,
-        TriggerEventData,
+        SelectionDeltaData, SelectionRemoveMask, SnapshotPoint, SnapshotPointValue, TargetUnitData,
+        TrackerEvent, TrackerEventField, TriggerEventData,
     },
     value::Value,
 };
@@ -1264,11 +1264,27 @@ impl EventSpecialDataDecoder {
             }
             TypeOp::Struct => decoder.visit_struct_fields_from_typeinfo(
                 typeinfo,
-                &mut |field_name| (field_name == "m_abilLink").then_some(()),
-                &mut |decoder, (), field_typeinfo| {
-                    ability.m_abilLink = decoder
-                        .i64_from_typeinfo(field_typeinfo)?
-                        .unwrap_or_default();
+                &mut |field_name| match field_name {
+                    "m_abilLink" => Some(0_u8),
+                    "m_abilCmdIndex" => Some(1_u8),
+                    "m_abilCmdData" => Some(2_u8),
+                    _ => None,
+                },
+                &mut |decoder, field, field_typeinfo| {
+                    match field {
+                        0 => {
+                            ability.m_abilLink = decoder
+                                .i64_from_typeinfo(field_typeinfo)?
+                                .unwrap_or_default();
+                        }
+                        1 => {
+                            ability.m_abilCmdIndex = decoder.i64_from_typeinfo(field_typeinfo)?;
+                        }
+                        2 => {
+                            ability.m_abilCmdData = decoder.i64_from_typeinfo(field_typeinfo)?;
+                        }
+                        _ => unreachable!("invalid selected ability data field"),
+                    }
                     *found = true;
                     Ok(())
                 },
@@ -1437,20 +1453,48 @@ impl EventSpecialDataDecoder {
             }
             TypeOp::Struct => decoder.visit_struct_fields_from_typeinfo(
                 typeinfo,
-                &mut |field_name| (field_name == "TargetUnit").then_some(()),
-                &mut |decoder, (), field_typeinfo| {
-                    data.TargetUnit =
-                        Self::decode_target_unit_data_from_typeinfo(decoder, field_typeinfo)?;
+                &mut |field_name| match field_name {
+                    "TargetPoint" => Some(0u8),
+                    "TargetUnit" => Some(1u8),
+                    _ => None,
+                },
+                &mut |decoder, field, field_typeinfo| {
+                    match field {
+                        0 => {
+                            data.TargetPoint =
+                                Self::decode_snapshot_point_from_typeinfo(decoder, field_typeinfo)?;
+                        }
+                        _ => {
+                            data.TargetUnit = Self::decode_target_unit_data_from_typeinfo(
+                                decoder,
+                                field_typeinfo,
+                            )?;
+                        }
+                    }
                     *found = true;
                     Ok(())
                 },
             ),
             TypeOp::Choice => decoder.visit_choice_field_from_typeinfo(
                 typeinfo,
-                &mut |field_name| (field_name == "TargetUnit").then_some(()),
-                &mut |decoder, (), field_typeinfo| {
-                    data.TargetUnit =
-                        Self::decode_target_unit_data_from_typeinfo(decoder, field_typeinfo)?;
+                &mut |field_name| match field_name {
+                    "TargetPoint" => Some(0u8),
+                    "TargetUnit" => Some(1u8),
+                    _ => None,
+                },
+                &mut |decoder, field, field_typeinfo| {
+                    match field {
+                        0 => {
+                            data.TargetPoint =
+                                Self::decode_snapshot_point_from_typeinfo(decoder, field_typeinfo)?;
+                        }
+                        _ => {
+                            data.TargetUnit = Self::decode_target_unit_data_from_typeinfo(
+                                decoder,
+                                field_typeinfo,
+                            )?;
+                        }
+                    }
                     *found = true;
                     Ok(())
                 },
@@ -1466,6 +1510,223 @@ impl EventSpecialDataDecoder {
         let mut data = CmdEventData::default();
         let mut found = false;
         Self::decode_cmd_event_data_inner(decoder, typeinfo, &mut data, &mut found)?;
+        Ok(found.then_some(data))
+    }
+
+    fn collect_i64_values<D: TypeDecoder>(
+        decoder: &mut D,
+        typeinfo: &TypeInfo,
+        values: &mut Vec<i64>,
+    ) -> Result<(), DecodeError> {
+        match typeinfo.op() {
+            TypeOp::Null => {
+                decoder.skip_from_typeinfo(typeinfo)?;
+                Ok(())
+            }
+            TypeOp::Optional => {
+                decoder.visit_optional_child_from_typeinfo(
+                    typeinfo,
+                    &mut |decoder, child_typeinfo| {
+                        Self::collect_i64_values(decoder, child_typeinfo, values)
+                    },
+                )?;
+                Ok(())
+            }
+            TypeOp::Int => {
+                if let Some(value) = decoder.i64_from_typeinfo(typeinfo)? {
+                    values.push(value);
+                }
+                Ok(())
+            }
+            TypeOp::Array => decoder.visit_array_elements_from_typeinfo(
+                typeinfo,
+                &mut |decoder, child_typeinfo| {
+                    Self::collect_i64_values(decoder, child_typeinfo, values)
+                },
+            ),
+            _ => decoder.skip_from_typeinfo(typeinfo),
+        }
+    }
+
+    fn bools_from_bitarray_value(value: Value) -> Result<Vec<bool>, DecodeError> {
+        let Value::Array(items) = value else {
+            return Err(DecodeError::Corrupted(
+                "selection remove mask bitarray decoded to non-array".into(),
+            ));
+        };
+        let [length_value, bits_value]: [Value; 2] = items.try_into().map_err(|_| {
+            DecodeError::Corrupted("selection remove mask bitarray has invalid shape".into())
+        })?;
+        let length = length_value
+            .as_u64()
+            .and_then(|value| usize::try_from(value).ok())
+            .ok_or_else(|| {
+                DecodeError::Corrupted("selection remove mask bitarray length is invalid".into())
+            })?;
+
+        match bits_value {
+            Value::Int(bits) => {
+                let bits = u128::try_from(bits).map_err(|_| {
+                    DecodeError::Corrupted("selection remove mask bitarray is negative".into())
+                })?;
+                Ok((0..length)
+                    .map(|index| ((bits >> index) & 1) != 0)
+                    .collect())
+            }
+            Value::Bytes(bytes) => {
+                let mut bits = Vec::with_capacity(length);
+                for index in 0..length {
+                    let byte = bytes.get(index / 8).copied().unwrap_or_default();
+                    let bit_offset = 7 - (index % 8);
+                    bits.push(((byte >> bit_offset) & 1) != 0);
+                }
+                Ok(bits)
+            }
+            _ => Err(DecodeError::Corrupted(
+                "selection remove mask bitarray data is invalid".into(),
+            )),
+        }
+    }
+
+    fn decode_bitarray_bools<D: TypeDecoder>(
+        decoder: &mut D,
+        typeinfo: &TypeInfo,
+    ) -> Result<Vec<bool>, DecodeError> {
+        Self::bools_from_bitarray_value(decoder.instance_from_typeinfo(typeinfo)?)
+    }
+
+    fn decode_selection_remove_mask<D: TypeDecoder>(
+        decoder: &mut D,
+        typeinfo: &TypeInfo,
+    ) -> Result<SelectionRemoveMask, DecodeError> {
+        match typeinfo.op() {
+            TypeOp::Null => {
+                decoder.skip_from_typeinfo(typeinfo)?;
+                Ok(SelectionRemoveMask::None)
+            }
+            TypeOp::Optional => {
+                let mut mask = SelectionRemoveMask::None;
+                let exists = decoder.visit_optional_child_from_typeinfo(
+                    typeinfo,
+                    &mut |decoder, child_typeinfo| {
+                        mask = Self::decode_selection_remove_mask(decoder, child_typeinfo)?;
+                        Ok(())
+                    },
+                )?;
+                Ok(if exists {
+                    mask
+                } else {
+                    SelectionRemoveMask::None
+                })
+            }
+            TypeOp::Choice => {
+                let mut mask = SelectionRemoveMask::None;
+                decoder.visit_choice_field_from_typeinfo(
+                    typeinfo,
+                    &mut |field_name| match field_name {
+                        "None" => Some(0u8),
+                        "Mask" => Some(1u8),
+                        "OneIndices" => Some(2u8),
+                        "ZeroIndices" => Some(3u8),
+                        _ => None,
+                    },
+                    &mut |decoder, field, field_typeinfo| {
+                        match field {
+                            0 => {
+                                decoder.skip_from_typeinfo(field_typeinfo)?;
+                                mask = SelectionRemoveMask::None;
+                            }
+                            1 => {
+                                mask = SelectionRemoveMask::Mask(Self::decode_bitarray_bools(
+                                    decoder,
+                                    field_typeinfo,
+                                )?);
+                            }
+                            2 => {
+                                let mut indices = Vec::new();
+                                Self::collect_i64_values(decoder, field_typeinfo, &mut indices)?;
+                                mask = SelectionRemoveMask::OneIndices(indices);
+                            }
+                            3 => {
+                                let mut indices = Vec::new();
+                                Self::collect_i64_values(decoder, field_typeinfo, &mut indices)?;
+                                mask = SelectionRemoveMask::ZeroIndices(indices);
+                            }
+                            _ => unreachable!("invalid selected selection remove mask field"),
+                        }
+                        Ok(())
+                    },
+                )?;
+                Ok(mask)
+            }
+            _ => {
+                decoder.skip_from_typeinfo(typeinfo)?;
+                Ok(SelectionRemoveMask::None)
+            }
+        }
+    }
+
+    fn decode_selection_delta_inner<D: TypeDecoder>(
+        decoder: &mut D,
+        typeinfo: &TypeInfo,
+        data: &mut SelectionDeltaData,
+        found: &mut bool,
+    ) -> Result<(), DecodeError> {
+        match typeinfo.op() {
+            TypeOp::Null => {
+                decoder.skip_from_typeinfo(typeinfo)?;
+                Ok(())
+            }
+            TypeOp::Optional => {
+                decoder.visit_optional_child_from_typeinfo(
+                    typeinfo,
+                    &mut |decoder, child_typeinfo| {
+                        Self::decode_selection_delta_inner(decoder, child_typeinfo, data, found)
+                    },
+                )?;
+                Ok(())
+            }
+            TypeOp::Struct => decoder.visit_struct_fields_from_typeinfo(
+                typeinfo,
+                &mut |field_name| match field_name {
+                    "m_subgroupIndex" => Some(0u8),
+                    "m_removeMask" => Some(1u8),
+                    "m_addUnitTags" => Some(2u8),
+                    _ => None,
+                },
+                &mut |decoder, field, field_typeinfo| {
+                    match field {
+                        0 => {
+                            data.m_subgroup_index = decoder.i64_from_typeinfo(field_typeinfo)?;
+                        }
+                        1 => {
+                            data.m_remove_mask =
+                                Self::decode_selection_remove_mask(decoder, field_typeinfo)?;
+                        }
+                        2 => {
+                            Self::collect_i64_values(
+                                decoder,
+                                field_typeinfo,
+                                &mut data.m_add_unit_tags,
+                            )?;
+                        }
+                        _ => unreachable!("invalid selected selection delta field"),
+                    }
+                    *found = true;
+                    Ok(())
+                },
+            ),
+            _ => decoder.skip_from_typeinfo(typeinfo),
+        }
+    }
+
+    pub(crate) fn decode_selection_delta_data_from_typeinfo<D: TypeDecoder>(
+        decoder: &mut D,
+        typeinfo: &TypeInfo,
+    ) -> Result<Option<SelectionDeltaData>, DecodeError> {
+        let mut data = SelectionDeltaData::default();
+        let mut found = false;
+        Self::decode_selection_delta_inner(decoder, typeinfo, &mut data, &mut found)?;
         Ok(found.then_some(data))
     }
 

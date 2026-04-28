@@ -1,13 +1,13 @@
 import * as React from "react";
 import type {
     ReplayVisualAssault,
-    ReplayVisualFrame,
     ReplayVisualPayload,
     ReplayVisualUnit,
     ReplayVisualUnitGroup,
 } from "../../../bindings/overlay";
 import styles from "../page.module.css";
 import type { DisplayValue } from "../types";
+import { buildUnitTracks, interpolatedUnits } from "./replayVisualTracks";
 
 type ReplayVisualPlayerProps = {
     payload: ReplayVisualPayload;
@@ -25,15 +25,6 @@ type ReplayVisualGroupCount = {
 type ReplayVisualUnitCountRow = {
     label: string;
     count: number;
-};
-type ReplayVisualUnitTrackSample = {
-    seconds: number;
-    unit: ReplayVisualUnit;
-};
-type ReplayVisualUnitTrack = {
-    id: string;
-    samples: ReplayVisualUnitTrackSample[];
-    visibleUntilSeconds: number;
 };
 type ReplayVisualPlaybackSpeed = (typeof PLAYBACK_SPEEDS)[number];
 
@@ -179,140 +170,6 @@ function playbackSpeedFromValue(value: string): ReplayVisualPlaybackSpeed {
         }
     }
     return DEFAULT_PLAYBACK_SPEED;
-}
-
-function canInterpolateUnit(
-    current: ReplayVisualUnit,
-    next: ReplayVisualUnit,
-): boolean {
-    return (
-        current.unit_type === next.unit_type &&
-        current.owner_player_id === next.owner_player_id &&
-        current.owner_kind === next.owner_kind &&
-        current.group === next.group
-    );
-}
-
-function shouldAppendTrackSample(
-    current: ReplayVisualUnit,
-    next: ReplayVisualUnit,
-): boolean {
-    return (
-        current.x !== next.x ||
-        current.y !== next.y ||
-        current.radius !== next.radius ||
-        current.unit_type !== next.unit_type ||
-        current.display_name !== next.display_name ||
-        current.owner_player_id !== next.owner_player_id ||
-        current.owner_kind !== next.owner_kind ||
-        current.group !== next.group
-    );
-}
-
-function buildUnitTracks(
-    payload: ReplayVisualPayload,
-): readonly ReplayVisualUnitTrack[] {
-    const tracks = new Map<string, ReplayVisualUnitTrack>();
-
-    for (const frame of payload.frames) {
-        for (const unit of frame.units) {
-            const existing = tracks.get(unit.id);
-            if (!existing) {
-                tracks.set(unit.id, {
-                    id: unit.id,
-                    samples: [{ seconds: frame.seconds, unit }],
-                    visibleUntilSeconds: frame.seconds,
-                });
-                continue;
-            }
-
-            existing.visibleUntilSeconds = frame.seconds;
-            const currentSample = existing.samples[existing.samples.length - 1];
-            if (
-                currentSample &&
-                shouldAppendTrackSample(currentSample.unit, unit)
-            ) {
-                existing.samples.push({ seconds: frame.seconds, unit });
-            }
-        }
-    }
-
-    return Array.from(tracks.values());
-}
-
-function unitAtSeconds(
-    track: ReplayVisualUnitTrack,
-    seconds: number,
-): ReplayVisualUnit | null {
-    const firstSample = track.samples[0];
-    if (
-        !firstSample ||
-        seconds < firstSample.seconds ||
-        seconds > track.visibleUntilSeconds
-    ) {
-        return null;
-    }
-
-    if (track.samples.length === 1) {
-        return firstSample.unit;
-    }
-
-    let low = 0;
-    let high = track.samples.length - 1;
-    while (low <= high) {
-        const middle = Math.floor((low + high) / 2);
-        const sample = track.samples[middle];
-        if (!sample || sample.seconds > seconds) {
-            high = middle - 1;
-        } else {
-            low = middle + 1;
-        }
-    }
-
-    const currentIndex = Math.min(track.samples.length - 1, Math.max(0, high));
-    const currentSample = track.samples[currentIndex];
-    const nextSample = track.samples[currentIndex + 1];
-    if (
-        !currentSample ||
-        !nextSample ||
-        nextSample.seconds <= currentSample.seconds
-    ) {
-        return currentSample?.unit || null;
-    }
-
-    if (!canInterpolateUnit(currentSample.unit, nextSample.unit)) {
-        return currentSample.unit;
-    }
-
-    const progress =
-        (seconds - currentSample.seconds) /
-        (nextSample.seconds - currentSample.seconds);
-    return {
-        ...currentSample.unit,
-        x:
-            currentSample.unit.x +
-            (nextSample.unit.x - currentSample.unit.x) * progress,
-        y:
-            currentSample.unit.y +
-            (nextSample.unit.y - currentSample.unit.y) * progress,
-        radius:
-            currentSample.unit.radius +
-            (nextSample.unit.radius - currentSample.unit.radius) * progress,
-    };
-}
-
-function interpolatedUnits(
-    tracks: readonly ReplayVisualUnitTrack[],
-    seconds: number,
-): readonly ReplayVisualUnit[] {
-    const units: ReplayVisualUnit[] = [];
-    for (const track of tracks) {
-        const unit = unitAtSeconds(track, seconds);
-        if (unit) {
-            units.push(unit);
-        }
-    }
-    return units;
 }
 
 function currentAssault(

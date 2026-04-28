@@ -12,7 +12,8 @@ mod value;
 pub use crate::error::DecodeError;
 pub use crate::events::{
     AbilityData, CmdEventData, GameEvent, MessageEvent, PlayerStatsData, ReplayEvent,
-    SnapshotPoint, SnapshotPointValue, TargetUnitData, TrackerEvent, TriggerEventData,
+    SelectionDeltaData, SelectionRemoveMask, SnapshotPoint, SnapshotPointValue, TargetUnitData,
+    TrackerEvent, TriggerEventData,
 };
 pub use crate::protocol::{ProtocolStore, ProtocolStoreBuilder};
 pub use crate::replay::{ParsedReplay, ParsedReplayWithEvents, ReplayParseMode, ReplayParser};

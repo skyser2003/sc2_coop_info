@@ -1,7 +1,8 @@
 use s2coop_analyzer::detailed_replay_analysis::ReplayAnalysisResources;
 use s2coop_analyzer::dictionary_data::{Sc2DictionaryData, UnitNamesJson};
 use s2protocol_port::{
-    ReplayDetails, ReplayEvent, ReplayInitData, ReplayMetadata, ReplayParser, TrackerEvent,
+    GameEvent, ReplayDetails, ReplayEvent, ReplayInitData, ReplayMetadata, ReplayParser,
+    SelectionRemoveMask, SnapshotPoint, SnapshotPointValue, TrackerEvent, UnitTag,
 };
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -12,6 +13,16 @@ const FRAME_INTERVAL_GAME_LOOPS: i64 = 16;
 const ASSAULT_MIN_GAME_SECONDS: f64 = 60.0;
 const ASSAULT_MIN_UNITS: usize = 6;
 const GAME_LOOPS_PER_SECOND: f64 = 16.0;
+const GAME_POINT_FIXED_SCALE: f64 = 4096.0;
+const ABATHUR_DEEP_TUNNEL_ABILITY_LINK: i64 = 2307;
+const ABATHUR_DEEP_TUNNEL_TRAVEL_GAME_LOOPS: i64 = 16;
+const ABATHUR_DEEP_TUNNEL_PENDING_TARGET_GAME_LOOPS: i64 = 320;
+const ABATHUR_DEEP_TUNNEL_TRACKER_MIN_DISTANCE: f64 = 15.0;
+const TYCHUS_MEDIVAC_ABILITY_LINKS: [i64; 3] = [3101, 3115, 3125];
+const TELEPORT_TRACKER_ACCEPT_DISTANCE: f64 = 8.0;
+const TYCHUS_MEDIVAC_TRACKER_ACCEPT_DISTANCE: f64 = 12.0;
+const TYCHUS_MEDIVAC_TRACKER_MIN_DISTANCE: f64 = 15.0;
+const TYCHUS_MEDIVAC_PENDING_TARGET_GAME_LOOPS: i64 = 320;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -65,6 +76,7 @@ pub struct ReplayVisualUnit {
     pub x: f64,
     pub y: f64,
     pub radius: f64,
+    pub interpolate_from_previous: bool,
 }
 
 #[derive(Clone, Debug, Serialize, TS)]
@@ -128,6 +140,8 @@ pub struct ReplayVisualDictionaries {
     units_in_waves: HashSet<String>,
     amon_player_ids: HashSet<i64>,
     omitted_unit_types: HashSet<String>,
+    omitted_unit_type_prefixes: Vec<String>,
+    omitted_unit_type_or_name_fragments: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -154,6 +168,14 @@ struct ReplayVisualLiveUnit {
     x: f64,
     y: f64,
     radius: f64,
+    interpolate_from_previous: bool,
+    teleport_target: Option<ReplayVisualPoint>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ReplayVisualPoint {
+    x: f64,
+    y: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -170,11 +192,32 @@ struct ReplayVisualAssaultDraft {
     units: Vec<ReplayVisualAssaultUnit>,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct ReplayVisualPendingTeleportTarget {
+    game_loop: i64,
+    owner_player_id: i64,
+    x: f64,
+    y: f64,
+}
+
+#[derive(Clone, Debug)]
+struct ReplayVisualPendingDeepTunnelTarget {
+    game_loop: i64,
+    owner_player_id: i64,
+    x: f64,
+    y: f64,
+    candidate_unit_ids: Vec<i64>,
+}
+
 #[derive(Debug)]
 struct ReplayVisualTimelineBuilder {
     input: ReplayVisualBuildInput,
     dictionaries: ReplayVisualDictionaries,
     unit_id_by_tag_index: BTreeMap<i64, i64>,
+    selected_unit_ids_by_user_id: HashMap<i64, Vec<i64>>,
+    pending_deep_tunnel_targets: Vec<ReplayVisualPendingDeepTunnelTarget>,
+    last_tychus_medivac_passenger_unit_ids_by_user_id: HashMap<i64, Vec<i64>>,
+    pending_tychus_medivac_targets: Vec<ReplayVisualPendingTeleportTarget>,
     live_units: BTreeMap<i64, ReplayVisualLiveUnit>,
     frames: Vec<ReplayVisualFrame>,
     assaults: Vec<ReplayVisualAssault>,
@@ -239,12 +282,46 @@ impl ReplayVisualDictionaries {
         amon_player_ids: HashSet<i64>,
         omitted_unit_types: HashSet<String>,
     ) -> Self {
+        let mut omitted_unit_types = omitted_unit_types;
+        omitted_unit_types.extend(Self::visualizer_omitted_unit_types());
         Self {
             unit_names,
             units_in_waves,
             amon_player_ids,
             omitted_unit_types,
+            omitted_unit_type_prefixes: Self::visualizer_omitted_unit_type_prefixes(),
+            omitted_unit_type_or_name_fragments:
+                Self::visualizer_omitted_unit_type_or_name_fragments(),
         }
+    }
+
+    fn visualizer_omitted_unit_types() -> HashSet<String> {
+        HashSet::from(["CreepTumorStukov".to_string()])
+    }
+
+    fn visualizer_omitted_unit_type_prefixes() -> Vec<String> {
+        vec![
+            "AbathurSymbiote".to_string(),
+            "Beacon".to_string(),
+            "CoopCaster".to_string(),
+            "SOACaster".to_string(),
+        ]
+    }
+
+    fn visualizer_omitted_unit_type_or_name_fragments() -> Vec<String> {
+        vec![
+            "cocoon".to_string(),
+            "dummy".to_string(),
+            "egg".to_string(),
+            "larva".to_string(),
+            "mineralfield".to_string(),
+            "pathingblocker".to_string(),
+            "pickup".to_string(),
+            "placeholder".to_string(),
+            "top bar".to_string(),
+            "unbuildable".to_string(),
+            "vespenegeyser".to_string(),
+        ]
     }
 
     fn from_dictionary(dictionary: &Sc2DictionaryData, map_name: &str) -> Self {
@@ -297,8 +374,21 @@ impl ReplayVisualDictionaries {
     }
 
     fn should_omit_unit(&self, unit_type: &str, display_name: &str) -> bool {
-        self.omitted_unit_types.contains(unit_type)
-            || ReplayVisualOps::should_skip_unit_type(unit_type, display_name)
+        if self.omitted_unit_types.contains(unit_type) {
+            return true;
+        }
+        if self
+            .omitted_unit_type_prefixes
+            .iter()
+            .any(|prefix| unit_type.starts_with(prefix))
+        {
+            return true;
+        }
+        let lower_type = unit_type.to_ascii_lowercase();
+        let lower_name = display_name.to_ascii_lowercase();
+        self.omitted_unit_type_or_name_fragments
+            .iter()
+            .any(|fragment| lower_type.contains(fragment) || lower_name.contains(fragment))
     }
 }
 
@@ -337,6 +427,34 @@ impl ReplayVisualPlayer {
     }
 }
 
+impl ReplayVisualPoint {
+    fn new(x: f64, y: f64) -> Self {
+        Self { x, y }
+    }
+
+    fn distance_to(self, other: ReplayVisualPoint) -> f64 {
+        let x_delta = self.x - other.x;
+        let y_delta = self.y - other.y;
+        (x_delta * x_delta + y_delta * y_delta).sqrt()
+    }
+}
+
+impl ReplayVisualPendingTeleportTarget {
+    fn point(self) -> ReplayVisualPoint {
+        ReplayVisualPoint::new(self.x, self.y)
+    }
+}
+
+impl ReplayVisualPendingDeepTunnelTarget {
+    fn point(&self) -> ReplayVisualPoint {
+        ReplayVisualPoint::new(self.x, self.y)
+    }
+
+    fn has_candidate_unit(&self, unit_id: i64) -> bool {
+        self.candidate_unit_ids.contains(&unit_id)
+    }
+}
+
 impl ReplayVisualLiveUnit {
     fn from_event(
         event: &TrackerEvent,
@@ -366,6 +484,8 @@ impl ReplayVisualLiveUnit {
             x: event.m_x.unwrap_or_default() as f64,
             y: event.m_y.unwrap_or_default() as f64,
             radius,
+            interpolate_from_previous: true,
+            teleport_target: None,
         }
     }
 
@@ -399,9 +519,39 @@ impl ReplayVisualLiveUnit {
         self.radius = ReplayVisualOps::unit_radius(self.group);
     }
 
-    fn set_position(&mut self, x: i64, y: i64) {
+    fn set_position(&mut self, x: i64, y: i64) -> bool {
+        let position = ReplayVisualPoint::new(x as f64, y as f64);
+        if let Some(target) = self.teleport_target {
+            if target.distance_to(position) > TELEPORT_TRACKER_ACCEPT_DISTANCE {
+                return false;
+            }
+            self.teleport_target = None;
+        }
         self.x = x as f64;
         self.y = y as f64;
+        self.interpolate_from_previous = true;
+        true
+    }
+
+    fn set_snap_position(&mut self, x: i64, y: i64) {
+        self.x = x as f64;
+        self.y = y as f64;
+        self.interpolate_from_previous = false;
+        self.teleport_target = None;
+    }
+
+    fn set_teleport_position(&mut self, x: f64, y: f64) {
+        self.x = x;
+        self.y = y;
+        self.interpolate_from_previous = false;
+        self.teleport_target = Some(ReplayVisualPoint::new(x, y));
+    }
+
+    fn set_command_movement_position(&mut self, x: f64, y: f64) {
+        self.x = x;
+        self.y = y;
+        self.interpolate_from_previous = true;
+        self.teleport_target = Some(ReplayVisualPoint::new(x, y));
     }
 
     fn as_payload(&self) -> ReplayVisualUnit {
@@ -415,6 +565,7 @@ impl ReplayVisualLiveUnit {
             x: self.x,
             y: self.y,
             radius: self.radius,
+            interpolate_from_previous: self.interpolate_from_previous,
         }
     }
 }
@@ -425,6 +576,10 @@ impl ReplayVisualTimelineBuilder {
             input,
             dictionaries,
             unit_id_by_tag_index: BTreeMap::new(),
+            selected_unit_ids_by_user_id: HashMap::new(),
+            pending_deep_tunnel_targets: Vec::new(),
+            last_tychus_medivac_passenger_unit_ids_by_user_id: HashMap::new(),
+            pending_tychus_medivac_targets: Vec::new(),
             live_units: BTreeMap::new(),
             frames: Vec::new(),
             assaults: Vec::new(),
@@ -452,10 +607,10 @@ impl ReplayVisualTimelineBuilder {
                 Some(_) => {}
             }
 
-            self.last_game_loop = event_game_loop;
+            self.last_game_loop = self.last_game_loop.max(event_game_loop);
             match event {
                 ReplayEvent::Tracker(tracker) => self.process_tracker_event(tracker),
-                ReplayEvent::Game(_) => {}
+                ReplayEvent::Game(game) => self.process_game_event(game),
             }
         }
         if let Some(active_game_loop) = current_game_loop {
@@ -475,6 +630,309 @@ impl ReplayVisualTimelineBuilder {
             ReplayVisualTrackerEventKind::UnitDied => self.handle_unit_died(event),
             ReplayVisualTrackerEventKind::Other => {}
         }
+    }
+
+    fn process_game_event(&mut self, event: &GameEvent) {
+        match event.event.as_str() {
+            "NNet.Game.SCmdEvent" => self.handle_game_command(event),
+            "NNet.Game.SSelectionDeltaEvent" => self.handle_selection_delta(event),
+            _ => {}
+        }
+    }
+
+    fn handle_selection_delta(&mut self, event: &GameEvent) {
+        let Some(user_id) = event.user_id else {
+            return;
+        };
+        let Some(delta) = event.m_delta.as_ref() else {
+            return;
+        };
+        let mut selected_unit_ids = self
+            .selected_unit_ids_by_user_id
+            .remove(&user_id)
+            .unwrap_or_default();
+        ReplayVisualOps::apply_selection_remove_mask(&mut selected_unit_ids, &delta.m_remove_mask);
+        for unit_id in delta
+            .m_add_unit_tags
+            .iter()
+            .filter_map(|unit_tag| ReplayVisualOps::unit_id_from_game_unit_tag(*unit_tag))
+        {
+            if !selected_unit_ids.contains(&unit_id) {
+                selected_unit_ids.push(unit_id);
+            }
+        }
+
+        if selected_unit_ids.is_empty() {
+            return;
+        }
+        self.remember_tychus_medivac_passenger_selection(user_id, &selected_unit_ids);
+        self.selected_unit_ids_by_user_id
+            .insert(user_id, selected_unit_ids);
+    }
+
+    fn handle_game_command(&mut self, event: &GameEvent) {
+        let Some(ability_link) = event.m_abil.as_ref().map(|ability| ability.m_abilLink) else {
+            return;
+        };
+        let Some((x, y)) = ReplayVisualOps::game_event_target_point(event) else {
+            return;
+        };
+        let Some(control_player_id) = event.user_id.map(|user_id| user_id + 1) else {
+            return;
+        };
+
+        if ability_link == ABATHUR_DEEP_TUNNEL_ABILITY_LINK {
+            let candidate_unit_ids = self.deep_tunnel_candidate_unit_ids(event, control_player_id);
+            if candidate_unit_ids.len() == 1 {
+                self.capture_frame(event.game_loop);
+                self.set_deep_tunnel_unit(candidate_unit_ids[0], x, y);
+                self.frame_dirty = true;
+                self.next_frame_loop = event.game_loop + ABATHUR_DEEP_TUNNEL_TRAVEL_GAME_LOOPS;
+                self.last_game_loop = self.last_game_loop.max(self.next_frame_loop);
+            } else if !candidate_unit_ids.is_empty() {
+                self.remember_pending_deep_tunnel_target(
+                    event.game_loop,
+                    control_player_id,
+                    x,
+                    y,
+                    candidate_unit_ids,
+                );
+            }
+            return;
+        }
+
+        let changed = if ReplayVisualOps::is_tychus_medivac_ability_link(ability_link) {
+            self.remember_pending_tychus_medivac_target(event.game_loop, control_player_id, x, y);
+            self.set_selected_tychus_medivac_passenger_units(event, control_player_id, x, y)
+        } else {
+            false
+        };
+        if changed {
+            self.frame_dirty = true;
+            self.capture_frame(event.game_loop);
+        }
+    }
+
+    fn deep_tunnel_candidate_unit_ids(
+        &self,
+        event: &GameEvent,
+        control_player_id: i64,
+    ) -> Vec<i64> {
+        let selected_unit_ids = event
+            .user_id
+            .and_then(|user_id| self.selected_unit_ids_by_user_id.get(&user_id))
+            .cloned();
+        if let Some(selected_unit_ids) = selected_unit_ids.as_ref() {
+            let selected = self.selected_deep_tunnel_unit_ids(selected_unit_ids, control_player_id);
+            if !selected.is_empty() {
+                return selected;
+            }
+        } else {
+            return self.owned_deep_tunnel_unit_ids(control_player_id);
+        }
+        self.owned_deep_tunnel_unit_ids(control_player_id)
+    }
+
+    fn selected_deep_tunnel_unit_ids(
+        &self,
+        selected_unit_ids: &[i64],
+        control_player_id: i64,
+    ) -> Vec<i64> {
+        selected_unit_ids
+            .iter()
+            .copied()
+            .filter(|unit_id| {
+                self.live_units.get(unit_id).is_some_and(|live_unit| {
+                    live_unit.owner_player_id == control_player_id
+                        && ReplayVisualOps::is_deep_tunnel_unit(live_unit.unit_type.as_str())
+                })
+            })
+            .collect()
+    }
+
+    fn owned_deep_tunnel_unit_ids(&self, control_player_id: i64) -> Vec<i64> {
+        self.live_units
+            .iter()
+            .filter_map(|(unit_id, live_unit)| {
+                (live_unit.owner_player_id == control_player_id
+                    && ReplayVisualOps::is_deep_tunnel_unit(live_unit.unit_type.as_str()))
+                .then_some(*unit_id)
+            })
+            .collect()
+    }
+
+    fn set_deep_tunnel_unit(&mut self, unit_id: i64, x: f64, y: f64) {
+        let Some(live_unit) = self.live_units.get_mut(&unit_id) else {
+            return;
+        };
+        live_unit.set_command_movement_position(x, y);
+    }
+
+    fn remember_pending_deep_tunnel_target(
+        &mut self,
+        game_loop: i64,
+        owner_player_id: i64,
+        x: f64,
+        y: f64,
+        candidate_unit_ids: Vec<i64>,
+    ) {
+        self.prune_pending_deep_tunnel_targets(game_loop);
+        self.pending_deep_tunnel_targets
+            .push(ReplayVisualPendingDeepTunnelTarget {
+                game_loop,
+                owner_player_id,
+                x,
+                y,
+                candidate_unit_ids,
+            });
+    }
+
+    fn prune_pending_deep_tunnel_targets(&mut self, game_loop: i64) {
+        self.pending_deep_tunnel_targets.retain(|target| {
+            game_loop.saturating_sub(target.game_loop)
+                <= ABATHUR_DEEP_TUNNEL_PENDING_TARGET_GAME_LOOPS
+        });
+    }
+
+    fn remember_tychus_medivac_passenger_selection(
+        &mut self,
+        user_id: i64,
+        selected_unit_ids: &[i64],
+    ) {
+        let control_player_id = user_id + 1;
+        let passenger_unit_ids =
+            self.tychus_medivac_passenger_unit_ids(selected_unit_ids, control_player_id);
+        if !passenger_unit_ids.is_empty() {
+            self.last_tychus_medivac_passenger_unit_ids_by_user_id
+                .insert(user_id, passenger_unit_ids);
+        }
+    }
+
+    fn tychus_medivac_passenger_unit_ids(
+        &self,
+        selected_unit_ids: &[i64],
+        control_player_id: i64,
+    ) -> Vec<i64> {
+        selected_unit_ids
+            .iter()
+            .copied()
+            .filter(|unit_id| {
+                self.live_units.get(unit_id).is_some_and(|live_unit| {
+                    live_unit.owner_player_id == control_player_id
+                        && ReplayVisualOps::is_tychus_medivac_passenger_unit(live_unit)
+                })
+            })
+            .collect()
+    }
+
+    fn tychus_medivac_candidate_unit_ids(
+        &self,
+        user_id: i64,
+        control_player_id: i64,
+    ) -> Option<Vec<i64>> {
+        let selected_unit_ids = self.selected_unit_ids_by_user_id.get(&user_id)?;
+        let passenger_unit_ids =
+            self.tychus_medivac_passenger_unit_ids(selected_unit_ids, control_player_id);
+        if !passenger_unit_ids.is_empty() {
+            return Some(passenger_unit_ids);
+        }
+        if !self.selection_contains_tychus_medivac_proxy(selected_unit_ids) {
+            return None;
+        }
+        self.last_tychus_medivac_passenger_unit_ids_by_user_id
+            .get(&user_id)
+            .map(|cached_unit_ids| {
+                self.tychus_medivac_passenger_unit_ids(cached_unit_ids, control_player_id)
+            })
+            .filter(|cached_unit_ids| !cached_unit_ids.is_empty())
+    }
+
+    fn selection_contains_tychus_medivac_proxy(&self, selected_unit_ids: &[i64]) -> bool {
+        selected_unit_ids.iter().any(|unit_id| {
+            self.live_units
+                .get(unit_id)
+                .is_some_and(|live_unit| ReplayVisualOps::is_tychus_medivac_proxy_unit(live_unit))
+        })
+    }
+
+    fn set_selected_tychus_medivac_passenger_units(
+        &mut self,
+        event: &GameEvent,
+        control_player_id: i64,
+        x: f64,
+        y: f64,
+    ) -> bool {
+        let Some(user_id) = event.user_id else {
+            return false;
+        };
+        let Some(unit_ids) = self.tychus_medivac_candidate_unit_ids(user_id, control_player_id)
+        else {
+            return false;
+        };
+        let mut changed = false;
+        for unit_id in unit_ids {
+            let Some(live_unit) = self.live_units.get_mut(&unit_id) else {
+                continue;
+            };
+            if live_unit.owner_player_id != control_player_id
+                || !ReplayVisualOps::is_tychus_medivac_passenger_unit(live_unit)
+            {
+                continue;
+            }
+            live_unit.set_teleport_position(x, y);
+            changed = true;
+        }
+        changed
+    }
+
+    fn remember_pending_tychus_medivac_target(
+        &mut self,
+        game_loop: i64,
+        owner_player_id: i64,
+        x: f64,
+        y: f64,
+    ) {
+        self.prune_pending_tychus_medivac_targets(game_loop);
+        self.pending_tychus_medivac_targets
+            .push(ReplayVisualPendingTeleportTarget {
+                game_loop,
+                owner_player_id,
+                x,
+                y,
+            });
+    }
+
+    fn prune_pending_tychus_medivac_targets(&mut self, game_loop: i64) {
+        self.pending_tychus_medivac_targets.retain(|target| {
+            game_loop.saturating_sub(target.game_loop) <= TYCHUS_MEDIVAC_PENDING_TARGET_GAME_LOOPS
+        });
+    }
+
+    fn pending_tychus_medivac_tracker_target(
+        &self,
+        game_loop: i64,
+        live_unit: &ReplayVisualLiveUnit,
+        new_position: ReplayVisualPoint,
+    ) -> Option<ReplayVisualPendingTeleportTarget> {
+        if !ReplayVisualOps::is_tychus_medivac_passenger_unit(live_unit) {
+            return None;
+        }
+        let previous_position = ReplayVisualPoint::new(live_unit.x, live_unit.y);
+        if previous_position.distance_to(new_position) < TYCHUS_MEDIVAC_TRACKER_MIN_DISTANCE {
+            return None;
+        }
+        self.pending_tychus_medivac_targets
+            .iter()
+            .rev()
+            .copied()
+            .find(|target| {
+                target.owner_player_id == live_unit.owner_player_id
+                    && game_loop >= target.game_loop
+                    && game_loop.saturating_sub(target.game_loop)
+                        <= TYCHUS_MEDIVAC_PENDING_TARGET_GAME_LOOPS
+                    && target.point().distance_to(new_position)
+                        <= TYCHUS_MEDIVAC_TRACKER_ACCEPT_DISTANCE
+            })
     }
 
     fn handle_unit_born_or_init(&mut self, event: &TrackerEvent) {
@@ -543,16 +1001,199 @@ impl ReplayVisualTimelineBuilder {
         let Some(mut tag_index) = event.m_first_unit_index else {
             return;
         };
+        self.prune_pending_deep_tunnel_targets(event.game_loop);
+        self.prune_pending_tychus_medivac_targets(event.game_loop);
         for chunk in event.m_position_items.chunks_exact(3) {
             tag_index += chunk[0];
             let Some(unit_id) = self.unit_id_by_tag_index.get(&tag_index).copied() else {
                 continue;
             };
+            let new_position = ReplayVisualPoint::new(chunk[1] as f64, chunk[2] as f64);
+            let deep_tunnel_tracker_target =
+                self.live_units
+                    .get(&unit_id)
+                    .cloned()
+                    .and_then(|live_unit| {
+                        let start_unit = ReplayVisualOps::should_render_unit(
+                            &live_unit,
+                            &self.input,
+                            &self.dictionaries,
+                        )
+                        .then(|| live_unit.as_payload());
+                        self.take_pending_deep_tunnel_tracker_target(
+                            event.game_loop,
+                            unit_id,
+                            &live_unit,
+                            new_position,
+                        )
+                        .zip(start_unit)
+                    });
+            let medivac_tracker_target = self.live_units.get(&unit_id).and_then(|live_unit| {
+                self.pending_tychus_medivac_tracker_target(event.game_loop, live_unit, new_position)
+            });
+            if let Some((target, start_unit)) = deep_tunnel_tracker_target.as_ref() {
+                self.backpatch_unit_movement_frames(
+                    target.game_loop,
+                    event.game_loop,
+                    start_unit,
+                    target.x,
+                    target.y,
+                );
+            }
+            let snap_unit = medivac_tracker_target.and_then(|_| {
+                self.live_units.get(&unit_id).and_then(|live_unit| {
+                    ReplayVisualOps::should_render_unit(live_unit, &self.input, &self.dictionaries)
+                        .then(|| {
+                            let mut unit = live_unit.as_payload();
+                            unit.x = new_position.x;
+                            unit.y = new_position.y;
+                            unit.interpolate_from_previous = false;
+                            unit
+                        })
+                })
+            });
+            if let (Some(target), Some(unit)) = (medivac_tracker_target, snap_unit.as_ref()) {
+                self.backpatch_unit_snap_frames(target.game_loop, event.game_loop, unit);
+            }
             if let Some(live_unit) = self.live_units.get_mut(&unit_id) {
-                live_unit.set_position(chunk[1], chunk[2]);
-                self.frame_dirty = true;
+                if deep_tunnel_tracker_target.is_some() {
+                    live_unit.set_position(chunk[1], chunk[2]);
+                    self.frame_dirty = true;
+                } else if medivac_tracker_target.is_some() {
+                    live_unit.set_snap_position(chunk[1], chunk[2]);
+                    self.frame_dirty = true;
+                } else if live_unit.set_position(chunk[1], chunk[2]) {
+                    self.frame_dirty = true;
+                }
             }
         }
+    }
+
+    fn take_pending_deep_tunnel_tracker_target(
+        &mut self,
+        game_loop: i64,
+        unit_id: i64,
+        live_unit: &ReplayVisualLiveUnit,
+        new_position: ReplayVisualPoint,
+    ) -> Option<ReplayVisualPendingDeepTunnelTarget> {
+        if !ReplayVisualOps::is_deep_tunnel_unit(live_unit.unit_type.as_str()) {
+            return None;
+        }
+        let previous_position = ReplayVisualPoint::new(live_unit.x, live_unit.y);
+        if previous_position.distance_to(new_position) < ABATHUR_DEEP_TUNNEL_TRACKER_MIN_DISTANCE {
+            return None;
+        }
+
+        let mut best_match = None;
+        for (index, target) in self.pending_deep_tunnel_targets.iter().enumerate() {
+            if target.owner_player_id != live_unit.owner_player_id {
+                continue;
+            }
+            if !target.has_candidate_unit(unit_id) {
+                continue;
+            }
+            if game_loop < target.game_loop {
+                continue;
+            }
+            if game_loop.saturating_sub(target.game_loop)
+                > ABATHUR_DEEP_TUNNEL_PENDING_TARGET_GAME_LOOPS
+            {
+                continue;
+            }
+            let distance = target.point().distance_to(new_position);
+            if distance > TELEPORT_TRACKER_ACCEPT_DISTANCE {
+                continue;
+            }
+            if match best_match {
+                Some((_, best_distance)) => distance < best_distance,
+                None => true,
+            } {
+                best_match = Some((index, distance));
+            }
+        }
+
+        best_match.map(|(index, _)| self.pending_deep_tunnel_targets.remove(index))
+    }
+
+    fn backpatch_unit_snap_frames(
+        &mut self,
+        from_game_loop: i64,
+        until_game_loop: i64,
+        unit: &ReplayVisualUnit,
+    ) {
+        if from_game_loop >= until_game_loop {
+            return;
+        }
+        self.ensure_backpatch_frame(from_game_loop, unit);
+        for frame in &mut self.frames {
+            if frame.game_loop >= from_game_loop && frame.game_loop < until_game_loop {
+                Self::replace_or_insert_frame_unit(frame, unit);
+            }
+        }
+    }
+
+    fn backpatch_unit_movement_frames(
+        &mut self,
+        from_game_loop: i64,
+        until_game_loop: i64,
+        start_unit: &ReplayVisualUnit,
+        arrival_x: f64,
+        arrival_y: f64,
+    ) {
+        if from_game_loop >= until_game_loop {
+            return;
+        }
+        let arrival_game_loop =
+            (from_game_loop + ABATHUR_DEEP_TUNNEL_TRAVEL_GAME_LOOPS).min(until_game_loop);
+        let mut arrival_unit = start_unit.clone();
+        arrival_unit.x = arrival_x;
+        arrival_unit.y = arrival_y;
+        arrival_unit.interpolate_from_previous = true;
+
+        self.ensure_backpatch_frame(from_game_loop, start_unit);
+        self.ensure_backpatch_frame(arrival_game_loop, &arrival_unit);
+        for frame in &mut self.frames {
+            if frame.game_loop >= from_game_loop && frame.game_loop < arrival_game_loop {
+                Self::replace_or_insert_frame_unit(frame, start_unit);
+            } else if frame.game_loop >= arrival_game_loop && frame.game_loop < until_game_loop {
+                Self::replace_or_insert_frame_unit(frame, &arrival_unit);
+            }
+        }
+    }
+
+    fn ensure_backpatch_frame(&mut self, game_loop: i64, unit: &ReplayVisualUnit) {
+        if self.frames.iter().any(|frame| frame.game_loop == game_loop) {
+            return;
+        }
+        let insert_index = self
+            .frames
+            .iter()
+            .position(|frame| frame.game_loop > game_loop)
+            .unwrap_or(self.frames.len());
+        let units = insert_index
+            .checked_sub(1)
+            .and_then(|previous_index| self.frames.get(previous_index))
+            .map(|frame| frame.units.clone())
+            .unwrap_or_default();
+        let mut frame = ReplayVisualFrame {
+            game_loop,
+            seconds: ReplayVisualOps::seconds_from_game_loop(game_loop),
+            units,
+        };
+        Self::replace_or_insert_frame_unit(&mut frame, unit);
+        self.frames.insert(insert_index, frame);
+    }
+
+    fn replace_or_insert_frame_unit(frame: &mut ReplayVisualFrame, unit: &ReplayVisualUnit) {
+        if let Some(existing) = frame
+            .units
+            .iter_mut()
+            .find(|existing| existing.id == unit.id)
+        {
+            *existing = unit.clone();
+            return;
+        }
+        frame.units.push(unit.clone());
     }
 
     fn handle_unit_died(&mut self, event: &TrackerEvent) {
@@ -699,6 +1340,9 @@ impl ReplayVisualTimelineBuilder {
             seconds: ReplayVisualOps::seconds_from_game_loop(game_loop),
             units,
         });
+        for live_unit in self.live_units.values_mut() {
+            live_unit.interpolate_from_previous = true;
+        }
         self.frame_dirty = false;
     }
 
@@ -775,11 +1419,23 @@ impl ReplayVisualOps {
         Some(recycle_index * 100_000 + index)
     }
 
+    fn unit_id_from_game_unit_tag(unit_tag: i64) -> Option<i64> {
+        let index = i64::try_from(UnitTag::index(unit_tag.into())).ok()?;
+        let recycle = i64::try_from(UnitTag::recycle(unit_tag.into())).ok()?;
+        Self::replay_unit_id(Some(index), Some(recycle))
+    }
+
     fn replay_event_unit_id(event: &TrackerEvent) -> Option<i64> {
         Self::replay_unit_id(event.m_unit_tag_index, event.m_unit_tag_recycle)
     }
 
     fn event_name_is_needed(event_name: &str) -> bool {
+        if matches!(
+            event_name,
+            "NNet.Game.SCmdEvent" | "NNet.Game.SSelectionDeltaEvent"
+        ) {
+            return true;
+        }
         !matches!(
             Self::tracker_event_kind(event_name),
             ReplayVisualTrackerEventKind::Other
@@ -913,6 +1569,107 @@ impl ReplayVisualOps {
         }
     }
 
+    fn game_event_target_point(event: &GameEvent) -> Option<(f64, f64)> {
+        let point = event
+            .m_data
+            .as_ref()
+            .and_then(|data| data.TargetPoint.as_ref())
+            .or_else(|| {
+                event
+                    .m_data
+                    .as_ref()
+                    .and_then(|data| data.TargetUnit.as_ref())
+                    .and_then(|target| target.m_snapshotPoint.as_ref())
+            })
+            .or_else(|| {
+                event
+                    .m_target
+                    .as_ref()
+                    .and_then(|target| target.m_snapshotPoint.as_ref())
+            })?;
+        Self::snapshot_point_xy(point)
+    }
+
+    fn snapshot_point_xy(point: &SnapshotPoint) -> Option<(f64, f64)> {
+        let x = point.values.first().and_then(Self::snapshot_point_number)?;
+        let y = point.values.get(1).and_then(Self::snapshot_point_number)?;
+        Some((x / GAME_POINT_FIXED_SCALE, y / GAME_POINT_FIXED_SCALE))
+    }
+
+    fn snapshot_point_number(value: &SnapshotPointValue) -> Option<f64> {
+        match value {
+            SnapshotPointValue::Int(value) => Some(*value as f64),
+            SnapshotPointValue::Float(value) if value.is_finite() => Some(*value),
+            SnapshotPointValue::Float(_) => None,
+        }
+    }
+
+    fn is_deep_tunnel_unit(unit_type: &str) -> bool {
+        unit_type.to_ascii_lowercase().contains("brutalisk")
+    }
+
+    fn is_tychus_medivac_ability_link(ability_link: i64) -> bool {
+        TYCHUS_MEDIVAC_ABILITY_LINKS.contains(&ability_link)
+    }
+
+    fn apply_selection_remove_mask(selection: &mut Vec<i64>, remove_mask: &SelectionRemoveMask) {
+        match remove_mask {
+            SelectionRemoveMask::None => {}
+            SelectionRemoveMask::Mask(mask) => {
+                let mut index = 0_usize;
+                selection.retain(|_| {
+                    let should_remove = mask.get(index).copied().unwrap_or(false);
+                    index += 1;
+                    !should_remove
+                });
+            }
+            SelectionRemoveMask::OneIndices(indices) => {
+                let indices_to_remove = Self::selection_mask_indices(indices);
+                let mut index = 0_usize;
+                selection.retain(|_| {
+                    let should_remove = indices_to_remove.contains(&index);
+                    index += 1;
+                    !should_remove
+                });
+            }
+            SelectionRemoveMask::ZeroIndices(indices) => {
+                let indices_to_keep = Self::selection_mask_indices(indices);
+                let mut index = 0_usize;
+                selection.retain(|_| {
+                    let should_keep = indices_to_keep.contains(&index);
+                    index += 1;
+                    should_keep
+                });
+            }
+        }
+    }
+
+    fn selection_mask_indices(indices: &[i64]) -> HashSet<usize> {
+        indices
+            .iter()
+            .filter_map(|index| usize::try_from(*index).ok())
+            .collect()
+    }
+
+    fn is_tychus_medivac_passenger_unit(unit: &ReplayVisualLiveUnit) -> bool {
+        if unit.group != ReplayVisualUnitGroup::AttackUnits {
+            return false;
+        }
+        let lower_type = unit.unit_type.to_ascii_lowercase();
+        if !lower_type.starts_with("tychus") {
+            return false;
+        }
+        let excluded_terms = ["scv", "medivac", "platform", "turret", "dummy", "caster"];
+        !excluded_terms.iter().any(|term| lower_type.contains(term))
+    }
+
+    fn is_tychus_medivac_proxy_unit(unit: &ReplayVisualLiveUnit) -> bool {
+        if Self::is_tychus_medivac_passenger_unit(unit) {
+            return false;
+        }
+        unit.unit_type.to_ascii_lowercase().starts_with("tychus")
+    }
+
     fn infer_map_bounds(events: &[ReplayEvent]) -> (f64, f64) {
         let mut max_x = 0_i64;
         let mut max_y = 0_i64;
@@ -1006,33 +1763,6 @@ impl ReplayVisualOps {
             unit.group,
             ReplayVisualUnitGroup::Buildings | ReplayVisualUnitGroup::DefenseBuildings
         )
-    }
-
-    fn should_skip_unit_type(unit_type: &str, display_name: &str) -> bool {
-        let lower_type = unit_type.to_ascii_lowercase();
-        let lower_name = display_name.to_ascii_lowercase();
-        if lower_type.starts_with("beacon") {
-            return true;
-        }
-        if lower_type.starts_with("coopcaster") || lower_type.starts_with("soacaster") {
-            return true;
-        }
-        let skip_terms = [
-            "mineralfield",
-            "vespenegeyser",
-            "pickup",
-            "unbuildable",
-            "pathingblocker",
-            "dummy",
-            "placeholder",
-            "cocoon",
-            "egg",
-            "larva",
-            "top bar",
-        ];
-        skip_terms
-            .iter()
-            .any(|term| lower_type.contains(term) || lower_name.contains(term))
     }
 
     fn is_defense_structure(unit_type: &str, display_name: &str) -> bool {

@@ -277,3 +277,42 @@ fn filtered_ordered_file_parse_matches_filtered_events_only_parse() {
     let actual = parsed.events().iter().map(ordered_key).collect::<Vec<_>>();
     assert_eq!(actual, expected);
 }
+
+#[test]
+fn command_metadata_decodes_from_command_events() {
+    let Some(account_dir) = resolve_account_dir() else {
+        eprintln!("skipping command metadata test: no SC2 account directory configured");
+        return;
+    };
+    let Some(replay_path) = find_replay(&account_dir, "승천의 사슬 (164).SC2Replay") else {
+        eprintln!(
+            "skipping command metadata test: replay not found under {}",
+            account_dir.display()
+        );
+        return;
+    };
+
+    let store = ProtocolStoreBuilder::build().expect("protocol store should build");
+    let events =
+        ReplayParser::parse_ordered_events_with_store_filtered(&replay_path, &store, |event| {
+            event == "NNet.Game.SCmdEvent"
+        })
+        .expect("command events should parse");
+    let deep_tunnel_command = events.iter().find_map(|event| {
+        let ReplayEvent::Game(game_event) = event else {
+            return None;
+        };
+        let ability = game_event.m_abil.as_ref()?;
+        (game_event.game_loop == 3457 && ability.m_abilLink == 2307)
+            .then_some((game_event, ability))
+    });
+    let (deep_tunnel_event, deep_tunnel_ability) =
+        deep_tunnel_command.expect("expected Deep Tunnel command event");
+
+    assert_eq!(deep_tunnel_event.m_cmd_flags, Some(256));
+    assert_eq!(deep_tunnel_event.m_sequence, Some(488));
+    assert_eq!(deep_tunnel_event.m_other_unit, None);
+    assert_eq!(deep_tunnel_event.m_unit_group, Some(70011));
+    assert_eq!(deep_tunnel_ability.m_abilCmdIndex, Some(0));
+    assert_eq!(deep_tunnel_ability.m_abilCmdData, None);
+}
