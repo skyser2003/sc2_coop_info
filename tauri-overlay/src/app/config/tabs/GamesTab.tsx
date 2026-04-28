@@ -55,6 +55,19 @@ type GamesTabProps = {
     languageManager: LanguageManager;
 };
 
+type GamesActionIconName = "overlay" | "visualizer" | "chatting" | "file";
+
+type GamesActionIconProps = {
+    name: GamesActionIconName;
+};
+
+type GamesActionButtonProps = {
+    label: string;
+    iconName: GamesActionIconName;
+    disabled: boolean;
+    onClick: (event: React.MouseEvent<HTMLButtonElement>) => void;
+};
+
 function asTableValueCompat(value: DisplayValue) {
     if (value === null || value === undefined) {
         return "";
@@ -79,6 +92,83 @@ function formatDurationSecondsCompat(value: DisplayValue) {
 
 function mutatorIconPath(iconName: string): string {
     return `/overlay/Mutator Icons/${encodeURIComponent(iconName)}.png`;
+}
+
+function GamesActionIcon({ name }: GamesActionIconProps) {
+    const commonProps: React.SVGProps<SVGSVGElement> = {
+        "aria-hidden": true,
+        focusable: "false",
+        viewBox: "0 0 24 24",
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: 2,
+        strokeLinecap: "round",
+        strokeLinejoin: "round",
+    };
+
+    if (name === "overlay") {
+        return (
+            <svg {...commonProps}>
+                <path d="M4 18V8" />
+                <path d="M8 18V5" />
+                <path d="M12 18v-8" />
+                <path d="M16 18V7" />
+                <path d="M20 18v-5" />
+                <path d="M3 18h18" />
+            </svg>
+        );
+    }
+
+    if (name === "visualizer") {
+        return (
+            <svg {...commonProps}>
+                <path d="M8 5v14l11-7Z" />
+            </svg>
+        );
+    }
+
+    if (name === "chatting") {
+        return (
+            <svg {...commonProps}>
+                <path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-7a8 8 0 1 1 18-4Z" />
+                <path d="M8 11h8" />
+                <path d="M8 15h5" />
+            </svg>
+        );
+    }
+
+    return (
+        <svg {...commonProps}>
+            <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v1H3Z" />
+            <path d="M3 10h18l-2 9H5Z" />
+        </svg>
+    );
+}
+
+function GamesActionButton({
+    label,
+    iconName,
+    disabled,
+    onClick,
+}: GamesActionButtonProps) {
+    return (
+        <button
+            type="button"
+            className={[
+                styles.gamesRowBtn,
+                styles.gamesActionIconBtn,
+                styles.buttonNormal,
+            ]
+                .filter(Boolean)
+                .join(" ")}
+            disabled={disabled}
+            onClick={onClick}
+            aria-label={label}
+            title={label}
+        >
+            <GamesActionIcon name={iconName} />
+        </button>
+    );
 }
 
 function readMutators(
@@ -894,33 +984,23 @@ export default function GamesTab({
                                                     styles.gamesActionsCell
                                                 }
                                             >
-                                                <button
-                                                    type="button"
-                                                    className={[
-                                                        styles.gamesRowBtn,
-                                                        styles.buttonNormal,
-                                                    ]
-                                                        .filter(Boolean)
-                                                        .join(" ")}
+                                                <GamesActionButton
+                                                    label={t(
+                                                        "ui_games_action_overlay",
+                                                    )}
+                                                    iconName="overlay"
                                                     disabled={!file}
                                                     onClick={(event) => {
                                                         event.stopPropagation();
                                                         state.showReplay(file);
                                                     }}
-                                                >
-                                                    {t(
-                                                        "ui_games_action_overlay",
-                                                    )}
-                                                </button>
+                                                />
                                                 {isDev ? (
-                                                    <button
-                                                        type="button"
-                                                        className={[
-                                                            styles.gamesRowBtn,
-                                                            styles.buttonNormal,
-                                                        ]
-                                                            .filter(Boolean)
-                                                            .join(" ")}
+                                                    <GamesActionButton
+                                                        label={t(
+                                                            "ui_games_action_visual",
+                                                        )}
+                                                        iconName="visualizer"
                                                         disabled={!file}
                                                         onClick={(event) => {
                                                             event.stopPropagation();
@@ -928,20 +1008,13 @@ export default function GamesTab({
                                                                 file,
                                                             );
                                                         }}
-                                                    >
-                                                        {t(
-                                                            "ui_games_action_visual",
-                                                        )}
-                                                    </button>
+                                                    />
                                                 ) : null}
-                                                <button
-                                                    type="button"
-                                                    className={[
-                                                        styles.gamesRowBtn,
-                                                        styles.buttonNormal,
-                                                    ]
-                                                        .filter(Boolean)
-                                                        .join(" ")}
+                                                <GamesActionButton
+                                                    label={t(
+                                                        "ui_games_action_chat",
+                                                    )}
+                                                    iconName="chatting"
                                                     disabled={!file}
                                                     onClick={(event) => {
                                                         event.stopPropagation();
@@ -949,25 +1022,18 @@ export default function GamesTab({
                                                             file,
                                                         );
                                                     }}
-                                                >
-                                                    {t("ui_games_action_chat")}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    className={[
-                                                        styles.gamesRowBtn,
-                                                        styles.buttonNormal,
-                                                    ]
-                                                        .filter(Boolean)
-                                                        .join(" ")}
+                                                />
+                                                <GamesActionButton
+                                                    label={t(
+                                                        "ui_games_action_file",
+                                                    )}
+                                                    iconName="file"
                                                     disabled={!file}
                                                     onClick={(event) => {
                                                         event.stopPropagation();
                                                         state.revealFile(file);
                                                     }}
-                                                >
-                                                    {t("ui_games_action_file")}
-                                                </button>
+                                                />
                                             </td>
                                         </tr>
                                     );

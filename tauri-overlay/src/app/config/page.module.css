@@ -666,6 +666,19 @@
     min-inline-size: 7em;
 }
 
+.configPage .gamesActionIconBtn {
+    inline-size: 2.75rem;
+    min-inline-size: 2.75rem;
+    block-size: 2.75rem;
+    min-block-size: 2.75rem;
+    padding: 0;
+}
+
+.configPage .gamesActionIconBtn svg {
+    inline-size: 2.3rem;
+    block-size: 2.3rem;
+}
+
 .configPage .chatModalBackdrop {
     position: fixed;
     inset: 0;
