@@ -190,6 +190,41 @@ impl ReplayAnalysisOps {
 }
 
 impl ReplayAnalysisOps {
+    fn build_mastery_distribution_map(raw_values: &[[u64; 31]; 3]) -> Map<String, Value> {
+        let mut result = Map::new();
+        for (pair_index, pair_counts) in raw_values.iter().enumerate() {
+            let pair_total = pair_counts.iter().sum::<u64>();
+            let mut buckets = Map::new();
+            for (bucket, count) in pair_counts.iter().enumerate() {
+                buckets.insert(
+                    bucket.to_string(),
+                    Value::from(TauriOverlayOps::ratio(*count, pair_total)),
+                );
+            }
+            result.insert(pair_index.to_string(), Value::Object(buckets));
+        }
+        result
+    }
+}
+
+impl ReplayAnalysisOps {
+    fn build_mastery_distribution_by_prestige_map(
+        raw_values: &[[[u64; 31]; 3]; 4],
+    ) -> Map<String, Value> {
+        let mut result = Map::new();
+        for (prestige, prestige_values) in raw_values.iter().enumerate() {
+            result.insert(
+                prestige.to_string(),
+                Value::Object(ReplayAnalysisOps::build_mastery_distribution_map(
+                    prestige_values,
+                )),
+            );
+        }
+        result
+    }
+}
+
+impl ReplayAnalysisOps {
     fn ratio_f64(numerator: f64, denominator: f64) -> f64 {
         if denominator == 0.0 {
             0.0
@@ -217,6 +252,38 @@ impl ReplayAnalysisOps {
 impl ReplayAnalysisOps {
     fn mastery_points_invested(raw_values: &[u64]) -> u64 {
         raw_values.iter().take(6).copied().sum::<u64>()
+    }
+}
+
+impl ReplayAnalysisOps {
+    fn record_mastery_distribution(target: &mut [[u64; 31]; 3], raw_values: &[u64]) {
+        for pair_index in 0..3 {
+            let left = raw_values.get(pair_index * 2).copied().unwrap_or(0);
+            let right = raw_values.get(pair_index * 2 + 1).copied().unwrap_or(0);
+            let pair_total = left.saturating_add(right);
+            if pair_total == 0 {
+                continue;
+            }
+            let bucket = left
+                .saturating_mul(30)
+                .saturating_add(pair_total / 2)
+                .checked_div(pair_total)
+                .unwrap_or(0)
+                .min(30);
+            let bucket_index = usize::try_from(bucket).unwrap_or(30);
+            target[pair_index][bucket_index] = target[pair_index][bucket_index].saturating_add(1);
+        }
+    }
+}
+
+impl ReplayAnalysisOps {
+    fn record_mastery_distribution_by_prestige(
+        target: &mut [[[u64; 31]; 3]; 4],
+        prestige: u64,
+        raw_values: &[u64],
+    ) {
+        let prestige_bucket = usize::try_from(prestige.min(3)).unwrap_or(3);
+        ReplayAnalysisOps::record_mastery_distribution(&mut target[prestige_bucket], raw_values);
     }
 }
 
@@ -642,6 +709,8 @@ struct CommanderAggregate {
     apm_values: Vec<u64>,
     kill_fractions: Vec<f64>,
     mastery_counts: [f64; 6],
+    mastery_distribution_counts: [[u64; 31]; 3],
+    mastery_distribution_by_prestige_counts: [[[u64; 31]; 3]; 4],
     mastery_by_prestige_counts: [[f64; 6]; 4],
     prestige_counts: [u64; 4],
     detailed_count: u64,
@@ -2016,6 +2085,10 @@ impl ReplayAnalysis {
             kill_fraction: f64,
             #[serde(rename = "Mastery")]
             mastery: Map<String, Value>,
+            #[serde(rename = "MasteryDistribution")]
+            mastery_distribution: Map<String, Value>,
+            #[serde(rename = "MasteryDistributionByPrestige")]
+            mastery_distribution_by_prestige: Map<String, Value>,
             #[serde(rename = "Prestige")]
             prestige: Map<String, Value>,
             #[serde(rename = "MasteryByPrestige")]
@@ -2125,6 +2198,10 @@ impl ReplayAnalysis {
         let mut sum_ally_kill_fraction: Vec<f64> = Vec::new();
         let mut sum_main_mastery_counts = [0f64; 6];
         let mut sum_ally_mastery_counts = [0f64; 6];
+        let mut sum_main_mastery_distribution_counts = [[0u64; 31]; 3];
+        let mut sum_ally_mastery_distribution_counts = [[0u64; 31]; 3];
+        let mut sum_main_mastery_distribution_by_prestige_counts = [[[0u64; 31]; 3]; 4];
+        let mut sum_ally_mastery_distribution_by_prestige_counts = [[[0u64; 31]; 3]; 4];
         let mut sum_main_mastery_by_prestige_counts = [[0f64; 6]; 4];
         let mut sum_ally_mastery_by_prestige_counts = [[0f64; 6]; 4];
         let mut sum_main_prestige_counts = [0u64; 4];
@@ -2363,6 +2440,15 @@ impl ReplayAnalysis {
                 &mut main.mastery_counts,
                 &main_mastery_normalized,
             );
+            ReplayAnalysisOps::record_mastery_distribution(
+                &mut main.mastery_distribution_counts,
+                replay.main_masteries(),
+            );
+            ReplayAnalysisOps::record_mastery_distribution_by_prestige(
+                &mut main.mastery_distribution_by_prestige_counts,
+                replay.main_prestige(),
+                replay.main_masteries(),
+            );
             if include_prestige {
                 ReplayAnalysisOps::record_prestige_count(
                     &mut main.prestige_counts,
@@ -2372,6 +2458,15 @@ impl ReplayAnalysis {
             ReplayAnalysisOps::record_command_mastery_counts(
                 &mut sum_main_mastery_counts,
                 &main_mastery_normalized,
+            );
+            ReplayAnalysisOps::record_mastery_distribution(
+                &mut sum_main_mastery_distribution_counts,
+                replay.main_masteries(),
+            );
+            ReplayAnalysisOps::record_mastery_distribution_by_prestige(
+                &mut sum_main_mastery_distribution_by_prestige_counts,
+                replay.main_prestige(),
+                replay.main_masteries(),
             );
             if include_prestige {
                 ReplayAnalysisOps::record_prestige_count(
@@ -2416,6 +2511,15 @@ impl ReplayAnalysis {
                 &mut ally.mastery_counts,
                 &ally_mastery_normalized,
             );
+            ReplayAnalysisOps::record_mastery_distribution(
+                &mut ally.mastery_distribution_counts,
+                replay.ally_masteries(),
+            );
+            ReplayAnalysisOps::record_mastery_distribution_by_prestige(
+                &mut ally.mastery_distribution_by_prestige_counts,
+                replay.ally_prestige(),
+                replay.ally_masteries(),
+            );
             if include_prestige {
                 ReplayAnalysisOps::record_prestige_count(
                     &mut ally.prestige_counts,
@@ -2425,6 +2529,15 @@ impl ReplayAnalysis {
             ReplayAnalysisOps::record_command_mastery_counts(
                 &mut sum_ally_mastery_counts,
                 &ally_mastery_normalized,
+            );
+            ReplayAnalysisOps::record_mastery_distribution(
+                &mut sum_ally_mastery_distribution_counts,
+                replay.ally_masteries(),
+            );
+            ReplayAnalysisOps::record_mastery_distribution_by_prestige(
+                &mut sum_ally_mastery_distribution_by_prestige_counts,
+                replay.ally_prestige(),
+                replay.ally_masteries(),
             );
             if include_prestige {
                 ReplayAnalysisOps::record_prestige_count(
@@ -2619,6 +2732,13 @@ impl ReplayAnalysis {
                     median_apm: TauriOverlayOps::median_u64(&agg.apm_values),
                     kill_fraction: TauriOverlayOps::median_f64(&agg.kill_fractions),
                     mastery: ReplayAnalysisOps::build_mastery_ratio_map(&agg.mastery_counts),
+                    mastery_distribution: ReplayAnalysisOps::build_mastery_distribution_map(
+                        &agg.mastery_distribution_counts,
+                    ),
+                    mastery_distribution_by_prestige:
+                        ReplayAnalysisOps::build_mastery_distribution_by_prestige_map(
+                            &agg.mastery_distribution_by_prestige_counts,
+                        ),
                     prestige: ReplayAnalysisOps::build_ratio_map(
                         &agg.prestige_counts,
                         prestige_games,
@@ -2646,6 +2766,13 @@ impl ReplayAnalysis {
                 median_apm: TauriOverlayOps::median_u64(&sum_main_apm),
                 kill_fraction: TauriOverlayOps::median_f64(&sum_main_kill_fraction),
                 mastery: ReplayAnalysisOps::build_mastery_ratio_map(&sum_main_mastery_counts),
+                mastery_distribution: ReplayAnalysisOps::build_mastery_distribution_map(
+                    &sum_main_mastery_distribution_counts,
+                ),
+                mastery_distribution_by_prestige:
+                    ReplayAnalysisOps::build_mastery_distribution_by_prestige_map(
+                        &sum_main_mastery_distribution_by_prestige_counts,
+                    ),
                 prestige: ReplayAnalysisOps::build_ratio_map(
                     &sum_main_prestige_counts,
                     sum_main_prestige_counts.iter().sum::<u64>(),
@@ -2700,6 +2827,13 @@ impl ReplayAnalysis {
                     median_apm: TauriOverlayOps::median_u64(&agg.apm_values),
                     kill_fraction: TauriOverlayOps::median_f64(&agg.kill_fractions),
                     mastery: ReplayAnalysisOps::build_mastery_ratio_map(&agg.mastery_counts),
+                    mastery_distribution: ReplayAnalysisOps::build_mastery_distribution_map(
+                        &agg.mastery_distribution_counts,
+                    ),
+                    mastery_distribution_by_prestige:
+                        ReplayAnalysisOps::build_mastery_distribution_by_prestige_map(
+                            &agg.mastery_distribution_by_prestige_counts,
+                        ),
                     prestige: ReplayAnalysisOps::build_ratio_map(
                         &agg.prestige_counts,
                         prestige_games,
@@ -2732,6 +2866,13 @@ impl ReplayAnalysis {
                 median_apm: TauriOverlayOps::median_u64(&sum_ally_apm),
                 kill_fraction: TauriOverlayOps::median_f64(&sum_ally_kill_fraction),
                 mastery: ReplayAnalysisOps::build_mastery_ratio_map(&sum_ally_mastery_counts),
+                mastery_distribution: ReplayAnalysisOps::build_mastery_distribution_map(
+                    &sum_ally_mastery_distribution_counts,
+                ),
+                mastery_distribution_by_prestige:
+                    ReplayAnalysisOps::build_mastery_distribution_by_prestige_map(
+                        &sum_ally_mastery_distribution_by_prestige_counts,
+                    ),
                 prestige: ReplayAnalysisOps::build_ratio_map(
                     &sum_ally_prestige_counts,
                     sum_ally_prestige_counts.iter().sum::<u64>(),

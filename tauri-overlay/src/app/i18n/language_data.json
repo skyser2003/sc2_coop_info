@@ -1175,6 +1175,30 @@
         "en": "Mastery {{index}}",
         "ko": "마스터 힘 {{index}}"
     },
+    "ui_stats_mastery_choice_1": {
+        "en": "Choice 1",
+        "ko": "선택 1"
+    },
+    "ui_stats_mastery_choice_2": {
+        "en": "Choice 2",
+        "ko": "선택 2"
+    },
+    "ui_stats_mastery_choice_even": {
+        "en": "Even",
+        "ko": "균등"
+    },
+    "ui_stats_mastery_choice_1_leaning": {
+        "en": "Choice 1 leaning",
+        "ko": "선택 1 우세"
+    },
+    "ui_stats_mastery_choice_2_leaning": {
+        "en": "Choice 2 leaning",
+        "ko": "선택 2 우세"
+    },
+    "ui_stats_mastery_distribution_graph_label": {
+        "en": "{{prestige}} {{mastery}} ratio distribution",
+        "ko": "{{prestige}} {{mastery}} 비율 분포"
+    },
     "ui_stats_commander_label": {
         "en": "Commander",
         "ko": "사령관"

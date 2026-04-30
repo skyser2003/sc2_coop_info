@@ -76,9 +76,24 @@ async function installTauriMock(
             window.__SCO_CONFIG_APPLY_REQUESTS__ = [];
             window.__SCO_CONFIG_SAVE_REQUESTS__ = [];
             window.__SCO_FOLDER_PICKER_REQUESTS__ = [];
+            window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+                unregisterListener: () => {},
+            };
 
             window.__TAURI_INTERNALS__ = {
                 invoke: async (command, request) => {
+                    if (command === "plugin:app|version") {
+                        return "0.1.0";
+                    }
+                    if (command === "plugin:event|listen") {
+                        return 1;
+                    }
+                    if (command === "plugin:event|unlisten") {
+                        return null;
+                    }
+                    if (command === "is_dev") {
+                        return true;
+                    }
                     if (command === "pick_folder") {
                         window.__SCO_FOLDER_PICKER_REQUESTS__.push(
                             request || null,
@@ -101,6 +116,116 @@ async function installTauriMock(
                             return folderPickerResponses.__default;
                         }
                         return null;
+                    }
+                    if (command === "config_get") {
+                        return {
+                            status: "ok",
+                            settings,
+                            active_settings: activeSettings,
+                            randomizer_catalog: randomizerCatalog,
+                            monitor_catalog: monitorCatalog,
+                        };
+                    }
+                    if (command === "config_update") {
+                        const nextSettings =
+                            request?.settings || activeSettings;
+                        activeSettings = cloneJson(nextSettings);
+                        if (request?.persist === false) {
+                            window.__SCO_CONFIG_APPLY_REQUESTS__.push(
+                                activeSettings,
+                            );
+                        } else {
+                            settings = cloneJson(nextSettings);
+                            activeSettings = cloneJson(nextSettings);
+                            window.__SCO_CONFIG_SAVE_REQUESTS__.push(settings);
+                        }
+                        return {
+                            status: "ok",
+                            settings,
+                            active_settings: activeSettings,
+                            randomizer_catalog: randomizerCatalog,
+                            monitor_catalog: monitorCatalog,
+                        };
+                    }
+                    if (command === "config_stats_get") {
+                        const query = request?.query || "";
+                        const matched = Array.isArray(queryPayloads)
+                            ? queryPayloads.find((entry) =>
+                                  query.includes(entry.match),
+                              )
+                            : null;
+                        if (matched?.response) {
+                            return cloneJson(
+                                matched.response.stats || matched.response,
+                            );
+                        }
+                        if (payload) {
+                            return cloneJson(payload.stats || payload);
+                        }
+                        return {
+                            status: "ok",
+                            ready: true,
+                            games: 0,
+                            analysis_running: false,
+                            analysis_running_mode: null,
+                            message: "",
+                            query: "",
+                            analysis: {
+                                MapData: {},
+                                CommanderData: {},
+                                AllyCommanderData: {},
+                                DifficultyData: {},
+                                RegionData: {},
+                                PlayerData: {},
+                                AmonData: {},
+                                MapDataReady: true,
+                                UnitData: {
+                                    main: {},
+                                    ally: {},
+                                    amon: {},
+                                },
+                            },
+                        };
+                    }
+                    if (command === "config_stats_action") {
+                        return { status: "ok", message: "ok" };
+                    }
+                    if (command === "config_replays_get") {
+                        return (
+                            tabResponses.games || {
+                                status: "ok",
+                                replays: [],
+                                selected_replay_file: "",
+                            }
+                        );
+                    }
+                    if (command === "config_players_get") {
+                        return (
+                            tabResponses.players || {
+                                status: "ok",
+                                players: [],
+                            }
+                        );
+                    }
+                    if (command === "config_weeklies_get") {
+                        return (
+                            tabResponses.weeklies || {
+                                status: "ok",
+                                weeklies: [],
+                            }
+                        );
+                    }
+                    if (command === "config_action") {
+                        window.__SCO_ACTION_REQUESTS__.push(request || null);
+                        const action = request?.action;
+                        if (action && actionResponses[action]) {
+                            return actionResponses[action];
+                        }
+                        return {
+                            status: "ok",
+                            result: { ok: true },
+                            message: "ok",
+                        };
                     }
                     if (command !== "config_request") {
                         throw new Error(`Unexpected command: ${command}`);
@@ -266,6 +391,11 @@ async function installTauriMock(
                 event: {
                     listen: async () => () => {},
                 },
+                transformCallback: (callback) => {
+                    const id = Math.floor(Math.random() * 1000000);
+                    window[`_${id}`] = callback;
+                    return id;
+                },
             };
         },
         {
@@ -278,6 +408,250 @@ async function installTauriMock(
 
 test.describe("Config route", () => {
     test.describe.configure({ timeout: 60000 });
+
+    test("commander mastery statistics render same-category distribution graphs", async ({
+        page,
+    }) => {
+        await installTauriMock(page, {
+            status: "ok",
+            stats: {
+                ready: true,
+                games: 10,
+                analysis_running: false,
+                analysis_running_mode: null,
+                message: "",
+                query: "",
+                analysis: {
+                    MapData: {},
+                    CommanderData: {
+                        Abathur: {
+                            Frequency: 1,
+                            Victory: 8,
+                            Defeat: 2,
+                            Winrate: 0.8,
+                            MedianAPM: 124,
+                            KillFraction: 0.61,
+                            detailedCount: 10,
+                            Prestige: {
+                                0: 0.2,
+                                1: 0.3,
+                                2: 0.1,
+                                3: 0.4,
+                            },
+                            Mastery: {
+                                0: 0.75,
+                                1: 0.25,
+                                2: 0.4,
+                                3: 0.6,
+                                4: 0.1,
+                                5: 0.9,
+                            },
+                            MasteryDistribution: {
+                                0: {
+                                    0: 0.2,
+                                    15: 0.3,
+                                    30: 0.5,
+                                },
+                                1: {
+                                    10: 0.6,
+                                    20: 0.4,
+                                },
+                                2: {
+                                    0: 0.9,
+                                    30: 0.1,
+                                },
+                            },
+                            MasteryDistributionByPrestige: {
+                                0: {
+                                    0: {
+                                        0: 0.2,
+                                        15: 0.3,
+                                        30: 0.5,
+                                    },
+                                    1: {
+                                        10: 0.6,
+                                        20: 0.4,
+                                    },
+                                    2: {
+                                        0: 0.9,
+                                        30: 0.1,
+                                    },
+                                },
+                                1: {
+                                    0: {
+                                        0: 0.25,
+                                        30: 0.75,
+                                    },
+                                    1: {
+                                        15: 1,
+                                    },
+                                    2: {
+                                        30: 1,
+                                    },
+                                },
+                                2: {
+                                    0: {},
+                                    1: {},
+                                    2: {},
+                                },
+                                3: {
+                                    0: {},
+                                    1: {},
+                                    2: {},
+                                },
+                            },
+                            MasteryByPrestige: {
+                                0: {
+                                    0: 1,
+                                    1: 0,
+                                    2: 0.5,
+                                    3: 0.5,
+                                    4: 0,
+                                    5: 1,
+                                },
+                                1: {
+                                    0: 0.6,
+                                    1: 0.4,
+                                    2: 0.3,
+                                    3: 0.7,
+                                    4: 0.2,
+                                    5: 0.8,
+                                },
+                                2: {
+                                    0: 0.8,
+                                    1: 0.2,
+                                    2: 0.2,
+                                    3: 0.8,
+                                    4: 0.1,
+                                    5: 0.9,
+                                },
+                                3: {
+                                    0: 0.7,
+                                    1: 0.3,
+                                    2: 0.4,
+                                    3: 0.6,
+                                    4: 0.15,
+                                    5: 0.85,
+                                },
+                            },
+                        },
+                        any: {
+                            Frequency: 1,
+                            Victory: 8,
+                            Defeat: 2,
+                            Winrate: 0.8,
+                            MedianAPM: 124,
+                            KillFraction: 0.61,
+                            detailedCount: 10,
+                        },
+                    },
+                    AllyCommanderData: {},
+                    DifficultyData: {},
+                    RegionData: {},
+                    PlayerData: {},
+                    AmonData: {},
+                    MapDataReady: true,
+                    UnitData: {
+                        main: {},
+                        ally: {},
+                        amon: {},
+                    },
+                },
+            },
+        });
+
+        await page.goto("/", { waitUntil: "domcontentloaded" });
+        await page.getByRole("tab", { name: "Statistics" }).click();
+        await page.getByRole("button", { name: "My Commanders" }).click();
+
+        await expect(
+            page.getByTestId("mastery-distribution-category"),
+        ).toHaveCount(3);
+        await expect(
+            page.getByRole("row", {
+                name: "Prestige 0 Prestige 1 Prestige 2 Prestige 3 Total",
+            }),
+        ).toBeVisible();
+        await expect(
+            page.getByRole("row", {
+                name: "20% 30% 10% 40% 100%",
+            }),
+        ).toBeVisible();
+        await expect(page.getByText("Toxic Nest Damage").first()).toBeVisible();
+        await expect(
+            page.getByText("Mend Healing Duration").first(),
+        ).toBeVisible();
+        const firstMasteryHeader = await page
+            .getByTestId("mastery-distribution-header")
+            .first()
+            .evaluate((header) =>
+                Array.from(header.children).map(
+                    (child) => child.textContent || "",
+                ),
+            );
+        expect(firstMasteryHeader).toEqual([
+            "Mastery 1",
+            "Choice 1 - Toxic Nest Damage",
+            "Choice 2 - Mend Healing Duration",
+        ]);
+        await expect(page.getByTestId("mastery-distribution-line")).toHaveCount(
+            12,
+        );
+        const masteryPrestigeListsFit = await page
+            .getByTestId("mastery-distribution-prestige-list")
+            .evaluateAll((lists) =>
+                lists.every((list) => list.scrollWidth <= list.clientWidth + 1),
+            );
+        expect(masteryPrestigeListsFit).toBe(true);
+        await expect(page.getByText("Prestige 0").first()).toBeVisible();
+        await expect(page.getByText("Prestige 1").first()).toBeVisible();
+        await expect(page.getByText("Mastery 1")).toBeVisible();
+        await expect(
+            page.getByLabel("Prestige 0 Choice 2: 20.0%"),
+        ).toBeVisible();
+        await expect(
+            page.getByLabel("Prestige 0 Even: 30.0%").first(),
+        ).toBeVisible();
+        await expect(
+            page.getByLabel("Prestige 1 Choice 1: 75.0%"),
+        ).toBeVisible();
+        await expect(
+            page.getByTestId("mastery-distribution-even-line"),
+        ).toHaveCount(12);
+        await expect(
+            page.getByTestId("mastery-distribution-point-label"),
+        ).toHaveCount(10);
+        const masteryPointLabelTexts = await page
+            .getByTestId("mastery-distribution-point-label")
+            .allTextContents();
+        expect(masteryPointLabelTexts).toEqual(
+            expect.arrayContaining([
+                "20.0%",
+                "30.0%",
+                "50.0%",
+                "60.0%",
+                "75.0%",
+                "100.0%",
+            ]),
+        );
+        expect(
+            masteryPointLabelTexts.filter((text) => text === "40.0%"),
+        ).toHaveLength(0);
+        await expect(
+            page.getByText("Choice 2 leaning: 60.0%", { exact: true }),
+        ).toHaveCount(0);
+        await expect(
+            page.getByText("Choice 1: 50.0%", { exact: true }),
+        ).toHaveCount(0);
+        await expect(
+            page.getByText("Choice 2: 20.0%", { exact: true }),
+        ).toHaveCount(0);
+        await expect(
+            page.getByText("Even: 30.0%", {
+                exact: true,
+            }),
+        ).toHaveCount(0);
+    });
 
     test("unit stats sum row preserves the stored wx total", async ({
         page,

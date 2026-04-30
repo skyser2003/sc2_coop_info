@@ -43,6 +43,8 @@ const DIFFICULTY_ORDER = [
     "B+5",
     "B+6",
 ];
+const MASTERY_DISTRIBUTION_GRAPH_TOP = 24;
+const MASTERY_DISTRIBUTION_LABEL_OFFSET = 4;
 
 type StatisticsTabProps = {
     statsPayload: StatisticsPayload | null;
@@ -76,6 +78,23 @@ type FastestMapDetails = {
 type StatsRow = JsonObject;
 type NamedStatsRows = Array<[string, StatsRow]>;
 type StatsSelectionField = "selectedAllyCommander" | "selectedMyCommander";
+type MasteryDistributionBucket = {
+    ratioPercent: number;
+    percent: number;
+};
+type MasteryPrestigeDistribution = {
+    key: string;
+    label: string;
+    buckets: MasteryDistributionBucket[];
+};
+type MasteryCategoryDistribution = {
+    pairIndex: number;
+    leftIndex: number;
+    rightIndex: number;
+    leftLabel: string;
+    rightLabel: string;
+    prestigeRows: MasteryPrestigeDistribution[];
+};
 type UnitStatRow = StatsRow & {
     created?: number | string;
     made?: number | string;
@@ -264,6 +283,107 @@ function formatPercent1(value: DisplayValue) {
     return `${(num * 100).toFixed(1)}%`;
 }
 
+function clampRatio(value: DisplayValue): number {
+    const num = Number(value);
+    if (!Number.isFinite(num)) {
+        return 0;
+    }
+    return Math.max(0, Math.min(1, num));
+}
+
+function masteryRatioPercent(bucket: number): number {
+    return Math.round((bucket / 30) * 100);
+}
+
+function masteryChoiceLabel(
+    languageManager: LanguageManager,
+    leftRatioPercent: number,
+): string {
+    if (leftRatioPercent >= 100) {
+        return languageManager.translate("ui_stats_mastery_choice_1");
+    }
+    if (leftRatioPercent <= 0) {
+        return languageManager.translate("ui_stats_mastery_choice_2");
+    }
+    if (leftRatioPercent === 50) {
+        return languageManager.translate("ui_stats_mastery_choice_even");
+    }
+    if (leftRatioPercent > 50) {
+        return languageManager.translate("ui_stats_mastery_choice_1_leaning");
+    }
+    return languageManager.translate("ui_stats_mastery_choice_2_leaning");
+}
+
+function masteryDistributionY(percent: number, maxPercent: number): number {
+    if (maxPercent <= 0) {
+        return 100;
+    }
+    return (
+        100 - (percent / maxPercent) * (100 - MASTERY_DISTRIBUTION_GRAPH_TOP)
+    );
+}
+
+function masteryDistributionLabelTop(
+    percent: number,
+    maxPercent: number,
+): string {
+    return `${Math.max(
+        8,
+        Math.min(
+            92,
+            masteryDistributionY(percent, maxPercent) -
+                MASTERY_DISTRIBUTION_LABEL_OFFSET,
+        ),
+    ).toFixed(3)}%`;
+}
+
+function masteryDistributionLabelLeft(leftRatioPercent: number): string {
+    return `${(100 - leftRatioPercent).toFixed(3)}%`;
+}
+
+function masteryDistributionLabelClass(leftRatioPercent: number): string {
+    if (leftRatioPercent >= 100) {
+        return [
+            styles.masteryDistributionPointLabel,
+            styles.masteryDistributionPointLabelLeft,
+        ].join(" ");
+    }
+    if (leftRatioPercent <= 0) {
+        return [
+            styles.masteryDistributionPointLabel,
+            styles.masteryDistributionPointLabelRight,
+        ].join(" ");
+    }
+    return styles.masteryDistributionPointLabel;
+}
+
+function masteryDistributionVisibleLabels(
+    buckets: MasteryDistributionBucket[],
+): MasteryDistributionBucket[] {
+    const endpointBuckets = buckets.filter(
+        (bucket) =>
+            bucket.percent > 0 &&
+            (bucket.ratioPercent <= 0 || bucket.ratioPercent >= 100),
+    );
+    const representativeBucket = buckets
+        .filter(
+            (bucket) =>
+                bucket.percent > 0 &&
+                bucket.ratioPercent > 0 &&
+                bucket.ratioPercent < 100,
+        )
+        .sort(
+            (left, right) =>
+                right.percent - left.percent ||
+                left.ratioPercent - right.ratioPercent,
+        )[0];
+
+    if (!representativeBucket) {
+        return endpointBuckets;
+    }
+    return [...endpointBuckets, representativeBucket];
+}
+
 function formatNumber(value: DisplayValue) {
     const num = Number(value);
     if (!Number.isFinite(num)) {
@@ -434,6 +554,186 @@ function tableHeader(
     );
 }
 
+function masteryLabelAt(
+    labels: string[],
+    index: number,
+    languageManager: LanguageManager,
+): string {
+    return languageManager.localize(
+        asTableValue(
+            labels[index] ||
+                translate(languageManager, "ui_stats_mastery_fallback", {
+                    index: index + 1,
+                }),
+        ),
+    );
+}
+
+function buildMasteryCategoryDistributions(
+    masteryDistributionByPrestige: StatsRow,
+    masteryLabels: string[],
+    languageManager: LanguageManager,
+): MasteryCategoryDistribution[] {
+    const categories: MasteryCategoryDistribution[] = [];
+    const prestigeKeys = ["0", "1", "2", "3"];
+
+    for (let pairIndex = 0; pairIndex < 3; pairIndex += 1) {
+        const leftIndex = pairIndex * 2;
+        const rightIndex = leftIndex + 1;
+        const prestigeRows = prestigeKeys.map((prestigeKey) => {
+            const prestigeDistribution = asStatsRow(
+                masteryDistributionByPrestige[prestigeKey],
+            );
+            const pairDistribution = asStatsRow(
+                prestigeDistribution[String(pairIndex)],
+            );
+            const buckets: MasteryDistributionBucket[] = Array.from(
+                { length: 31 },
+                (_, bucket) => ({
+                    ratioPercent: masteryRatioPercent(bucket),
+                    percent: clampRatio(pairDistribution[String(bucket)]),
+                }),
+            );
+            return {
+                key: prestigeKey,
+                label: `${languageManager.translate(
+                    "ui_stats_prestige_label",
+                )} ${prestigeKey}`,
+                buckets,
+            };
+        });
+        const hasData = prestigeRows.some((prestige) =>
+            prestige.buckets.some((bucket) => bucket.percent > 0),
+        );
+
+        if (!hasData) {
+            continue;
+        }
+
+        categories.push({
+            pairIndex,
+            leftIndex,
+            rightIndex,
+            leftLabel: masteryLabelAt(
+                masteryLabels,
+                leftIndex,
+                languageManager,
+            ),
+            rightLabel: masteryLabelAt(
+                masteryLabels,
+                rightIndex,
+                languageManager,
+            ),
+            prestigeRows,
+        });
+    }
+
+    return categories;
+}
+
+function renderMasteryDistributionLineGraph(
+    category: MasteryCategoryDistribution,
+    prestige: MasteryPrestigeDistribution,
+    languageManager: LanguageManager,
+) {
+    const maxPercent = prestige.buckets.reduce(
+        (current, bucket) => Math.max(current, bucket.percent),
+        0,
+    );
+    const points = prestige.buckets
+        .map((bucket, index) => {
+            const x = 100 - (index / 30) * 100;
+            const y = masteryDistributionY(bucket.percent, maxPercent);
+            return `${x.toFixed(3)},${y.toFixed(3)}`;
+        })
+        .join(" ");
+
+    return (
+        <div
+            className={styles.masteryDistributionLineGraph}
+            data-testid="mastery-distribution-line"
+        >
+            <svg
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                role="img"
+                aria-label={translate(
+                    languageManager,
+                    "ui_stats_mastery_distribution_graph_label",
+                    {
+                        prestige: prestige.label,
+                        mastery: category.leftLabel,
+                    },
+                )}
+            >
+                <line
+                    className={styles.masteryDistributionGridLine}
+                    x1="0"
+                    y1="100"
+                    x2="100"
+                    y2="100"
+                />
+                <line
+                    className={styles.masteryDistributionGridLine}
+                    x1="0"
+                    y1={(100 + MASTERY_DISTRIBUTION_GRAPH_TOP) / 2}
+                    x2="100"
+                    y2={(100 + MASTERY_DISTRIBUTION_GRAPH_TOP) / 2}
+                />
+                <line
+                    className={styles.masteryDistributionEvenLine}
+                    data-testid="mastery-distribution-even-line"
+                    x1="50"
+                    y1={MASTERY_DISTRIBUTION_GRAPH_TOP}
+                    x2="50"
+                    y2="100"
+                />
+                <polyline
+                    className={styles.masteryDistributionLine}
+                    points={points}
+                />
+                {prestige.buckets
+                    .filter((bucket) => bucket.percent > 0)
+                    .map((bucket) => (
+                        <circle
+                            className={styles.masteryDistributionPoint}
+                            key={`mastery-${category.pairIndex}-${prestige.key}-${bucket.ratioPercent}`}
+                            cx={100 - bucket.ratioPercent}
+                            cy={masteryDistributionY(
+                                bucket.percent,
+                                maxPercent,
+                            )}
+                            r="1.8"
+                            aria-label={`${prestige.label} ${masteryChoiceLabel(languageManager, bucket.ratioPercent)}: ${formatPercent1(bucket.percent)}`}
+                        />
+                    ))}
+            </svg>
+            {masteryDistributionVisibleLabels(prestige.buckets).map(
+                (bucket) => (
+                    <span
+                        className={masteryDistributionLabelClass(
+                            bucket.ratioPercent,
+                        )}
+                        data-testid="mastery-distribution-point-label"
+                        key={`mastery-label-${category.pairIndex}-${prestige.key}-${bucket.ratioPercent}`}
+                        style={{
+                            left: masteryDistributionLabelLeft(
+                                bucket.ratioPercent,
+                            ),
+                            top: masteryDistributionLabelTop(
+                                bucket.percent,
+                                maxPercent,
+                            ),
+                        }}
+                    >
+                        {formatPercent1(bucket.percent)}
+                    </span>
+                ),
+            )}
+        </div>
+    );
+}
+
 function renderCommanderDetails(
     commander: string | null,
     entry: StatsRow | null,
@@ -457,47 +757,34 @@ function renderCommanderDetails(
         languageManager,
         commanderKey,
     );
-    const mastery = entry.Mastery || {};
-    const masteryKeys = Object.keys(mastery)
-        .map((key) => Number(key))
-        .filter((key) => Number.isFinite(key))
-        .sort((a, b) => a - b);
-    const masteryByPrestige = entry.MasteryByPrestige || {};
-    const masteryByPrestigeKeys = ["0", "1", "2", "3"];
-    const prestigeSelection = entry.Prestige || {};
-    const prestigeSelectionTotal = Object.values(
-        prestigeSelection,
-    ).reduce<number>((sum, value) => sum + Number(value), 0);
-
-    const getMasteryPercent = (masteryIdx: number, prestigeKey: string) => {
-        const byPrestige = masteryByPrestige[prestigeKey] || {};
-        return Number(byPrestige[masteryIdx] || 0);
-    };
-    const getMasteryTotalPercent = (masteryIdx: number) => {
-        return Number(mastery[masteryIdx] || 0);
-    };
+    const prestigeSelectionKeys = ["0", "1", "2", "3"];
+    const prestigeSelection = asStatsRow(entry.Prestige);
+    const prestigeSelectionTotal = prestigeSelectionKeys.reduce<number>(
+        (sum, prestigeKey) => sum + Number(prestigeSelection[prestigeKey] || 0),
+        0,
+    );
+    const masteryCategories = buildMasteryCategoryDistributions(
+        asStatsRow(entry.MasteryDistributionByPrestige),
+        masteryLabels,
+        languageManager,
+    );
 
     return (
         <div className={styles.statsCommanderDetail}>
-            <SelectionPreview
-                assetUrl={commanderPreview.url}
-                title={displayCommander}
-                kind="commander"
-                className={styles.statsCommanderHero}
-                titleClassName={styles.statsCommanderTitle}
-            />
-            <div className={styles.statsCommanderMeta}>
-                <span>
-                    {`${languageManager.translate("ui_stats_frequency")}: `}
-                    <strong>{formatPercent1(entry.Frequency)}</strong>
-                </span>
-                <span>
-                    {`${languageManager.translate("ui_players_column_apm")} ${languageManager.translate("ui_stats_avg")}: `}
-                    <strong>{Math.round(Number(entry.MedianAPM || 0))}</strong>
-                </span>
-            </div>
-            <div className={styles.statsCommanderBottom}>
-                <div className={styles.statsCommanderBottomCol}>
+            <div className={styles.statsCommanderTop}>
+                <div className={styles.statsCommanderSummary}>
+                    <div className={styles.statsCommanderMeta}>
+                        <span>
+                            {`${languageManager.translate("ui_stats_frequency")}: `}
+                            <strong>{formatPercent1(entry.Frequency)}</strong>
+                        </span>
+                        <span>
+                            {`${languageManager.translate("ui_players_column_apm")} ${languageManager.translate("ui_stats_avg")}: `}
+                            <strong>
+                                {Math.round(Number(entry.MedianAPM || 0))}
+                            </strong>
+                        </span>
+                    </div>
                     <h4 className={styles.statsCommanderSubheading}>
                         {languageManager.translate("ui_stats_mastery")} /{" "}
                         {languageManager.translate("ui_stats_prestige_label")}{" "}
@@ -517,11 +804,6 @@ function renderCommanderDetails(
                         >
                             <thead>
                                 <tr>
-                                    <th>
-                                        {languageManager.translate(
-                                            "ui_stats_mastery",
-                                        )}
-                                    </th>
                                     <th>
                                         {languageManager.translate(
                                             "ui_stats_prestige_label",
@@ -557,12 +839,7 @@ function renderCommanderDetails(
                                 <tr
                                     className={styles.statsCommanderPrestigeRow}
                                 >
-                                    <td>
-                                        {languageManager.translate(
-                                            "ui_stats_prestige_selection",
-                                        )}
-                                    </td>
-                                    {masteryByPrestigeKeys.map(
+                                    {prestigeSelectionKeys.map(
                                         (prestigeKey) => (
                                             <td
                                                 className={
@@ -586,86 +863,109 @@ function renderCommanderDetails(
                                         {formatPercent0(prestigeSelectionTotal)}
                                     </td>
                                 </tr>
-                                <tr className={styles.statsCommanderEmptyRow}>
-                                    <td
-                                        colSpan={6}
-                                        className={
-                                            styles.statsCommanderEmptyRowCell
-                                        }
-                                    >
-                                        {" "}
-                                    </td>
-                                </tr>
-                                {masteryKeys.length === 0 ? (
-                                    <tr>
-                                        <td
-                                            colSpan={6}
-                                            className={styles.emptyCell}
-                                        >
-                                            {languageManager.translate(
-                                                "ui_stats_no_mastery_data",
-                                            )}
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    masteryKeys.map((idx) => (
-                                        <tr
-                                            key={`m-${idx}`}
-                                            className={[
-                                                styles.statsCommanderMasteryRow,
-                                                idx === 2 || idx === 4
-                                                    ? styles.statsCommanderCategoryGap
-                                                    : "",
-                                            ]
-                                                .filter(Boolean)
-                                                .join(" ")}
-                                        >
-                                            <td>
-                                                {languageManager.localize(
-                                                    asTableValue(
-                                                        masteryLabels[idx] ||
-                                                            translate(
-                                                                languageManager,
-                                                                "ui_stats_mastery_fallback",
-                                                                {
-                                                                    index:
-                                                                        idx + 1,
-                                                                },
-                                                            ),
-                                                    ),
-                                                )}
-                                            </td>
-                                            {masteryByPrestigeKeys.map(
-                                                (prestigeKey) => (
-                                                    <td
-                                                        className={
-                                                            styles.statsCommanderTablePct
-                                                        }
-                                                        key={`m-${idx}-${prestigeKey}`}
-                                                    >
-                                                        {formatPercent0(
-                                                            getMasteryPercent(
-                                                                idx,
-                                                                prestigeKey,
-                                                            ),
-                                                        )}
-                                                    </td>
-                                                ),
-                                            )}
-                                            <td
-                                                className={
-                                                    styles.statsCommanderTablePct
-                                                }
-                                            >
-                                                {formatPercent0(
-                                                    getMasteryTotalPercent(idx),
-                                                )}
-                                            </td>
-                                        </tr>
-                                    ))
-                                )}
                             </tbody>
                         </table>
+                    </div>
+                </div>
+                <SelectionPreview
+                    assetUrl={commanderPreview.url}
+                    title={displayCommander}
+                    kind="commander"
+                    className={styles.statsCommanderHero}
+                    titleClassName={styles.statsCommanderTitle}
+                />
+            </div>
+            <div className={styles.statsCommanderBottom}>
+                <div className={styles.statsCommanderBottomCol}>
+                    <div
+                        className={styles.masteryDistributionList}
+                        data-testid="mastery-distribution-list"
+                    >
+                        {masteryCategories.length === 0 ? (
+                            <div className={styles.statsDetailEmpty}>
+                                {languageManager.translate(
+                                    "ui_stats_no_mastery_data",
+                                )}
+                            </div>
+                        ) : (
+                            masteryCategories.map((category) => (
+                                <section
+                                    className={
+                                        styles.masteryDistributionCategory
+                                    }
+                                    key={`mastery-category-${category.pairIndex}`}
+                                    data-testid="mastery-distribution-category"
+                                >
+                                    <div
+                                        className={
+                                            styles.masteryDistributionHeader
+                                        }
+                                        data-testid="mastery-distribution-header"
+                                    >
+                                        <strong>
+                                            {`${languageManager.translate(
+                                                "ui_stats_mastery",
+                                            )} ${category.pairIndex + 1}`}
+                                        </strong>
+                                        <span>
+                                            {`${languageManager.translate(
+                                                "ui_stats_mastery_choice_1",
+                                            )} - ${category.leftLabel}`}
+                                        </span>
+                                        <span>
+                                            {`${languageManager.translate(
+                                                "ui_stats_mastery_choice_2",
+                                            )} - ${category.rightLabel}`}
+                                        </span>
+                                    </div>
+                                    <div
+                                        className={
+                                            styles.masteryDistributionPrestigeList
+                                        }
+                                        data-testid="mastery-distribution-prestige-list"
+                                    >
+                                        {category.prestigeRows.map(
+                                            (prestige) => (
+                                                <div
+                                                    className={
+                                                        styles.masteryDistributionPrestigePanel
+                                                    }
+                                                    key={`mastery-category-${category.pairIndex}-${prestige.key}`}
+                                                >
+                                                    <h5>{prestige.label}</h5>
+                                                    {renderMasteryDistributionLineGraph(
+                                                        category,
+                                                        prestige,
+                                                        languageManager,
+                                                    )}
+                                                    <div
+                                                        className={
+                                                            styles.masteryDistributionAxis
+                                                        }
+                                                    >
+                                                        <span>
+                                                            {languageManager.translate(
+                                                                "ui_stats_mastery_choice_1",
+                                                            )}
+                                                        </span>
+                                                        <span>
+                                                            {languageManager.translate(
+                                                                "ui_stats_mastery_choice_even",
+                                                            )}
+                                                        </span>
+                                                        <span>
+                                                            {languageManager.translate(
+                                                                "ui_stats_mastery_choice_2",
+                                                            )}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ),
+                                        )}
+                                    </div>
+                                </section>
+                            ))
+                        )}
                     </div>
                 </div>
             </div>
