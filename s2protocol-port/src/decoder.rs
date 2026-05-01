@@ -1399,119 +1399,20 @@ impl EventSpecialDataDecoder {
             }
             TypeOp::Struct => decoder.visit_struct_fields_from_typeinfo(
                 typeinfo,
-                &mut |field_name| match field_name {
-                    "m_tag" => Some(0u8),
-                    "m_targetUnitTag" => Some(1u8),
-                    "m_snapshotPlayerId" => Some(2u8),
-                    "m_snapshotControlPlayerId" => Some(3u8),
-                    "m_snapshotUpkeepPlayerId" => Some(4u8),
-                    "m_targetUnitSnapshotPlayerId" => Some(5u8),
-                    "m_targetUnitSnapshotControlPlayerId" => Some(6u8),
-                    "m_targetUnitSnapshotUpkeepPlayerId" => Some(7u8),
-                    "m_snapshotPoint" => Some(8u8),
-                    "x" | "y" | "z" => Some(9u8),
-                    _ => None,
-                },
-                &mut |decoder, field, field_typeinfo| {
-                    match field {
-                        0 => {
-                            data.m_tag = decoder.i64_from_typeinfo(field_typeinfo)?;
-                        }
-                        1 => {
-                            data.m_targetUnitTag = decoder.i64_from_typeinfo(field_typeinfo)?;
-                        }
-                        2 => {
-                            data.m_snapshotPlayerId = decoder.i64_from_typeinfo(field_typeinfo)?;
-                        }
-                        3 => {
-                            data.m_snapshotControlPlayerId =
-                                decoder.i64_from_typeinfo(field_typeinfo)?;
-                        }
-                        4 => {
-                            data.m_snapshotUpkeepPlayerId =
-                                decoder.i64_from_typeinfo(field_typeinfo)?;
-                        }
-                        5 => {
-                            data.m_targetUnitSnapshotPlayerId =
-                                decoder.i64_from_typeinfo(field_typeinfo)?;
-                        }
-                        6 => {
-                            data.m_targetUnitSnapshotControlPlayerId =
-                                decoder.i64_from_typeinfo(field_typeinfo)?;
-                        }
-                        7 => {
-                            data.m_targetUnitSnapshotUpkeepPlayerId =
-                                decoder.i64_from_typeinfo(field_typeinfo)?;
-                        }
-                        8 => {
-                            data.m_snapshotPoint =
-                                Self::decode_snapshot_point_from_typeinfo(decoder, field_typeinfo)?;
-                        }
-                        9 => {
-                            if let Some(value) = decoder.i64_from_typeinfo(field_typeinfo)? {
-                                data.m_snapshotPoint
-                                    .get_or_insert_with(|| SnapshotPoint { values: Vec::new() })
-                                    .values
-                                    .push(SnapshotPointValue::Int(value));
-                            }
-                        }
-                        _ => unreachable!("invalid selected target unit data field"),
-                    }
+                &mut |field_name| (field_name == "m_snapshotPoint").then_some(()),
+                &mut |decoder, (), field_typeinfo| {
+                    data.m_snapshotPoint =
+                        Self::decode_snapshot_point_from_typeinfo(decoder, field_typeinfo)?;
                     *found = true;
                     Ok(())
                 },
             ),
             TypeOp::Choice => decoder.visit_choice_field_from_typeinfo(
                 typeinfo,
-                &mut |field_name| match field_name {
-                    "m_tag" => Some(0u8),
-                    "m_targetUnitTag" => Some(1u8),
-                    "m_snapshotPlayerId" => Some(2u8),
-                    "m_snapshotControlPlayerId" => Some(3u8),
-                    "m_snapshotUpkeepPlayerId" => Some(4u8),
-                    "m_targetUnitSnapshotPlayerId" => Some(5u8),
-                    "m_targetUnitSnapshotControlPlayerId" => Some(6u8),
-                    "m_targetUnitSnapshotUpkeepPlayerId" => Some(7u8),
-                    "m_snapshotPoint" => Some(8u8),
-                    _ => None,
-                },
-                &mut |decoder, field, field_typeinfo| {
-                    match field {
-                        0 => {
-                            data.m_tag = decoder.i64_from_typeinfo(field_typeinfo)?;
-                        }
-                        1 => {
-                            data.m_targetUnitTag = decoder.i64_from_typeinfo(field_typeinfo)?;
-                        }
-                        2 => {
-                            data.m_snapshotPlayerId = decoder.i64_from_typeinfo(field_typeinfo)?;
-                        }
-                        3 => {
-                            data.m_snapshotControlPlayerId =
-                                decoder.i64_from_typeinfo(field_typeinfo)?;
-                        }
-                        4 => {
-                            data.m_snapshotUpkeepPlayerId =
-                                decoder.i64_from_typeinfo(field_typeinfo)?;
-                        }
-                        5 => {
-                            data.m_targetUnitSnapshotPlayerId =
-                                decoder.i64_from_typeinfo(field_typeinfo)?;
-                        }
-                        6 => {
-                            data.m_targetUnitSnapshotControlPlayerId =
-                                decoder.i64_from_typeinfo(field_typeinfo)?;
-                        }
-                        7 => {
-                            data.m_targetUnitSnapshotUpkeepPlayerId =
-                                decoder.i64_from_typeinfo(field_typeinfo)?;
-                        }
-                        8 => {
-                            data.m_snapshotPoint =
-                                Self::decode_snapshot_point_from_typeinfo(decoder, field_typeinfo)?;
-                        }
-                        _ => unreachable!("invalid selected target unit data field"),
-                    }
+                &mut |field_name| (field_name == "m_snapshotPoint").then_some(()),
+                &mut |decoder, (), field_typeinfo| {
+                    data.m_snapshotPoint =
+                        Self::decode_snapshot_point_from_typeinfo(decoder, field_typeinfo)?;
                     *found = true;
                     Ok(())
                 },

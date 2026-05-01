@@ -238,10 +238,6 @@ impl ReplayMapAnalysisFlags {
         self.dead_of_night
     }
 
-    pub(super) fn is_part_and_parcel(&self) -> bool {
-        self.part_and_parcel
-    }
-
     fn is_scythe_of_amon(&self) -> bool {
         self.scythe_of_amon
     }

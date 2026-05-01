@@ -29,14 +29,6 @@ pub struct SnapshotPoint {
 #[allow(non_snake_case)]
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct TargetUnitData {
-    pub m_tag: Option<i64>,
-    pub m_targetUnitTag: Option<i64>,
-    pub m_snapshotPlayerId: Option<i64>,
-    pub m_snapshotControlPlayerId: Option<i64>,
-    pub m_snapshotUpkeepPlayerId: Option<i64>,
-    pub m_targetUnitSnapshotPlayerId: Option<i64>,
-    pub m_targetUnitSnapshotControlPlayerId: Option<i64>,
-    pub m_targetUnitSnapshotUpkeepPlayerId: Option<i64>,
     pub m_snapshotPoint: Option<SnapshotPoint>,
 }
 
@@ -113,7 +105,6 @@ pub struct TrackerEvent {
     pub m_unit_type_name: Option<String>,
     pub m_creator_ability_name: Option<String>,
     pub m_control_player_id: Option<i64>,
-    pub m_upkeep_player_id: Option<i64>,
     pub m_unit_tag_index: Option<i64>,
     pub m_unit_tag_recycle: Option<i64>,
     pub m_creator_unit_tag_index: Option<i64>,
@@ -123,8 +114,6 @@ pub struct TrackerEvent {
     pub m_killer_player_id: Option<i64>,
     pub m_x: Option<i64>,
     pub m_y: Option<i64>,
-    pub m_first_unit_index: Option<i64>,
-    pub m_position_items: Vec<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -190,7 +179,6 @@ pub(crate) enum TrackerEventField {
     UnitTypeName,
     CreatorAbilityName,
     ControlPlayerId,
-    UpkeepPlayerId,
     UnitTagIndex,
     UnitTagRecycle,
     CreatorUnitTagIndex,
@@ -200,8 +188,6 @@ pub(crate) enum TrackerEventField {
     KillerPlayerId,
     X,
     Y,
-    FirstUnitIndex,
-    PositionItems,
 }
 
 impl TrackerEventField {
@@ -214,7 +200,6 @@ impl TrackerEventField {
             "m_unitTypeName" => Some(Self::UnitTypeName),
             "m_creatorAbilityName" => Some(Self::CreatorAbilityName),
             "m_controlPlayerId" => Some(Self::ControlPlayerId),
-            "m_upkeepPlayerId" => Some(Self::UpkeepPlayerId),
             "m_unitTagIndex" => Some(Self::UnitTagIndex),
             "m_unitTagRecycle" => Some(Self::UnitTagRecycle),
             "m_creatorUnitTagIndex" => Some(Self::CreatorUnitTagIndex),
@@ -224,8 +209,6 @@ impl TrackerEventField {
             "m_killerPlayerId" => Some(Self::KillerPlayerId),
             "m_x" => Some(Self::X),
             "m_y" => Some(Self::Y),
-            "m_firstUnitIndex" => Some(Self::FirstUnitIndex),
-            "m_items" => Some(Self::PositionItems),
             _ => None,
         }
     }
@@ -409,7 +392,6 @@ impl DirectEventDecode for TrackerEvent {
             m_unit_type_name: None,
             m_creator_ability_name: None,
             m_control_player_id: None,
-            m_upkeep_player_id: None,
             m_unit_tag_index: None,
             m_unit_tag_recycle: None,
             m_creator_unit_tag_index: None,
@@ -419,8 +401,6 @@ impl DirectEventDecode for TrackerEvent {
             m_killer_player_id: None,
             m_x: None,
             m_y: None,
-            m_first_unit_index: None,
-            m_position_items: Vec::new(),
         }
     }
 
@@ -459,9 +439,6 @@ impl DirectEventDecode for TrackerEvent {
             TrackerEventField::ControlPlayerId => {
                 self.m_control_player_id = decoder.i64_from_typeinfo(field_typeinfo)?;
             }
-            TrackerEventField::UpkeepPlayerId => {
-                self.m_upkeep_player_id = decoder.i64_from_typeinfo(field_typeinfo)?;
-            }
             TrackerEventField::UnitTagIndex => {
                 self.m_unit_tag_index = decoder.i64_from_typeinfo(field_typeinfo)?;
             }
@@ -488,20 +465,6 @@ impl DirectEventDecode for TrackerEvent {
             }
             TrackerEventField::Y => {
                 self.m_y = decoder.i64_from_typeinfo(field_typeinfo)?;
-            }
-            TrackerEventField::FirstUnitIndex => {
-                self.m_first_unit_index = decoder.i64_from_typeinfo(field_typeinfo)?;
-            }
-            TrackerEventField::PositionItems => {
-                decoder.visit_array_elements_from_typeinfo(
-                    field_typeinfo,
-                    &mut |decoder, child_typeinfo| {
-                        if let Some(item) = decoder.i64_from_typeinfo(child_typeinfo)? {
-                            self.m_position_items.push(item);
-                        }
-                        Ok(())
-                    },
-                )?;
             }
         }
         Ok(())
