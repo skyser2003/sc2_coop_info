@@ -7,9 +7,41 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-const PART_AND_PARCEL_REPLAY_NAME: &str = "핵심 부품 (144).SC2Replay";
 const MAIN_PLAYER_HANDLE_ENV_KEY: &str = "MAIN_PLAYER_HANDLE";
 const PARTS_ICON_KEY: &str = "parts";
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PartAndParcelPartsCase {
+    replay_name: &'static str,
+    main_player_position: u8,
+    ally_player_position: u8,
+    main_commander: &'static str,
+    ally_commander: &'static str,
+    main_parts: u64,
+    ally_parts: u64,
+}
+
+impl PartAndParcelPartsCase {
+    fn new(
+        replay_name: &'static str,
+        main_player_position: u8,
+        ally_player_position: u8,
+        main_commander: &'static str,
+        ally_commander: &'static str,
+        main_parts: u64,
+        ally_parts: u64,
+    ) -> Self {
+        Self {
+            replay_name,
+            main_player_position,
+            ally_player_position,
+            main_commander,
+            ally_commander,
+            main_parts,
+            ally_parts,
+        }
+    }
+}
 
 fn read_env_file_value(env_file: &Path, key: &str) -> Option<String> {
     let content = fs::read_to_string(env_file).ok()?;
@@ -114,13 +146,6 @@ fn part_and_parcel_replay_shows_collected_parts_icon_per_player() {
         );
         return;
     };
-    let Some(replay_path) = find_replay(&account_dir, PART_AND_PARCEL_REPLAY_NAME) else {
-        eprintln!(
-            "skipping Part and Parcel parts regression test: replay not found under {}",
-            account_dir.display()
-        );
-        return;
-    };
     let Some(main_handles) = resolve_main_handles() else {
         eprintln!(
             "skipping Part and Parcel parts regression test: {MAIN_PLAYER_HANDLE_ENV_KEY} is not configured"
@@ -129,16 +154,119 @@ fn part_and_parcel_replay_shows_collected_parts_icon_per_player() {
     };
 
     let resources = common::load_replay_resources();
-    let result =
-        DetailedReplayAnalyzer::analyze_single_detailed(&replay_path, &main_handles, &resources)
-            .unwrap_or_else(|error| panic!("replay analysis should succeed: {error}"));
-    let report = result.report();
+    let cases = [
+        PartAndParcelPartsCase::new(
+            "핵심 부품 (146).SC2Replay",
+            2,
+            1,
+            "Abathur",
+            "Swann",
+            171,
+            51,
+        ),
+        PartAndParcelPartsCase::new(
+            "핵심 부품 (144).SC2Replay",
+            2,
+            1,
+            "Abathur",
+            "Stukov",
+            119,
+            105,
+        ),
+        PartAndParcelPartsCase::new(
+            "핵심 부품 (147).SC2Replay",
+            2,
+            1,
+            "Abathur",
+            "Alarak",
+            135,
+            89,
+        ),
+        PartAndParcelPartsCase::new(
+            "핵심 부품 (148).SC2Replay",
+            2,
+            1,
+            "Swann",
+            "Kerrigan",
+            113,
+            99,
+        ),
+        PartAndParcelPartsCase::new(
+            "핵심 부품 (149).SC2Replay",
+            2,
+            1,
+            "Abathur",
+            "Tychus",
+            139,
+            74,
+        ),
+        PartAndParcelPartsCase::new(
+            "핵심 부품 (150).SC2Replay",
+            1,
+            2,
+            "Stetmann",
+            "Swann",
+            127,
+            97,
+        ),
+        PartAndParcelPartsCase::new(
+            "핵심 부품 (151).SC2Replay",
+            2,
+            1,
+            "Dehaka",
+            "Raynor",
+            192,
+            31,
+        ),
+    ];
 
-    assert_eq!(report.map_name, "Part and Parcel");
-    assert_eq!(report.positions.main, 2);
-    assert_eq!(report.positions.ally, 1);
-    assert_eq!(report.main_commander, "Abathur");
-    assert_eq!(report.ally_commander, "Stukov");
-    assert_eq!(icon_count(&report.main_icons, PARTS_ICON_KEY), 104);
-    assert_eq!(icon_count(&report.ally_icons, PARTS_ICON_KEY), 120);
+    for case in cases {
+        let Some(replay_path) = find_replay(&account_dir, case.replay_name) else {
+            eprintln!(
+                "skipping Part and Parcel parts regression case for {}: replay not found under {}",
+                case.replay_name,
+                account_dir.display()
+            );
+            continue;
+        };
+
+        let result = DetailedReplayAnalyzer::analyze_single_detailed(
+            &replay_path,
+            &main_handles,
+            &resources,
+        )
+        .unwrap_or_else(|error| panic!("replay analysis should succeed: {error}"));
+        let report = result.report();
+
+        assert_eq!(report.map_name, "Part and Parcel", "{}", case.replay_name);
+        assert_eq!(
+            report.positions.main, case.main_player_position,
+            "{}",
+            case.replay_name
+        );
+        assert_eq!(
+            report.positions.ally, case.ally_player_position,
+            "{}",
+            case.replay_name
+        );
+        assert_eq!(
+            report.main_commander, case.main_commander,
+            "{}",
+            case.replay_name
+        );
+        assert_eq!(
+            report.ally_commander, case.ally_commander,
+            "{}",
+            case.replay_name
+        );
+        assert_eq!(
+            (
+                icon_count(&report.main_icons, PARTS_ICON_KEY),
+                icon_count(&report.ally_icons, PARTS_ICON_KEY),
+            ),
+            (case.main_parts, case.ally_parts),
+            "{} parts",
+            case.replay_name
+        );
+    }
 }

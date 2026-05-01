@@ -29,6 +29,14 @@ pub struct SnapshotPoint {
 #[allow(non_snake_case)]
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct TargetUnitData {
+    pub m_tag: Option<i64>,
+    pub m_targetUnitTag: Option<i64>,
+    pub m_snapshotPlayerId: Option<i64>,
+    pub m_snapshotControlPlayerId: Option<i64>,
+    pub m_snapshotUpkeepPlayerId: Option<i64>,
+    pub m_targetUnitSnapshotPlayerId: Option<i64>,
+    pub m_targetUnitSnapshotControlPlayerId: Option<i64>,
+    pub m_targetUnitSnapshotUpkeepPlayerId: Option<i64>,
     pub m_snapshotPoint: Option<SnapshotPoint>,
 }
 
@@ -105,6 +113,7 @@ pub struct TrackerEvent {
     pub m_unit_type_name: Option<String>,
     pub m_creator_ability_name: Option<String>,
     pub m_control_player_id: Option<i64>,
+    pub m_upkeep_player_id: Option<i64>,
     pub m_unit_tag_index: Option<i64>,
     pub m_unit_tag_recycle: Option<i64>,
     pub m_creator_unit_tag_index: Option<i64>,
@@ -181,6 +190,7 @@ pub(crate) enum TrackerEventField {
     UnitTypeName,
     CreatorAbilityName,
     ControlPlayerId,
+    UpkeepPlayerId,
     UnitTagIndex,
     UnitTagRecycle,
     CreatorUnitTagIndex,
@@ -204,6 +214,7 @@ impl TrackerEventField {
             "m_unitTypeName" => Some(Self::UnitTypeName),
             "m_creatorAbilityName" => Some(Self::CreatorAbilityName),
             "m_controlPlayerId" => Some(Self::ControlPlayerId),
+            "m_upkeepPlayerId" => Some(Self::UpkeepPlayerId),
             "m_unitTagIndex" => Some(Self::UnitTagIndex),
             "m_unitTagRecycle" => Some(Self::UnitTagRecycle),
             "m_creatorUnitTagIndex" => Some(Self::CreatorUnitTagIndex),
@@ -398,6 +409,7 @@ impl DirectEventDecode for TrackerEvent {
             m_unit_type_name: None,
             m_creator_ability_name: None,
             m_control_player_id: None,
+            m_upkeep_player_id: None,
             m_unit_tag_index: None,
             m_unit_tag_recycle: None,
             m_creator_unit_tag_index: None,
@@ -446,6 +458,9 @@ impl DirectEventDecode for TrackerEvent {
             }
             TrackerEventField::ControlPlayerId => {
                 self.m_control_player_id = decoder.i64_from_typeinfo(field_typeinfo)?;
+            }
+            TrackerEventField::UpkeepPlayerId => {
+                self.m_upkeep_player_id = decoder.i64_from_typeinfo(field_typeinfo)?;
             }
             TrackerEventField::UnitTagIndex => {
                 self.m_unit_tag_index = decoder.i64_from_typeinfo(field_typeinfo)?;
