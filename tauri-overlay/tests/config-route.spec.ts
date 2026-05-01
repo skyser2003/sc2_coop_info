@@ -449,44 +449,44 @@ test.describe("Config route", () => {
                             MasteryDistribution: {
                                 0: {
                                     0: 0.2,
-                                    15: 0.3,
-                                    30: 0.5,
+                                    50: 0.3,
+                                    100: 0.5,
                                 },
                                 1: {
-                                    10: 0.6,
-                                    20: 0.4,
+                                    33.333: 0.6,
+                                    66.667: 0.4,
                                 },
                                 2: {
                                     0: 0.9,
-                                    30: 0.1,
+                                    100: 0.1,
                                 },
                             },
                             MasteryDistributionByPrestige: {
                                 0: {
                                     0: {
                                         0: 0.2,
-                                        15: 0.3,
-                                        30: 0.5,
+                                        50: 0.3,
+                                        100: 0.5,
                                     },
                                     1: {
-                                        10: 0.6,
-                                        20: 0.4,
+                                        33.333: 0.6,
+                                        66.667: 0.4,
                                     },
                                     2: {
                                         0: 0.9,
-                                        30: 0.1,
+                                        100: 0.1,
                                     },
                                 },
                                 1: {
                                     0: {
                                         0: 0.25,
-                                        30: 0.75,
+                                        100: 0.75,
                                     },
                                     1: {
-                                        15: 1,
+                                        50: 1,
                                     },
                                     2: {
-                                        30: 1,
+                                        100: 1,
                                     },
                                 },
                                 2: {
@@ -620,6 +620,9 @@ test.describe("Config route", () => {
         ).toHaveCount(12);
         await expect(
             page.getByTestId("mastery-distribution-point-label"),
+        ).toHaveCount(10);
+        await expect(
+            page.getByTestId("mastery-distribution-point"),
         ).toHaveCount(10);
         const masteryPointLabelTexts = await page
             .getByTestId("mastery-distribution-point-label")

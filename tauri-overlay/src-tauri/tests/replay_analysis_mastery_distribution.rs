@@ -50,13 +50,14 @@ fn prestige_distribution_bucket(
         .and_then(Value::as_object)
         .and_then(|pair_distribution| pair_distribution.get(bucket))
         .and_then(Value::as_f64)
-        .expect("prestige distribution bucket should exist")
+        .unwrap_or(0.0)
 }
 
 #[test]
 fn commander_mastery_distribution_tracks_exact_pair_ratio_buckets() {
     let replays = vec![
         replay(vec![0, 30, 10, 20, 30, 0], 0),
+        replay(vec![1, 2, 10, 20, 0, 30], 0),
         replay(vec![15, 15, 10, 20, 0, 30], 1),
         replay(vec![30, 0, 20, 10, 0, 30], 1),
     ];
@@ -70,15 +71,17 @@ fn commander_mastery_distribution_tracks_exact_pair_ratio_buckets() {
         .and_then(Value::as_object)
         .expect("Abathur commander stats should exist");
 
-    assert!((distribution_bucket(abathur, "0", "0") - (1.0 / 3.0)).abs() < 1e-9);
-    assert!((distribution_bucket(abathur, "0", "15") - (1.0 / 3.0)).abs() < 1e-9);
-    assert!((distribution_bucket(abathur, "0", "30") - (1.0 / 3.0)).abs() < 1e-9);
-    assert!((distribution_bucket(abathur, "1", "10") - (2.0 / 3.0)).abs() < 1e-9);
-    assert!((distribution_bucket(abathur, "1", "20") - (1.0 / 3.0)).abs() < 1e-9);
-    assert!((distribution_bucket(abathur, "2", "0") - (2.0 / 3.0)).abs() < 1e-9);
-    assert!((distribution_bucket(abathur, "2", "30") - (1.0 / 3.0)).abs() < 1e-9);
-    assert!((prestige_distribution_bucket(abathur, "0", "0", "0") - 1.0).abs() < 1e-9);
-    assert!((prestige_distribution_bucket(abathur, "1", "0", "15") - 0.5).abs() < 1e-9);
-    assert!((prestige_distribution_bucket(abathur, "1", "0", "30") - 0.5).abs() < 1e-9);
+    assert!((distribution_bucket(abathur, "0", "0") - 0.25).abs() < 1e-9);
+    assert!((distribution_bucket(abathur, "0", "33.333") - 0.25).abs() < 1e-9);
+    assert!((distribution_bucket(abathur, "0", "50") - 0.25).abs() < 1e-9);
+    assert!((distribution_bucket(abathur, "0", "100") - 0.25).abs() < 1e-9);
+    assert!((distribution_bucket(abathur, "1", "33.333") - 0.75).abs() < 1e-9);
+    assert!((distribution_bucket(abathur, "1", "66.667") - 0.25).abs() < 1e-9);
+    assert!((distribution_bucket(abathur, "2", "0") - 0.75).abs() < 1e-9);
+    assert!((distribution_bucket(abathur, "2", "100") - 0.25).abs() < 1e-9);
+    assert!((prestige_distribution_bucket(abathur, "0", "0", "0") - 0.5).abs() < 1e-9);
+    assert!((prestige_distribution_bucket(abathur, "0", "0", "33.333") - 0.5).abs() < 1e-9);
+    assert!((prestige_distribution_bucket(abathur, "1", "0", "50") - 0.5).abs() < 1e-9);
+    assert!((prestige_distribution_bucket(abathur, "1", "0", "100") - 0.5).abs() < 1e-9);
     assert_eq!(prestige_distribution_bucket(abathur, "2", "0", "0"), 0.0);
 }

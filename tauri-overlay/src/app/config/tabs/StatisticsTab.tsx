@@ -291,10 +291,6 @@ function clampRatio(value: DisplayValue): number {
     return Math.max(0, Math.min(1, num));
 }
 
-function masteryRatioPercent(bucket: number): number {
-    return Math.round((bucket / 30) * 100);
-}
-
 function masteryChoiceLabel(
     languageManager: LanguageManager,
     leftRatioPercent: number,
@@ -321,20 +317,6 @@ function masteryDistributionY(percent: number, maxPercent: number): number {
     return (
         100 - (percent / maxPercent) * (100 - MASTERY_DISTRIBUTION_GRAPH_TOP)
     );
-}
-
-function masteryDistributionLabelTop(
-    percent: number,
-    maxPercent: number,
-): string {
-    return `${Math.max(
-        8,
-        Math.min(
-            92,
-            masteryDistributionY(percent, maxPercent) -
-                MASTERY_DISTRIBUTION_LABEL_OFFSET,
-        ),
-    ).toFixed(3)}%`;
 }
 
 function masteryDistributionLabelLeft(leftRatioPercent: number): string {
@@ -382,6 +364,31 @@ function masteryDistributionVisibleLabels(
         return endpointBuckets;
     }
     return [...endpointBuckets, representativeBucket];
+}
+
+function masteryDistributionDisplayBuckets(
+    buckets: MasteryDistributionBucket[],
+): MasteryDistributionBucket[] {
+    const projected = Array.from({ length: 31 }, (_, point) => ({
+        ratioPercent: (point / 30) * 100,
+        percent: 0,
+    }));
+
+    for (const bucket of buckets) {
+        const point = Math.max(
+            0,
+            Math.min(30, Math.round((bucket.ratioPercent / 100) * 30)),
+        );
+        projected[point].percent += bucket.percent;
+    }
+
+    return projected;
+}
+
+function masteryDistributionPointKey(
+    bucket: MasteryDistributionBucket,
+): string {
+    return String(bucket.ratioPercent);
 }
 
 function formatNumber(value: DisplayValue) {
@@ -587,13 +594,18 @@ function buildMasteryCategoryDistributions(
             const pairDistribution = asStatsRow(
                 prestigeDistribution[String(pairIndex)],
             );
-            const buckets: MasteryDistributionBucket[] = Array.from(
-                { length: 31 },
-                (_, bucket) => ({
-                    ratioPercent: masteryRatioPercent(bucket),
-                    percent: clampRatio(pairDistribution[String(bucket)]),
-                }),
-            );
+            const buckets: MasteryDistributionBucket[] = Object.entries(
+                pairDistribution,
+            )
+                .map(([ratioPercent, percent]) => ({
+                    ratioPercent: Math.max(
+                        0,
+                        Math.min(100, Number(ratioPercent)),
+                    ),
+                    percent: clampRatio(percent),
+                }))
+                .filter((bucket) => Number.isFinite(bucket.ratioPercent))
+                .sort((left, right) => left.ratioPercent - right.ratioPercent);
             return {
                 key: prestigeKey,
                 label: `${languageManager.translate(
@@ -636,16 +648,28 @@ function renderMasteryDistributionLineGraph(
     prestige: MasteryPrestigeDistribution,
     languageManager: LanguageManager,
 ) {
-    const maxPercent = prestige.buckets.reduce(
+    const displayBuckets = masteryDistributionDisplayBuckets(prestige.buckets);
+    const maxPercent = displayBuckets.reduce(
         (current, bucket) => Math.max(current, bucket.percent),
         0,
     );
-    const points = prestige.buckets
-        .map((bucket, index) => {
-            const x = 100 - (index / 30) * 100;
-            const y = masteryDistributionY(bucket.percent, maxPercent);
-            return `${x.toFixed(3)},${y.toFixed(3)}`;
-        })
+    const labelY = (bucket: MasteryDistributionBucket): number =>
+        masteryDistributionY(bucket.percent, maxPercent);
+    const labelTop = (bucket: MasteryDistributionBucket): string =>
+        `${Math.max(
+            8,
+            Math.min(92, labelY(bucket) - MASTERY_DISTRIBUTION_LABEL_OFFSET),
+        ).toFixed(3)}%`;
+    const visibleLabelBuckets =
+        masteryDistributionVisibleLabels(displayBuckets);
+    const visibleLabelKeys = new Set(
+        visibleLabelBuckets.map(masteryDistributionPointKey),
+    );
+    const linePoints = displayBuckets
+        .map(
+            (bucket) =>
+                `${(100 - bucket.ratioPercent).toFixed(3)},${labelY(bucket).toFixed(3)}`,
+        )
         .join(" ");
 
     return (
@@ -690,46 +714,43 @@ function renderMasteryDistributionLineGraph(
                 />
                 <polyline
                     className={styles.masteryDistributionLine}
-                    points={points}
+                    points={linePoints}
                 />
-                {prestige.buckets
-                    .filter((bucket) => bucket.percent > 0)
+                {displayBuckets
+                    .filter(
+                        (bucket) =>
+                            bucket.percent > 0 &&
+                            visibleLabelKeys.has(
+                                masteryDistributionPointKey(bucket),
+                            ),
+                    )
                     .map((bucket) => (
                         <circle
                             className={styles.masteryDistributionPoint}
+                            data-testid="mastery-distribution-point"
                             key={`mastery-${category.pairIndex}-${prestige.key}-${bucket.ratioPercent}`}
                             cx={100 - bucket.ratioPercent}
-                            cy={masteryDistributionY(
-                                bucket.percent,
-                                maxPercent,
-                            )}
+                            cy={labelY(bucket)}
                             r="1.8"
                             aria-label={`${prestige.label} ${masteryChoiceLabel(languageManager, bucket.ratioPercent)}: ${formatPercent1(bucket.percent)}`}
                         />
                     ))}
             </svg>
-            {masteryDistributionVisibleLabels(prestige.buckets).map(
-                (bucket) => (
-                    <span
-                        className={masteryDistributionLabelClass(
-                            bucket.ratioPercent,
-                        )}
-                        data-testid="mastery-distribution-point-label"
-                        key={`mastery-label-${category.pairIndex}-${prestige.key}-${bucket.ratioPercent}`}
-                        style={{
-                            left: masteryDistributionLabelLeft(
-                                bucket.ratioPercent,
-                            ),
-                            top: masteryDistributionLabelTop(
-                                bucket.percent,
-                                maxPercent,
-                            ),
-                        }}
-                    >
-                        {formatPercent1(bucket.percent)}
-                    </span>
-                ),
-            )}
+            {visibleLabelBuckets.map((bucket) => (
+                <span
+                    className={masteryDistributionLabelClass(
+                        bucket.ratioPercent,
+                    )}
+                    data-testid="mastery-distribution-point-label"
+                    key={`mastery-label-${category.pairIndex}-${prestige.key}-${bucket.ratioPercent}`}
+                    style={{
+                        left: masteryDistributionLabelLeft(bucket.ratioPercent),
+                        top: labelTop(bucket),
+                    }}
+                >
+                    {formatPercent1(bucket.percent)}
+                </span>
+            ))}
         </div>
     );
 }

@@ -15,7 +15,7 @@ use s2coop_analyzer::weekly_mutation_manager::{WeeklyMutationManager, WeeklyMuta
 use serde::Serialize;
 use serde_json::{Map, Value};
 use std::borrow::{Borrow, Cow};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, TryLockError};
@@ -33,6 +33,10 @@ use crate::{
 };
 
 const PRESTIGE_TRACKING_START_YMD: u32 = 20200726;
+const MASTERY_DISTRIBUTION_RATIO_SCALE: u64 = 100_000;
+
+type MasteryDistributionCounts = [BTreeMap<u64, u64>; 3];
+type MasteryDistributionByPrestigeCounts = [MasteryDistributionCounts; 4];
 
 struct ScanInFlightGuard<'a> {
     flag: &'a AtomicBool,
@@ -190,14 +194,36 @@ impl ReplayAnalysisOps {
 }
 
 impl ReplayAnalysisOps {
-    fn build_mastery_distribution_map(raw_values: &[[u64; 31]; 3]) -> Map<String, Value> {
+    fn empty_mastery_distribution_counts() -> MasteryDistributionCounts {
+        std::array::from_fn(|_| BTreeMap::new())
+    }
+
+    fn empty_mastery_distribution_by_prestige_counts() -> MasteryDistributionByPrestigeCounts {
+        std::array::from_fn(|_| ReplayAnalysisOps::empty_mastery_distribution_counts())
+    }
+
+    fn mastery_distribution_ratio_key(bucket: u64) -> String {
+        let integer = bucket / 1_000;
+        let fractional = bucket % 1_000;
+        if fractional == 0 {
+            return integer.to_string();
+        }
+
+        format!("{integer}.{fractional:03}")
+            .trim_end_matches('0')
+            .to_string()
+    }
+
+    fn build_mastery_distribution_map(
+        raw_values: &MasteryDistributionCounts,
+    ) -> Map<String, Value> {
         let mut result = Map::new();
         for (pair_index, pair_counts) in raw_values.iter().enumerate() {
-            let pair_total = pair_counts.iter().sum::<u64>();
+            let pair_total = pair_counts.values().sum::<u64>();
             let mut buckets = Map::new();
-            for (bucket, count) in pair_counts.iter().enumerate() {
+            for (bucket, count) in pair_counts.iter() {
                 buckets.insert(
-                    bucket.to_string(),
+                    ReplayAnalysisOps::mastery_distribution_ratio_key(*bucket),
                     Value::from(TauriOverlayOps::ratio(*count, pair_total)),
                 );
             }
@@ -209,7 +235,7 @@ impl ReplayAnalysisOps {
 
 impl ReplayAnalysisOps {
     fn build_mastery_distribution_by_prestige_map(
-        raw_values: &[[[u64; 31]; 3]; 4],
+        raw_values: &MasteryDistributionByPrestigeCounts,
     ) -> Map<String, Value> {
         let mut result = Map::new();
         for (prestige, prestige_values) in raw_values.iter().enumerate() {
@@ -256,7 +282,7 @@ impl ReplayAnalysisOps {
 }
 
 impl ReplayAnalysisOps {
-    fn record_mastery_distribution(target: &mut [[u64; 31]; 3], raw_values: &[u64]) {
+    fn record_mastery_distribution(target: &mut MasteryDistributionCounts, raw_values: &[u64]) {
         for pair_index in 0..3 {
             let left = raw_values.get(pair_index * 2).copied().unwrap_or(0);
             let right = raw_values.get(pair_index * 2 + 1).copied().unwrap_or(0);
@@ -265,20 +291,20 @@ impl ReplayAnalysisOps {
                 continue;
             }
             let bucket = left
-                .saturating_mul(30)
+                .saturating_mul(MASTERY_DISTRIBUTION_RATIO_SCALE)
                 .saturating_add(pair_total / 2)
                 .checked_div(pair_total)
                 .unwrap_or(0)
-                .min(30);
-            let bucket_index = usize::try_from(bucket).unwrap_or(30);
-            target[pair_index][bucket_index] = target[pair_index][bucket_index].saturating_add(1);
+                .min(MASTERY_DISTRIBUTION_RATIO_SCALE);
+            let entry = target[pair_index].entry(bucket).or_insert(0);
+            *entry = entry.saturating_add(1);
         }
     }
 }
 
 impl ReplayAnalysisOps {
     fn record_mastery_distribution_by_prestige(
-        target: &mut [[[u64; 31]; 3]; 4],
+        target: &mut MasteryDistributionByPrestigeCounts,
         prestige: u64,
         raw_values: &[u64],
     ) {
@@ -709,8 +735,8 @@ struct CommanderAggregate {
     apm_values: Vec<u64>,
     kill_fractions: Vec<f64>,
     mastery_counts: [f64; 6],
-    mastery_distribution_counts: [[u64; 31]; 3],
-    mastery_distribution_by_prestige_counts: [[[u64; 31]; 3]; 4],
+    mastery_distribution_counts: MasteryDistributionCounts,
+    mastery_distribution_by_prestige_counts: MasteryDistributionByPrestigeCounts,
     mastery_by_prestige_counts: [[f64; 6]; 4],
     prestige_counts: [u64; 4],
     detailed_count: u64,
@@ -2198,10 +2224,14 @@ impl ReplayAnalysis {
         let mut sum_ally_kill_fraction: Vec<f64> = Vec::new();
         let mut sum_main_mastery_counts = [0f64; 6];
         let mut sum_ally_mastery_counts = [0f64; 6];
-        let mut sum_main_mastery_distribution_counts = [[0u64; 31]; 3];
-        let mut sum_ally_mastery_distribution_counts = [[0u64; 31]; 3];
-        let mut sum_main_mastery_distribution_by_prestige_counts = [[[0u64; 31]; 3]; 4];
-        let mut sum_ally_mastery_distribution_by_prestige_counts = [[[0u64; 31]; 3]; 4];
+        let mut sum_main_mastery_distribution_counts =
+            ReplayAnalysisOps::empty_mastery_distribution_counts();
+        let mut sum_ally_mastery_distribution_counts =
+            ReplayAnalysisOps::empty_mastery_distribution_counts();
+        let mut sum_main_mastery_distribution_by_prestige_counts =
+            ReplayAnalysisOps::empty_mastery_distribution_by_prestige_counts();
+        let mut sum_ally_mastery_distribution_by_prestige_counts =
+            ReplayAnalysisOps::empty_mastery_distribution_by_prestige_counts();
         let mut sum_main_mastery_by_prestige_counts = [[0f64; 6]; 4];
         let mut sum_ally_mastery_by_prestige_counts = [[0f64; 6]; 4];
         let mut sum_main_prestige_counts = [0u64; 4];
