@@ -1548,6 +1548,15 @@ impl EventSpecialDataDecoder {
         }
     }
 
+    pub(crate) fn decode_i64_values_from_typeinfo<D: TypeDecoder>(
+        decoder: &mut D,
+        typeinfo: &TypeInfo,
+    ) -> Result<Vec<i64>, DecodeError> {
+        let mut values = Vec::new();
+        Self::collect_i64_values(decoder, typeinfo, &mut values)?;
+        Ok(values)
+    }
+
     fn bools_from_bitarray_value(value: Value) -> Result<Vec<bool>, DecodeError> {
         let Value::Array(items) = value else {
             return Err(DecodeError::Corrupted(

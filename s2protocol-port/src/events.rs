@@ -114,6 +114,8 @@ pub struct TrackerEvent {
     pub m_killer_player_id: Option<i64>,
     pub m_x: Option<i64>,
     pub m_y: Option<i64>,
+    pub m_first_unit_index: Option<i64>,
+    pub m_position_items: Vec<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -188,6 +190,8 @@ pub(crate) enum TrackerEventField {
     KillerPlayerId,
     X,
     Y,
+    FirstUnitIndex,
+    Items,
 }
 
 impl TrackerEventField {
@@ -209,6 +213,8 @@ impl TrackerEventField {
             "m_killerPlayerId" => Some(Self::KillerPlayerId),
             "m_x" => Some(Self::X),
             "m_y" => Some(Self::Y),
+            "m_firstUnitIndex" => Some(Self::FirstUnitIndex),
+            "m_items" => Some(Self::Items),
             _ => None,
         }
     }
@@ -401,6 +407,8 @@ impl DirectEventDecode for TrackerEvent {
             m_killer_player_id: None,
             m_x: None,
             m_y: None,
+            m_first_unit_index: None,
+            m_position_items: Vec::new(),
         }
     }
 
@@ -465,6 +473,15 @@ impl DirectEventDecode for TrackerEvent {
             }
             TrackerEventField::Y => {
                 self.m_y = decoder.i64_from_typeinfo(field_typeinfo)?;
+            }
+            TrackerEventField::FirstUnitIndex => {
+                self.m_first_unit_index = decoder.i64_from_typeinfo(field_typeinfo)?;
+            }
+            TrackerEventField::Items => {
+                self.m_position_items = EventSpecialDataDecoder::decode_i64_values_from_typeinfo(
+                    decoder,
+                    field_typeinfo,
+                )?;
             }
         }
         Ok(())
