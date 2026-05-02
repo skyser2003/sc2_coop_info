@@ -76,6 +76,7 @@ async function installTauriMock(
             window.__SCO_CONFIG_APPLY_REQUESTS__ = [];
             window.__SCO_CONFIG_SAVE_REQUESTS__ = [];
             window.__SCO_FOLDER_PICKER_REQUESTS__ = [];
+            window.__SCO_TAB_REQUESTS__ = [];
             window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
                 unregisterListener: () => {},
             };
@@ -191,6 +192,10 @@ async function installTauriMock(
                         return { status: "ok", message: "ok" };
                     }
                     if (command === "config_replays_get") {
+                        window.__SCO_TAB_REQUESTS__.push({
+                            command,
+                            request: cloneJson(request || {}),
+                        });
                         return (
                             tabResponses.games || {
                                 status: "ok",
@@ -200,6 +205,10 @@ async function installTauriMock(
                         );
                     }
                     if (command === "config_players_get") {
+                        window.__SCO_TAB_REQUESTS__.push({
+                            command,
+                            request: cloneJson(request || {}),
+                        });
                         return (
                             tabResponses.players || {
                                 status: "ok",
@@ -208,6 +217,10 @@ async function installTauriMock(
                         );
                     }
                     if (command === "config_weeklies_get") {
+                        window.__SCO_TAB_REQUESTS__.push({
+                            command,
+                            request: cloneJson(request || {}),
+                        });
                         return (
                             tabResponses.weeklies || {
                                 status: "ok",
@@ -321,6 +334,10 @@ async function installTauriMock(
                         method === "GET" &&
                         path.startsWith("/config/replays?")
                     ) {
+                        window.__SCO_TAB_REQUESTS__.push({
+                            method,
+                            path,
+                        });
                         return (
                             tabResponses.games || {
                                 status: "ok",
@@ -333,6 +350,10 @@ async function installTauriMock(
                         method === "GET" &&
                         path.startsWith("/config/players?")
                     ) {
+                        window.__SCO_TAB_REQUESTS__.push({
+                            method,
+                            path,
+                        });
                         return (
                             tabResponses.players || {
                                 status: "ok",
@@ -341,6 +362,10 @@ async function installTauriMock(
                         );
                     }
                     if (method === "GET" && path === "/config/weeklies") {
+                        window.__SCO_TAB_REQUESTS__.push({
+                            method,
+                            path,
+                        });
                         return (
                             tabResponses.weeklies || {
                                 status: "ok",
@@ -1592,6 +1617,94 @@ test.describe("Config route", () => {
         await expect(
             page.locator("table.data-table tbody tr").nth(1),
         ).toContainText("OlderPlayer");
+    });
+
+    test("players tab can clear the active sort without crashing", async ({
+        page,
+    }) => {
+        const pageErrors = [];
+        page.on("pageerror", (error) => pageErrors.push(error.message));
+
+        await installTauriMock(page, null, [], {
+            tabResponses: {
+                players: {
+                    status: "ok",
+                    players: [
+                        {
+                            handle: "3-S2-1-100",
+                            player: "OlderPlayer",
+                            player_names: ["OlderPlayer"],
+                            wins: 1,
+                            losses: 0,
+                            winrate: 1,
+                            apm: 80,
+                            commander: "Karax",
+                            frequency: 1,
+                            kills: 0.2,
+                            last_seen: 1538345544,
+                        },
+                        {
+                            handle: "3-S2-1-200",
+                            player: "NewerPlayer",
+                            player_names: ["NewerPlayer"],
+                            wins: 2,
+                            losses: 1,
+                            winrate: 0.66,
+                            apm: 140,
+                            commander: "Abathur",
+                            frequency: 1,
+                            kills: 0.5,
+                            last_seen: 1735689600,
+                        },
+                    ],
+                    total_players: 2,
+                },
+            },
+        });
+
+        await page.goto("/", { waitUntil: "domcontentloaded" });
+        await page.getByRole("tab", { name: "Players" }).click();
+        await page.getByRole("button", { name: /^Last Seen/ }).click();
+
+        await expect(page.locator("tbody tr").nth(0)).toContainText(
+            "OlderPlayer",
+        );
+        expect(pageErrors).toEqual([]);
+    });
+
+    test("players tab requests the initial paginated player set", async ({
+        page,
+    }) => {
+        await installTauriMock(page, null, [], {
+            tabResponses: {
+                players: {
+                    status: "ok",
+                    players: [],
+                },
+            },
+        });
+
+        await page.goto("/", { waitUntil: "domcontentloaded" });
+        await page.getByRole("tab", { name: "Players" }).click();
+
+        await expect
+            .poll(() =>
+                page.evaluate(() => {
+                    const requests = window["__SCO_TAB_REQUESTS__"] || [];
+                    return (
+                        requests.find(
+                            (request) =>
+                                request.command === "config_players_get",
+                        ) || null
+                    );
+                }),
+            )
+            .toMatchObject({
+                command: "config_players_get",
+                request: {
+                    limit: 300,
+                },
+            });
     });
 
     test("reassigned hotkeys apply immediately and save only after Save is pressed", async ({

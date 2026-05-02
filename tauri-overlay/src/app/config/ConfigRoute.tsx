@@ -65,15 +65,20 @@ type GamesPayload = {
     rows: GamesRows;
     totalRows: number;
 };
+type PlayersPayload = {
+    rows: PlayerRows;
+    totalRows: number;
+};
 type TabDataState = {
     games: GamesPayload | null;
-    players: PlayerRows | null;
+    players: PlayersPayload | null;
     weeklies: WeekliesRows | null;
     statistics: StatisticsPayload | null;
 };
 type PathValueUpdater = (path: string[], value: JsonValue) => void;
 type LoadTabOptions = {
     gamesLimit?: number;
+    playersLimit?: number;
 };
 type SettingsEditorProps = {
     onThemeModeChange: (darkThemeEnabled: boolean) => void;
@@ -108,9 +113,10 @@ type PerformanceTabActions = React.ComponentProps<
     typeof PerformanceTab
 >["actions"];
 type GamesTabState = React.ComponentProps<typeof GamesTab>["state"];
+type PlayersTabState = React.ComponentProps<typeof PlayersTab>["state"];
 type GenericTabValue =
     | GamesPayload
-    | PlayerRows
+    | PlayersPayload
     | WeekliesRows
     | StatisticsPayload
     | null;
@@ -120,6 +126,7 @@ type ExtraState = {
     isBusy: boolean;
     settingsActions: SettingsTabActions;
     refreshPlayers: () => void;
+    playersState: PlayersTabState;
     playerNotes: Record<string, string>;
     onPlayerNoteChange: (handle: string, note: string) => void;
     onPlayerNoteCommit: (handle: string, note: string) => Promise<void>;
@@ -992,19 +999,22 @@ function renderGamesTab(
 }
 
 function renderPlayersTab(
-    rows: React.ComponentProps<typeof PlayersTab>["rows"],
-    onRefresh: () => void,
-    isBusy: boolean,
+    rows: PlayersPayload | React.ComponentProps<typeof PlayersTab>["rows"],
+    state: PlayersTabState,
     languageManager: LanguageManagerInstance,
     playerNotes: React.ComponentProps<typeof PlayersTab>["noteValues"],
     onPlayerNoteChange: (handle: string, note: string) => void,
     onPlayerNoteCommit: (handle: string, note: string) => Promise<void>,
 ): React.ReactNode {
+    const playerRows = Array.isArray(rows)
+        ? rows
+        : rows !== null && typeof rows === "object" && "rows" in rows
+          ? rows.rows
+          : null;
     return (
         <PlayersTab
-            rows={rows}
-            onRefresh={onRefresh}
-            isBusy={isBusy}
+            rows={playerRows}
+            state={state}
             noteValues={playerNotes}
             onNoteChange={onPlayerNoteChange}
             onNoteCommit={onPlayerNoteCommit}
@@ -1128,8 +1138,7 @@ function renderTabContent(
     if (tab.id === "players") {
         return renderPlayersTab(
             extraState.tabData.players,
-            extraState.refreshPlayers,
-            extraState.isBusy,
+            extraState.playersState,
             extraState.languageManager,
             extraState.playerNotes,
             extraState.onPlayerNoteChange,
@@ -1238,6 +1247,7 @@ function SettingsEditor({
         weeklies: false,
     });
     const gamesLoadLimitRef = useRef<number>(300);
+    const playersLoadLimitRef = useRef<number>(300);
     const draftRef = useRef<AppSettings | null>(null);
     const settingsMutationRef = useRef<Promise<void>>(Promise.resolve());
     const latestLiveApplySeqRef = useRef<number>(0);
@@ -1748,7 +1758,13 @@ function SettingsEditor({
             };
         }
         if (tabId === "players") {
-            return (payload as ConfigPlayersPayload).players || [];
+            const playersPayload = payload as ConfigPlayersPayload;
+            return {
+                rows: playersPayload.players || [],
+                totalRows:
+                    Number(playersPayload.total_players) ||
+                    (playersPayload.players || []).length,
+            };
         }
         if (tabId === "weeklies") {
             return (payload as ConfigWeekliesPayload).weeklies || [];
@@ -1775,11 +1791,18 @@ function SettingsEditor({
             if (tabId === "games") {
                 gamesLoadLimitRef.current = gamesLimit;
             }
+            const playersLimit =
+                Number(options.playersLimit) > 0
+                    ? Number(options.playersLimit)
+                    : playersLoadLimitRef.current;
+            if (tabId === "players") {
+                playersLoadLimitRef.current = playersLimit;
+            }
             const payload =
                 tabId === "games"
                     ? await loadReplaysRequest(gamesLimit)
                     : tabId === "players"
-                      ? await loadPlayersRequest(500)
+                      ? await loadPlayersRequest(playersLimit)
                       : await loadWeekliesRequest();
             setTabData((current) => ({
                 ...current,
@@ -2732,6 +2755,55 @@ function SettingsEditor({
                     loadChat: loadReplayChat,
                     loadVisual: loadReplayVisual,
                     revealFile: revealReplayByFile,
+                },
+                playersState: {
+                    isBusy,
+                    totalRows: tabData.players?.totalRows || 0,
+                    loadedRows: Array.isArray(tabData.players?.rows)
+                        ? tabData.players.rows.length
+                        : 0,
+                    refresh: () =>
+                        loadTabData("players", true, {
+                            playersLimit: playersLoadLimitRef.current,
+                        }),
+                    ensureAllRowsLoaded: async () => {
+                        const loadedRows = Array.isArray(tabData.players?.rows)
+                            ? tabData.players.rows.length
+                            : 0;
+                        const totalRows =
+                            Number(tabData.players?.totalRows) || 0;
+                        if (totalRows <= 0 || loadedRows >= totalRows) {
+                            return;
+                        }
+                        await loadTabData("players", true, {
+                            playersLimit: totalRows,
+                        });
+                    },
+                    ensureRowsForPage: async (page, rowsPerPage) => {
+                        const safePage = Math.max(1, Number(page) || 1);
+                        const safeRowsPerPage = Math.max(
+                            1,
+                            Number(rowsPerPage) || 20,
+                        );
+                        const requiredRows = safePage * safeRowsPerPage;
+                        const loadedRows = Array.isArray(tabData.players?.rows)
+                            ? tabData.players.rows.length
+                            : 0;
+                        const totalRows =
+                            Number(tabData.players?.totalRows) || 0;
+                        if (
+                            requiredRows <= loadedRows ||
+                            (totalRows > 0 && loadedRows >= totalRows)
+                        ) {
+                            return;
+                        }
+                        await loadTabData("players", true, {
+                            playersLimit: Math.max(
+                                playersLoadLimitRef.current,
+                                requiredRows,
+                            ),
+                        });
+                    },
                 },
             })
         );

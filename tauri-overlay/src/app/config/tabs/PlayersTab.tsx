@@ -10,6 +10,7 @@ import {
     type SortState,
 } from "./tableSort";
 import {
+    TABLE_ROWS_PER_PAGE,
     clampPageNumber,
     pageCountForRows,
     rowsForPage,
@@ -18,13 +19,21 @@ import {
 
 type PlayerNotes = Readonly<Record<string, string>>;
 
+type PlayersTabState = {
+    isBusy: boolean;
+    totalRows?: number;
+    loadedRows?: number;
+    refresh: () => void;
+    ensureAllRowsLoaded?: () => Promise<void>;
+    ensureRowsForPage?: (page: number, rowsPerPage: number) => Promise<void>;
+};
+
 type PlayersTabProps = {
     rows: readonly PlayerRowPayload[] | null;
-    onRefresh: () => void;
+    state: PlayersTabState;
     noteValues: PlayerNotes;
     onNoteChange: (handle: string, note: string) => void;
     onNoteCommit: (handle: string, note: string) => Promise<void>;
-    isBusy: boolean;
     asTableValue?: (value: DisplayValue) => string;
     formatPercent?: (value: DisplayValue) => string;
     languageManager: LanguageManager;
@@ -114,11 +123,10 @@ function uniquePlayerNames(
 
 export default function PlayersTab({
     rows,
-    onRefresh,
+    state,
     noteValues,
     onNoteChange,
     onNoteCommit,
-    isBusy,
     asTableValue = asTableValueCompat,
     formatPercent = formatPercentCompat,
     languageManager,
@@ -188,7 +196,36 @@ export default function PlayersTab({
             }),
         [filtered, languageManager, sortState],
     );
-    const totalPages = pageCountForRows(sorted.length);
+    const usingServerBackedPagination =
+        searchText.trim() === "" &&
+        sortState?.key === "last_seen" &&
+        sortState.direction === "desc";
+    const hasActiveClientTransforms = !usingServerBackedPagination;
+    const totalRowsForPagination = usingServerBackedPagination
+        ? Math.max(Number(state.totalRows) || 0, sorted.length)
+        : sorted.length;
+    const totalPages = pageCountForRows(totalRowsForPagination);
+
+    React.useEffect(() => {
+        if (!hasActiveClientTransforms) {
+            return;
+        }
+        const loadedRows = Number(state.loadedRows) || 0;
+        const totalRows = Number(state.totalRows) || 0;
+        if (totalRows <= 0 || loadedRows >= totalRows) {
+            return;
+        }
+        void state.ensureAllRowsLoaded?.();
+    }, [
+        hasActiveClientTransforms,
+        state.ensureAllRowsLoaded,
+        state.loadedRows,
+        state.totalRows,
+    ]);
+
+    React.useEffect(() => {
+        setCurrentPage(1);
+    }, [searchText, sortState]);
 
     React.useEffect(() => {
         setCurrentPage((page) => clampPageNumber(page, totalPages));
@@ -210,6 +247,21 @@ export default function PlayersTab({
     const pagedRows = React.useMemo(
         () => rowsForPage(sorted, currentPage),
         [currentPage, sorted],
+    );
+
+    const handlePageChange = React.useCallback(
+        (page: number) => {
+            void (async () => {
+                if (
+                    usingServerBackedPagination &&
+                    typeof state.ensureRowsForPage === "function"
+                ) {
+                    await state.ensureRowsForPage(page, TABLE_ROWS_PER_PAGE);
+                }
+                setCurrentPage(page);
+            })();
+        },
+        [state, usingServerBackedPagination],
     );
 
     const columns = [
@@ -266,18 +318,18 @@ export default function PlayersTab({
                             ]
                                 .filter(Boolean)
                                 .join(" ")}
-                            onClick={onRefresh}
-                            disabled={isBusy}
+                            onClick={state.refresh}
+                            disabled={state.isBusy}
                             title={t("ui_common_refresh")}
                         >
-                            {isBusy ? "..." : "🔄"}
+                            {state.isBusy ? "..." : "🔄"}
                         </button>
                     </div>
                 </div>
                 <TablePagination
                     currentPage={currentPage}
-                    onPageChange={setCurrentPage}
-                    totalRows={sorted.length}
+                    onPageChange={handlePageChange}
+                    totalRows={totalRowsForPagination}
                 />
                 <div className={styles.tableWrap} style={{ marginTop: "20px" }}>
                     <table
@@ -505,7 +557,7 @@ export default function PlayersTab({
                                                         placeholder={t(
                                                             "ui_players_memo_placeholder",
                                                         )}
-                                                        disabled={isBusy}
+                                                        disabled={state.isBusy}
                                                     />
                                                 </td>
                                             </tr>
@@ -570,8 +622,8 @@ export default function PlayersTab({
                 </div>
                 <TablePagination
                     currentPage={currentPage}
-                    onPageChange={setCurrentPage}
-                    totalRows={sorted.length}
+                    onPageChange={handlePageChange}
+                    totalRows={totalRowsForPagination}
                 />
             </section>
         </div>

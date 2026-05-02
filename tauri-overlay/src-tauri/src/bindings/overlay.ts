@@ -8,7 +8,7 @@ export type ConfigChatPayload = { status: string, chat: ReplayChatPayload, };
 
 export type ConfigPayload = { status: string, settings: AppSettings, active_settings: AppSettings, randomizer_catalog: OverlayRandomizerCatalog, monitor_catalog: Array<MonitorOption>, };
 
-export type ConfigPlayersPayload = { status: string, players: Array<PlayerRowPayload>, loading: boolean, };
+export type ConfigPlayersPayload = { status: string, players: Array<PlayerRowPayload>, total_players: number, loading: boolean, };
 
 export type ConfigReplayVisualPayload = { status: string, visual: ReplayVisualPayload, };
 

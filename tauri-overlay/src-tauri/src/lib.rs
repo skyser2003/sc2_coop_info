@@ -4221,35 +4221,51 @@ async fn config_players_get(
     limit: Option<usize>,
     state: State<'_, BackendState>,
 ) -> Result<ConfigPlayersPayload, String> {
-    let path = format!("/config/players?limit={}", limit.unwrap_or(500));
+    let path = format!(
+        "/config/players?limit={}",
+        limit.unwrap_or(UNLIMITED_REPLAY_LIMIT)
+    );
     state.log_request("get", &path, &None);
-    let limit = TauriOverlayOps::parse_query_usize(&path, "limit", 500);
+    let limit = TauriOverlayOps::parse_query_usize(&path, "limit", UNLIMITED_REPLAY_LIMIT);
     let replay_state = state.get_replay_state();
     let main_names = state.configured_main_names();
     let main_handles = state.configured_main_handles();
     let settings = state.read_settings_memory();
     let resources = state.replay_analysis_resources().ok();
 
-    let replays = tauri::async_runtime::spawn_blocking(move || {
-        replay_state
+    let (players, total_players) = tauri::async_runtime::spawn_blocking(move || {
+        let replays = replay_state
             .lock()
             .map(|state| {
                 state.sync_replay_cache_slots_with_resources(
-                    limit,
+                    UNLIMITED_REPLAY_LIMIT,
                     &settings,
                     &main_names,
                     &main_handles,
                     resources.as_deref(),
                 )
             })
-            .unwrap_or_default()
+            .unwrap_or_default();
+        let mut players = ReplayAnalysis::rebuild_player_rows_fast(&replays);
+        players.sort_by(|left, right| {
+            right
+                .last_seen
+                .cmp(&left.last_seen)
+                .then_with(|| left.handle.cmp(&right.handle))
+        });
+        let total_players = players.len();
+        if limit > 0 && players.len() > limit {
+            players.truncate(limit);
+        }
+        (players, total_players)
     })
     .await
     .map_err(|error| format!("Failed to load /config/players: {error}"))?;
 
     Ok(ConfigPlayersPayload {
         status: "ok",
-        players: ReplayAnalysis::rebuild_player_rows_fast(&replays),
+        players,
+        total_players,
         loading: false,
     })
 }

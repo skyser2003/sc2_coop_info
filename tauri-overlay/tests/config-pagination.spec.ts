@@ -49,10 +49,101 @@ async function installPaginationMock(
                     command: string,
                     request?: {
                         body?: Record<string, unknown>;
+                        limit?: number;
                         method?: string;
                         path?: string;
                     },
                 ) => {
+                    if (command === "plugin:app|version") {
+                        return "0.1.0";
+                    }
+                    if (command === "plugin:event|listen") {
+                        return 1;
+                    }
+                    if (command === "plugin:event|unlisten") {
+                        return null;
+                    }
+                    if (command === "is_dev") {
+                        return true;
+                    }
+                    if (command === "config_get") {
+                        return {
+                            status: "ok",
+                            settings,
+                            active_settings: activeSettings,
+                            randomizer_catalog: {},
+                            monitor_catalog: [],
+                        };
+                    }
+
+                    if (command === "config_stats_get") {
+                        return {
+                            status: "ok",
+                            ready: true,
+                            games: 0,
+                            analysis_running: false,
+                            analysis_running_mode: null,
+                            message: "",
+                            query: "",
+                            analysis: {
+                                MapData: {},
+                                CommanderData: {},
+                                AllyCommanderData: {},
+                                DifficultyData: {},
+                                RegionData: {},
+                                PlayerData: {},
+                                AmonData: {},
+                                MapDataReady: true,
+                                UnitData: {
+                                    main: {},
+                                    ally: {},
+                                    amon: {},
+                                },
+                            },
+                        };
+                    }
+
+                    if (command === "config_stats_action") {
+                        return { status: "ok", message: "ok" };
+                    }
+
+                    if (command === "config_replays_get") {
+                        const limit = Number(request?.limit || 300);
+                        return {
+                            status: "ok",
+                            replays: initialGames.slice(
+                                0,
+                                Number.isFinite(limit) && limit > 0
+                                    ? limit
+                                    : initialGames.length,
+                            ),
+                            total_replays: initialGames.length,
+                            selected_replay_file: "",
+                        };
+                    }
+
+                    if (command === "config_players_get") {
+                        const limit = Number(request?.limit || 300);
+                        return {
+                            status: "ok",
+                            players: initialPlayers.slice(
+                                0,
+                                Number.isFinite(limit) && limit > 0
+                                    ? limit
+                                    : initialPlayers.length,
+                            ),
+                            total_players: initialPlayers.length,
+                            loading: false,
+                        };
+                    }
+
+                    if (command === "config_weeklies_get") {
+                        return {
+                            status: "ok",
+                            weeklies: [],
+                        };
+                    }
+
                     if (command !== "config_request") {
                         throw new Error(`Unexpected command: ${command}`);
                     }
@@ -79,9 +170,19 @@ async function installPaginationMock(
                         typeof path === "string" &&
                         path.startsWith("/config/replays?")
                     ) {
+                        const url = new URL(path, "http://127.0.0.1");
+                        const limit = Number(
+                            url.searchParams.get("limit") || "300",
+                        );
                         return {
                             status: "ok",
-                            replays: initialGames,
+                            replays: initialGames.slice(
+                                0,
+                                Number.isFinite(limit) && limit > 0
+                                    ? limit
+                                    : initialGames.length,
+                            ),
+                            total_replays: initialGames.length,
                             selected_replay_file: "",
                         };
                     }
@@ -91,9 +192,20 @@ async function installPaginationMock(
                         typeof path === "string" &&
                         path.startsWith("/config/players?")
                     ) {
+                        const url = new URL(path, "http://127.0.0.1");
+                        const limit = Number(
+                            url.searchParams.get("limit") || "300",
+                        );
                         return {
                             status: "ok",
-                            players: initialPlayers,
+                            players: initialPlayers.slice(
+                                0,
+                                Number.isFinite(limit) && limit > 0
+                                    ? limit
+                                    : initialPlayers.length,
+                            ),
+                            total_players: initialPlayers.length,
+                            loading: false,
                         };
                     }
 
@@ -120,6 +232,14 @@ async function installPaginationMock(
                 event: {
                     listen: async () => () => {},
                 },
+                transformCallback: (callback: () => void) => {
+                    const id = Math.floor(Math.random() * 1000000);
+                    window[`_${id}`] = callback;
+                    return id;
+                },
+            };
+            window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+                unregisterListener: () => {},
             };
         },
         {
@@ -175,21 +295,21 @@ test.describe("Config pagination", () => {
         });
 
         await page.goto("/#/config", { waitUntil: "domcontentloaded" });
-        await page.getByRole("button", { name: "Games" }).click();
+        await page.getByRole("tab", { name: "Games" }).click();
 
-        const gamesRows = page.locator(".games-table tbody tr");
+        const gamesRows = page.locator("tbody tr");
         await expect(gamesRows).toHaveCount(20);
         await expect(
-            page.getByText("Rows 1-20 of 22", { exact: true }),
+            page.getByText("Rows 1-20 of 22", { exact: true }).first(),
         ).toBeVisible();
         await expect(gamesRows.nth(0)).toContainText("Player 22");
         await expect(gamesRows.nth(19)).toContainText("Player 3");
 
-        await page.getByRole("button", { name: "Next" }).click();
+        await page.getByRole("button", { name: "Next" }).last().click();
 
         await expect(gamesRows).toHaveCount(2);
         await expect(
-            page.getByText("Rows 21-22 of 22", { exact: true }),
+            page.getByText("Rows 21-22 of 22", { exact: true }).first(),
         ).toBeVisible();
         await expect(gamesRows.nth(0)).toContainText("Player 2");
         await expect(gamesRows.nth(1)).toContainText("Player 1");
@@ -203,23 +323,61 @@ test.describe("Config pagination", () => {
         });
 
         await page.goto("/#/config", { waitUntil: "domcontentloaded" });
-        await page.getByRole("button", { name: "Players" }).click();
+        await page.getByRole("tab", { name: "Players" }).click();
 
-        const playerRows = page.locator("table.data-table tbody tr");
+        const playerRows = page.locator("tbody tr");
         await expect(playerRows).toHaveCount(20);
         await expect(
-            page.getByText("Rows 1-20 of 22", { exact: true }),
+            page.getByText("Rows 1-20 of 22", { exact: true }).first(),
         ).toBeVisible();
         await expect(playerRows.nth(0)).toContainText("Player 22");
         await expect(playerRows.nth(19)).toContainText("Player 3");
 
-        await page.getByRole("button", { name: "Next" }).click();
+        await page.getByRole("button", { name: "Next" }).last().click();
 
         await expect(playerRows).toHaveCount(2);
         await expect(
-            page.getByText("Rows 21-22 of 22", { exact: true }),
+            page.getByText("Rows 21-22 of 22", { exact: true }).first(),
         ).toBeVisible();
         await expect(playerRows.nth(0)).toContainText("Player 2");
         await expect(playerRows.nth(1)).toContainText("Player 1");
+    });
+
+    test("players tab loads beyond the initial 300 rows when paging forward", async ({
+        page,
+    }) => {
+        await installPaginationMock(page, {
+            players: Array.from({ length: 305 }, (_, index) => {
+                const playerNumber = index + 1;
+                return {
+                    player: `Player ${playerNumber}`,
+                    wins: playerNumber,
+                    losses: 0,
+                    winrate: 1,
+                    apm: 100,
+                    commander: "Fenix",
+                    kills: 0.5,
+                    last_seen: 305 - index,
+                };
+            }),
+        });
+
+        await page.goto("/#/config", { waitUntil: "domcontentloaded" });
+        await page.getByRole("tab", { name: "Players" }).click();
+
+        await expect(
+            page.getByText("Rows 1-20 of 305", { exact: true }).first(),
+        ).toBeVisible();
+
+        for (let pageIndex = 1; pageIndex < 16; pageIndex += 1) {
+            await page.getByRole("button", { name: "Next" }).last().click();
+        }
+
+        await expect(
+            page.getByText("Rows 301-305 of 305", { exact: true }).first(),
+        ).toBeVisible();
+        await expect(
+            page.locator("tbody tr").first(),
+        ).toContainText("Player 301");
     });
 });

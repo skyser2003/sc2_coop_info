@@ -51,6 +51,8 @@ pub struct ConfigReplaysPayload {
 pub struct ConfigPlayersPayload {
     pub status: &'static str,
     pub players: Vec<PlayerRowPayload>,
+    #[ts(type = "number")]
+    pub total_players: usize,
     pub loading: bool,
 }
 

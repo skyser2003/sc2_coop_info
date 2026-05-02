@@ -607,7 +607,9 @@ export default function GamesTab({
         searchText === "" &&
         includeNormalGames &&
         includeMutationGames &&
-        Object.values(difficultyFilters).every(Boolean);
+        Object.values(difficultyFilters).every(Boolean) &&
+        sortState?.key === "time" &&
+        sortState.direction === "desc";
     const hasActiveClientFilters = !usingServerBackedPagination;
     const totalRowsForPagination = usingServerBackedPagination
         ? Math.max(Number(state.totalRows) || 0, sorted.length)
