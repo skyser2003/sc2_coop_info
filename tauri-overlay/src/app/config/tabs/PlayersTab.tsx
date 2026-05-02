@@ -153,11 +153,12 @@ export default function PlayersTab({
     });
     const [currentPage, setCurrentPage] = React.useState<number>(1);
     const [searchText, setSearchText] = React.useState<string>("");
+    const deferredSearchText = React.useDeferredValue(searchText);
     const [expandedPlayers, setExpandedPlayers] = React.useState<Set<string>>(
         () => new Set<string>(),
     );
     const filtered = React.useMemo(() => {
-        const normalizedSearch = searchText.trim().toLowerCase();
+        const normalizedSearch = deferredSearchText.trim().toLowerCase();
         if (normalizedSearch === "") {
             return data;
         }
@@ -176,7 +177,7 @@ export default function PlayersTab({
                 playerNameMatch
             );
         });
-    }, [data, searchText]);
+    }, [data, deferredSearchText]);
     const sorted = React.useMemo(
         () =>
             sortRows(filtered, sortState, (row, key) => {
@@ -197,7 +198,7 @@ export default function PlayersTab({
         [filtered, languageManager, sortState],
     );
     const usingServerBackedPagination =
-        searchText.trim() === "" &&
+        deferredSearchText.trim() === "" &&
         sortState?.key === "last_seen" &&
         sortState.direction === "desc";
     const hasActiveClientTransforms = !usingServerBackedPagination;
@@ -225,7 +226,7 @@ export default function PlayersTab({
 
     React.useEffect(() => {
         setCurrentPage(1);
-    }, [searchText, sortState]);
+    }, [deferredSearchText, sortState]);
 
     React.useEffect(() => {
         setCurrentPage((page) => clampPageNumber(page, totalPages));

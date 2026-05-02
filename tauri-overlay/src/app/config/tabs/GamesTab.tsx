@@ -277,6 +277,7 @@ export default function GamesTab({
     languageManager,
 }: GamesTabProps) {
     const t = (id: string) => languageManager.translate(id);
+    const deferredSearchInput = React.useDeferredValue(state.searchText || "");
     const formatText = (
         id: string,
         values: Record<string, string | number> = {},
@@ -287,7 +288,7 @@ export default function GamesTab({
             t(id),
         );
     const data: readonly GamesRowPayload[] = Array.isArray(rows) ? rows : [];
-    const searchText = (state.searchText || "").trim().toLowerCase();
+    const searchText = deferredSearchInput.trim().toLowerCase();
     const [sortState, setSortState] = React.useState<SortState>({
         key: "time",
         direction: "desc",

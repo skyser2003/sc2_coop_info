@@ -1570,11 +1570,11 @@ test.describe("Config route", () => {
         });
 
         await page.goto("/", { waitUntil: "domcontentloaded" });
-        await page.getByRole("button", { name: "Players" }).click();
+        await page.getByRole("tab", { name: "Players" }).click();
 
-        await expect(
-            page.locator("table.data-table tbody tr").nth(0),
-        ).toContainText("2018-09-30 22:12:24");
+        await expect(page.locator("tbody tr").nth(0)).toContainText(
+            "2018-09-30 22:12:24",
+        );
     });
 
     test("players tab defaults to last seen descending", async ({ page }) => {
@@ -1609,14 +1609,14 @@ test.describe("Config route", () => {
         });
 
         await page.goto("/", { waitUntil: "domcontentloaded" });
-        await page.getByRole("button", { name: "Players" }).click();
+        await page.getByRole("tab", { name: "Players" }).click();
 
-        await expect(
-            page.locator("table.data-table tbody tr").nth(0),
-        ).toContainText("NewerPlayer");
-        await expect(
-            page.locator("table.data-table tbody tr").nth(1),
-        ).toContainText("OlderPlayer");
+        await expect(page.locator("tbody tr").nth(0)).toContainText(
+            "NewerPlayer",
+        );
+        await expect(page.locator("tbody tr").nth(1)).toContainText(
+            "OlderPlayer",
+        );
     });
 
     test("players tab can clear the active sort without crashing", async ({
