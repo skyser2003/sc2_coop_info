@@ -6,6 +6,8 @@
         "tauri": "tauri",
         "dev": "vite",
         "build": "vite build",
+        "typecheck": "tsc --noEmit",
+        "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json",
         "format": "prettier . --write",
         "test:config": "npx playwright test"
     },

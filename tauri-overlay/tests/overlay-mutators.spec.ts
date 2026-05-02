@@ -39,11 +39,16 @@ async function installOverlayMutatorMock(
             },
             invoke: async (
                 command: string,
-                request: { path: string; method: string },
+                request: {
+                    path?: string;
+                    method?: string;
+                    event?: string;
+                    handler?: number;
+                },
             ) => {
                 if (command === "plugin:event|listen") {
-                    const eventName = (request as { event: string }).event;
-                    const handler = (request as { handler: number }).handler;
+                    const eventName = request.event ?? "";
+                    const handler = request.handler ?? 0;
                     const current = listeners.get(eventName) || [];
                     current.push(handler);
                     listeners.set(eventName, current);

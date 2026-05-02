@@ -160,7 +160,7 @@ test("overlay layout stays within portrait viewport width", async ({
             Defeat: 0,
             difficulty: "Brutal",
             weekly: false,
-            extension: 0,
+            extension: false,
             "B+": 0,
             mainkills: 10,
             allykills: 20,

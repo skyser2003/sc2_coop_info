@@ -1,62 +1,17 @@
 import { expect, test } from "@playwright/test";
+import type {
+    OverlayInitColorsDurationPayload,
+    OverlayReplayPayload,
+} from "../src/bindings/overlay";
 
 test.describe.configure({ timeout: 60_000 });
-
-type ReplayPayload = {
-    file: string;
-    mainPrestige: string;
-    allyPrestige: string;
-    comp: string;
-    player_stats: null;
-    mutators: [];
-    result: string;
-    mainCommander: string;
-    allyCommander: string;
-    bonus: [];
-    map_name: string;
-    length: number;
-    main: string;
-    ally: string;
-    mainCommanderLevel: number;
-    allyCommanderLevel: number;
-    mainAPM: number;
-    allyAPM: number;
-    fastest: boolean;
-    Victory: number;
-    Defeat: number;
-    difficulty: string;
-    weekly: boolean;
-    extension: number;
-    "B+": number;
-    mainkills: number;
-    allykills: number;
-    mainIcons: Record<string, never>;
-    mainMasteries: number[];
-    mainUnits: Record<string, [number, number, number, number]>;
-    allyIcons: Record<string, never>;
-    allyMasteries: number[];
-    allyUnits: Record<string, [number, number, number, number]>;
-    amon_units: Record<string, never>;
-    newReplay?: boolean;
-};
-
-type OverlayInitColorsDurationPayload = {
-    colors: [string | null, string | null, string | null, string | null];
-    duration: number;
-    show_charts: boolean;
-    show_session?: boolean;
-    session_victory?: number;
-    session_defeat?: number;
-    language?: string;
-    hide_nicknames_in_overlay?: boolean;
-};
 
 async function installOverlayEventMock(page: import("@playwright/test").Page) {
     await page.addInitScript(() => {
         const listeners = new Map<string, number[]>();
         type OverlayEventPayload =
             | OverlayInitColorsDurationPayload
-            | ReplayPayload
+            | OverlayReplayPayload
             | Record<string, never>;
         type MockEvent = {
             event: string;
@@ -161,7 +116,7 @@ function buildReplayPayload(
     options?: {
         newReplay?: boolean;
     },
-): ReplayPayload {
+): OverlayReplayPayload {
     return {
         file,
         mainPrestige: "Renegade Commander",
@@ -186,7 +141,7 @@ function buildReplayPayload(
         Defeat: 0,
         difficulty: "Brutal",
         weekly: false,
-        extension: 0,
+        extension: false,
         "B+": 0,
         mainkills,
         allykills,
@@ -209,15 +164,15 @@ function buildReplayPayload(
 
 async function postReplay(
     page: import("@playwright/test").Page,
-    payload: ReplayPayload,
+    payload: OverlayReplayPayload,
 ) {
-    await page.evaluate((nextPayload) => {
+    await page.evaluate((nextPayload: OverlayReplayPayload) => {
         const runtime = window as typeof window & {
             __emitMockEvent?: (
                 eventName: string,
                 payload:
                     | OverlayInitColorsDurationPayload
-                    | ReplayPayload
+                    | OverlayReplayPayload
                     | Record<string, never>,
             ) => void;
         };
@@ -226,6 +181,10 @@ async function postReplay(
             colors: [null, null, null, null],
             duration: 60,
             show_charts: false,
+            show_session: false,
+            hide_nicknames_in_overlay: false,
+            session_victory: 0,
+            session_defeat: 0,
             language: "en",
         });
         runtime.__emitMockEvent?.("sco://overlay-replay-payload", nextPayload);

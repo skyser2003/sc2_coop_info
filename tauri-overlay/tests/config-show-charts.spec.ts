@@ -2,8 +2,8 @@ import { expect, test, type Page } from "@playwright/test";
 
 async function installConfigTauriMock(page: Page) {
     await page.addInitScript(() => {
-        type ConfigSettings = Record<string, unknown>;
-        type ConfigRequest = {
+        type ConfigSettings = TestJsonObject;
+        type ConfigRequest = TestTauriRequest & {
             path: string;
             method: string;
             body?: {
@@ -11,22 +11,9 @@ async function installConfigTauriMock(page: Page) {
                 persist?: boolean;
             };
         };
-        type ConfigMockWindow = Window & {
-            __SCO_CONFIG_APPLY_REQUESTS__: ConfigSettings[];
-            __SCO_CONFIG_SAVE_REQUESTS__: ConfigSettings[];
-            __TAURI_INTERNALS__: {
-                invoke: (
-                    command: string,
-                    request: ConfigRequest,
-                ) => Promise<unknown>;
-                event: {
-                    listen: () => Promise<() => void>;
-                };
-            };
-        };
-        const runtimeWindow = window as ConfigMockWindow;
+        const runtimeWindow = window;
         const cloneJson = <T>(value: T): T => JSON.parse(JSON.stringify(value));
-        let settings: Record<string, unknown> = {
+        let settings: ConfigSettings = {
             account_folder: "fixtures/accounts",
             main_names: [],
             detailed_analysis_atstart: false,
@@ -36,13 +23,32 @@ async function installConfigTauriMock(page: Page) {
 
         runtimeWindow.__SCO_CONFIG_APPLY_REQUESTS__ = [];
         runtimeWindow.__SCO_CONFIG_SAVE_REQUESTS__ = [];
+        runtimeWindow.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+            unregisterListener: () => {},
+        };
         runtimeWindow.__TAURI_INTERNALS__ = {
+            transformCallback: () => 1,
+            unregisterCallback: () => {},
             invoke: async (command: string, request: ConfigRequest) => {
-                if (command !== "config_request") {
-                    throw new Error(`Unexpected command: ${command}`);
+                if (command === "plugin:app|version") {
+                    return "0.1.0";
+                }
+                if (command === "plugin:event|listen") {
+                    return 1;
+                }
+                if (command === "plugin:event|unlisten") {
+                    return null;
+                }
+                if (command === "is_dev") {
+                    return true;
                 }
 
-                if (request.method === "GET" && request.path === "/config") {
+                if (
+                    command === "config_get" ||
+                    (command === "config_request" &&
+                        request.method === "GET" &&
+                        request.path === "/config")
+                ) {
                     return {
                         status: "ok",
                         settings,
@@ -54,11 +60,20 @@ async function installConfigTauriMock(page: Page) {
                     };
                 }
 
-                if (request.method === "POST" && request.path === "/config") {
+                if (
+                    command === "config_update" ||
+                    (command === "config_request" &&
+                        request.method === "POST" &&
+                        request.path === "/config")
+                ) {
                     const nextSettings =
+                        request.settings ||
                         request.body?.settings || activeSettings;
                     activeSettings = cloneJson(nextSettings);
-                    if (request.body?.persist === false) {
+                    if (
+                        request.persist === false ||
+                        request.body?.persist === false
+                    ) {
                         runtimeWindow.__SCO_CONFIG_APPLY_REQUESTS__.push(
                             activeSettings,
                         );
@@ -80,11 +95,66 @@ async function installConfigTauriMock(page: Page) {
                     };
                 }
 
-                if (request.method === "POST") {
+                if (
+                    command === "config_action" ||
+                    command === "config_stats_action" ||
+                    request.method === "POST"
+                ) {
                     return {
                         status: "ok",
                         result: { ok: true },
                         message: "ok",
+                    };
+                }
+
+                if (command === "config_stats_get") {
+                    return {
+                        status: "ok",
+                        ready: true,
+                        games: 0,
+                        analysis_running: false,
+                        analysis_running_mode: null,
+                        message: "",
+                        query: "",
+                        analysis: {
+                            MapData: {},
+                            CommanderData: {},
+                            AllyCommanderData: {},
+                            DifficultyData: {},
+                            RegionData: {},
+                            PlayerData: {},
+                            AmonData: {},
+                            MapDataReady: true,
+                            UnitData: {
+                                main: {},
+                                ally: {},
+                                amon: {},
+                            },
+                        },
+                    };
+                }
+
+                if (command === "config_replays_get") {
+                    return {
+                        status: "ok",
+                        replays: [],
+                        total_replays: 0,
+                        selected_replay_file: "",
+                    };
+                }
+
+                if (command === "config_players_get") {
+                    return {
+                        status: "ok",
+                        players: [],
+                        total_players: 0,
+                    };
+                }
+
+                if (command === "config_weeklies_get") {
+                    return {
+                        status: "ok",
+                        weeklies: [],
                     };
                 }
 
@@ -118,9 +188,6 @@ async function installConfigTauriMock(page: Page) {
                     },
                 };
             },
-            event: {
-                listen: async () => () => {},
-            },
         };
     });
 }
@@ -142,9 +209,7 @@ test("show charts defaults to enabled and saves the replay overlay toggle", asyn
         .poll(() =>
             page.evaluate(() => {
                 const runtimeWindow = window as Window & {
-                    __SCO_CONFIG_APPLY_REQUESTS__?: Array<
-                        Record<string, unknown>
-                    >;
+                    __SCO_CONFIG_APPLY_REQUESTS__?: TestJsonObject[];
                 };
                 const requests =
                     runtimeWindow.__SCO_CONFIG_APPLY_REQUESTS__ || [];
@@ -161,9 +226,7 @@ test("show charts defaults to enabled and saves the replay overlay toggle", asyn
         .poll(() =>
             page.evaluate(() => {
                 const runtimeWindow = window as Window & {
-                    __SCO_CONFIG_SAVE_REQUESTS__?: Array<
-                        Record<string, unknown>
-                    >;
+                    __SCO_CONFIG_SAVE_REQUESTS__?: TestJsonObject[];
                 };
                 const requests =
                     runtimeWindow.__SCO_CONFIG_SAVE_REQUESTS__ || [];

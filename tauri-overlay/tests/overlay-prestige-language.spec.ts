@@ -41,11 +41,16 @@ async function installOverlayPrestigeLanguageMock(
             },
             invoke: async (
                 command: string,
-                request: { path: string; method: string },
+                request: {
+                    path?: string;
+                    method?: string;
+                    event?: string;
+                    handler?: number;
+                },
             ) => {
                 if (command === "plugin:event|listen") {
-                    const eventName = (request as { event: string }).event;
-                    const handler = (request as { handler: number }).handler;
+                    const eventName = request.event ?? "";
+                    const handler = request.handler ?? 0;
                     const current = listeners.get(eventName) || [];
                     current.push(handler);
                     listeners.set(eventName, current);
@@ -167,7 +172,7 @@ test("overlay prestige labels follow the selected language", async ({
             Defeat: 0,
             difficulty: "Brutal",
             weekly: false,
-            extension: 0,
+            extension: false,
             "B+": 0,
             mainkills: 10,
             allykills: 20,
