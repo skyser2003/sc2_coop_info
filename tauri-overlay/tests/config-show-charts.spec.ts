@@ -68,7 +68,8 @@ async function installConfigTauriMock(page: Page) {
                 ) {
                     const nextSettings =
                         request.settings ||
-                        request.body?.settings || activeSettings;
+                        request.body?.settings ||
+                        activeSettings;
                     activeSettings = cloneJson(nextSettings);
                     if (
                         request.persist === false ||

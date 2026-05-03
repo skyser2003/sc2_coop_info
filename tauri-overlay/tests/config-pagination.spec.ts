@@ -376,8 +376,8 @@ test.describe("Config pagination", () => {
         await expect(
             page.getByText("Rows 301-305 of 305", { exact: true }).first(),
         ).toBeVisible();
-        await expect(
-            page.locator("tbody tr").first(),
-        ).toContainText("Player 301");
+        await expect(page.locator("tbody tr").first()).toContainText(
+            "Player 301",
+        );
     });
 });
