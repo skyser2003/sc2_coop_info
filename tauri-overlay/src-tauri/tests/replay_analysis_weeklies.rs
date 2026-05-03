@@ -12,6 +12,17 @@ fn weekly_replay(weekly_name: &str, result: &str) -> ReplayInfo {
     replay
 }
 
+fn weekly_replay_without_name(map: &str, mutators: Vec<String>, result: &str) -> ReplayInfo {
+    let mut replay = ReplayInfo::default();
+    replay.set_file("fixtures/replays/unnamed-weekly.SC2Replay");
+    replay.set_map(map);
+    replay.set_result(result);
+    replay.set_difficulty("Brutal");
+    replay.set_weekly(true);
+    replay.set_mutators(mutators);
+    replay
+}
+
 #[test]
 fn rebuild_weeklies_rows_uses_dictionary_order_for_mutation_sort() {
     let dictionary = TestHelperOps::load_dictionary();
@@ -91,4 +102,38 @@ fn rebuild_weeklies_rows_without_record_uses_na_for_best_difficulty() {
         .expect("Train of the Dead row should exist");
 
     assert_eq!(row.difficulty, "N/A");
+}
+
+#[test]
+fn rebuild_weeklies_rows_infers_missing_weekly_name_from_map_id_and_mutators() {
+    let dictionary = TestHelperOps::load_dictionary();
+    let seeded_current_date =
+        NaiveDate::parse_from_str(&dictionary.weekly_mutation_date_json.date, "%Y-%m-%d")
+            .expect("seeded weekly mutation date should parse");
+    let oblivion_express_map_id = dictionary
+        .canonicalize_coop_map_id("Oblivion Express")
+        .expect("Oblivion Express map id should resolve");
+    let replays = vec![weekly_replay_without_name(
+        &oblivion_express_map_id,
+        vec![
+            "BlackFog".to_string(),
+            "InfestedTerranSpawner".to_string(),
+            "WalkingInfested".to_string(),
+        ],
+        "Victory",
+    )];
+
+    let rows = ReplayAnalysis::rebuild_weeklies_rows_with_dictionary(
+        &replays,
+        seeded_current_date,
+        &dictionary,
+    );
+    let train_of_the_dead = rows
+        .iter()
+        .find(|row| row.mutation == "Train of the Dead")
+        .expect("Train of the Dead row should exist");
+
+    assert_eq!(train_of_the_dead.wins, 1);
+    assert_eq!(train_of_the_dead.losses, 0);
+    assert!(!rows.iter().any(|row| row.mutation == "Unknown Weekly"));
 }

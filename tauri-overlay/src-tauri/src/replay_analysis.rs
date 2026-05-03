@@ -3394,6 +3394,15 @@ impl ReplayAnalysis {
                 .clone()
                 .map(|value| TauriOverlayOps::sanitize_replay_text(&value))
                 .filter(|value| !value.is_empty())
+                .or_else(|| {
+                    ReplayAnalysisOps::resolve_weekly_mutation_name_with_dictionary(
+                        &replay.map,
+                        &replay.mutators,
+                        dictionary,
+                    )
+                    .map(|value| TauriOverlayOps::sanitize_replay_text(&value))
+                    .filter(|value| !value.is_empty())
+                })
                 .unwrap_or_else(|| "Unknown Weekly".to_string());
             let aggregate = aggregates.entry(mutation_name).or_default();
             if replay_wins_main {
@@ -4683,6 +4692,26 @@ impl ReplayAnalysisOps {
 }
 
 impl ReplayAnalysisOps {
+    fn normalized_coop_map_match_key_with_dictionary(
+        map_name: &str,
+        dictionary: &Sc2DictionaryData,
+    ) -> Option<String> {
+        let display_name = TauriOverlayOps::map_display_name(map_name);
+        if display_name.trim().is_empty() {
+            return None;
+        }
+
+        let comparable_name = dictionary
+            .canonicalize_coop_map_id(&display_name)
+            .unwrap_or(display_name);
+        let key = ReplayAnalysisOps::normalize_lookup_key(&comparable_name);
+        if key.is_empty() {
+            None
+        } else {
+            Some(key)
+        }
+    }
+
     fn resolve_weekly_mutation_name_with_dictionary(
         map_name: &str,
         mutators: &[String],
@@ -4693,10 +4722,7 @@ impl ReplayAnalysisOps {
         }
 
         let map_key =
-            ReplayAnalysisOps::normalize_lookup_key(&TauriOverlayOps::map_display_name(map_name));
-        if map_key.is_empty() {
-            return None;
-        }
+            ReplayAnalysisOps::normalized_coop_map_match_key_with_dictionary(map_name, dictionary)?;
 
         let mutator_set: HashSet<String> = mutators
             .iter()
@@ -4712,7 +4738,14 @@ impl ReplayAnalysisOps {
         }
 
         for (weekly_name, row) in dictionary.weekly_mutations_as_sets.iter() {
-            if ReplayAnalysisOps::normalize_lookup_key(&row.map) != map_key {
+            let Some(weekly_map_key) =
+                ReplayAnalysisOps::normalized_coop_map_match_key_with_dictionary(
+                    &row.map, dictionary,
+                )
+            else {
+                continue;
+            };
+            if weekly_map_key != map_key {
                 continue;
             }
             if row.mutators == mutator_set {
