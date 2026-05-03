@@ -10,12 +10,125 @@ type ConfigSettings = {
     start_minimized?: boolean;
 };
 
+type ThemeCommanderStats = {
+    Frequency: number;
+    Victory: number;
+    Defeat: number;
+    Winrate: number;
+    MedianAPM: number;
+    KillFraction: number;
+    detailedCount: number;
+    Prestige?: Record<string, number>;
+    MasteryDistributionByPrestige?: Record<
+        string,
+        Record<string, Record<string, number>>
+    >;
+};
+
+type ThemeStatsAnalysis = {
+    MapData: Record<string, never>;
+    CommanderData: Record<string, ThemeCommanderStats>;
+    AllyCommanderData: Record<string, never>;
+    DifficultyData: Record<string, never>;
+    RegionData: Record<string, never>;
+    PlayerData: Record<string, never>;
+    AmonData: Record<string, never>;
+    MapDataReady: boolean;
+    UnitData: {
+        main: Record<string, never>;
+        ally: Record<string, never>;
+        amon: Record<string, never>;
+    };
+};
+
+type ConfigStatsPayload = {
+    status: "ok";
+    ready: boolean;
+    games: number;
+    analysis_running: boolean;
+    analysis_running_mode: string | null;
+    message: string;
+    query?: string;
+    analysis?: ThemeStatsAnalysis;
+};
+
+const LIGHT_THEME_READY_STATS: ConfigStatsPayload = {
+    status: "ok",
+    ready: true,
+    games: 10,
+    analysis_running: false,
+    analysis_running_mode: null,
+    message: "",
+    query: "",
+    analysis: {
+        MapData: {},
+        CommanderData: {
+            Abathur: {
+                Frequency: 1,
+                Victory: 8,
+                Defeat: 2,
+                Winrate: 0.8,
+                MedianAPM: 124,
+                KillFraction: 0.61,
+                detailedCount: 10,
+                Prestige: {
+                    0: 0.2,
+                    1: 0.3,
+                    2: 0.1,
+                    3: 0.4,
+                },
+                MasteryDistributionByPrestige: {
+                    0: {
+                        0: {
+                            0: 0.2,
+                            50: 0.3,
+                            100: 0.5,
+                        },
+                    },
+                    1: {
+                        0: {
+                            50: 1,
+                        },
+                    },
+                    2: {
+                        0: {},
+                    },
+                    3: {
+                        0: {},
+                    },
+                },
+            },
+            any: {
+                Frequency: 1,
+                Victory: 8,
+                Defeat: 2,
+                Winrate: 0.8,
+                MedianAPM: 124,
+                KillFraction: 0.61,
+                detailedCount: 10,
+            },
+        },
+        AllyCommanderData: {},
+        DifficultyData: {},
+        RegionData: {},
+        PlayerData: {},
+        AmonData: {},
+        MapDataReady: true,
+        UnitData: {
+            main: {},
+            ally: {},
+            amon: {},
+        },
+    },
+};
+
 async function installThemeMock(
     page: Page,
     settingsOverride: ConfigSettings = {},
+    statsOverride: ConfigStatsPayload | null = null,
 ) {
     await page.addInitScript(
-        ({ providedSettings }) => {
+        ({ providedSettings, providedStats }) => {
             const cloneJson = <T>(value: T): T =>
                 JSON.parse(JSON.stringify(value)) as T;
 
@@ -99,13 +212,14 @@ async function installThemeMock(
                 total_players: 1,
                 loading: false,
             });
-            const statsPayload = () => ({
+            const statsPayload = (): ConfigStatsPayload => ({
                 status: "ok",
                 ready: false,
                 games: 0,
                 analysis_running: false,
                 analysis_running_mode: null,
                 message: "",
+                ...(providedStats ?? {}),
             });
 
             window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
@@ -263,7 +377,7 @@ async function installThemeMock(
                 },
             };
         },
-        { providedSettings: settingsOverride },
+        { providedSettings: settingsOverride, providedStats: statsOverride },
     );
 }
 
@@ -382,4 +496,63 @@ test("light theme keeps statistics empty states readable", async ({ page }) => {
         "background-color",
         "rgb(237, 243, 250)",
     );
+});
+
+test("light theme keeps statistics filters and mastery graphs readable", async ({
+    page,
+}) => {
+    await installThemeMock(
+        page,
+        {
+            dark_theme: false,
+        },
+        LIGHT_THEME_READY_STATS,
+    );
+
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.getByRole("tab", { name: "Statistics" }).click();
+
+    const difficultyHeading = page.getByRole("heading", {
+        name: "Difficulty",
+    });
+    const difficultyPanel = difficultyHeading.locator("xpath=..");
+
+    await expect(difficultyHeading).toHaveCSS("color", "rgb(15, 23, 42)");
+    await expect(difficultyPanel).toHaveCSS(
+        "background-color",
+        "rgb(248, 251, 255)",
+    );
+    await expect(difficultyPanel).toHaveCSS(
+        "border-top-color",
+        "rgb(215, 225, 238)",
+    );
+    await expect(page.getByText("Casual", { exact: true })).toHaveCSS(
+        "color",
+        "rgb(15, 23, 42)",
+    );
+
+    await page.getByRole("button", { name: "My Commanders" }).click();
+
+    const masteryHeader = page
+        .getByTestId("mastery-distribution-header")
+        .first()
+        .locator("strong");
+    const prestigeTitle = page
+        .getByTestId("mastery-distribution-prestige-list")
+        .first()
+        .locator("h5")
+        .first();
+    const masteryGraph = page.getByTestId("mastery-distribution-line").first();
+    const pointLabel = page
+        .getByTestId("mastery-distribution-point-label")
+        .first();
+
+    await expect(masteryHeader).toHaveCSS("color", "rgb(29, 78, 216)");
+    await expect(prestigeTitle).toHaveCSS("color", "rgb(15, 23, 42)");
+    await expect(masteryGraph).toHaveCSS(
+        "background-color",
+        "rgb(238, 245, 253)",
+    );
+    await expect(pointLabel).toHaveCSS("background-color", "rgb(15, 23, 42)");
+    await expect(pointLabel).toHaveCSS("color", "rgb(248, 250, 252)");
 });

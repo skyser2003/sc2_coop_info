@@ -2577,7 +2577,9 @@
 .configPage.configPage .weekliesMap,
 .configPage.configPage .mainSettingsGroupTitle,
 .configPage.configPage .mainPathsTitle,
-.configPage.configPage .chatTime {
+.configPage.configPage .chatTime,
+.configPage.configPage .masteryDistributionHeader strong,
+.configPage.configPage .statsMapPlayerApm {
     color: var(--config-link-text);
 }
 
@@ -2676,10 +2678,18 @@
 .configPage.configPage .statsCommanderMeta,
 .configPage.configPage .statsCommanderSubheading,
 .configPage.configPage .masteryDistributionHeader,
+.configPage.configPage .masteryDistributionPrestigePanel h5,
 .configPage.configPage .randomizerResultHead,
 .configPage.configPage .performanceTabCopy h3,
 .configPage.configPage .performanceTabHotkeyBlock h3,
 .configPage.configPage .statsUnitTable h3,
+.configPage.configPage .statsFilterGroup h4,
+.configPage.configPage .statsFiltersSide h4,
+.configPage.configPage .statsCheckboxLine span,
+.configPage.configPage .statsSideActions p,
+.configPage.configPage .statsMapPlayer h4,
+.configPage.configPage .statsMapPlayerLine strong,
+.configPage.configPage .statsMapMasteries strong,
 .configPage.configPage .mainSettingCheck span {
     color: var(--config-page-text);
 }
@@ -2714,6 +2724,8 @@
 .configPage.configPage .statsPaneRight,
 .configPage.configPage .statsCommanderHero,
 .configPage.configPage .statsCommanderTop,
+.configPage.configPage .statsFilterGroup,
+.configPage.configPage .statsMapPlayer,
 .configPage.configPage .masteryDistributionCategory,
 .configPage.configPage .masteryDistributionPrestigePanel,
 .configPage.configPage .masteryDistributionLineGraph,
@@ -2834,12 +2846,31 @@
 .configPage.configPage .playersDetailCell,
 .configPage.configPage .statsPaneRight,
 .configPage.configPage .statsCommanderTop,
+.configPage.configPage .statsFilterGroup,
+.configPage.configPage .statsMapPlayer,
 .configPage.configPage .masteryDistributionCategory,
 .configPage.configPage .masteryDistributionPrestigePanel,
 .configPage.configPage .randomizerTableShell,
 .configPage.configPage .mainSettingsGroup,
 .configPage.configPage .mainSettingsBox {
     background: var(--config-surface-soft);
+}
+
+.configPage.configPage .masteryDistributionLineGraph {
+    background: var(--config-chart-bg);
+}
+
+.configPage.configPage .masteryDistributionGridLine {
+    stroke: var(--config-chart-grid);
+}
+
+.configPage.configPage .masteryDistributionEvenLine {
+    stroke: var(--config-chart-even);
+}
+
+.configPage.configPage .masteryDistributionPointLabel {
+    background: var(--config-chart-label-bg);
+    color: var(--config-chart-label-text);
 }
 
 .configPage.configPage .randomizerChoiceTable td,

@@ -83,6 +83,19 @@ export default function ConfigPage({ onThemeModeChange }: ConfigPageProps) {
                     "--config-input-bg": isDark ? "#0a1020" : "#f8fbff",
                     "--config-input-hover-bg": isDark ? "#101a31" : "#eef5fd",
                     "--config-preview-bg": isDark ? "#111827" : "#dbe7f5",
+                    "--config-chart-bg": isDark
+                        ? "rgba(2, 6, 23, 0.72)"
+                        : "#eef5fd",
+                    "--config-chart-grid": isDark
+                        ? "rgb(148 163 184 / 0.22)"
+                        : "rgb(100 116 139 / 0.22)",
+                    "--config-chart-even": isDark
+                        ? "rgb(226 232 240 / 0.38)"
+                        : "rgb(51 65 85 / 0.35)",
+                    "--config-chart-label-bg": isDark
+                        ? "rgba(2, 6, 23, 0.78)"
+                        : "#0f172a",
+                    "--config-chart-label-text": "#f8fafc",
                     "--config-border": theme.palette.divider,
                     "--config-border-strong": isDark ? "#334155" : "#c7d4e5",
                     "--config-shadow": isDark
