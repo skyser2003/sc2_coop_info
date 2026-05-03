@@ -780,10 +780,6 @@ function renderCommanderDetails(
     );
     const prestigeSelectionKeys = ["0", "1", "2", "3"];
     const prestigeSelection = asStatsRow(entry.Prestige);
-    const prestigeSelectionTotal = prestigeSelectionKeys.reduce<number>(
-        (sum, prestigeKey) => sum + Number(prestigeSelection[prestigeKey] || 0),
-        0,
-    );
     const masteryCategories = buildMasteryCategoryDistributions(
         asStatsRow(entry.MasteryDistributionByPrestige),
         masteryLabels,
@@ -849,11 +845,6 @@ function renderCommanderDetails(
                                         )}{" "}
                                         3
                                     </th>
-                                    <th>
-                                        {languageManager.translate(
-                                            "ui_common_total",
-                                        )}
-                                    </th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -876,13 +867,6 @@ function renderCommanderDetails(
                                             </td>
                                         ),
                                     )}
-                                    <td
-                                        className={
-                                            styles.statsCommanderTablePct
-                                        }
-                                    >
-                                        {formatPercent0(prestigeSelectionTotal)}
-                                    </td>
                                 </tr>
                             </tbody>
                         </table>

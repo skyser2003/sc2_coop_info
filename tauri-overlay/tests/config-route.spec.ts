@@ -594,12 +594,14 @@ test.describe("Config route", () => {
         ).toHaveCount(3);
         await expect(
             page.getByRole("row", {
-                name: "Prestige 0 Prestige 1 Prestige 2 Prestige 3 Total",
+                name: "Prestige 0 Prestige 1 Prestige 2 Prestige 3",
+                exact: true,
             }),
         ).toBeVisible();
         await expect(
             page.getByRole("row", {
-                name: "20% 30% 10% 40% 100%",
+                name: "20% 30% 10% 40%",
+                exact: true,
             }),
         ).toBeVisible();
         await expect(page.getByText("Toxic Nest Damage").first()).toBeVisible();
