@@ -51,7 +51,7 @@ jobs:
               with:
                   tagName: v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
                   releaseName: "SC2_Coop_Info v__VERSION__"
-                  releaseBody: "Performance: Replay parsing speed up by around x1.6\nMiscellaneous: Overlay layout arranged"
+                  releaseBody: "Feature: Mastery point distribution now shows as graph\nBug fix: Weekly name not resolving correctly fixed"
                   releaseDraft: false
                   prerelease: false
                   projectPath: "./tauri-overlay"
