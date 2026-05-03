@@ -39,16 +39,111 @@ async function installGamesMock(page: Page, rows: readonly GamesRow[]) {
                 detailed_analysis_atstart: false,
                 rng_choices: {},
             };
+            const configPayload = () => ({
+                status: "ok",
+                settings,
+                active_settings: settings,
+                randomizer_catalog: {},
+                monitor_catalog: [],
+            });
+            const statsPayload = () => ({
+                status: "ok",
+                ready: true,
+                games: 0,
+                analysis_running: false,
+                analysis_running_mode: null,
+                message: "",
+                query: "",
+                analysis: {
+                    MapData: {},
+                    CommanderData: {},
+                    AllyCommanderData: {},
+                    DifficultyData: {},
+                    RegionData: {},
+                    PlayerData: {},
+                    AmonData: {},
+                    MapDataReady: true,
+                    UnitData: {
+                        main: {},
+                        ally: {},
+                        amon: {},
+                    },
+                },
+            });
+            const replaysPayload = (limitValue: number) => ({
+                status: "ok",
+                replays: initialRows.slice(
+                    0,
+                    Number.isFinite(limitValue) && limitValue > 0
+                        ? limitValue
+                        : initialRows.length,
+                ),
+                total_replays: initialRows.length,
+                selected_replay_file: "",
+            });
+
+            window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+                unregisterListener: () => {},
+            };
 
             window.__TAURI_INTERNALS__ = {
                 invoke: async (
                     command: string,
                     request?: {
                         body?: Record<string, unknown>;
+                        limit?: number;
                         method?: string;
                         path?: string;
                     },
                 ) => {
+                    if (command === "plugin:app|version") {
+                        return "0.1.0";
+                    }
+                    if (command === "plugin:event|listen") {
+                        return 1;
+                    }
+                    if (command === "plugin:event|unlisten") {
+                        return null;
+                    }
+                    if (command === "is_dev") {
+                        return true;
+                    }
+                    if (command === "config_get") {
+                        return configPayload();
+                    }
+                    if (command === "config_update") {
+                        return configPayload();
+                    }
+                    if (command === "config_replays_get") {
+                        return replaysPayload(Number(request?.limit || 300));
+                    }
+                    if (command === "config_players_get") {
+                        return {
+                            status: "ok",
+                            players: [],
+                            total_players: 0,
+                            loading: false,
+                        };
+                    }
+                    if (command === "config_weeklies_get") {
+                        return {
+                            status: "ok",
+                            weeklies: [],
+                        };
+                    }
+                    if (command === "config_stats_get") {
+                        return statsPayload();
+                    }
+                    if (command === "config_action") {
+                        return {
+                            status: "ok",
+                            result: { ok: true },
+                            message: "ok",
+                        };
+                    }
+                    if (command === "config_stats_action") {
+                        return { status: "ok", message: "ok" };
+                    }
                     if (command !== "config_request") {
                         throw new Error(`Unexpected command: ${command}`);
                     }
@@ -57,13 +152,7 @@ async function installGamesMock(page: Page, rows: readonly GamesRow[]) {
                     const path = request?.path;
 
                     if (method === "GET" && path === "/config") {
-                        return {
-                            status: "ok",
-                            settings,
-                            active_settings: settings,
-                            randomizer_catalog: {},
-                            monitor_catalog: [],
-                        };
+                        return configPayload();
                     }
 
                     if (
@@ -75,17 +164,7 @@ async function installGamesMock(page: Page, rows: readonly GamesRow[]) {
                         const limit = Number(
                             url.searchParams.get("limit") || "300",
                         );
-                        return {
-                            status: "ok",
-                            replays: initialRows.slice(
-                                0,
-                                Number.isFinite(limit) && limit > 0
-                                    ? limit
-                                    : initialRows.length,
-                            ),
-                            total_replays: initialRows.length,
-                            selected_replay_file: "",
-                        };
+                        return replaysPayload(limit);
                     }
 
                     if (
@@ -128,32 +207,7 @@ async function installGamesMock(page: Page, rows: readonly GamesRow[]) {
                         typeof path === "string" &&
                         path.startsWith("/config/stats?")
                     ) {
-                        return {
-                            status: "ok",
-                            stats: {
-                                ready: true,
-                                games: 0,
-                                analysis_running: false,
-                                analysis_running_mode: null,
-                                message: "",
-                                query: "",
-                                analysis: {
-                                    MapData: {},
-                                    CommanderData: {},
-                                    AllyCommanderData: {},
-                                    DifficultyData: {},
-                                    RegionData: {},
-                                    PlayerData: {},
-                                    AmonData: {},
-                                    MapDataReady: true,
-                                    UnitData: {
-                                        main: {},
-                                        ally: {},
-                                        amon: {},
-                                    },
-                                },
-                            },
-                        };
+                        return { status: "ok", stats: statsPayload() };
                     }
 
                     throw new Error(
@@ -162,6 +216,11 @@ async function installGamesMock(page: Page, rows: readonly GamesRow[]) {
                 },
                 event: {
                     listen: async () => () => {},
+                },
+                transformCallback: (callback: () => void) => {
+                    const id = Math.floor(Math.random() * 1000000);
+                    window[`_${id}`] = callback;
+                    return id;
                 },
             };
         },
@@ -194,17 +253,15 @@ test.describe("Games filters and mutators", () => {
         );
 
         await page.goto("/", { waitUntil: "domcontentloaded" });
-        await page.getByRole("button", { name: "Games" }).click();
+        await page.getByRole("tab", { name: "Games" }).click();
 
         await page
             .getByRole("checkbox", { name: "Normal", exact: true })
             .click();
 
+        await expect(page.locator("tbody tr").first()).toContainText("Map 305");
         await expect(
-            page.locator("table.games-table tbody tr").first(),
-        ).toContainText("Map 305");
-        await expect(
-            page.getByText("Rows 1-1 of 1", { exact: true }),
+            page.getByText("Rows 1-1 of 1", { exact: true }).first(),
         ).toBeVisible();
     });
 
@@ -232,22 +289,20 @@ test.describe("Games filters and mutators", () => {
         );
 
         await page.goto("/", { waitUntil: "domcontentloaded" });
-        await page.getByRole("button", { name: "Games" }).click();
+        await page.getByRole("tab", { name: "Games" }).click();
 
         await expect(
-            page.getByText("Rows 1-20 of 305", { exact: true }),
+            page.getByText("Rows 1-20 of 305", { exact: true }).first(),
         ).toBeVisible();
 
         for (let pageIndex = 1; pageIndex < 16; pageIndex += 1) {
-            await page.getByRole("button", { name: "Next" }).click();
+            await page.getByRole("button", { name: "Next" }).last().click();
         }
 
         await expect(
-            page.getByText("Rows 301-305 of 305", { exact: true }),
+            page.getByText("Rows 301-305 of 305", { exact: true }).first(),
         ).toBeVisible();
-        await expect(
-            page.locator("table.games-table tbody tr").first(),
-        ).toContainText("Map 301");
+        await expect(page.locator("tbody tr").first()).toContainText("Map 301");
     });
 
     test("filters normal and mutation games and shows weekly difficulty notation", async ({
@@ -301,13 +356,13 @@ test.describe("Games filters and mutators", () => {
         ]);
 
         await page.goto("/", { waitUntil: "domcontentloaded" });
-        await page.getByRole("button", { name: "Games" }).click();
+        await page.getByRole("tab", { name: "Games" }).click();
 
-        const rows = page.locator("table.games-table tbody tr");
+        const rows = page.locator("tbody tr");
         await expect(rows).toHaveCount(2);
         await expect(rows.nth(0)).toContainText("Brutal (Weekly)");
 
-        const mutatorIcon = page.locator(".games-mutator-icon").first();
+        const mutatorIcon = page.getByRole("img", { name: "Barrier" });
         await expect(mutatorIcon).toHaveAttribute(
             "title",
             /Barrier\nEnemy units gain a temporary shield when damaged\./,
@@ -317,23 +372,27 @@ test.describe("Games filters and mutators", () => {
         await expect(rows).toHaveCount(1);
         await expect(rows.nth(0)).toContainText("Malwarfare");
         await expect(
-            page.getByRole("button", { name: "Previous" }),
+            page.getByRole("button", { name: "Previous" }).first(),
         ).toBeVisible();
-        await expect(page.getByRole("button", { name: "Next" })).toBeVisible();
         await expect(
-            page.getByText("Rows 1-1 of 1", { exact: true }),
+            page.getByRole("button", { name: "Next" }).first(),
+        ).toBeVisible();
+        await expect(
+            page.getByText("Rows 1-1 of 1", { exact: true }).first(),
         ).toBeVisible();
 
         await page.getByRole("checkbox", { name: "Mutations" }).click();
         await expect(
-            page.locator("table.games-table tbody .empty-cell"),
+            page.getByRole("cell", { name: "No matching games" }),
         ).toHaveText("No matching games");
         await expect(
-            page.getByRole("button", { name: "Previous" }),
+            page.getByRole("button", { name: "Previous" }).first(),
         ).toBeVisible();
-        await expect(page.getByRole("button", { name: "Next" })).toBeVisible();
         await expect(
-            page.getByText("Rows 1-0 of 0", { exact: true }),
+            page.getByRole("button", { name: "Next" }).first(),
+        ).toBeVisible();
+        await expect(
+            page.getByText("Rows 1-0 of 0", { exact: true }).first(),
         ).toBeVisible();
 
         await page.getByRole("checkbox", { name: "Mutations" }).click();
@@ -341,7 +400,7 @@ test.describe("Games filters and mutators", () => {
             .getByRole("checkbox", { name: "Brutal", exact: true })
             .click();
         await expect(
-            page.locator("table.games-table tbody .empty-cell"),
+            page.getByRole("cell", { name: "No matching games" }),
         ).toHaveText("No matching games");
     });
 });

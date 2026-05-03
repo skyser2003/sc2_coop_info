@@ -52,36 +52,191 @@ async function installMasteryLanguageMock(page) {
                 ],
             },
         };
+        const prestigeNames = {
+            Abathur: {
+                en: ["Evolution Master"],
+                ko: ["진화 군주"],
+            },
+            Fenix: {
+                en: ["Purifier Executor"],
+                ko: ["정화자 집행관"],
+            },
+        };
+        const randomizerCatalog = {
+            commander_mastery: commanderMastery,
+            prestige_names: prestigeNames,
+            mutators: [],
+            brutal_plus: [],
+        };
+        const monitorCatalog = [{ index: 1, label: "1 - Primary Monitor" }];
+        const configPayload = () => ({
+            status: "ok",
+            settings,
+            active_settings: activeSettings,
+            randomizer_catalog: randomizerCatalog,
+            monitor_catalog: monitorCatalog,
+        });
+        const statsPayload = () => ({
+            status: "ok",
+            ready: true,
+            games: 1,
+            analysis_running: false,
+            analysis_running_mode: null,
+            message: "",
+            query: "",
+            commander_mastery: commanderMastery,
+            prestige_names: {
+                Abathur: {
+                    en: ["Evolution Master"],
+                    ko: ["진화 군주"],
+                },
+            },
+            main_handles: ["3-S2-1-900001"],
+            analysis: {
+                MapData: {
+                    "Miner Evacuation": {
+                        average_victory_time: 1041,
+                        frequency: 1,
+                        Victory: 1,
+                        Defeat: 0,
+                        Winrate: 1,
+                        bonus: 0,
+                        Fastest: {
+                            length: 1041,
+                            file: "fixtures/replays/miner-evacuation.SC2Replay",
+                            date: 1538345544,
+                            difficulty: "Normal",
+                            enemy_race: "Terran",
+                            players: [
+                                {
+                                    name: "Tester",
+                                    handle: "3-S2-1-900001",
+                                    commander: "Abathur",
+                                    apm: 123,
+                                    mastery_level: 90,
+                                    masteries: [30, 0, 30, 0, 30, 0],
+                                    prestige: 0,
+                                    prestige_name: "Evolution Master",
+                                },
+                                {
+                                    name: "Partner",
+                                    handle: "3-S2-1-900002",
+                                    commander: "Fenix",
+                                    apm: 88,
+                                    mastery_level: 90,
+                                    masteries: [0, 30, 0, 30, 0, 30],
+                                    prestige: 0,
+                                    prestige_name: "Purifier Executor",
+                                },
+                            ],
+                        },
+                    },
+                },
+                CommanderData: {},
+                AllyCommanderData: {},
+                DifficultyData: {},
+                RegionData: {},
+                PlayerData: {},
+                AmonData: {},
+                MapDataReady: true,
+                UnitData: {
+                    main: {},
+                    ally: {},
+                    amon: {},
+                },
+            },
+        });
+        const randomizerGeneratePayload = () => ({
+            status: "ok",
+            result: { ok: true, path: null },
+            message: "Generated random commander",
+            randomizer: {
+                kind: "commander",
+                commander: "Fenix",
+                prestige: 0,
+                mastery_indices: [30, 30, 30],
+                map_race: "Scythe of Amon | Zerg",
+            },
+        });
+
+        window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+            unregisterListener: () => {},
+        };
 
         window.__TAURI_INTERNALS__ = {
             invoke: async (command, request) => {
+                if (command === "plugin:app|version") {
+                    return "0.1.0";
+                }
+                if (command === "plugin:event|listen") {
+                    return 1;
+                }
+                if (command === "plugin:event|unlisten") {
+                    return null;
+                }
+                if (command === "plugin:event|emit") {
+                    return null;
+                }
+                if (command === "is_dev") {
+                    return true;
+                }
+                if (command === "config_get") {
+                    return configPayload();
+                }
+                if (command === "config_update") {
+                    const nextSettings = request?.settings || activeSettings;
+                    activeSettings = cloneJson(nextSettings);
+                    if (request?.persist !== false) {
+                        settings = cloneJson(nextSettings);
+                        activeSettings = cloneJson(nextSettings);
+                    }
+                    return configPayload();
+                }
+                if (command === "config_stats_get") {
+                    return statsPayload();
+                }
+                if (command === "config_action") {
+                    if (request?.action === "randomizer_generate") {
+                        return randomizerGeneratePayload();
+                    }
+                    return {
+                        status: "ok",
+                        result: { ok: true },
+                        message: "ok",
+                    };
+                }
+                if (command === "config_stats_action") {
+                    return { status: "ok", message: "ok" };
+                }
+                if (command === "config_replays_get") {
+                    return {
+                        status: "ok",
+                        replays: [],
+                        total_replays: 0,
+                        selected_replay_file: "",
+                    };
+                }
+                if (command === "config_players_get") {
+                    return {
+                        status: "ok",
+                        players: [],
+                        total_players: 0,
+                        loading: false,
+                    };
+                }
+                if (command === "config_weeklies_get") {
+                    return {
+                        status: "ok",
+                        weeklies: [],
+                    };
+                }
                 if (command !== "config_request") {
                     throw new Error(`Unexpected command: ${command}`);
                 }
 
                 const { path, method } = request;
                 if (method === "GET" && path === "/config") {
-                    return {
-                        status: "ok",
-                        settings,
-                        active_settings: activeSettings,
-                        randomizer_catalog: {
-                            commander_mastery: commanderMastery,
-                            prestige_names: {
-                                Abathur: {
-                                    en: ["Evolution Master"],
-                                    ko: ["진화 군주"],
-                                },
-                                Fenix: {
-                                    en: ["Purifier Executor"],
-                                    ko: ["정화자 집행관"],
-                                },
-                            },
-                        },
-                        monitor_catalog: [
-                            { index: 1, label: "1 - Primary Monitor" },
-                        ],
-                    };
+                    return configPayload();
                 }
 
                 if (method === "POST" && path === "/config") {
@@ -92,149 +247,19 @@ async function installMasteryLanguageMock(page) {
                         settings = cloneJson(nextSettings);
                         activeSettings = cloneJson(nextSettings);
                     }
-                    return {
-                        status: "ok",
-                        settings,
-                        active_settings: activeSettings,
-                        randomizer_catalog: {
-                            commander_mastery: commanderMastery,
-                            prestige_names: {
-                                Abathur: {
-                                    en: ["Evolution Master"],
-                                    ko: ["진화 군주"],
-                                },
-                                Fenix: {
-                                    en: ["Purifier Executor"],
-                                    ko: ["정화자 집행관"],
-                                },
-                            },
-                        },
-                        monitor_catalog: [
-                            { index: 1, label: "1 - Primary Monitor" },
-                        ],
-                    };
+                    return configPayload();
                 }
 
                 if (method === "GET" && path.startsWith("/config/stats?")) {
                     return {
                         status: "ok",
-                        stats: {
-                            ready: true,
-                            games: 1,
-                            analysis_running: false,
-                            analysis_running_mode: null,
-                            message: "",
-                            query: "",
-                            commander_mastery: commanderMastery,
-                            prestige_names: {
-                                Abathur: {
-                                    en: ["Evolution Master"],
-                                    ko: ["진화 군주"],
-                                },
-                            },
-                            main_handles: ["3-S2-1-900001"],
-                            analysis: {
-                                MapData: {
-                                    "Miner Evacuation": {
-                                        average_victory_time: 1041,
-                                        frequency: 1,
-                                        Victory: 1,
-                                        Defeat: 0,
-                                        Winrate: 1,
-                                        bonus: 0,
-                                        Fastest: {
-                                            length: 1041,
-                                            file: "fixtures/replays/miner-evacuation.SC2Replay",
-                                            date: 1538345544,
-                                            difficulty: "Normal",
-                                            enemy_race: "Terran",
-                                            players: [
-                                                {
-                                                    name: "Tester",
-                                                    handle: "3-S2-1-900001",
-                                                    commander: "Abathur",
-                                                    apm: 123,
-                                                    mastery_level: 90,
-                                                    masteries: [
-                                                        30, 0, 30, 0, 30, 0,
-                                                    ],
-                                                    prestige: 0,
-                                                    prestige_name:
-                                                        "Evolution Master",
-                                                },
-                                                {
-                                                    name: "Partner",
-                                                    handle: "3-S2-1-900002",
-                                                    commander: "Fenix",
-                                                    apm: 88,
-                                                    mastery_level: 90,
-                                                    masteries: [
-                                                        0, 30, 0, 30, 0, 30,
-                                                    ],
-                                                    prestige: 0,
-                                                    prestige_name:
-                                                        "Purifier Executor",
-                                                },
-                                            ],
-                                        },
-                                    },
-                                },
-                                CommanderData: {},
-                                AllyCommanderData: {},
-                                DifficultyData: {},
-                                RegionData: {},
-                                PlayerData: {},
-                                AmonData: {},
-                                MapDataReady: true,
-                                UnitData: {
-                                    main: {},
-                                    ally: {},
-                                    amon: {},
-                                },
-                            },
-                        },
+                        stats: statsPayload(),
                     };
                 }
 
                 if (method === "POST" && path === "/config/action") {
                     if (request.body?.action === "randomizer_generate") {
-                        return {
-                            status: "ok",
-                            result: { ok: true },
-                            message: "Generated random commander",
-                            randomizer: {
-                                commander: "Fenix",
-                                prestige: 0,
-                                prestige_name: "Purifier Executor",
-                                mastery: [
-                                    {
-                                        points: 30,
-                                        label: "Fenix Suit Attack Speed",
-                                    },
-                                    {
-                                        points: 0,
-                                        label: "Fenix Suit Offline Energy Regeneration",
-                                    },
-                                    {
-                                        points: 30,
-                                        label: "Champion A.I. Attack Speed",
-                                    },
-                                    {
-                                        points: 0,
-                                        label: "Champion A.I. Life and Shields",
-                                    },
-                                    {
-                                        points: 30,
-                                        label: "Chrono Boost Efficiency",
-                                    },
-                                    {
-                                        points: 0,
-                                        label: "Extra Starting Supply",
-                                    },
-                                ],
-                                map_race: "Scythe of Amon | Zerg",
-                            },
-                        };
+                        return randomizerGeneratePayload();
                     }
 
                     return {
@@ -249,6 +274,11 @@ async function installMasteryLanguageMock(page) {
             event: {
                 listen: async () => () => {},
             },
+            transformCallback: (callback) => {
+                const id = Math.floor(Math.random() * 1000000);
+                window[`_${id}`] = callback;
+                return id;
+            },
         };
     });
 }
@@ -259,21 +289,19 @@ test("localized commander mastery data drives statistics and randomizer labels",
     await installMasteryLanguageMock(page);
     await page.goto("/", { waitUntil: "domcontentloaded" });
 
-    await page.getByRole("button", { name: "Statistics" }).click();
-    await page.locator("table.data-table tbody tr").first().click();
+    await page.getByRole("tab", { name: "Statistics" }).click();
+    await page.locator("tbody tr").first().click();
     await expect(page.getByText("30 Toxic Nest Damage")).toBeVisible();
 
-    await page.getByRole("button", { name: "Settings" }).click();
-    const languageSelect = page
-        .locator(".main-settings-inline-numbers select")
-        .first();
+    await page.getByRole("tab", { name: "Settings" }).click();
+    const languageSelect = page.locator("select").first();
     await languageSelect.selectOption("ko");
 
-    await page.getByRole("button", { name: "통계" }).click();
-    await page.locator("table.data-table tbody tr").first().click();
+    await page.getByRole("tab", { name: "통계" }).click();
+    await page.locator("tbody tr").first().click();
     await expect(page.getByText("30 독성 둥지 공격력")).toBeVisible();
 
-    await page.getByRole("button", { name: "랜덤 선택" }).click();
-    await page.getByRole("button", { name: "Generate" }).click();
+    await page.getByRole("tab", { name: "랜덤 선택" }).click();
+    await page.getByRole("button", { name: "생성" }).first().click();
     await expect(page.getByText("30 피닉스 전투복 공격 속도")).toBeVisible();
 });

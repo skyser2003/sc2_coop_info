@@ -52,6 +52,64 @@ async function installThemeMock(
                         ko: ["진화 군주", "정수 축적가", "땅굴 공포", "무제한"],
                     },
                 },
+                mutators: [],
+                brutal_plus: [],
+            };
+            const configPayload = () => ({
+                status: "ok",
+                settings,
+                active_settings: activeSettings,
+                randomizer_catalog: randomizerCatalog,
+                monitor_catalog: [{ index: 1, label: "1 - Primary Monitor" }],
+            });
+            const weekliesPayload = () => ({
+                status: "ok",
+                weeklies: [
+                    {
+                        mutation: "Distant Threat",
+                        nameEn: "Distant Threat",
+                        map: "Dead of Night",
+                        isCurrent: true,
+                        nextDuration: "Now",
+                        nextDurationDays: 0,
+                        difficulty: "Brutal",
+                        wins: 1,
+                        losses: 0,
+                        winrate: 1,
+                        mutators: [],
+                    },
+                ],
+            });
+            const playersPayload = () => ({
+                status: "ok",
+                players: [
+                    {
+                        handle: "3-S2-1-900001",
+                        player: "Main Tester",
+                        player_names: ["Main Tester", "Main Alias"],
+                        wins: 1599,
+                        losses: 331,
+                        winrate: 0.828,
+                        apm: 123,
+                        commander: "Abathur",
+                        kills: 0.41,
+                        last_seen: 1735689600,
+                    },
+                ],
+                total_players: 1,
+                loading: false,
+            });
+            const statsPayload = () => ({
+                status: "ok",
+                ready: false,
+                games: 0,
+                analysis_running: false,
+                analysis_running_mode: null,
+                message: "",
+            });
+
+            window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+                unregisterListener: () => {},
             };
 
             (
@@ -62,6 +120,8 @@ async function installThemeMock(
                             request: {
                                 path?: string;
                                 method?: string;
+                                settings?: typeof settings;
+                                persist?: boolean;
                                 body?: {
                                     settings?: typeof settings;
                                     persist?: boolean;
@@ -71,10 +131,66 @@ async function installThemeMock(
                         event: {
                             listen: () => Promise<() => void>;
                         };
+                        transformCallback: (callback: () => void) => number;
                     };
                 }
             ).__TAURI_INTERNALS__ = {
                 invoke: async (command, request) => {
+                    if (command === "plugin:app|version") {
+                        return "0.1.0";
+                    }
+                    if (command === "plugin:event|listen") {
+                        return 1;
+                    }
+                    if (command === "plugin:event|unlisten") {
+                        return null;
+                    }
+                    if (command === "plugin:event|emit") {
+                        return null;
+                    }
+                    if (command === "is_dev") {
+                        return true;
+                    }
+                    if (command === "config_get") {
+                        return configPayload();
+                    }
+                    if (command === "config_update") {
+                        const nextSettings = request.settings ?? activeSettings;
+                        if (request.persist === false) {
+                            activeSettings = cloneJson(nextSettings);
+                        } else {
+                            settings = cloneJson(nextSettings);
+                            activeSettings = cloneJson(nextSettings);
+                        }
+                        return configPayload();
+                    }
+                    if (command === "config_weeklies_get") {
+                        return weekliesPayload();
+                    }
+                    if (command === "config_players_get") {
+                        return playersPayload();
+                    }
+                    if (command === "config_replays_get") {
+                        return {
+                            status: "ok",
+                            replays: [],
+                            total_replays: 0,
+                            selected_replay_file: "",
+                        };
+                    }
+                    if (command === "config_stats_get") {
+                        return statsPayload();
+                    }
+                    if (command === "config_action") {
+                        return {
+                            status: "ok",
+                            result: { ok: true },
+                            message: "ok",
+                        };
+                    }
+                    if (command === "config_stats_action") {
+                        return { status: "ok", message: "ok" };
+                    }
                     if (command !== "config_request") {
                         throw new Error(`Unexpected command: ${command}`);
                     }
@@ -83,15 +199,7 @@ async function installThemeMock(
                         request.method === "GET" &&
                         request.path === "/config"
                     ) {
-                        return {
-                            status: "ok",
-                            settings,
-                            active_settings: activeSettings,
-                            randomizer_catalog: randomizerCatalog,
-                            monitor_catalog: [
-                                { index: 1, label: "1 - Primary Monitor" },
-                            ],
-                        };
+                        return configPayload();
                     }
 
                     if (
@@ -107,15 +215,7 @@ async function installThemeMock(
                             activeSettings = cloneJson(nextSettings);
                         }
 
-                        return {
-                            status: "ok",
-                            settings,
-                            active_settings: activeSettings,
-                            randomizer_catalog: randomizerCatalog,
-                            monitor_catalog: [
-                                { index: 1, label: "1 - Primary Monitor" },
-                            ],
-                        };
+                        return configPayload();
                     }
 
                     if (
@@ -129,47 +229,14 @@ async function installThemeMock(
                         request.method === "GET" &&
                         request.path === "/config/weeklies"
                     ) {
-                        return {
-                            status: "ok",
-                            weeklies: [
-                                {
-                                    mutation: "Distant Threat",
-                                    nameEn: "Distant Threat",
-                                    map: "Dead of Night",
-                                    isCurrent: true,
-                                    nextDuration: "Now",
-                                    nextDurationDays: 0,
-                                    difficulty: "Brutal",
-                                    wins: 1,
-                                    losses: 0,
-                                    winrate: 1,
-                                    mutators: [],
-                                },
-                            ],
-                        };
+                        return weekliesPayload();
                     }
 
                     if (
                         request.method === "GET" &&
                         request.path.startsWith("/config/players?")
                     ) {
-                        return {
-                            status: "ok",
-                            players: [
-                                {
-                                    handle: "3-S2-1-900001",
-                                    player: "Main Tester",
-                                    player_names: ["Main Tester", "Main Alias"],
-                                    wins: 1599,
-                                    losses: 331,
-                                    winrate: 0.828,
-                                    apm: 123,
-                                    commander: "Abathur",
-                                    kills: 0.41,
-                                    last_seen: 1735689600,
-                                },
-                            ],
-                        };
+                        return playersPayload();
                     }
 
                     if (
@@ -178,13 +245,7 @@ async function installThemeMock(
                     ) {
                         return {
                             status: "ok",
-                            stats: {
-                                ready: false,
-                                games: 0,
-                                analysis_running: false,
-                                analysis_running_mode: null,
-                                message: "",
-                            },
+                            stats: statsPayload(),
                         };
                     }
 
@@ -194,6 +255,11 @@ async function installThemeMock(
                 },
                 event: {
                     listen: async () => () => {},
+                },
+                transformCallback: (callback: () => void) => {
+                    const id = Math.floor(Math.random() * 1000000);
+                    window[`_${id}`] = callback;
+                    return id;
                 },
             };
         },
@@ -233,22 +299,28 @@ test("light theme keeps randomizer table text and disabled labels readable", asy
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
 
-    const disabledLaunchRow = page.locator(".main-setting-check.is-disabled");
-    const disabledLaunchLabel = disabledLaunchRow.locator("span");
+    const disabledLaunchRow = page
+        .getByRole("checkbox", { name: "Start minimized" })
+        .locator("xpath=ancestor::div[.//span][1]");
+    const disabledLaunchLabel = disabledLaunchRow.getByText("Start minimized", {
+        exact: true,
+    });
     await expect(disabledLaunchLabel).toHaveCSS("color", "rgb(100, 116, 139)");
     await expect(disabledLaunchRow).toHaveCSS("opacity", "1");
 
-    await page.getByRole("button", { name: "Randomizer" }).click();
+    await page.getByRole("tab", { name: "Randomizer" }).click();
 
     const commanderCell = page
-        .locator(".randomizer-choice-table tbody tr")
+        .getByRole("row", { name: /Abathur/ })
         .first()
         .locator("td")
         .first();
-    const commanderButton = commanderCell.locator(
-        ".randomizer-commander-toggle",
-    );
-    const headerButton = page.locator(".randomizer-header-toggle").first();
+    const commanderButton = page.getByRole("button", {
+        name: "Toggle all prestiges for Abathur",
+    });
+    const headerButton = page.getByRole("button", {
+        name: "Toggle P0 for all commanders",
+    });
 
     await expect(commanderCell).toHaveCSS("color", "rgb(15, 23, 42)");
     await expect(commanderButton).toHaveCSS("color", "rgb(15, 23, 42)");
@@ -269,9 +341,9 @@ test("light theme keeps weekly detail chips readable", async ({ page }) => {
     });
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Weeklies" }).click();
+    await page.getByRole("tab", { name: "Weeklies" }).click();
 
-    const chip = page.locator(".weeklies-stat-chip").first();
+    const chip = page.getByText("Next In: Now", { exact: true });
     await expect(chip).toHaveCSS("color", "rgb(15, 23, 42)");
     await expect(chip).toHaveCSS("background-color", "rgb(237, 243, 250)");
 });
@@ -282,13 +354,13 @@ test("light theme keeps player chips readable", async ({ page }) => {
     });
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Players" }).click();
-    const expander = page.locator(".players-expander-btn").first();
+    await page.getByRole("tab", { name: "Players" }).click();
+    const expander = page.getByRole("button", { name: "Expand" }).first();
     await expect(expander).toHaveCSS("background-color", "rgb(237, 243, 250)");
     await expect(expander).toHaveCSS("border-top-color", "rgb(215, 225, 238)");
     await expander.click();
 
-    const chip = page.locator(".players-handle-chip").first();
+    const chip = page.locator("code").filter({ hasText: "Main Tester" });
     await expect(chip).toHaveCSS("color", "rgb(15, 23, 42)");
     await expect(chip).toHaveCSS("background-color", "rgb(237, 243, 250)");
 });
@@ -299,9 +371,11 @@ test("light theme keeps statistics empty states readable", async ({ page }) => {
     });
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Statistics" }).click();
+    await page.getByRole("tab", { name: "Statistics" }).click();
 
-    const emptyState = page.locator(".stats-detail-empty").first();
+    const emptyState = page.getByText("No statistics loaded.", {
+        exact: true,
+    });
     await expect(emptyState).toHaveText("No statistics loaded.");
     await expect(emptyState).toHaveCSS("color", "rgb(51, 65, 85)");
     await expect(emptyState).toHaveCSS(

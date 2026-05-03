@@ -1,4 +1,19 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
+
+function hotkeyInputForAction(page: Page, name: string | RegExp): Locator {
+    const actionButton = page.getByRole("button", { name });
+    return actionButton
+        .locator("xpath=ancestor::div[.//input][1]")
+        .locator("input");
+}
+
+async function expectHotkeyRecording(input: Locator): Promise<void> {
+    await expect(input).toHaveAttribute("placeholder", "Recording...");
+}
+
+async function expectHotkeyIdle(input: Locator): Promise<void> {
+    await expect(input).toHaveAttribute("placeholder", "Press shortcut");
+}
 
 async function installTauriMock(
     page,
@@ -62,6 +77,8 @@ async function installTauriMock(
                         ],
                     },
                 },
+                mutators: [],
+                brutal_plus: [],
             };
             const actionResponses =
                 (overrides && overrides.actionResponses) || {};
@@ -90,6 +107,9 @@ async function installTauriMock(
                         return 1;
                     }
                     if (command === "plugin:event|unlisten") {
+                        return null;
+                    }
+                    if (command === "plugin:event|emit") {
                         return null;
                     }
                     if (command === "is_dev") {
@@ -234,6 +254,20 @@ async function installTauriMock(
                         if (action && actionResponses[action]) {
                             return actionResponses[action];
                         }
+                        if (action === "randomizer_generate") {
+                            return {
+                                status: "ok",
+                                result: { ok: true, path: null },
+                                message: "Generated random commander",
+                                randomizer: {
+                                    kind: "commander",
+                                    commander: "Fenix",
+                                    prestige: 0,
+                                    mastery_indices: [0, 30, 30],
+                                    map_race: "Scythe of Amon | Zerg",
+                                },
+                            };
+                        }
                         return {
                             status: "ok",
                             result: { ok: true },
@@ -288,38 +322,13 @@ async function installTauriMock(
                         if (action === "randomizer_generate") {
                             return {
                                 status: "ok",
-                                result: { ok: true },
+                                result: { ok: true, path: null },
                                 message: "Generated random commander",
                                 randomizer: {
+                                    kind: "commander",
                                     commander: "Fenix",
                                     prestige: 0,
-                                    prestige_name: "Purifier Executor",
-                                    mastery: [
-                                        {
-                                            points: 0,
-                                            label: "Fenix Suit Attack Speed",
-                                        },
-                                        {
-                                            points: 30,
-                                            label: "Fenix Suit Offline Energy Regeneration",
-                                        },
-                                        {
-                                            points: 30,
-                                            label: "Champion A.I. Attack Speed",
-                                        },
-                                        {
-                                            points: 0,
-                                            label: "Champion A.I. Life and Shields",
-                                        },
-                                        {
-                                            points: 30,
-                                            label: "Chrono Boost Efficiency",
-                                        },
-                                        {
-                                            points: 0,
-                                            label: "Extra Starting Supply",
-                                        },
-                                    ],
+                                    mastery_indices: [0, 30, 30],
                                     map_race: "Scythe of Amon | Zerg",
                                 },
                             };
@@ -765,7 +774,7 @@ test.describe("Config route", () => {
         });
 
         await page.goto("/", { waitUntil: "domcontentloaded" });
-        await page.getByRole("button", { name: "Statistics" }).click();
+        await page.getByRole("tab", { name: "Statistics" }).click();
         await page.getByRole("button", { name: "Unit stats" }).click();
         await expect(
             page.getByText(
@@ -779,16 +788,9 @@ test.describe("Config route", () => {
         await expect(
             page.getByRole("cell", { name: "Brood Queen" }),
         ).toHaveCount(0);
-        await expect(
-            page
-                .locator(".stats-unit-table-grid tbody tr.stats-sum-row td")
-                .nth(3),
-        ).toHaveText("5,410");
-        await expect(
-            page
-                .locator(".stats-unit-table-grid tbody tr.stats-sum-row td")
-                .nth(5),
-        ).toHaveText("16");
+        const sumRow = page.getByRole("row", { name: /Σ \(9 games\)/ });
+        await expect(sumRow.getByRole("cell").nth(3)).toHaveText("5,410");
+        await expect(sumRow.getByRole("cell").nth(5)).toHaveText("16");
     });
 
     test("unit and amon tabs show detailed parsed replay counts", async ({
@@ -844,7 +846,7 @@ test.describe("Config route", () => {
         });
 
         await page.goto("/", { waitUntil: "domcontentloaded" });
-        await page.getByRole("button", { name: "Statistics" }).click();
+        await page.getByRole("tab", { name: "Statistics" }).click();
 
         const detailMessage =
             "This tab only shows statistics from detailedly parsed replays. Detailedly parsed files: 2 / 5.";
@@ -954,39 +956,35 @@ test.describe("Config route", () => {
         });
 
         await page.goto("/", { waitUntil: "domcontentloaded" });
-        await page.getByRole("button", { name: "Statistics" }).click();
+        await page.getByRole("tab", { name: "Statistics" }).click();
 
         await expect(
-            page.locator(".stats-map-players .stats-map-player h4").nth(0),
-        ).toHaveText("Main Tester");
+            page.getByRole("heading", { name: "Main Tester" }),
+        ).toBeVisible();
         await expect(
-            page.locator(".stats-map-players .stats-map-player h4").nth(1),
-        ).toHaveText("Partner Tester");
-        await expect(page.locator(".stats-map-sub")).toHaveText(
-            "17:21 | Terran",
-        );
-        await expect(page.locator(".stats-map-foot")).toContainText(
-            "Normal | 2018-09-30 22:12:24",
-        );
-        await expect(page.locator(".stats-map-player").nth(0)).toContainText(
-            "Evolution Master (P0)",
-        );
-        await expect(page.locator(".stats-map-player").nth(1)).toContainText(
-            "Chief Engineer (P0)",
-        );
-        await expect(page.locator(".stats-map-player").nth(0)).toContainText(
-            "0 Toxic Nest Damage",
-        );
-        await expect(page.locator(".stats-map-player").nth(0)).toContainText(
-            "0 Structure Morph and Evolution Rate",
-        );
-        await expect(page.locator(".stats-map-player").nth(1)).toContainText(
-            "0 Combat Drop Duration and Life",
-        );
-        await expect(page.locator(".stats-map-player").nth(1)).toContainText(
-            "0 Laser Drill Build Time, Upgrade Time, and Upgrade Cost",
-        );
-        await expect(page.locator(".stats-map-player-empty")).toHaveCount(0);
+            page.getByRole("heading", { name: "Partner Tester" }),
+        ).toBeVisible();
+        await expect(
+            page.getByText("17:21 | Terran", { exact: true }),
+        ).toBeVisible();
+        await expect(
+            page.getByText("Normal | 2018-09-30 22:12:24", { exact: true }),
+        ).toBeVisible();
+        await expect(page.getByText("Evolution Master (P0)")).toBeVisible();
+        await expect(page.getByText("Chief Engineer (P0)")).toBeVisible();
+        await expect(page.getByText("0 Toxic Nest Damage")).toBeVisible();
+        await expect(
+            page.getByText("0 Structure Morph and Evolution Rate"),
+        ).toBeVisible();
+        await expect(
+            page.getByText("0 Combat Drop Duration and Life"),
+        ).toBeVisible();
+        await expect(
+            page.getByText(
+                "0 Laser Drill Build Time, Upgrade Time, and Upgrade Cost",
+            ),
+        ).toBeVisible();
+        await expect(page.getByText("No mastery data")).toHaveCount(0);
     });
 
     test("statistics checkbox filters refresh immediately", async ({
@@ -1063,7 +1061,7 @@ test.describe("Config route", () => {
         );
 
         await page.goto("/", { waitUntil: "domcontentloaded" });
-        await page.getByRole("button", { name: "Statistics" }).click();
+        await page.getByRole("tab", { name: "Statistics" }).click();
 
         await expect(
             page.getByText("Games found: 10", { exact: true }),
@@ -1143,16 +1141,16 @@ test.describe("Config route", () => {
         );
 
         await page.goto("/", { waitUntil: "domcontentloaded" });
-        await page.getByRole("button", { name: "Statistics" }).click();
+        await page.getByRole("tab", { name: "Statistics" }).click();
 
         await expect(
             page.getByText("Games found: 10", { exact: true }),
         ).toBeVisible();
         await page
-            .locator(".stats-filter-group")
-            .filter({ hasText: "Main mastery point" })
+            .getByRole("heading", { name: "Main mastery point" })
+            .locator("xpath=..")
             .getByRole("checkbox", {
-                name: "Mastery Point <= 90",
+                name: "<= 90",
                 exact: true,
             })
             .click();
@@ -1193,12 +1191,12 @@ test.describe("Config route", () => {
 
         await page.goto("/", { waitUntil: "domcontentloaded" });
 
-        await page.getByRole("button", { name: "Statistics" }).click();
+        await page.getByRole("tab", { name: "Statistics" }).click();
         await expect(
             page.getByRole("button", { name: "Run simple analysis" }),
         ).toBeDisabled();
 
-        await page.getByRole("button", { name: "Settings" }).click();
+        await page.getByRole("tab", { name: "Settings" }).click();
         await expect(
             page.getByRole("button", { name: "Delete parsed data" }),
         ).toBeDisabled();
@@ -1209,17 +1207,16 @@ test.describe("Config route", () => {
         await page.goto("/", { waitUntil: "domcontentloaded" });
 
         await expect(
-            page.getByRole("heading", { name: "SCO Overlay Config" }),
+            page.getByRole("heading", { name: /SC2 Coop Info v0\.1\.0 Dev/ }),
         ).toBeVisible();
-        await expect(page.locator("#app-status")).toBeVisible();
-        await expect(page.locator("#app-tab-nav")).toBeVisible();
-        await expect(page.locator("#app-content")).toBeVisible();
-        await expect(page.locator("#app-footer")).toHaveCount(1);
-        await expect(page.locator("#app-save")).toHaveCount(1);
-        await expect(page.locator("#app-revert")).toHaveCount(1);
-        await expect(page.locator("#app-reload")).toHaveCount(1);
-        await expect(page.locator("#app-footer")).toHaveClass(/is-hidden/);
-        await expect(page.locator("#app-tab-nav .tab-btn")).toHaveCount(8);
+        await expect(
+            page.getByText("Settings loaded", { exact: true }),
+        ).toBeVisible();
+        await expect(page.getByRole("tab")).toHaveCount(8);
+        await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
+        await expect(
+            page.getByRole("button", { name: "Revert" }),
+        ).toBeDisabled();
     });
 
     test("monitor selector uses indexed monitor names from the backend", async ({
@@ -1237,10 +1234,7 @@ test.describe("Config route", () => {
 
         await page.goto("/", { waitUntil: "domcontentloaded" });
 
-        const monitorSelect = page
-            .locator("label.main-number-row")
-            .filter({ hasText: "Monitor" })
-            .locator("select.input");
+        const monitorSelect = page.locator("select").nth(1);
         await expect(monitorSelect).toHaveValue("2");
         await expect(monitorSelect.locator("option")).toHaveText([
             "1 - ASUS VG27A",
@@ -1272,11 +1266,13 @@ test.describe("Config route", () => {
         ).toBeVisible();
         await expect(
             page.getByRole("checkbox", {
-                name: "Show player winrates and notes",
+                name: "Show player stats and notes at game start",
             }),
         ).toBeVisible();
         await expect(
-            page.getByRole("checkbox", { name: "Show replay info after game" }),
+            page.getByRole("checkbox", {
+                name: "Show replay info after the game ends",
+            }),
         ).toBeVisible();
         await expect(
             page.getByRole("checkbox", { name: "Fast expand hints" }),
@@ -1394,10 +1390,14 @@ test.describe("Config route", () => {
         await page.goto("/", { waitUntil: "domcontentloaded" });
 
         await page
-            .getByRole("button", { name: "Account folder", exact: true })
+            .getByText("fixtures/accounts", { exact: true })
+            .locator("xpath=ancestor::div[.//button][1]")
+            .getByRole("button", { name: "Change" })
             .click();
         await page
-            .getByRole("button", { name: "Screenshot folder", exact: true })
+            .getByText("fixtures/screenshots", { exact: true })
+            .locator("xpath=ancestor::div[.//button][1]")
+            .getByRole("button", { name: "Change" })
             .click();
 
         await expect(
@@ -1480,8 +1480,8 @@ test.describe("Config route", () => {
         await page.goto("/", { waitUntil: "domcontentloaded" });
 
         await page
-            .locator(".color-row")
-            .filter({ hasText: /^Player 1$/ })
+            .getByText("Player 1", { exact: true })
+            .locator("xpath=..")
             .getByRole("button")
             .click();
 
@@ -1516,10 +1516,7 @@ test.describe("Config route", () => {
         await installTauriMock(page);
         await page.goto("/", { waitUntil: "domcontentloaded" });
 
-        const hotkeyInput = page
-            .locator(".hotkey-entry")
-            .filter({ has: page.getByRole("button", { name: "Show / Hide" }) })
-            .locator("input.hotkey-input");
+        const hotkeyInput = hotkeyInputForAction(page, "Show / Hide");
 
         await hotkeyInput.click();
 
@@ -1532,10 +1529,12 @@ test.describe("Config route", () => {
             )
             .toMatchObject({
                 action: "hotkey_reassign_begin",
-                path: "hotkey_show/hide",
+                payload: {
+                    path: "hotkey_show/hide",
+                },
             });
 
-        await page.getByRole("heading", { name: "SCO Overlay Config" }).click();
+        await page.getByRole("heading", { name: /SC2 Coop Info/ }).click();
 
         await expect
             .poll(() =>
@@ -1546,7 +1545,9 @@ test.describe("Config route", () => {
             )
             .toMatchObject({
                 action: "hotkey_reassign_end",
-                path: "hotkey_show/hide",
+                payload: {
+                    path: "hotkey_show/hide",
+                },
             });
     });
 
@@ -1719,12 +1720,7 @@ test.describe("Config route", () => {
         });
         await page.goto("/", { waitUntil: "domcontentloaded" });
 
-        const hotkeyInput = page
-            .locator(".hotkey-entry")
-            .filter({
-                has: page.getByRole("button", { name: /^Show \/ Hide$/ }),
-            })
-            .locator("input.hotkey-input");
+        const hotkeyInput = hotkeyInputForAction(page, /^Show \/ Hide$/);
 
         await hotkeyInput.click();
         await hotkeyInput.dispatchEvent("keydown", {
@@ -1733,7 +1729,7 @@ test.describe("Config route", () => {
             ctrlKey: true,
         });
 
-        await expect(hotkeyInput).toHaveClass(/is-recording/);
+        await expectHotkeyRecording(hotkeyInput);
 
         await hotkeyInput.dispatchEvent("keydown", {
             key: "P",
@@ -1742,7 +1738,7 @@ test.describe("Config route", () => {
             shiftKey: true,
         });
 
-        await expect(hotkeyInput).not.toHaveClass(/is-recording/);
+        await expectHotkeyIdle(hotkeyInput);
         await expect(hotkeyInput).toHaveValue("Ctrl+Shift+P");
 
         await expect
@@ -1774,7 +1770,9 @@ test.describe("Config route", () => {
             )
             .toMatchObject({
                 action: "hotkey_reassign_end",
-                path: "hotkey_show/hide",
+                payload: {
+                    path: "hotkey_show/hide",
+                },
             });
 
         await page.getByRole("button", { name: /^Save$/ }).click();
@@ -1802,15 +1800,10 @@ test.describe("Config route", () => {
         });
         await page.goto("/", { waitUntil: "domcontentloaded" });
 
-        const hotkeyInput = page
-            .locator(".hotkey-entry")
-            .filter({
-                has: page.getByRole("button", { name: /^Show \/ Hide$/ }),
-            })
-            .locator("input.hotkey-input");
+        const hotkeyInput = hotkeyInputForAction(page, /^Show \/ Hide$/);
 
         await hotkeyInput.click();
-        await expect(hotkeyInput).toHaveClass(/is-recording/);
+        await expectHotkeyRecording(hotkeyInput);
 
         await hotkeyInput.dispatchEvent("keydown", {
             key: "&",
@@ -1820,7 +1813,7 @@ test.describe("Config route", () => {
         });
 
         await expect(hotkeyInput).toHaveValue("Ctrl+Shift+7");
-        await expect(hotkeyInput).not.toHaveClass(/is-recording/);
+        await expectHotkeyIdle(hotkeyInput);
 
         await expect
             .poll(() =>
@@ -1868,26 +1861,18 @@ test.describe("Config route", () => {
         });
         await page.goto("/", { waitUntil: "domcontentloaded" });
 
-        const showHideInput = page
-            .locator(".hotkey-entry")
-            .filter({
-                has: page.getByRole("button", { name: /^Show \/ Hide$/ }),
-            })
-            .locator("input.hotkey-input");
-        const showInput = page
-            .locator(".hotkey-entry")
-            .filter({ has: page.getByRole("button", { name: /^Show$/ }) })
-            .locator("input.hotkey-input");
+        const showHideInput = hotkeyInputForAction(page, /^Show \/ Hide$/);
+        const showInput = hotkeyInputForAction(page, /^Show$/);
 
         await showHideInput.click();
-        await expect(showHideInput).toHaveClass(/is-recording/);
+        await expectHotkeyRecording(showHideInput);
         await showHideInput.dispatchEvent("keydown", {
             key: "Escape",
             code: "Escape",
         });
 
         await expect(showHideInput).toHaveValue("");
-        await expect(showHideInput).not.toHaveClass(/is-recording/);
+        await expectHotkeyIdle(showHideInput);
 
         await expect
             .poll(() =>
@@ -1898,14 +1883,14 @@ test.describe("Config route", () => {
             .toBe(0);
 
         await showInput.click();
-        await expect(showInput).toHaveClass(/is-recording/);
+        await expectHotkeyRecording(showInput);
         await showInput.dispatchEvent("keydown", {
             key: "Backspace",
             code: "Backspace",
         });
 
         await expect(showInput).toHaveValue("");
-        await expect(showInput).not.toHaveClass(/is-recording/);
+        await expectHotkeyIdle(showInput);
 
         await expect
             .poll(() =>
@@ -1915,18 +1900,16 @@ test.describe("Config route", () => {
             )
             .toBe(0);
 
-        await page
-            .locator(".main-bottom-right button")
-            .filter({ hasText: /^Revert$/ })
-            .click();
+        await page.getByRole("button", { name: /^Revert$/ }).click();
 
         await expect(showHideInput).toHaveValue("Ctrl+Shift+*");
         await expect(showInput).toHaveValue("Ctrl+Alt+K");
     });
 
     test("loads with hash route fallback", async ({ page }) => {
+        await installTauriMock(page);
         await page.goto("/", { waitUntil: "domcontentloaded" });
-        await expect(page).toHaveURL(/#\/config$/);
+        await expect(page).toHaveURL(/#\/config\/settings$/);
     });
 
     test("randomizer tab matches the legacy selection and result flow", async ({
@@ -1935,7 +1918,7 @@ test.describe("Config route", () => {
         await installTauriMock(page);
         await page.goto("/", { waitUntil: "domcontentloaded" });
 
-        await page.getByRole("button", { name: "Randomizer" }).click();
+        await page.getByRole("tab", { name: "Randomizer" }).click();
 
         await expect(
             page.getByText("Commander and prestige choices"),
@@ -1973,7 +1956,7 @@ test.describe("Config route", () => {
         await expect(
             page.getByRole("checkbox", { name: "Fenix P0" }),
         ).not.toBeChecked();
-        await page.getByRole("button", { name: "Generate" }).click();
+        await page.getByRole("button", { name: "Generate" }).first().click();
 
         await expect(
             page.getByText("Fenix - Purifier Executor (P0)"),
