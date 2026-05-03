@@ -1,6 +1,5 @@
 mod common;
 
-use s2coop_analyzer::cache_overall_stats_generator::CacheOverallStatsFile;
 use s2coop_analyzer::detailed_replay_analysis::{
     DetailedReplayAnalyzer, GenerateCacheConfig, GenerateCacheRuntimeOptions,
 };
@@ -28,15 +27,5 @@ fn generate_cache_skips_invalid_replay_candidates() {
     assert_eq!(
         fs::read_to_string(&output_file).expect("cache output should be readable"),
         "[]"
-    );
-
-    let pretty_output = CacheOverallStatsFile::pretty_output_path(&output_file);
-    assert!(
-        pretty_output.is_file(),
-        "pretty cache output should be written"
-    );
-    assert_eq!(
-        fs::read_to_string(pretty_output).expect("pretty cache output should be readable"),
-        "[]\n"
     );
 }

@@ -1,8 +1,7 @@
 use chrono::{Local, NaiveDate};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use s2coop_analyzer::cache_overall_stats_generator::{
-    CacheIconValue, CacheNumericValue, CacheOverallStatsFile, CachePlayer, CacheReplayEntry,
-    CacheUnitStats, ReplayMessage,
+    CacheIconValue, CacheNumericValue, CachePlayer, CacheReplayEntry, CacheUnitStats, ReplayMessage,
 };
 use s2coop_analyzer::detailed_replay_analysis::{
     DetailedReplayAnalyzer, ReplayAnalysisResources, ReplayFileIdentity,
@@ -1127,15 +1126,6 @@ impl ReplayAnalysisOps {
                 cache_path.display()
             );
         } else {
-            if let Err(error) = CacheOverallStatsFile::write_pretty_cache_file(
-                cache_path,
-                Some(&CacheOverallStatsFile::pretty_output_path(cache_path)),
-            ) {
-                crate::sco_log!(
-                    "[SCO/cache] failed to update pretty cache '{}': {error}",
-                    cache_path.display()
-                );
-            }
             if let Err(error) = std::fs::remove_file(&temp_path) {
                 crate::sco_log!(
                     "[SCO/cache] failed to remove recovered temp cache '{}': {error}",
@@ -3645,28 +3635,46 @@ impl ReplayAnalysis {
         main_handles: &HashSet<String>,
         dictionary: &Sc2DictionaryData,
     ) -> Vec<ReplayInfo> {
-        let mut replays = ReplayAnalysisOps::recover_cache_entries_from_temp(
+        let entries = ReplayAnalysisOps::recover_cache_entries_from_temp(
             cache_path,
             "detailed-analysis cache",
-        )
-        .into_iter()
-        .filter(|entry| entry.detailed_analysis && Path::new(&entry.file).exists())
-        .map(|entry| {
-            ReplayAnalysisOps::replay_info_from_cache_entry_with_dictionary(&entry, dictionary)
-                .oriented_for_main_identity(main_names, main_handles)
-        })
-        .collect::<Vec<_>>();
-
-        replays.sort_by(|a, b| b.date.cmp(&a.date).then_with(|| b.file.cmp(&a.file)));
-        if limit > 0 && replays.len() > limit {
-            replays.truncate(limit);
-        }
+        );
+        let replays = Self::detailed_analysis_replays_snapshot_from_entries_with_dictionary(
+            &entries,
+            limit,
+            main_names,
+            main_handles,
+            dictionary,
+        );
 
         crate::sco_log!(
             "[SCO/cache] loaded {} replay(s) from detailed-analysis cache '{}'",
             replays.len(),
             cache_path.display()
         );
+        replays
+    }
+
+    pub(crate) fn detailed_analysis_replays_snapshot_from_entries_with_dictionary(
+        entries: &[CacheReplayEntry],
+        limit: usize,
+        main_names: &HashSet<String>,
+        main_handles: &HashSet<String>,
+        dictionary: &Sc2DictionaryData,
+    ) -> Vec<ReplayInfo> {
+        let mut replays = entries
+            .iter()
+            .filter(|entry| entry.detailed_analysis && Path::new(&entry.file).exists())
+            .map(|entry| {
+                ReplayAnalysisOps::replay_info_from_cache_entry_with_dictionary(entry, dictionary)
+                    .oriented_for_main_identity(main_names, main_handles)
+            })
+            .collect::<Vec<_>>();
+
+        replays.sort_by(|a, b| b.date.cmp(&a.date).then_with(|| b.file.cmp(&a.file)));
+        if limit > 0 && replays.len() > limit {
+            replays.truncate(limit);
+        }
         replays
     }
 

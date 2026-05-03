@@ -1,7 +1,8 @@
+use s2coop_analyzer::cache_overall_stats_generator::CacheReplayEntry;
 use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use std::borrow::Borrow;
 use std::borrow::Cow;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -174,6 +175,32 @@ impl TestHelperOps {
         main_handles,
         &dictionary,
     )
+    }
+}
+
+impl TestHelperOps {
+    pub fn detailed_analysis_replays_snapshot_from_entries(
+        entries: &[CacheReplayEntry],
+        limit: usize,
+    ) -> Vec<ReplayInfo> {
+        let (main_names, main_handles) = TestHelperOps::default_main_identity();
+        let dictionary = TestHelperOps::load_dictionary();
+        crate::replay_analysis::ReplayAnalysis::detailed_analysis_replays_snapshot_from_entries_with_dictionary(
+            entries,
+            limit,
+            &main_names,
+            &main_handles,
+            &dictionary,
+        )
+    }
+}
+
+impl TestHelperOps {
+    pub fn merge_cache_entries_for_test(
+        existing_by_hash: &HashMap<String, CacheReplayEntry>,
+        new_entries: Vec<CacheReplayEntry>,
+    ) -> Vec<CacheReplayEntry> {
+        TauriOverlayOps::merge_cache_entries(existing_by_hash, new_entries)
     }
 }
 

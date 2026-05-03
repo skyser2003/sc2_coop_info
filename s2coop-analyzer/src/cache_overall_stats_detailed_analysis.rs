@@ -1,4 +1,3 @@
-use crate::cache_overall_stats_generator::CacheOverallStatsFile;
 use crate::detailed_replay_analysis::{
     DetailedReplayAnalyzer, GenerateCacheConfig, GenerateCacheError, GenerateCacheRuntimeOptions,
     ReplayAnalysisResources,
@@ -34,8 +33,6 @@ pub enum TestCacheOverallStatsDetailedAnalysisError {
     MissingOriginalCache(PathBuf),
     #[error("generated cache_overall_stats file was not created: {0}")]
     MissingGeneratedCache(PathBuf),
-    #[error("generated pretty cache_overall_stats file was not created: {0}")]
-    MissingGeneratedPrettyCache(PathBuf),
     #[error("generated cache file is empty: {0}")]
     EmptyGeneratedCache(PathBuf),
     #[error("generated cache has no detailed-analysis replay entries: {0}")]
@@ -70,16 +67,14 @@ struct FieldDifference {
 #[derive(Debug)]
 struct CacheSummaryPaths {
     generated: PathBuf,
-    pretty: PathBuf,
     original: PathBuf,
 }
 
 impl CacheSummaryPaths {
     fn format_line(&self) -> String {
         format!(
-            "Cache comparison summary: generated={}, pretty={}, original={}",
+            "Cache comparison summary: generated={}, original={}",
             self.generated.display(),
-            self.pretty.display(),
             self.original.display()
         )
     }
@@ -115,15 +110,12 @@ impl CacheOverallStatsDetailedAnalysis {
             .output_file
             .clone()
             .unwrap_or_else(CacheAnalysisPaths::default_generated_output);
-        let generated_pretty = CacheOverallStatsFile::pretty_output_path(&generated_output);
         let original_output = args
             .original_output
             .clone()
             .unwrap_or_else(CacheAnalysisPaths::default_original_output);
-        let original_pretty = CacheOverallStatsFile::pretty_output_path(&original_output);
         let summary_paths = CacheSummaryPaths {
             generated: generated_output.clone(),
-            pretty: generated_pretty.clone(),
             original: original_output.clone(),
         };
 
@@ -147,13 +139,6 @@ impl CacheOverallStatsDetailedAnalysis {
         if !generated_output.is_file() {
             return Err(
                 TestCacheOverallStatsDetailedAnalysisError::MissingGeneratedCache(generated_output),
-            );
-        }
-        if !generated_pretty.is_file() {
-            return Err(
-                TestCacheOverallStatsDetailedAnalysisError::MissingGeneratedPrettyCache(
-                    generated_pretty,
-                ),
             );
         }
 
@@ -183,19 +168,11 @@ impl CacheOverallStatsDetailedAnalysis {
             );
         }
 
-        let regenerated_original_pretty = CacheOverallStatsFile::write_pretty_cache_file(
-            &original_output,
-            Some(&original_pretty),
-        )
-        .map_err(GenerateCacheError::from)?;
-
         let comparison_report = CachePayloadDiff::compare_with_report(
             &generated_output,
             &original_output,
             "Generated cache_overall_stats and original/cache_overall_stats",
             NUMERIC_ABS_TOLERANCE,
-            Some(&generated_pretty),
-            Some(&regenerated_original_pretty),
         )
         .map_err(|error| error.with_context(&summary_paths, start.elapsed().as_secs_f64()))?;
 
@@ -818,91 +795,12 @@ impl CachePayloadDiff {
         }
     }
 
-    fn truncate_line(text: &str, max_length: usize) -> String {
-        if text.len() <= max_length {
-            text.to_string()
-        } else {
-            format!("{}...", &text[..max_length - 3])
-        }
-    }
-
-    fn first_differing_pretty_line(
-        expected_path: &Path,
-        actual_path: &Path,
-    ) -> Result<String, TestCacheOverallStatsDetailedAnalysisError> {
-        let expected_lines = fs::read_to_string(expected_path)
-            .map_err(|error| {
-                TestCacheOverallStatsDetailedAnalysisError::ReadFailed(
-                    expected_path.to_path_buf(),
-                    error,
-                )
-            })?
-            .lines()
-            .map(ToString::to_string)
-            .collect::<Vec<String>>();
-        let actual_lines = fs::read_to_string(actual_path)
-            .map_err(|error| {
-                TestCacheOverallStatsDetailedAnalysisError::ReadFailed(
-                    actual_path.to_path_buf(),
-                    error,
-                )
-            })?
-            .lines()
-            .map(ToString::to_string)
-            .collect::<Vec<String>>();
-
-        let min_count = expected_lines.len().min(actual_lines.len());
-        for line_index in 0..min_count {
-            if expected_lines[line_index] != actual_lines[line_index] {
-                return Ok(format!(
-                    "first_differing_pretty_line={}\nexpected_line={}\nactual_line={}",
-                    line_index + 1,
-                    Self::truncate_line(&expected_lines[line_index], 240),
-                    Self::truncate_line(&actual_lines[line_index], 240)
-                ));
-            }
-        }
-
-        if expected_lines.len() != actual_lines.len() {
-            return Ok(format!(
-                "pretty_line_count_diff expected_lines={} actual_lines={}",
-                expected_lines.len(),
-                actual_lines.len()
-            ));
-        }
-
-        Ok("pretty_line_report_unavailable".to_string())
-    }
-
     fn compare_with_report(
         actual_path: &Path,
         expected_path: &Path,
         label: &str,
         abs_tolerance: f64,
-        actual_pretty_path: Option<&Path>,
-        expected_pretty_path: Option<&Path>,
     ) -> Result<String, TestCacheOverallStatsDetailedAnalysisError> {
-        if let (Some(actual_pretty_path), Some(expected_pretty_path)) =
-            (actual_pretty_path, expected_pretty_path)
-        {
-            if actual_pretty_path.is_file()
-                && expected_pretty_path.is_file()
-                && fs::read(actual_pretty_path).map_err(|error| {
-                    TestCacheOverallStatsDetailedAnalysisError::ReadFailed(
-                        actual_pretty_path.to_path_buf(),
-                        error,
-                    )
-                })? == fs::read(expected_pretty_path).map_err(|error| {
-                    TestCacheOverallStatsDetailedAnalysisError::ReadFailed(
-                        expected_pretty_path.to_path_buf(),
-                        error,
-                    )
-                })?
-            {
-                return Ok(format!("{label}: pretty-identical; no differences."));
-            }
-        }
-
         let actual_bytes = fs::read(actual_path).map_err(|error| {
             TestCacheOverallStatsDetailedAnalysisError::ReadFailed(actual_path.to_path_buf(), error)
         })?;
@@ -941,21 +839,6 @@ impl CachePayloadDiff {
         let all_differences_report =
             Self::format_report(&expected_payload, &actual_payload, 8, 3, abs_tolerance);
 
-        let pretty_line_report = if let (Some(actual_pretty_path), Some(expected_pretty_path)) =
-            (actual_pretty_path, expected_pretty_path)
-        {
-            if actual_pretty_path.is_file() && expected_pretty_path.is_file() {
-                format!(
-                    "Pretty file line diff:\n{}\n",
-                    Self::first_differing_pretty_line(expected_pretty_path, actual_pretty_path)?
-                )
-            } else {
-                String::new()
-            }
-        } else {
-            String::new()
-        };
-
         let mut significant_differences = Vec::new();
         Self::collect_first_field_differences(
             &expected_payload,
@@ -969,10 +852,9 @@ impl CachePayloadDiff {
         if significant_differences.is_empty() {
             let mut lines = vec![
                 format!(
-                    "{label}: byte-level differences are numeric-equivalent.\nexpected={}\nactual={}\n{}Diff summary (all differences):\n{}",
+                    "{label}: byte-level differences are numeric-equivalent.\nexpected={}\nactual={}\nDiff summary (all differences):\n{}",
                     expected_path.display(),
                     actual_path.display(),
-                    pretty_line_report,
                     all_differences_report
                 ),
                 format!(
@@ -990,10 +872,9 @@ impl CachePayloadDiff {
 
         Err(TestCacheOverallStatsDetailedAnalysisError::ComparisonFailed {
             details: format!(
-                "{label}: byte-level difference detected.\nexpected={}\nactual={}\n{}Diff summary (all differences):\n{}\n{label} are different.\nexpected={}\nactual={}\nnumeric_abs_tolerance={}\nDiff summary:\n{}",
+                "{label}: byte-level difference detected.\nexpected={}\nactual={}\nDiff summary (all differences):\n{}\n{label} are different.\nexpected={}\nactual={}\nnumeric_abs_tolerance={}\nDiff summary:\n{}",
                 expected_path.display(),
                 actual_path.display(),
-                pretty_line_report,
                 all_differences_report,
                 expected_path.display(),
                 actual_path.display(),

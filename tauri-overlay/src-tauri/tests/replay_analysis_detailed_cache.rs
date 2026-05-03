@@ -1,10 +1,10 @@
 use s2coop_analyzer::cache_overall_stats_generator::{
-    CacheCountValue, CacheNumericValue, CacheOverallStatsFile, CachePlayer, CacheReplayEntry,
-    CacheUnitStats, ProtocolBuildValue, ReplayBuildInfo,
+    CacheCountValue, CacheNumericValue, CachePlayer, CacheReplayEntry, CacheUnitStats,
+    ProtocolBuildValue, ReplayBuildInfo,
 };
 use sco_tauri_overlay::TestHelperOps;
 use serde_json::json;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -172,6 +172,59 @@ fn load_detailed_analysis_replays_snapshot_from_path_uses_cache_entries() {
 }
 
 #[test]
+fn detailed_analysis_replays_snapshot_from_entries_uses_memory_entries() {
+    let root = unique_temp_path("memory_cache");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let replay_path = root.join("memory.SC2Replay");
+    let ignored_replay_path = root.join("memory_ignored.SC2Replay");
+
+    std::fs::write(&replay_path, []).expect("replay file should be created");
+    std::fs::write(&ignored_replay_path, []).expect("ignored replay file should be created");
+
+    let entries = vec![
+        sample_cache_entry(&replay_path, true),
+        sample_cache_entry(&ignored_replay_path, false),
+    ];
+
+    let replays = TestHelperOps::detailed_analysis_replays_snapshot_from_entries(&entries, 0);
+
+    assert_eq!(replays.len(), 1);
+    assert_eq!(replays[0].file(), replay_path.display().to_string());
+    assert_eq!(replays[0].map(), test_map_id("Void Launch"));
+    assert_eq!(replays[0].main_commander(), "Raynor");
+    assert_eq!(replays[0].ally_commander(), "Karax");
+
+    let _ = std::fs::remove_file(&replay_path);
+    let _ = std::fs::remove_file(&ignored_replay_path);
+    let _ = std::fs::remove_dir(&root);
+}
+
+#[test]
+fn detailed_analysis_cache_merge_replaces_same_file_different_hash() {
+    let root = unique_temp_path("same_file_merge");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let replay_path = root.join("changed.SC2Replay");
+
+    let mut stale_entry = sample_cache_entry(&replay_path, true);
+    stale_entry.hash = "old-hash".to_string();
+    stale_entry.date = "2026-03-09 12:00:00".to_string();
+
+    let mut updated_entry = sample_cache_entry(&replay_path, true);
+    updated_entry.hash = "new-hash".to_string();
+    updated_entry.date = "2026-03-09 12:00:01".to_string();
+
+    let existing_by_hash = HashMap::from([(stale_entry.hash.clone(), stale_entry)]);
+    let merged =
+        TestHelperOps::merge_cache_entries_for_test(&existing_by_hash, vec![updated_entry]);
+
+    assert_eq!(merged.len(), 1);
+    assert_eq!(merged[0].file, replay_path.display().to_string());
+    assert_eq!(merged[0].hash, "new-hash");
+
+    let _ = std::fs::remove_dir(&root);
+}
+
+#[test]
 fn load_detailed_analysis_replays_snapshot_from_path_recovers_temp_cache_entries() {
     let root = unique_temp_path("recover_temp_cache");
     std::fs::create_dir_all(&root).expect("temp root should be created");
@@ -179,7 +232,6 @@ fn load_detailed_analysis_replays_snapshot_from_path_recovers_temp_cache_entries
     let recovered_replay_path = root.join("recovered.SC2Replay");
     let cache_path = root.join("cache_overall_stats.json");
     let temp_path = cache_path.with_extension("temp.jsonl");
-    let pretty_path = CacheOverallStatsFile::pretty_output_path(&cache_path);
 
     std::fs::write(&existing_replay_path, []).expect("existing replay file should be created");
     std::fs::write(&recovered_replay_path, []).expect("recovered replay file should be created");
@@ -212,10 +264,6 @@ fn load_detailed_analysis_replays_snapshot_from_path_recovers_temp_cache_entries
         !temp_path.exists(),
         "temp cache should be removed after recovery"
     );
-    assert!(
-        pretty_path.exists(),
-        "pretty cache should be regenerated after recovery"
-    );
 
     let persisted_payload = std::fs::read(&cache_path).expect("cache file should exist");
     let persisted_entries = serde_json::from_slice::<Vec<CacheReplayEntry>>(&persisted_payload)
@@ -228,7 +276,6 @@ fn load_detailed_analysis_replays_snapshot_from_path_recovers_temp_cache_entries
         .iter()
         .any(|entry| entry.file == recovered_entry.file));
 
-    let _ = std::fs::remove_file(&pretty_path);
     let _ = std::fs::remove_file(&cache_path);
     let _ = std::fs::remove_file(&existing_replay_path);
     let _ = std::fs::remove_file(&recovered_replay_path);
@@ -243,7 +290,6 @@ fn load_detailed_analysis_replays_snapshot_from_path_persists_simple_temp_entry_
     let recovered_replay_path = root.join("recovered_simple.SC2Replay");
     let cache_path = root.join("cache_overall_stats.json");
     let temp_path = cache_path.with_extension("temp.jsonl");
-    let pretty_path = CacheOverallStatsFile::pretty_output_path(&cache_path);
 
     std::fs::write(&existing_replay_path, []).expect("existing replay file should be created");
     std::fs::write(&recovered_replay_path, []).expect("recovered replay file should be created");
@@ -274,10 +320,6 @@ fn load_detailed_analysis_replays_snapshot_from_path_persists_simple_temp_entry_
         !temp_path.exists(),
         "temp cache should be removed after recovery"
     );
-    assert!(
-        pretty_path.exists(),
-        "pretty cache should be regenerated after recovery"
-    );
 
     let persisted_payload = std::fs::read(&cache_path).expect("cache file should exist");
     let persisted_entries = serde_json::from_slice::<Vec<CacheReplayEntry>>(&persisted_payload)
@@ -290,7 +332,6 @@ fn load_detailed_analysis_replays_snapshot_from_path_persists_simple_temp_entry_
         .iter()
         .any(|entry| entry.file == recovered_entry.file && !entry.detailed_analysis));
 
-    let _ = std::fs::remove_file(&pretty_path);
     let _ = std::fs::remove_file(&cache_path);
     let _ = std::fs::remove_file(&existing_replay_path);
     let _ = std::fs::remove_file(&recovered_replay_path);

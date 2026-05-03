@@ -1356,10 +1356,11 @@ pub struct GenerateCacheConfig {
     recent_replay_count: Option<usize>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct GenerateCacheSummary {
     scanned_replays: usize,
     output_file: PathBuf,
+    entries: Vec<CacheReplayEntry>,
     completed: bool,
 }
 
@@ -1432,6 +1433,8 @@ pub enum GenerateCacheError {
     ThreadPoolBuildFailed(String),
     #[error("failed to serialize cache payload: {0}")]
     SerializeFailed(#[source] serde_json::Error),
+    #[error("failed to canonicalize cache payload: {0}")]
+    CanonicalizeFailed(#[source] serde_json::Error),
     #[error("failed to write cache temp file '{0}': {1}")]
     TempWriteFailed(PathBuf, #[source] io::Error),
     #[error("failed to replace cache file '{1}' from temp '{0}': {2}")]
@@ -1513,12 +1516,15 @@ impl DetailedReplayAnalyzer {
         let cache_output = DetailedReplayAnalyzer::analyze_replays_for_cache_output(
             config, logger, runtime, resources, mode,
         )?;
-        CacheReplayEntry::write_entries(&cache_output.entries, &config.output_file)?;
-        CacheOverallStatsFile::write_pretty_cache_file(&config.output_file, None)?;
+        let scanned_replays = cache_output.entries.len();
+        let cache_entries = CacheReplayEntry::canonicalized_entries(&cache_output.entries)
+            .map_err(GenerateCacheError::CanonicalizeFailed)?;
+        CacheReplayEntry::write_entries(&cache_entries, &config.output_file)?;
 
         Ok(GenerateCacheSummary::new(
-            cache_output.entries.len(),
+            scanned_replays,
             config.output_file.clone(),
+            cache_entries,
             cache_output.completed,
         ))
     }
@@ -1568,10 +1574,16 @@ impl GenerateCacheConfig {
 }
 
 impl GenerateCacheSummary {
-    fn new(scanned_replays: usize, output_file: PathBuf, completed: bool) -> Self {
+    fn new(
+        scanned_replays: usize,
+        output_file: PathBuf,
+        entries: Vec<CacheReplayEntry>,
+        completed: bool,
+    ) -> Self {
         Self {
             scanned_replays,
             output_file,
+            entries,
             completed,
         }
     }
@@ -1582,6 +1594,14 @@ impl GenerateCacheSummary {
 
     pub fn output_file(&self) -> &Path {
         &self.output_file
+    }
+
+    pub fn cache_entries(&self) -> &[CacheReplayEntry] {
+        &self.entries
+    }
+
+    pub fn into_cache_entries(self) -> Vec<CacheReplayEntry> {
+        self.entries
     }
 
     pub fn completed(&self) -> bool {

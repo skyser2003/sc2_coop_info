@@ -23,7 +23,7 @@ fn read_json(path: &Path) -> serde_json::Value {
 }
 
 #[test]
-fn generate_cache_writes_pretty_sibling_file() {
+fn write_pretty_cache_file_writes_pretty_sibling_file() {
     let resources = common::load_replay_resources();
     let temp_dir = TempDir::new().expect("failed to create tempdir");
     let account_dir = temp_dir.path().join("Accounts");
@@ -37,6 +37,8 @@ fn generate_cache_writes_pretty_sibling_file() {
             .expect("cache generation should succeed");
 
     let pretty_file = CacheOverallStatsFile::pretty_output_path(summary.output_file());
+    CacheOverallStatsFile::write_pretty_cache_file(summary.output_file(), Some(&pretty_file))
+        .expect("pretty cache file should be written");
     assert!(pretty_file.is_file(), "pretty cache file should be created");
     assert_eq!(read_json(summary.output_file()), read_json(&pretty_file));
 

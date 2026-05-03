@@ -166,12 +166,19 @@ impl CacheOverallStatsFile {
             .map_err(|error| PrettyCacheError::ReadFailed(minified_path.to_path_buf(), error))?;
         let parsed: JsonValue = serde_json::from_slice(&payload)
             .map_err(|error| PrettyCacheError::ParseFailed(minified_path.to_path_buf(), error))?;
+        Self::write_pretty_json_value(minified_path, pretty_path, &parsed)
+    }
+
+    fn write_pretty_json_value(
+        source_path: &Path,
+        pretty_path: Option<&Path>,
+        parsed: &JsonValue,
+    ) -> Result<PathBuf, PrettyCacheError> {
         let target_path = pretty_path
             .map(Path::to_path_buf)
-            .unwrap_or_else(|| Self::pretty_output_path(minified_path));
-        let pretty_text = serde_json::to_string_pretty(&parsed).map_err(|error| {
-            PrettyCacheError::SerializeFailed(minified_path.to_path_buf(), error)
-        })?;
+            .unwrap_or_else(|| Self::pretty_output_path(source_path));
+        let pretty_text = serde_json::to_string_pretty(parsed)
+            .map_err(|error| PrettyCacheError::SerializeFailed(source_path.to_path_buf(), error))?;
         fs::write(&target_path, format!("{pretty_text}\n"))
             .map_err(|error| PrettyCacheError::WriteFailed(target_path.clone(), error))?;
         Ok(target_path)
@@ -582,6 +589,11 @@ impl CacheReplayEntry {
             canonical_entries.push(Self::canonicalize_json_value(value));
         }
         serde_json::to_vec(&canonical_entries)
+    }
+
+    pub fn canonicalized_entries(entries: &[Self]) -> Result<Vec<Self>, serde_json::Error> {
+        let payload = Self::serialize_entries(entries)?;
+        serde_json::from_slice::<Vec<Self>>(&payload)
     }
 
     pub fn write_entries(entries: &[Self], path: &Path) -> Result<(), GenerateCacheError> {

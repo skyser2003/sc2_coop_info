@@ -3,7 +3,7 @@ use rfd::FileDialog;
 use s2coop_analyzer::cache_overall_stats_generator::CacheReplayEntry;
 use s2coop_analyzer::detailed_replay_analysis::{
     DetailedReplayAnalyzer, GenerateCacheConfig, GenerateCacheRuntimeOptions,
-    GenerateCacheStopController, ReplayAnalysisResources, ReplayFileIdentity,
+    GenerateCacheStopController, GenerateCacheSummary, ReplayAnalysisResources, ReplayFileIdentity,
 };
 use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use serde::Serialize;
@@ -1811,7 +1811,7 @@ impl TauriOverlayOps {
         stats: &Arc<Mutex<StatsState>>,
         worker_count: usize,
         stop_controller: Arc<GenerateCacheStopController>,
-    ) -> Result<(usize, bool), String> {
+    ) -> Result<GenerateCacheSummary, String> {
         let state = app.state::<BackendState>();
         let settings = state.read_settings_memory();
         let replay_scan_progress = state.replay_scan_progress();
@@ -1856,7 +1856,6 @@ impl TauriOverlayOps {
             Some(&logger),
             &runtime,
         )
-        .map(|summary| (summary.scanned_replays(), summary.completed()))
         .map_err(|error| format!("Failed to generate '{}': {error}", output_file.display()))
     }
 }
@@ -2235,6 +2234,18 @@ impl TauriOverlayOps {
                 continue;
             }
 
+            if merged.values().any(|existing| {
+                existing.file == entry.file
+                    && existing.hash != entry.hash
+                    && existing.detailed_analysis
+                    && !entry.detailed_analysis
+            }) {
+                continue;
+            }
+            merged.retain(|existing_hash, existing| {
+                existing_hash == &hash || existing.file != entry.file
+            });
+
             match merged.get(&hash) {
                 Some(existing) => {
                     // Keep detailed over simple
@@ -2296,36 +2307,27 @@ impl TauriOverlayOps {
                 slot.take();
             }
 
-            let (scanned_replays, completed) = generation_result?;
+            let generation_summary = generation_result?;
+            let scanned_replays = generation_summary.scanned_replays();
+            let completed = generation_summary.completed();
             crate::sco_log!(
                 "[SCO/stats] detailed scan generated '{}' with {} replay(s) completed={completed}",
                 PathManagerOps::get_cache_path().display(),
                 scanned_replays
             );
 
-            let cache_path = PathManagerOps::get_cache_path();
-            let payload = match std::fs::read(&cache_path) {
-                Ok(payload) => payload,
-                Err(error) => {
-                    crate::sco_log!("[SCO/stats] failed to read generated detailed cache: {error}");
-                    Vec::new()
-                }
-            };
-            let new_cache_entries = serde_json::from_slice::<Vec<CacheReplayEntry>>(&payload)
-                .unwrap_or_else(|error| {
-                    crate::sco_log!(
-                        "[SCO/stats] failed to parse generated detailed cache: {error}"
-                    );
-                    Vec::new()
-                });
-
             let main_names = state.configured_main_names();
             let main_handles = state.configured_main_handles();
-            let replays = ReplayAnalysis::load_detailed_analysis_replays_snapshot(
-                limit,
-                &main_names,
-                &main_handles,
-            );
+            let dictionary = state.dictionary_data()?;
+            let new_cache_entries = generation_summary.into_cache_entries();
+            let replays =
+                ReplayAnalysis::detailed_analysis_replays_snapshot_from_entries_with_dictionary(
+                    &new_cache_entries,
+                    limit,
+                    &main_names,
+                    &main_handles,
+                    dictionary.as_ref(),
+                );
             let final_cache_entries =
                 TauriOverlayOps::merge_cache_entries(&existing_cache_by_hash, new_cache_entries);
 
@@ -2573,10 +2575,9 @@ impl TauriOverlayOps {
 
             if include_detailed {
                 let cache_path = PathManagerOps::get_cache_path();
-                if let Err(error) = CacheReplayEntry::persist_simple_cache_entries(
-                    &final_cache_entries,
-                    &cache_path,
-                ) {
+                if let Err(error) =
+                    CacheReplayEntry::write_entries(&final_cache_entries, &cache_path)
+                {
                     crate::sco_log!("[SCO/stats] failed to persist final merged cache: {error}");
                 }
             }
