@@ -136,6 +136,8 @@ function buildReplayPayload(): OverlayReplayPayload {
         extension: false,
         mainCommanderLevel: 15,
         allyCommanderLevel: 15,
+        mainMasteryLevel: 90,
+        allyMasteryLevel: 90,
         mainMasteries: [30, 0, 30, 0, 30, 0],
         allyMasteries: [0, 30, 0, 30, 0, 30],
         mainUnits: {

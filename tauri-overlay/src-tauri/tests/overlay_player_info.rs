@@ -23,10 +23,14 @@ fn cached_orientation_replay_with_reversed_player_stats() -> ReplayInfo {
     let mut replay = ReplayInfo::with_players(
         ReplayPlayerInfo::default()
             .with_name("AllyPlayer")
-            .with_commander("Swann"),
+            .with_commander("Swann")
+            .with_commander_level(12)
+            .with_mastery_level(321),
         ReplayPlayerInfo::default()
             .with_name("MainPlayer")
-            .with_commander("Abathur"),
+            .with_commander("Abathur")
+            .with_commander_level(15)
+            .with_mastery_level(987),
         1,
     );
     replay.set_file("cached-replay.SC2Replay");
@@ -114,6 +118,10 @@ fn overlay_payload_exposes_semantic_player_stats_for_main_and_ally() {
 
     assert_eq!(payload.main, "MainPlayer");
     assert_eq!(payload.ally, "AllyPlayer");
+    assert_eq!(payload.main_commander_level, 15);
+    assert_eq!(payload.main_mastery_level, 987);
+    assert_eq!(payload.ally_commander_level, 12);
+    assert_eq!(payload.ally_mastery_level, 321);
     assert_eq!(
         payload
             .main_player_stats

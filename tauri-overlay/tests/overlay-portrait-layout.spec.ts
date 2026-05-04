@@ -153,6 +153,8 @@ test("overlay layout stays within portrait viewport width", async ({
             ally: "Player Two",
             mainCommanderLevel: 15,
             allyCommanderLevel: 15,
+            mainMasteryLevel: 90,
+            allyMasteryLevel: 90,
             mainAPM: 100,
             allyAPM: 90,
             fastest: false,

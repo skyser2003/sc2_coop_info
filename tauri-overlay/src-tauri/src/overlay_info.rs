@@ -320,6 +320,8 @@ impl OverlayReplayPayload {
             extension: sanitized.extension,
             main_commander_level: OverlayInfoOps::as_u32(sanitized.main_commander_level()),
             ally_commander_level: OverlayInfoOps::as_u32(sanitized.ally_commander_level()),
+            main_mastery_level: OverlayInfoOps::as_u32(sanitized.main_mastery_level()),
+            ally_mastery_level: OverlayInfoOps::as_u32(sanitized.ally_mastery_level()),
             main_masteries: OverlayInfoOps::as_u32_vec(sanitized.main_masteries()),
             ally_masteries: OverlayInfoOps::as_u32_vec(sanitized.ally_masteries()),
             main_units: SharedTypesOps::unit_stats_map_from_value(sanitized.main_units()),
@@ -388,6 +390,8 @@ impl OverlayReplayPayload {
             extension: sanitized.extension,
             main_commander_level: OverlayInfoOps::as_u32(sanitized.main_commander_level()),
             ally_commander_level: OverlayInfoOps::as_u32(sanitized.ally_commander_level()),
+            main_mastery_level: OverlayInfoOps::as_u32(sanitized.main_mastery_level()),
+            ally_mastery_level: OverlayInfoOps::as_u32(sanitized.ally_mastery_level()),
             main_masteries: OverlayInfoOps::as_u32_vec(sanitized.main_masteries()),
             ally_masteries: OverlayInfoOps::as_u32_vec(sanitized.ally_masteries()),
             main_units: SharedTypesOps::unit_stats_map_from_value(sanitized.main_units()),
@@ -427,6 +431,7 @@ impl OverlayReplayPayload {
             &mut self.main_commander_level,
             &mut self.ally_commander_level,
         );
+        std::mem::swap(&mut self.main_mastery_level, &mut self.ally_mastery_level);
         std::mem::swap(&mut self.main_masteries, &mut self.ally_masteries);
         std::mem::swap(&mut self.main_units, &mut self.ally_units);
         std::mem::swap(&mut self.main_icons, &mut self.ally_icons);

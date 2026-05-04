@@ -153,6 +153,8 @@ test("overlay renders all mutator icons for replay payloads", async ({
             extension: true,
             mainCommanderLevel: 15,
             allyCommanderLevel: 15,
+            mainMasteryLevel: 90,
+            allyMasteryLevel: 90,
             mainMasteries: [0, 0, 0, 0, 0, 0],
             allyMasteries: [0, 0, 0, 0, 0, 0],
             mainUnits: {},

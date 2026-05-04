@@ -6,7 +6,12 @@ import type {
 
 test.describe.configure({ timeout: 60_000 });
 
-async function installOverlayEventMock(page: import("@playwright/test").Page) {
+type OverlayEventPayload =
+    | OverlayInitColorsDurationPayload
+    | OverlayReplayPayload
+    | Record<string, never>;
+
+async function installOverlayLevelMock(page: import("@playwright/test").Page) {
     await page.addInitScript(() => {
         const listeners = new Map<string, number[]>();
         type OverlayEventPayload =
@@ -110,57 +115,51 @@ async function installOverlayEventMock(page: import("@playwright/test").Page) {
 }
 
 function buildReplayPayload(
-    file: string,
-    mainkills: number,
-    allykills: number,
-    options?: {
-        newReplay?: boolean;
-    },
+    mainCommanderLevel: number,
+    mainMasteryLevel: number,
+    allyCommanderLevel: number,
+    allyMasteryLevel: number,
 ): OverlayReplayPayload {
     return {
-        file,
-        mainPrestige: "Renegade Commander",
-        allyPrestige: "Queen of Blades",
-        comp: "Terran",
-        player_stats: null,
-        mutators: [],
-        result: "Victory",
-        mainCommander: "Raynor",
-        allyCommander: "Kerrigan",
-        bonus: [],
+        file: "overlay-levels.SC2Replay",
         map_name: "Chain of Ascension",
-        length: 100,
         main: "Player One",
         ally: "Player Two",
-        mainCommanderLevel: 15,
-        allyCommanderLevel: 15,
-        mainMasteryLevel: 90,
-        allyMasteryLevel: 90,
+        mainCommander: "Raynor",
+        allyCommander: "Kerrigan",
         mainAPM: 100,
         allyAPM: 90,
-        fastest: false,
-        Victory: 1,
-        Defeat: 0,
+        mainkills: 10,
+        allykills: 20,
+        result: "Victory",
         difficulty: "Brutal",
+        length: 100,
+        "B+": 0,
         weekly: false,
         extension: false,
-        "B+": 0,
-        mainkills,
-        allykills,
-        mainIcons: {},
-        mainMasteries: [30, 0, 30, 0, 30, 0],
+        mainCommanderLevel: mainCommanderLevel,
+        allyCommanderLevel: allyCommanderLevel,
+        mainMasteryLevel: mainMasteryLevel,
+        allyMasteryLevel: allyMasteryLevel,
+        mainMasteries: [0, 0, 0, 0, 0, 0],
+        allyMasteries: [0, 0, 0, 0, 0, 0],
         mainUnits: {
-            Marine: [5, 0, mainkills, 1],
+            Marine: [5, 0, 10, 1],
         },
-        allyIcons: {},
-        allyMasteries: [0, 30, 0, 30, 0, 30],
         allyUnits: {
-            Zergling: [8, 0, allykills, 1],
+            Zergling: [8, 0, 20, 1],
         },
         amon_units: {},
-        ...(options?.newReplay === undefined
-            ? {}
-            : { newReplay: options.newReplay }),
+        mainIcons: {},
+        allyIcons: {},
+        mutators: [],
+        bonus: [],
+        mainPrestige: "Renegade Commander",
+        allyPrestige: "Queen of Blades",
+        Victory: 1,
+        Defeat: 0,
+        fastest: false,
+        comp: "Terran",
     };
 }
 
@@ -172,10 +171,7 @@ async function postReplay(
         const runtime = window as typeof window & {
             __emitMockEvent?: (
                 eventName: string,
-                payload:
-                    | OverlayInitColorsDurationPayload
-                    | OverlayReplayPayload
-                    | Record<string, never>,
+                payload: OverlayEventPayload,
             ) => void;
         };
 
@@ -193,130 +189,33 @@ async function postReplay(
     }, payload);
 }
 
-test("kill ratio bar keeps the previous replay ratio as the next animation start", async ({
+test("result overlay shows either commander level or mastery level by level status", async ({
     page,
 }) => {
-    await installOverlayEventMock(page);
+    await installOverlayLevelMock(page);
     await page.goto("/#/overlay", { waitUntil: "domcontentloaded" });
-    await page.waitForSelector("#killbar1", { state: "attached" });
+    await page.waitForSelector("#com1", { state: "attached" });
 
-    await postReplay(
-        page,
-        buildReplayPayload("first.SC2Replay", 10, 20, { newReplay: true }),
-    );
+    await postReplay(page, buildReplayPayload(14, 456, 15, 1000));
 
-    await expect
-        .poll(
-            () =>
-                page
-                    .locator("#killbar1")
-                    .evaluate(
-                        (element) => (element as HTMLElement).style.width,
-                    ),
-            { timeout: 2_000 },
-        )
-        .toBe("33%");
-    await expect
-        .poll(
-            () =>
-                page
-                    .locator("#killbar2")
-                    .evaluate(
-                        (element) => (element as HTMLElement).style.width,
-                    ),
-            { timeout: 2_000 },
-        )
-        .toBe("67%");
+    await expect(page.locator("#com1")).toContainText("Raynor");
+    await expect(page.locator("#com1")).toContainText("Lv 14");
+    await expect(page.locator("#com1")).not.toContainText("M 456");
+    await expect(page.locator("#com2")).toContainText("Kerrigan");
+    await expect(page.locator("#com2")).not.toContainText("Lv 15");
+    await expect(page.locator("#com2")).toContainText("M 1000");
 
-    await postReplay(
-        page,
-        buildReplayPayload("second.SC2Replay", 30, 10, { newReplay: true }),
-    );
+    await postReplay(page, buildReplayPayload(15, 321, 9, 222));
 
-    await page.waitForTimeout(100);
+    await expect(page.locator("#com1")).not.toContainText("Lv 15");
+    await expect(page.locator("#com1")).toContainText("M 321");
+    await expect(page.locator("#com2")).toContainText("Lv 9");
+    await expect(page.locator("#com2")).not.toContainText("M 222");
 
-    await expect(
-        page.locator("#killbar1").evaluate((element) => {
-            return (element as HTMLElement).style.width;
-        }),
-    ).resolves.toBe("33%");
-    await expect(
-        page.locator("#killbar2").evaluate((element) => {
-            return (element as HTMLElement).style.width;
-        }),
-    ).resolves.toBe("67%");
+    await postReplay(page, buildReplayPayload(12, 0, 15, 0));
 
-    await expect
-        .poll(
-            () =>
-                page
-                    .locator("#killbar1")
-                    .evaluate(
-                        (element) => (element as HTMLElement).style.width,
-                    ),
-            { timeout: 2_000 },
-        )
-        .toBe("75%");
-    await expect
-        .poll(
-            () =>
-                page
-                    .locator("#killbar2")
-                    .evaluate(
-                        (element) => (element as HTMLElement).style.width,
-                    ),
-            { timeout: 2_000 },
-        )
-        .toBe("25%");
-});
-
-test("manual replay navigation updates the kill ratio bar without post-game delay", async ({
-    page,
-}) => {
-    await installOverlayEventMock(page);
-    await page.goto("/#/overlay", { waitUntil: "domcontentloaded" });
-    await page.waitForSelector("#killbar1", { state: "attached" });
-
-    await postReplay(
-        page,
-        buildReplayPayload("first.SC2Replay", 10, 20, { newReplay: true }),
-    );
-
-    await expect
-        .poll(
-            () =>
-                page
-                    .locator("#killbar1")
-                    .evaluate(
-                        (element) => (element as HTMLElement).style.width,
-                    ),
-            { timeout: 2_000 },
-        )
-        .toBe("33%");
-    await expect
-        .poll(
-            () =>
-                page
-                    .locator("#killbar2")
-                    .evaluate(
-                        (element) => (element as HTMLElement).style.width,
-                    ),
-            { timeout: 2_000 },
-        )
-        .toBe("67%");
-
-    await postReplay(page, buildReplayPayload("second.SC2Replay", 30, 10));
-
-    await page.waitForTimeout(100);
-
-    await expect(
-        page.locator("#killbar1").evaluate((element) => {
-            return (element as HTMLElement).style.width;
-        }),
-    ).resolves.toBe("75%");
-    await expect(
-        page.locator("#killbar2").evaluate((element) => {
-            return (element as HTMLElement).style.width;
-        }),
-    ).resolves.toBe("25%");
+    await expect(page.locator("#com1")).toContainText("Lv 12");
+    await expect(page.locator("#com1")).not.toContainText("M 0");
+    await expect(page.locator("#com2")).toContainText("Lv 15");
+    await expect(page.locator("#com2")).not.toContainText("M 0");
 });

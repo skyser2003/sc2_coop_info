@@ -228,6 +228,10 @@ pub struct OverlayReplayPayload {
     pub main_commander_level: u32,
     #[serde(rename = "allyCommanderLevel")]
     pub ally_commander_level: u32,
+    #[serde(rename = "mainMasteryLevel")]
+    pub main_mastery_level: u32,
+    #[serde(rename = "allyMasteryLevel")]
+    pub ally_mastery_level: u32,
     #[serde(rename = "mainMasteries")]
     pub main_masteries: Vec<u32>,
     #[serde(rename = "allyMasteries")]

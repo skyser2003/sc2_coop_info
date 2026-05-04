@@ -50,6 +50,8 @@ test("auto-expired replay overlay uses the same fade-out before clearing replay 
             ally: "Player Two",
             mainCommanderLevel: 15,
             allyCommanderLevel: 15,
+            mainMasteryLevel: 90,
+            allyMasteryLevel: 90,
             mainAPM: 100,
             allyAPM: 90,
             fastest: false,

@@ -264,6 +264,58 @@
     text-shadow: 0.1vh 0.1vh 0.1vh #060606;
 }
 
+.overlayPageRoot :global(.commander-level-label) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45vh;
+    max-width: 48%;
+    min-width: 0;
+    vertical-align: top;
+}
+
+.overlayPageRoot :global(.commander-level-label-right) {
+    justify-content: flex-end;
+}
+
+.overlayPageRoot :global(.commander-level-name) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.overlayPageRoot :global(.commander-level-label-right .commander-level-name) {
+    text-align: right;
+}
+
+.overlayPageRoot :global(.commander-level-badges) {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 0.25vh;
+}
+
+.overlayPageRoot :global(.commander-level-badge) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.6vh;
+    padding: 0.12vh 0.38vh;
+    border: 0.1vh solid rgba(255, 255, 255, 0.42);
+    background: rgba(0, 0, 0, 0.62);
+    box-shadow: 0 0 0.35vh rgba(0, 0, 0, 0.55);
+    color: #e6f1ff;
+    font-size: 0.72em;
+    font-weight: bold;
+    line-height: 1;
+    text-shadow: 0.1vh 0.1vh 0.1vh black;
+}
+
+.overlayPageRoot :global(.commander-mastery-level-badge) {
+    border-color: rgba(255, 230, 112, 0.72);
+    color: #ffe670;
+}
+
 .overlayPageRoot :global(#map) {
     position: absolute;
     top: 7.8vh;

@@ -61,6 +61,13 @@ type MasteryRow = {
     className: string;
 };
 
+type CommanderLevelLabel = {
+    position: "left" | "right";
+    commanderName: string;
+    commanderLevel: number | null;
+    masteryLevel: number | null;
+};
+
 type CommanderSection = {
     idPrefix: "CM1" | "CM2" | "CM3";
     name: string;
@@ -100,6 +107,21 @@ function readNumber(value: LocalizableValue, fallback = 0): number {
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function readOptionalNonNegativeInteger(
+    value: LocalizableValue,
+): number | null {
+    if (value == null || value === "") {
+        return null;
+    }
+
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+        return null;
+    }
+
+    return Math.trunc(parsed);
+}
+
 function readBoolean(value: boolean | null | undefined): boolean {
     return value === true;
 }
@@ -135,19 +157,33 @@ function buildCommanderLabel(
     position: "left" | "right",
     commander: LocalizableValue,
     commanderLevel: number | null | undefined,
+    masteryLevel: number | null | undefined,
     localize: (value: LocalizableValue) => string,
-): string {
+): CommanderLevelLabel | null {
     const localizedCommander = localize(commander);
     if (localizedCommander === "") {
-        return "";
+        return null;
     }
 
-    const level = readNumber(commanderLevel);
-    const addition = level < 15 ? `{${level}}` : "";
+    const level = readOptionalNonNegativeInteger(commanderLevel);
+    const displayedCommanderLevel =
+        level == null || level <= 0 ? null : Math.min(level, 15);
+    const mastery = readOptionalNonNegativeInteger(masteryLevel);
+    const displayedMasteryLevel =
+        displayedCommanderLevel === 15 && mastery != null && mastery > 0
+            ? mastery
+            : null;
+    const displayedCommanderLevelBadge =
+        displayedCommanderLevel != null && displayedMasteryLevel == null
+            ? displayedCommanderLevel
+            : null;
 
-    return position === "left"
-        ? `${localizedCommander} ${addition}`.trim()
-        : `${addition} ${localizedCommander}`.trim();
+    return {
+        position,
+        commanderName: localizedCommander,
+        commanderLevel: displayedCommanderLevelBadge,
+        masteryLevel: displayedMasteryLevel,
+    };
 }
 
 function buildMasteryRows(values: number[], labels: string[]): MasteryRow[] {
@@ -280,6 +316,51 @@ function renderMasteryRows(masteryRows: MasteryRow[]): ReactNode {
             <br />
         </span>
     ));
+}
+
+function renderCommanderLabel(label: CommanderLevelLabel | null): ReactNode {
+    if (label == null) {
+        return "";
+    }
+
+    const levelBadges: ReactNode[] = [];
+    if (label.commanderLevel != null) {
+        levelBadges.push(
+            <span key="commander-level" className="commander-level-badge">
+                Lv {label.commanderLevel}
+            </span>,
+        );
+    }
+    if (label.masteryLevel != null) {
+        levelBadges.push(
+            <span
+                key="mastery-level"
+                className="commander-level-badge commander-mastery-level-badge"
+            >
+                M {label.masteryLevel}
+            </span>,
+        );
+    }
+
+    const commanderName = (
+        <span className="commander-level-name">{label.commanderName}</span>
+    );
+    const badges =
+        levelBadges.length === 0 ? null : (
+            <span className="commander-level-badges">{levelBadges}</span>
+        );
+
+    return label.position === "left" ? (
+        <>
+            {commanderName}
+            {badges}
+        </>
+    ) : (
+        <>
+            {badges}
+            {commanderName}
+        </>
+    );
 }
 
 function renderUnitRows(
@@ -728,12 +809,14 @@ export default function GameStatText({
                 "left",
                 statsPayload.mainCommander,
                 statsPayload.mainCommanderLevel,
+                statsPayload.mainMasteryLevel,
                 overlayLocalize,
             ),
             allyCommanderLabel: buildCommanderLabel(
                 "right",
                 statsPayload.allyCommander,
                 statsPayload.allyCommanderLevel,
+                statsPayload.allyMasteryLevel,
                 overlayLocalize,
             ),
             mainAPM: `${readNumber(statsPayload.mainAPM)} APM`,
@@ -881,11 +964,21 @@ export default function GameStatText({
                                 : "none",
                         }}
                     >
-                        <span id="com1">
-                            {viewModel?.mainCommanderLabel ?? ""}
+                        <span
+                            id="com1"
+                            className="commander-level-label commander-level-label-left"
+                        >
+                            {renderCommanderLabel(
+                                viewModel?.mainCommanderLabel ?? null,
+                            )}
                         </span>
-                        <span id="com2">
-                            {viewModel?.allyCommanderLabel ?? ""}
+                        <span
+                            id="com2"
+                            className="commander-level-label commander-level-label-right"
+                        >
+                            {renderCommanderLabel(
+                                viewModel?.allyCommanderLabel ?? null,
+                            )}
                         </span>
                         <div id="map">
                             {viewModel != null ? (
