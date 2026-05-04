@@ -1938,46 +1938,64 @@
     overflow: hidden;
 }
 
-.configPage .masteryDistributionLineGraph svg {
-    display: block;
-    inline-size: 100%;
-    block-size: 100%;
-    box-sizing: border-box;
-    padding: 6px;
-}
-
 .configPage .masteryDistributionGridLine {
-    stroke: rgb(148 163 184 / 0.22);
-    stroke-width: 1;
-    vector-effect: non-scaling-stroke;
+    position: absolute;
+    right: 0;
+    left: 0;
+    z-index: 1;
+    block-size: 1px;
+    background: rgb(148 163 184 / 0.22);
+    pointer-events: none;
+    transform: translateY(-50%);
 }
 
 .configPage .masteryDistributionEvenLine {
-    stroke: rgb(226 232 240 / 0.38);
-    stroke-dasharray: 3 3;
-    stroke-width: 1;
-    vector-effect: non-scaling-stroke;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    z-index: 1;
+    border-left: 1px dashed rgb(226 232 240 / 0.38);
+    pointer-events: none;
 }
 
-.configPage .masteryDistributionLine {
-    fill: none;
-    stroke: #60a5fa;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    stroke-width: 2.3;
-    vector-effect: non-scaling-stroke;
+.configPage .masteryDistributionChartSurface {
+    position: absolute;
+    inset: 6px;
+    z-index: 0;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.configPage .masteryDistributionOverlaySurface {
+    position: absolute;
+    inset: 6px;
+    z-index: 1;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.configPage .masteryDistributionChartCanvas {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
 }
 
 .configPage .masteryDistributionPoint {
-    fill: #f8fafc;
-    stroke: #2563eb;
-    stroke-width: 1;
-    vector-effect: non-scaling-stroke;
+    position: absolute;
+    z-index: 2;
+    inline-size: 7px;
+    block-size: 7px;
+    border: 1px solid #2563eb;
+    border-radius: 999px;
+    background: #f8fafc;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
 }
 
 .configPage .masteryDistributionPointLabel {
     position: absolute;
-    z-index: 1;
+    z-index: 3;
     padding: 1px 3px;
     border-radius: 4px;
     background: rgba(2, 6, 23, 0.78);
@@ -2861,11 +2879,11 @@
 }
 
 .configPage.configPage .masteryDistributionGridLine {
-    stroke: var(--config-chart-grid);
+    background: var(--config-chart-grid);
 }
 
 .configPage.configPage .masteryDistributionEvenLine {
-    stroke: var(--config-chart-even);
+    border-left-color: var(--config-chart-even);
 }
 
 .configPage.configPage .masteryDistributionPointLabel {

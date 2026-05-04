@@ -1,5 +1,6 @@
 import * as React from "react";
 import Grid from "@mui/material/Grid";
+import { Chart, registerables } from "chart.js";
 import type { LanguageManager } from "../../i18n/languageManager";
 import { PreviewManager } from "../../previews/PreviewManager";
 import type {
@@ -45,6 +46,7 @@ const DIFFICULTY_ORDER = [
 ];
 const MASTERY_DISTRIBUTION_GRAPH_TOP = 24;
 const MASTERY_DISTRIBUTION_LABEL_OFFSET = 4;
+const MASTERY_DISTRIBUTION_LINE_COLOR = "#60a5fa";
 
 type StatisticsTabProps = {
     statsPayload: StatisticsPayload | null;
@@ -95,6 +97,20 @@ type MasteryCategoryDistribution = {
     rightLabel: string;
     prestigeRows: MasteryPrestigeDistribution[];
 };
+type MasteryDistributionLineGraphProps = {
+    category: MasteryCategoryDistribution;
+    prestige: MasteryPrestigeDistribution;
+    languageManager: LanguageManager;
+};
+type MasteryDistributionChartPoint = {
+    x: number;
+    y: number;
+};
+type MasteryDistributionChart = Chart<
+    "line",
+    MasteryDistributionChartPoint[],
+    number
+>;
 type UnitStatRow = StatsRow & {
     created?: number | string;
     made?: number | string;
@@ -113,6 +129,16 @@ type UnitData = {
     ally?: UnitSideData;
     amon?: Record<string, UnitStatRow>;
 };
+
+let masteryChartComponentsRegistered = false;
+
+function ensureMasteryChartComponentsRegistered(): void {
+    if (masteryChartComponentsRegistered) {
+        return;
+    }
+    Chart.register(...registerables);
+    masteryChartComponentsRegistered = true;
+}
 
 function isRecord(value: JsonValue | undefined): value is JsonObject {
     return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -391,6 +417,92 @@ function masteryDistributionPointKey(
     return String(bucket.ratioPercent);
 }
 
+function masteryDistributionChartData(
+    buckets: MasteryDistributionBucket[],
+): MasteryDistributionChartPoint[] {
+    return buckets
+        .map((bucket) => ({
+            x: 100 - bucket.ratioPercent,
+            y: bucket.percent,
+        }))
+        .sort((left, right) => left.x - right.x);
+}
+
+function masteryDistributionYMax(maxPercent: number): number {
+    if (maxPercent <= 0) {
+        return 1;
+    }
+    return maxPercent / (1 - MASTERY_DISTRIBUTION_GRAPH_TOP / 100);
+}
+
+function masteryDistributionDataKey(
+    buckets: MasteryDistributionBucket[],
+): string {
+    return buckets
+        .map(
+            (bucket) =>
+                `${bucket.ratioPercent.toFixed(3)}:${bucket.percent.toFixed(6)}`,
+        )
+        .join("|");
+}
+
+function buildMasteryDistributionChart(
+    canvas: HTMLCanvasElement,
+    data: MasteryDistributionChartPoint[],
+    maxPercent: number,
+): MasteryDistributionChart {
+    ensureMasteryChartComponentsRegistered();
+    return new Chart(canvas, {
+        type: "line",
+        data: {
+            datasets: [
+                {
+                    data,
+                    borderColor: MASTERY_DISTRIBUTION_LINE_COLOR,
+                    borderWidth: 2.3,
+                    clip: false,
+                    pointRadius: 0,
+                    pointHoverRadius: 0,
+                    tension: 0,
+                },
+            ],
+        },
+        options: {
+            animation: false,
+            responsive: true,
+            maintainAspectRatio: false,
+            resizeDelay: 0,
+            events: [],
+            parsing: false,
+            layout: {
+                padding: 0,
+            },
+            plugins: {
+                legend: {
+                    display: false,
+                },
+                tooltip: {
+                    enabled: false,
+                },
+            },
+            scales: {
+                x: {
+                    type: "linear",
+                    min: 0,
+                    max: 100,
+                    display: false,
+                },
+                y: {
+                    type: "linear",
+                    min: 0,
+                    max: masteryDistributionYMax(maxPercent),
+                    display: false,
+                },
+            },
+        },
+    });
+}
+
 function formatNumber(value: DisplayValue) {
     const num = Number(value);
     if (!Number.isFinite(num)) {
@@ -643,16 +755,18 @@ function buildMasteryCategoryDistributions(
     return categories;
 }
 
-function renderMasteryDistributionLineGraph(
-    category: MasteryCategoryDistribution,
-    prestige: MasteryPrestigeDistribution,
-    languageManager: LanguageManager,
-) {
+function MasteryDistributionLineGraph({
+    category,
+    prestige,
+    languageManager,
+}: MasteryDistributionLineGraphProps) {
+    const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
     const displayBuckets = masteryDistributionDisplayBuckets(prestige.buckets);
     const maxPercent = displayBuckets.reduce(
         (current, bucket) => Math.max(current, bucket.percent),
         0,
     );
+    const dataKey = masteryDistributionDataKey(displayBuckets);
     const labelY = (bucket: MasteryDistributionBucket): number =>
         masteryDistributionY(bucket.percent, maxPercent);
     const labelTop = (bucket: MasteryDistributionBucket): string =>
@@ -665,56 +779,61 @@ function renderMasteryDistributionLineGraph(
     const visibleLabelKeys = new Set(
         visibleLabelBuckets.map(masteryDistributionPointKey),
     );
-    const linePoints = displayBuckets
-        .map(
-            (bucket) =>
-                `${(100 - bucket.ratioPercent).toFixed(3)},${labelY(bucket).toFixed(3)}`,
-        )
-        .join(" ");
+
+    React.useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) {
+            return;
+        }
+
+        const chart = buildMasteryDistributionChart(
+            canvas,
+            masteryDistributionChartData(displayBuckets),
+            maxPercent,
+        );
+
+        return () => {
+            chart.destroy();
+        };
+    }, [dataKey, maxPercent]);
 
     return (
         <div
             className={styles.masteryDistributionLineGraph}
             data-testid="mastery-distribution-line"
+            role="img"
+            aria-label={translate(
+                languageManager,
+                "ui_stats_mastery_distribution_graph_label",
+                {
+                    prestige: prestige.label,
+                    mastery: category.leftLabel,
+                },
+            )}
         >
-            <svg
-                viewBox="0 0 100 100"
-                preserveAspectRatio="none"
-                role="img"
-                aria-label={translate(
-                    languageManager,
-                    "ui_stats_mastery_distribution_graph_label",
-                    {
-                        prestige: prestige.label,
-                        mastery: category.leftLabel,
-                    },
-                )}
+            <div
+                className={styles.masteryDistributionChartSurface}
+                aria-hidden="true"
             >
-                <line
-                    className={styles.masteryDistributionGridLine}
-                    x1="0"
-                    y1="100"
-                    x2="100"
-                    y2="100"
+                <canvas
+                    className={styles.masteryDistributionChartCanvas}
+                    ref={canvasRef}
                 />
-                <line
+            </div>
+            <div className={styles.masteryDistributionOverlaySurface}>
+                <span
                     className={styles.masteryDistributionGridLine}
-                    x1="0"
-                    y1={(100 + MASTERY_DISTRIBUTION_GRAPH_TOP) / 2}
-                    x2="100"
-                    y2={(100 + MASTERY_DISTRIBUTION_GRAPH_TOP) / 2}
+                    style={{ top: "100%" }}
                 />
-                <line
+                <span
+                    className={styles.masteryDistributionGridLine}
+                    style={{
+                        top: `${(100 + MASTERY_DISTRIBUTION_GRAPH_TOP) / 2}%`,
+                    }}
+                />
+                <span
                     className={styles.masteryDistributionEvenLine}
                     data-testid="mastery-distribution-even-line"
-                    x1="50"
-                    y1={MASTERY_DISTRIBUTION_GRAPH_TOP}
-                    x2="50"
-                    y2="100"
-                />
-                <polyline
-                    className={styles.masteryDistributionLine}
-                    points={linePoints}
                 />
                 {displayBuckets
                     .filter(
@@ -725,32 +844,38 @@ function renderMasteryDistributionLineGraph(
                             ),
                     )
                     .map((bucket) => (
-                        <circle
+                        <span
                             className={styles.masteryDistributionPoint}
                             data-testid="mastery-distribution-point"
+                            role="img"
                             key={`mastery-${category.pairIndex}-${prestige.key}-${bucket.ratioPercent}`}
-                            cx={100 - bucket.ratioPercent}
-                            cy={labelY(bucket)}
-                            r="1.8"
+                            style={{
+                                left: masteryDistributionLabelLeft(
+                                    bucket.ratioPercent,
+                                ),
+                                top: `${labelY(bucket).toFixed(3)}%`,
+                            }}
                             aria-label={`${prestige.label} ${masteryChoiceLabel(languageManager, bucket.ratioPercent)}: ${formatPercent1(bucket.percent)}`}
                         />
                     ))}
-            </svg>
-            {visibleLabelBuckets.map((bucket) => (
-                <span
-                    className={masteryDistributionLabelClass(
-                        bucket.ratioPercent,
-                    )}
-                    data-testid="mastery-distribution-point-label"
-                    key={`mastery-label-${category.pairIndex}-${prestige.key}-${bucket.ratioPercent}`}
-                    style={{
-                        left: masteryDistributionLabelLeft(bucket.ratioPercent),
-                        top: labelTop(bucket),
-                    }}
-                >
-                    {formatPercent1(bucket.percent)}
-                </span>
-            ))}
+                {visibleLabelBuckets.map((bucket) => (
+                    <span
+                        className={masteryDistributionLabelClass(
+                            bucket.ratioPercent,
+                        )}
+                        data-testid="mastery-distribution-point-label"
+                        key={`mastery-label-${category.pairIndex}-${prestige.key}-${bucket.ratioPercent}`}
+                        style={{
+                            left: masteryDistributionLabelLeft(
+                                bucket.ratioPercent,
+                            ),
+                            top: labelTop(bucket),
+                        }}
+                    >
+                        {formatPercent1(bucket.percent)}
+                    </span>
+                ))}
+            </div>
         </div>
     );
 }
@@ -938,11 +1063,13 @@ function renderCommanderDetails(
                                                     key={`mastery-category-${category.pairIndex}-${prestige.key}`}
                                                 >
                                                     <h5>{prestige.label}</h5>
-                                                    {renderMasteryDistributionLineGraph(
-                                                        category,
-                                                        prestige,
-                                                        languageManager,
-                                                    )}
+                                                    <MasteryDistributionLineGraph
+                                                        category={category}
+                                                        prestige={prestige}
+                                                        languageManager={
+                                                            languageManager
+                                                        }
+                                                    />
                                                     <div
                                                         className={
                                                             styles.masteryDistributionAxis
