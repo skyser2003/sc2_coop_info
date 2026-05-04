@@ -51,7 +51,7 @@ jobs:
               with:
                   tagName: v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
                   releaseName: "SC2_Coop_Info v__VERSION__"
-                  releaseBody: "Feature: Mastery point distribution now shows as graph\nBug fix: Weekly name not resolving correctly fixed"
+                  releaseBody: "Feature: Show master level on overlay"
                   releaseDraft: false
                   prerelease: false
                   projectPath: "./tauri-overlay"
