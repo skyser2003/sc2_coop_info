@@ -17,6 +17,7 @@ $comparisonOutput = Join-Path $tempRoot "comparison-cache_overall_stats.json"
 $currentPrettyOutput = Join-Path $tempRoot "current-cache_overall_stats_pretty.json"
 $comparisonPrettyOutput = Join-Path $tempRoot "comparison-cache_overall_stats_pretty.json"
 $shouldKeepArtifacts = $KeepArtifacts.IsPresent
+$cargoJobs = [Math]::Max(1, [int][Math]::Floor([Environment]::ProcessorCount / 2))
 
 function Import-EnvFile {
     param([string]$Path)
@@ -118,6 +119,16 @@ function Get-FileDigest {
     }
 }
 
+function Get-OptionalFileDigest {
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $null
+    }
+
+    return Get-FileDigest -Path $Path
+}
+
 function New-RecentReplaySubset {
     param(
         [string]$SourceAccountDir,
@@ -129,10 +140,10 @@ function New-RecentReplaySubset {
         throw "RecentReplayCount must be greater than zero when supplied."
     }
 
-    $replayFiles = Get-ChildItem -LiteralPath $SourceAccountDir -Recurse -File |
+    $replayFiles = @(Get-ChildItem -LiteralPath $SourceAccountDir -Recurse -File |
         Where-Object { $_.Extension -ieq ".SC2Replay" } |
         Sort-Object -Property @{ Expression = { $_.LastWriteTimeUtc }; Descending = $true }, @{ Expression = { $_.FullName.ToLowerInvariant() }; Descending = $false } |
-        Select-Object -First $ReplayCount
+        Select-Object -First $ReplayCount)
 
     if ($replayFiles.Count -eq 0) {
         throw "No replay files found under account directory: $SourceAccountDir"
@@ -171,6 +182,8 @@ try {
     Invoke-Checked -FilePath "cargo" -Arguments @(
         "build",
         "--release",
+        "--jobs",
+        $cargoJobs.ToString(),
         "--manifest-path",
         "s2coop-analyzer/Cargo.toml",
         "--bin",
@@ -190,6 +203,8 @@ try {
     Invoke-Checked -FilePath "cargo" -Arguments @(
         "build",
         "--release",
+        "--jobs",
+        $cargoJobs.ToString(),
         "--manifest-path",
         "s2coop-analyzer/Cargo.toml",
         "--bin",
@@ -204,11 +219,14 @@ try {
 
     $currentDigest = Get-FileDigest -Path $currentOutput
     $comparisonDigest = Get-FileDigest -Path $comparisonOutput
-    $currentPrettyDigest = Get-FileDigest -Path $currentPrettyOutput
-    $comparisonPrettyDigest = Get-FileDigest -Path $comparisonPrettyOutput
+    $currentPrettyDigest = Get-OptionalFileDigest -Path $currentPrettyOutput
+    $comparisonPrettyDigest = Get-OptionalFileDigest -Path $comparisonPrettyOutput
 
     $mainEqual = $currentDigest.Hash -eq $comparisonDigest.Hash -and $currentDigest.Size -eq $comparisonDigest.Size
-    $prettyEqual = $currentPrettyDigest.Hash -eq $comparisonPrettyDigest.Hash -and $currentPrettyDigest.Size -eq $comparisonPrettyDigest.Size
+    $prettyEqual = $null
+    if ($null -ne $currentPrettyDigest -and $null -ne $comparisonPrettyDigest) {
+        $prettyEqual = $currentPrettyDigest.Hash -eq $comparisonPrettyDigest.Hash -and $currentPrettyDigest.Size -eq $comparisonPrettyDigest.Size
+    }
     $deltaSeconds = $currentRun.ElapsedSeconds - $comparisonRun.ElapsedSeconds
     $ratio = if ($comparisonRun.ElapsedSeconds -le 0) { 0.0 } else { $currentRun.ElapsedSeconds / $comparisonRun.ElapsedSeconds }
 
@@ -224,14 +242,20 @@ try {
     Write-Host "Current entry count: $($currentRun.EntryCount)"
     Write-Host "Comparison entry count: $($comparisonRun.EntryCount)"
     Write-Host "Main cache byte-identical: $mainEqual"
-    Write-Host "Pretty cache byte-identical: $prettyEqual"
+    if ($null -eq $prettyEqual) {
+        Write-Host "Pretty cache byte-identical: not compared"
+        Write-Host "Current pretty cache generated: $($null -ne $currentPrettyDigest)"
+        Write-Host "Comparison pretty cache generated: $($null -ne $comparisonPrettyDigest)"
+    } else {
+        Write-Host "Pretty cache byte-identical: $prettyEqual"
+    }
     Write-Host ("Current elapsed seconds: {0:N3}" -f $currentRun.ElapsedSeconds)
     Write-Host ("Comparison elapsed seconds: {0:N3}" -f $comparisonRun.ElapsedSeconds)
     Write-Host ("Delta seconds (current - comparison): {0:N3}" -f $deltaSeconds)
     Write-Host ("Runtime ratio (current / comparison): {0:N4}x" -f $ratio)
     Write-Host "Current output: $currentOutput"
     Write-Host "Comparison output: $comparisonOutput"
-    if (-not $mainEqual -or -not $prettyEqual) {
+    if (-not $mainEqual -or ($null -ne $prettyEqual -and -not $prettyEqual)) {
         $shouldKeepArtifacts = $true
         Write-Host "Artifacts kept for inspection: $tempRoot"
     } elseif ($KeepArtifacts) {
