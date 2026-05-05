@@ -1,5 +1,6 @@
 use crate::cache_overall_stats_generator::{
-    AnalysisPlayerStatsSeries, CacheOverallStatsFile, CacheReplayEntry, PrettyCacheError,
+    AnalysisPlayerStatsSeries, CacheOverallStatsFile, CacheReplayEntry,
+    CanonicalCachePayloadTiming, PrettyCacheError,
 };
 use crate::dictionary_data::{
     CacheGenerationData, Sc2DictionaryData, UnitAddKillsToJson, UnitNamesJson,
@@ -12,9 +13,10 @@ use chrono::{DateTime, Local};
 use indexmap::IndexMap;
 use s2protocol_port::{
     ProtocolStore, ProtocolStoreBuilder, ReplayDetails, ReplayEvent, ReplayInitData,
-    ReplayMetadata, ReplayParseMode, ReplayParser, TrackerEvent,
+    ReplayMetadata, ReplayParseMode, ReplayParseTiming, ReplayParser, TrackerEvent,
 };
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::io;
@@ -86,6 +88,43 @@ const CUSTOM_KILL_ICON_KEYS: [&str; 10] = [
 type UnitStats = (i64, i64, i64, f64);
 
 pub struct DetailedReplayAnalyzer;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ReplayAnalysisFilePriority {
+    size_bytes: u64,
+    normalized_path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ReplayFileDigest {
+    hash: String,
+    size_bytes: u64,
+}
+
+impl ReplayAnalysisFilePriority {
+    fn from_path(path: &Path) -> Self {
+        let size_bytes = fs::metadata(path)
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
+        Self::from_size_and_path(size_bytes, path)
+    }
+
+    fn from_size_and_path(size_bytes: u64, path: &Path) -> Self {
+        let normalized_path = path.to_string_lossy().to_ascii_lowercase();
+
+        Self {
+            size_bytes,
+            normalized_path,
+        }
+    }
+
+    fn compare_largest_first(&self, other: &Self) -> Ordering {
+        other
+            .size_bytes
+            .cmp(&self.size_bytes)
+            .then_with(|| self.normalized_path.cmp(&other.normalized_path))
+    }
+}
 
 #[derive(Clone)]
 pub struct ReplayAnalysisResources {
@@ -318,6 +357,104 @@ struct ReplayBaseParseOptions {
     filters: ReplayBaseParseFilters,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct ReplayBaseParseTiming {
+    total: Duration,
+    early_filter: Duration,
+    decode_replay: Duration,
+    decode_replay_detail: ReplayParseTiming,
+    extract_fields: Duration,
+    validate_filters: Duration,
+    resolve_build: Duration,
+    map_lookup: Duration,
+    lobby_metadata: Duration,
+    length_events: Duration,
+    identify_mutators: Duration,
+    collect_messages: Duration,
+    hash_file: Duration,
+    file_date: Duration,
+    detailed_event_filter: Duration,
+    build_base: Duration,
+}
+
+impl ReplayBaseParseTiming {
+    fn finish(mut self, total: Duration) -> Self {
+        self.total = total;
+        self
+    }
+
+    fn add(&mut self, other: &Self) {
+        self.total += other.total;
+        self.early_filter += other.early_filter;
+        self.decode_replay += other.decode_replay;
+        self.decode_replay_detail.add(&other.decode_replay_detail);
+        self.extract_fields += other.extract_fields;
+        self.validate_filters += other.validate_filters;
+        self.resolve_build += other.resolve_build;
+        self.map_lookup += other.map_lookup;
+        self.lobby_metadata += other.lobby_metadata;
+        self.length_events += other.length_events;
+        self.identify_mutators += other.identify_mutators;
+        self.collect_messages += other.collect_messages;
+        self.hash_file += other.hash_file;
+        self.file_date += other.file_date;
+        self.detailed_event_filter += other.detailed_event_filter;
+        self.build_base += other.build_base;
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct ReplayEntryParseTiming {
+    total: Duration,
+    base: ReplayBaseParseTiming,
+    bundle_projection: Duration,
+    candidate_filter: Duration,
+    cache_entry_projection: Duration,
+}
+
+impl ReplayEntryParseTiming {
+    fn finish(mut self, total: Duration) -> Self {
+        self.total = total;
+        self
+    }
+
+    fn add(&mut self, other: &Self) {
+        self.total += other.total;
+        self.base.add(&other.base);
+        self.bundle_projection += other.bundle_projection;
+        self.candidate_filter += other.candidate_filter;
+        self.cache_entry_projection += other.cache_entry_projection;
+    }
+}
+
+#[derive(Debug, Clone)]
+struct TimedReplayEntryParse {
+    parsed: Option<(CacheReplayEntry, ReplayParsedInputBundle)>,
+    timing: ReplayEntryParseTiming,
+}
+
+impl TimedReplayEntryParse {
+    fn new(
+        parsed: Option<(CacheReplayEntry, ReplayParsedInputBundle)>,
+        timing: ReplayEntryParseTiming,
+    ) -> Self {
+        Self { parsed, timing }
+    }
+
+    fn timing(&self) -> &ReplayEntryParseTiming {
+        &self.timing
+    }
+
+    fn into_parts(
+        self,
+    ) -> (
+        Option<(CacheReplayEntry, ReplayParsedInputBundle)>,
+        ReplayEntryParseTiming,
+    ) {
+        (self.parsed, self.timing)
+    }
+}
+
 impl ReplayBaseParseFilters {
     fn saved_cache() -> Self {
         Self {
@@ -448,8 +585,19 @@ impl ReplayAnalysisResources {
         replay_path: &Path,
         options: ReplayBaseParseOptions,
     ) -> Result<Option<ReplayBaseParse>, ReplayBaseParseError> {
+        self.parse_replay_base_timed(replay_path, options).0
+    }
+
+    fn parse_replay_base_timed(
+        &self,
+        replay_path: &Path,
+        options: ReplayBaseParseOptions,
+    ) -> (
+        Result<Option<ReplayBaseParse>, ReplayBaseParseError>,
+        ReplayBaseParseTiming,
+    ) {
         let inputs = self.cache_generation_data();
-        DetailedReplayAnalyzer::parse_replay_base(
+        DetailedReplayAnalyzer::parse_replay_base_timed(
             replay_path,
             &inputs,
             self.protocol_store(),
@@ -504,212 +652,267 @@ impl DetailedReplayAnalyzer {
         accurate_length / multiplier
     }
 
-    fn parse_replay_base(
+    fn parse_replay_base_timed(
         replay_path: &Path,
         inputs: &CacheGenerationData<'_>,
         protocol_store: &ProtocolStore,
         options: ReplayBaseParseOptions,
-    ) -> Result<Option<ReplayBaseParse>, ReplayBaseParseError> {
-        if options.filters.only_blizzard && replay_path.to_string_lossy().contains("[MM]") {
-            return Ok(None);
-        }
+    ) -> (
+        Result<Option<ReplayBaseParse>, ReplayBaseParseError>,
+        ReplayBaseParseTiming,
+    ) {
+        let total_start = Instant::now();
+        let mut timing = ReplayBaseParseTiming::default();
+        let result = (|| -> Result<Option<ReplayBaseParse>, ReplayBaseParseError> {
+            let early_filter_start = Instant::now();
+            let is_mm_replay = replay_path.to_string_lossy().contains("[MM]");
+            if options.filters.only_blizzard && is_mm_replay {
+                timing.early_filter = early_filter_start.elapsed();
+                return Ok(None);
+            }
+            timing.early_filter = early_filter_start.elapsed();
 
-        let (mut parsed, events) = if options.include_events {
-            let mut parsed = ReplayParser::parse_file_with_store_ordered_events_filtered(
-                replay_path,
-                protocol_store,
-                ReplayEventKind::needed_for_detailed_analysis_name,
-            )
-            .map_err(|error| ReplayBaseParseError::ReplayParse {
-                path: replay_path.display().to_string(),
-                message: error.to_string(),
+            let decode_replay_start = Instant::now();
+            let (mut parsed, events) = if options.include_events {
+                let mut parsed = ReplayParser::parse_file_with_store_ordered_events_filtered(
+                    replay_path,
+                    protocol_store,
+                    ReplayEventKind::needed_for_detailed_analysis_name,
+                )
+                .map_err(|error| ReplayBaseParseError::ReplayParse {
+                    path: replay_path.display().to_string(),
+                    message: error.to_string(),
+                })?;
+                timing.decode_replay_detail.add(parsed.timing());
+                let events = parsed.take_events();
+                (parsed.take_replay(), events)
+            } else {
+                let parsed = ReplayParser::parse_file_with_store_timed(
+                    replay_path,
+                    protocol_store,
+                    ReplayParseMode::Simple,
+                )
+                .map_err(|error| ReplayBaseParseError::ReplayParse {
+                    path: replay_path.display().to_string(),
+                    message: error.to_string(),
+                })?;
+                timing.decode_replay_detail.add(parsed.timing());
+                (parsed.take_replay(), Vec::new())
+            };
+            timing.decode_replay = decode_replay_start.elapsed();
+
+            let extract_fields_start = Instant::now();
+            let base_build = parsed.base_build();
+            let details = parsed.take_details();
+            let init_data = parsed.take_init_data();
+            let metadata = parsed.take_metadata();
+            let message_events = parsed.take_message_events();
+            timing.extract_fields = extract_fields_start.elapsed();
+
+            let validate_filters_start = Instant::now();
+            let details = details.ok_or_else(|| {
+                ReplayBaseParseError::InvalidReplayData("missing replay.details".to_string())
             })?;
-            let events = parsed.take_events();
-            (parsed.take_replay(), events)
-        } else {
-            let parsed = ReplayParser::parse_file_with_store(
-                replay_path,
-                protocol_store,
-                ReplayParseMode::Simple,
-            )
-            .map_err(|error| ReplayBaseParseError::ReplayParse {
-                path: replay_path.display().to_string(),
-                message: error.to_string(),
+            let init_data = init_data.ok_or_else(|| {
+                ReplayBaseParseError::InvalidReplayData("missing replay.initData".to_string())
             })?;
-            (parsed, Vec::new())
-        };
+            let metadata = metadata.ok_or_else(|| {
+                ReplayBaseParseError::InvalidReplayData(
+                    "missing replay.gamemetadata.json".to_string(),
+                )
+            })?;
 
-        let base_build = parsed.base_build();
-        let details = parsed.take_details();
-        let init_data = parsed.take_init_data();
-        let metadata = parsed.take_metadata();
-        let message_events = parsed.take_message_events();
+            if options.filters.only_blizzard && !details.m_isBlizzardMap {
+                timing.validate_filters = validate_filters_start.elapsed();
+                return Ok(None);
+            }
 
-        let details = details.ok_or_else(|| {
-            ReplayBaseParseError::InvalidReplayData("missing replay.details".to_string())
-        })?;
-        let init_data = init_data.ok_or_else(|| {
-            ReplayBaseParseError::InvalidReplayData("missing replay.initData".to_string())
-        })?;
-        let metadata = metadata.ok_or_else(|| {
-            ReplayBaseParseError::InvalidReplayData("missing replay.gamemetadata.json".to_string())
-        })?;
+            let disable_recover = details.m_disableRecoverGame.unwrap_or(false);
+            if options.filters.require_recover_disabled && !disable_recover {
+                timing.validate_filters = validate_filters_start.elapsed();
+                return Ok(None);
+            }
+            timing.validate_filters = validate_filters_start.elapsed();
 
-        if options.filters.only_blizzard && !details.m_isBlizzardMap {
-            return Ok(None);
-        }
-
-        let disable_recover = details.m_disableRecoverGame.unwrap_or(false);
-        if options.filters.require_recover_disabled && !disable_recover {
-            return Ok(None);
-        }
-
-        let replay_build = i64::from(base_build);
-        let latest_build = i64::from(
-            protocol_store
-                .latest()
-                .map_err(|error| ReplayBaseParseError::ProtocolStore(error.to_string()))?
-                .build(),
-        );
-        let selected_build = if protocol_store.build(base_build).is_ok() {
-            replay_build
-        } else {
-            protocol_store
-                .closest_build(base_build)
-                .map(i64::from)
-                .unwrap_or(latest_build)
-        };
-
-        let map_title = if metadata.Title.is_empty() {
-            "Unknown map".to_string()
-        } else {
-            metadata.Title.clone()
-        };
-        let map_name = inputs
-            .map_names
-            .get(&map_title)
-            .and_then(|row| row.get("EN"))
-            .cloned()
-            .unwrap_or(map_title);
-
-        let extension = init_data
-            .m_syncLobbyState
-            .m_gameDescription
-            .m_hasExtensionMod;
-        let brutal_plus = init_data
-            .m_syncLobbyState
-            .m_lobbyState
-            .m_slots
-            .first()
-            .map(|value| value.m_brutalPlusDifficulty as u32)
-            .unwrap_or_default();
-
-        let length_numeric = ReplayNumericValue::Float(metadata.Duration);
-        let start_time = DetailedReplayAnalyzer::get_start_time(&events);
-        let last_deselect_event = DetailedReplayAnalyzer::get_last_deselect_event(&events)
-            .unwrap_or(ReplayNumericValue::Float(metadata.Duration));
-
-        let metadata_players = &metadata.Players;
-        if metadata_players.is_empty() {
-            return Err(ReplayBaseParseError::InvalidReplayData(
-                "metadata Players must be array".to_string(),
-            ));
-        }
-
-        let player0_result = metadata_players
-            .first()
-            .map(|value| value.Result.clone())
-            .unwrap_or_default();
-        let player1_result = metadata_players
-            .get(1)
-            .map(|value| value.Result.clone())
-            .unwrap_or_default();
-        let result = if player0_result == "Win" || player1_result == "Win" {
-            "Victory".to_string()
-        } else {
-            "Defeat".to_string()
-        };
-
-        let accurate_length_numeric = if result == "Victory" && options.include_events {
-            last_deselect_event.subtract(&start_time)
-        } else {
-            length_numeric.subtract(&start_time)
-        };
-        let accurate_length = accurate_length_numeric.as_f64();
-        let realtime_length = DetailedReplayAnalyzer::realtime_length_from_replay(
-            accurate_length,
-            &details,
-            &init_data,
-        );
-        let end_time = if result == "Victory" && options.include_events {
-            last_deselect_event.as_f64()
-        } else {
-            metadata.Duration
-        };
-        let mutator_context = ReplayMutatorParseContext::from_init_data(&init_data);
-
-        let (mutators, weekly) = DetailedReplayAnalyzer::identify_mutators_for_replay(
-            &events,
-            &inputs.mutators_all,
-            &inputs.mutators_ui,
-            &inputs.mutator_ids,
-            &inputs.cached_mutators,
-            extension,
-            replay_path.to_string_lossy().contains("[MM]"),
-            Some(&mutator_context),
-        );
-
-        let raw_messages = message_events
-            .iter()
-            .filter_map(ParsedReplayMessage::from_message_event)
-            .collect::<Vec<ParsedReplayMessage>>();
-
-        Ok(Some(ReplayBaseParse {
-            context: ReplayParsedContext {
-                details,
-                init_data,
-                metadata,
-            },
-            build: ReplayBuildInfo::new(
+            let resolve_build_start = Instant::now();
+            let replay_build = i64::from(base_build);
+            let latest_build = i64::from(
+                protocol_store
+                    .latest()
+                    .map_err(|error| ReplayBaseParseError::ProtocolStore(error.to_string()))?
+                    .build(),
+            );
+            let selected_build = if protocol_store.build(base_build).is_ok() {
+                replay_build
+            } else {
+                protocol_store
+                    .closest_build(base_build)
+                    .map(i64::from)
+                    .unwrap_or(latest_build)
+            };
+            let build = ReplayBuildInfo::new(
                 base_build,
                 DetailedReplayAnalyzer::resolve_protocol_build(
                     replay_build,
                     latest_build,
                     selected_build,
                 ),
-            ),
-            file: replay_path.display().to_string(),
-            map_name,
-            extension,
-            brutal_plus,
-            result,
-            accurate_length,
-            accurate_length_force_float: matches!(
-                accurate_length_numeric,
-                ReplayNumericValue::Float(_)
-            ),
-            realtime_length,
-            form_alength: DetailedReplayAnalyzer::format_duration(accurate_length),
-            length: CacheOverallStatsFile::duration_to_u64(length_numeric.as_f64()),
-            mutators,
-            weekly,
-            raw_messages,
-            hash: DetailedReplayAnalyzer::calculate_replay_hash(replay_path),
-            date: DetailedReplayAnalyzer::file_date_string(replay_path).map_err(|error| {
+            );
+            timing.resolve_build = resolve_build_start.elapsed();
+
+            let map_lookup_start = Instant::now();
+            let map_title = if metadata.Title.is_empty() {
+                "Unknown map".to_string()
+            } else {
+                metadata.Title.clone()
+            };
+            let map_name = inputs
+                .map_names
+                .get(&map_title)
+                .and_then(|row| row.get("EN"))
+                .cloned()
+                .unwrap_or(map_title);
+            timing.map_lookup = map_lookup_start.elapsed();
+
+            let lobby_metadata_start = Instant::now();
+            let extension = init_data
+                .m_syncLobbyState
+                .m_gameDescription
+                .m_hasExtensionMod;
+            let brutal_plus = init_data
+                .m_syncLobbyState
+                .m_lobbyState
+                .m_slots
+                .first()
+                .map(|value| value.m_brutalPlusDifficulty as u32)
+                .unwrap_or_default();
+            timing.lobby_metadata = lobby_metadata_start.elapsed();
+
+            let length_events_start = Instant::now();
+            let length_numeric = ReplayNumericValue::Float(metadata.Duration);
+            let start_time = DetailedReplayAnalyzer::get_start_time(&events);
+            let last_deselect_event = DetailedReplayAnalyzer::get_last_deselect_event(&events)
+                .unwrap_or(ReplayNumericValue::Float(metadata.Duration));
+
+            let metadata_players = &metadata.Players;
+            if metadata_players.is_empty() {
+                return Err(ReplayBaseParseError::InvalidReplayData(
+                    "metadata Players must be array".to_string(),
+                ));
+            }
+
+            let player0_result = metadata_players
+                .first()
+                .map(|value| value.Result.clone())
+                .unwrap_or_default();
+            let player1_result = metadata_players
+                .get(1)
+                .map(|value| value.Result.clone())
+                .unwrap_or_default();
+            let result = if player0_result == "Win" || player1_result == "Win" {
+                "Victory".to_string()
+            } else {
+                "Defeat".to_string()
+            };
+
+            let accurate_length_numeric = if result == "Victory" && options.include_events {
+                last_deselect_event.subtract(&start_time)
+            } else {
+                length_numeric.subtract(&start_time)
+            };
+            let accurate_length = accurate_length_numeric.as_f64();
+            let realtime_length = DetailedReplayAnalyzer::realtime_length_from_replay(
+                accurate_length,
+                &details,
+                &init_data,
+            );
+            let end_time = if result == "Victory" && options.include_events {
+                last_deselect_event.as_f64()
+            } else {
+                metadata.Duration
+            };
+            let form_alength = DetailedReplayAnalyzer::format_duration(accurate_length);
+            let length = CacheOverallStatsFile::duration_to_u64(length_numeric.as_f64());
+            timing.length_events = length_events_start.elapsed();
+
+            let identify_mutators_start = Instant::now();
+            let mutator_context = ReplayMutatorParseContext::from_init_data(&init_data);
+            let (mutators, weekly) = DetailedReplayAnalyzer::identify_mutators_for_replay(
+                &events,
+                &inputs.mutators_all,
+                &inputs.mutators_ui,
+                &inputs.mutator_ids,
+                &inputs.cached_mutators,
+                extension,
+                is_mm_replay,
+                Some(&mutator_context),
+            );
+            timing.identify_mutators = identify_mutators_start.elapsed();
+
+            let collect_messages_start = Instant::now();
+            let raw_messages = message_events
+                .iter()
+                .filter_map(ParsedReplayMessage::from_message_event)
+                .collect::<Vec<ParsedReplayMessage>>();
+            timing.collect_messages = collect_messages_start.elapsed();
+
+            let hash_file_start = Instant::now();
+            let hash = DetailedReplayAnalyzer::calculate_replay_hash(replay_path);
+            timing.hash_file = hash_file_start.elapsed();
+
+            let file_date_start = Instant::now();
+            let date = DetailedReplayAnalyzer::file_date_string(replay_path).map_err(|error| {
                 ReplayBaseParseError::IoRead {
                     path: replay_path.to_path_buf(),
                     message: error.to_string(),
                 }
-            })?,
-            detailed: options.include_events.then(|| ReplayDetailedParseContext {
+            })?;
+            timing.file_date = file_date_start.elapsed();
+
+            let detailed_event_filter_start = Instant::now();
+            let detailed = options.include_events.then(|| ReplayDetailedParseContext {
                 events: events
                     .into_iter()
                     .filter(ReplayEventKind::needed_for_replay_report_analysis_event)
                     .collect(),
                 start_time: start_time.as_f64(),
                 end_time,
-            }),
-        }))
+            });
+            timing.detailed_event_filter = detailed_event_filter_start.elapsed();
+
+            let build_base_start = Instant::now();
+            let base = ReplayBaseParse {
+                context: ReplayParsedContext {
+                    details,
+                    init_data,
+                    metadata,
+                },
+                build,
+                file: replay_path.display().to_string(),
+                map_name,
+                extension,
+                brutal_plus,
+                result,
+                accurate_length,
+                accurate_length_force_float: matches!(
+                    accurate_length_numeric,
+                    ReplayNumericValue::Float(_)
+                ),
+                realtime_length,
+                form_alength,
+                length,
+                mutators,
+                weekly,
+                raw_messages,
+                hash,
+                date,
+                detailed,
+            };
+            timing.build_base = build_base_start.elapsed();
+
+            Ok(Some(base))
+        })();
+        (result, timing.finish(total_start.elapsed()))
     }
 
     fn resolve_protocol_build(
@@ -752,9 +955,21 @@ impl DetailedReplayAnalyzer {
     }
 
     fn calculate_replay_hash(path: &Path) -> String {
+        Self::calculate_replay_file_digest(path).hash
+    }
+
+    fn calculate_replay_file_digest(path: &Path) -> ReplayFileDigest {
         match fs::read(path) {
-            Ok(bytes) => format!("{:x}", md5::compute(bytes)),
-            Err(_) => format!("{:x}", md5::compute(path.to_string_lossy().as_bytes())),
+            Ok(bytes) => ReplayFileDigest {
+                hash: format!("{:x}", md5::compute(&bytes)),
+                size_bytes: u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+            },
+            Err(_) => ReplayFileDigest {
+                hash: format!("{:x}", md5::compute(path.to_string_lossy().as_bytes())),
+                size_bytes: fs::metadata(path)
+                    .map(|metadata| metadata.len())
+                    .unwrap_or(0),
+            },
         }
     }
 
@@ -1362,6 +1577,56 @@ pub struct GenerateCacheSummary {
     output_file: PathBuf,
     entries: Vec<CacheReplayEntry>,
     completed: bool,
+    timing_report: GenerateCacheTimingReport,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct GenerateCacheTimingReport {
+    worker_count: usize,
+    total_replay_files: usize,
+    candidate_count: usize,
+    reused_candidate_count: usize,
+    pending_candidate_count: usize,
+    analyzed_entry_count: usize,
+    output_directory_setup: Duration,
+    collect_replay_files: Duration,
+    resolve_main_handles: Duration,
+    load_existing_cache: Duration,
+    build_thread_pool: Duration,
+    build_canonicalize_thread_pool: Duration,
+    collect_candidates_parallel: Duration,
+    collect_candidates_worker: Duration,
+    collect_candidates_hash_lookup: Duration,
+    collect_candidates_priority: Duration,
+    partition_candidates: Duration,
+    sort_pending_candidates: Duration,
+    replay_analysis_parallel: Duration,
+    replay_analysis_worker: Duration,
+    replay_analysis_parse_detailed: Duration,
+    replay_analysis_parse_detailed_breakdown: ReplayEntryParseTiming,
+    replay_analysis_parse_basic_fallback: Duration,
+    replay_analysis_parse_basic_fallback_breakdown: ReplayEntryParseTiming,
+    replay_analysis_detailed_report: Duration,
+    replay_analysis_temp_entry_write: Duration,
+    replay_analysis_progress_record: Duration,
+    collect_analyzed_entries: Duration,
+    merge_entries: Duration,
+    sort_entries: Duration,
+    cleanup_temp_file: Duration,
+    simple_analysis_parallel: Duration,
+    simple_analysis_worker: Duration,
+    simple_analysis_parse: Duration,
+    simple_analysis_parse_breakdown: ReplayEntryParseTiming,
+    canonicalize_entries: Duration,
+    canonicalize_worker_count: usize,
+    canonicalize_entries_parallel: Duration,
+    canonicalize_entries_worker: Duration,
+    canonicalize_to_json_value_worker: Duration,
+    canonicalize_json_value_worker: Duration,
+    canonicalize_serialize_payload: Duration,
+    canonicalize_deserialize_payload: Duration,
+    write_entries: Duration,
+    total: Duration,
 }
 
 #[derive(Debug, Default)]
@@ -1499,6 +1764,21 @@ impl DetailedReplayAnalyzer {
         )
     }
 
+    #[doc(hidden)]
+    pub fn sort_replay_paths_by_detailed_analysis_priority(replay_paths: &mut [PathBuf]) {
+        let mut prioritized_paths = replay_paths
+            .iter()
+            .cloned()
+            .map(|path| (ReplayAnalysisFilePriority::from_path(&path), path))
+            .collect::<Vec<_>>();
+
+        prioritized_paths.sort_by(|left, right| left.0.compare_largest_first(&right.0));
+
+        for (target, (_, path)) in replay_paths.iter_mut().zip(prioritized_paths) {
+            *target = path;
+        }
+    }
+
     fn run_full_analysis(
         config: &GenerateCacheConfig,
         resources: &ReplayAnalysisResources,
@@ -1506,26 +1786,58 @@ impl DetailedReplayAnalyzer {
         runtime: &GenerateCacheRuntimeOptions,
         mode: FullAnalysisMode,
     ) -> Result<GenerateCacheSummary, GenerateCacheError> {
+        let total_start = Instant::now();
         if !config.account_dir.is_dir() {
             return Err(GenerateCacheError::InvalidAccountDirectory(
                 config.account_dir.clone(),
             ));
         }
 
+        let output_directory_setup_start = Instant::now();
         config.ensure_output_directory()?;
-        let cache_output = DetailedReplayAnalyzer::analyze_replays_for_cache_output(
+        let output_directory_setup = output_directory_setup_start.elapsed();
+        let mut cache_output = DetailedReplayAnalyzer::analyze_replays_for_cache_output(
             config, logger, runtime, resources, mode,
         )?;
+        cache_output.timing_report.output_directory_setup = output_directory_setup;
         let scanned_replays = cache_output.entries.len();
-        let cache_entries = CacheReplayEntry::canonicalized_entries(&cache_output.entries)
-            .map_err(GenerateCacheError::CanonicalizeFailed)?;
-        CacheReplayEntry::write_entries(&cache_entries, &config.output_file)?;
+
+        let canonical_worker_count = if cache_output.timing_report.worker_count == 0 {
+            runtime.resolved_worker_count(std::cmp::max(1, cache_output.entries.len()))
+        } else {
+            cache_output.timing_report.worker_count
+        };
+        let build_canonicalize_thread_pool_start = Instant::now();
+        let canonicalize_thread_pool = ThreadPoolBuilder::new()
+            .num_threads(canonical_worker_count)
+            .build()
+            .map_err(|error| GenerateCacheError::ThreadPoolBuildFailed(error.to_string()))?;
+        cache_output.timing_report.build_canonicalize_thread_pool =
+            build_canonicalize_thread_pool_start.elapsed();
+
+        let canonicalize_entries_start = Instant::now();
+        let canonical_payload = canonicalize_thread_pool.install(|| {
+            CacheReplayEntry::canonicalized_entries_with_payload(&cache_output.entries)
+        });
+        let canonical_payload =
+            canonical_payload.map_err(GenerateCacheError::CanonicalizeFailed)?;
+        cache_output.timing_report.canonicalize_entries = canonicalize_entries_start.elapsed();
+        cache_output
+            .timing_report
+            .apply_canonical_payload_timing(canonical_payload.timing());
+        let (cache_entries, cache_payload) = canonical_payload.into_parts();
+
+        let write_entries_start = Instant::now();
+        CacheReplayEntry::write_payload(&cache_payload, &config.output_file)?;
+        cache_output.timing_report.write_entries = write_entries_start.elapsed();
+        let timing_report = cache_output.timing_report.finish(total_start.elapsed());
 
         Ok(GenerateCacheSummary::new(
             scanned_replays,
             config.output_file.clone(),
             cache_entries,
             cache_output.completed,
+            timing_report,
         ))
     }
 }
@@ -1573,18 +1885,691 @@ impl GenerateCacheConfig {
     }
 }
 
+impl GenerateCacheTimingReport {
+    fn finish(mut self, total: Duration) -> Self {
+        self.total = total;
+        self
+    }
+
+    fn apply_canonical_payload_timing(&mut self, timing: CanonicalCachePayloadTiming) {
+        self.canonicalize_worker_count = timing.worker_count();
+        self.canonicalize_entries_parallel = timing.canonicalize_entries_parallel();
+        self.canonicalize_entries_worker = timing.canonicalize_entries_worker();
+        self.canonicalize_to_json_value_worker = timing.to_json_value_worker();
+        self.canonicalize_json_value_worker = timing.canonicalize_json_value_worker();
+        self.canonicalize_serialize_payload = timing.serialize_payload();
+        self.canonicalize_deserialize_payload = timing.deserialize_payload();
+    }
+
+    fn add_candidate_collection_timing(&mut self, timing: &CandidateReplayCollectionTiming) {
+        self.collect_candidates_worker += timing.total();
+        self.collect_candidates_hash_lookup += timing.hash_lookup();
+        self.collect_candidates_priority += timing.priority();
+    }
+
+    fn add_replay_analysis_timing(&mut self, timing: &CandidateReplayAnalysisTiming) {
+        self.replay_analysis_worker += timing.total();
+        self.replay_analysis_parse_detailed += timing.parse_detailed();
+        self.replay_analysis_parse_detailed_breakdown
+            .add(timing.parse_detailed_breakdown());
+        self.replay_analysis_parse_basic_fallback += timing.parse_basic_fallback();
+        self.replay_analysis_parse_basic_fallback_breakdown
+            .add(timing.parse_basic_fallback_breakdown());
+        self.replay_analysis_detailed_report += timing.detailed_report();
+        self.replay_analysis_temp_entry_write += timing.temp_entry_write();
+        self.replay_analysis_progress_record += timing.progress_record();
+    }
+
+    fn add_simple_analysis_timing(&mut self, timing: &SimpleReplayAnalysisTiming) {
+        self.simple_analysis_worker += timing.total();
+        self.simple_analysis_parse += timing.parse();
+        self.simple_analysis_parse_breakdown
+            .add(timing.parse_breakdown());
+    }
+
+    pub fn worker_count(&self) -> usize {
+        self.worker_count
+    }
+
+    pub fn total_replay_files(&self) -> usize {
+        self.total_replay_files
+    }
+
+    pub fn candidate_count(&self) -> usize {
+        self.candidate_count
+    }
+
+    pub fn reused_candidate_count(&self) -> usize {
+        self.reused_candidate_count
+    }
+
+    pub fn pending_candidate_count(&self) -> usize {
+        self.pending_candidate_count
+    }
+
+    pub fn analyzed_entry_count(&self) -> usize {
+        self.analyzed_entry_count
+    }
+
+    pub fn total(&self) -> Duration {
+        self.total
+    }
+
+    pub fn output_directory_setup(&self) -> Duration {
+        self.output_directory_setup
+    }
+
+    pub fn collect_replay_files(&self) -> Duration {
+        self.collect_replay_files
+    }
+
+    pub fn resolve_main_handles(&self) -> Duration {
+        self.resolve_main_handles
+    }
+
+    pub fn load_existing_cache(&self) -> Duration {
+        self.load_existing_cache
+    }
+
+    pub fn build_thread_pool(&self) -> Duration {
+        self.build_thread_pool
+    }
+
+    pub fn build_canonicalize_thread_pool(&self) -> Duration {
+        self.build_canonicalize_thread_pool
+    }
+
+    pub fn collect_candidates_parallel(&self) -> Duration {
+        self.collect_candidates_parallel
+    }
+
+    pub fn collect_candidates_worker(&self) -> Duration {
+        self.collect_candidates_worker
+    }
+
+    pub fn collect_candidates_hash_lookup(&self) -> Duration {
+        self.collect_candidates_hash_lookup
+    }
+
+    pub fn collect_candidates_priority(&self) -> Duration {
+        self.collect_candidates_priority
+    }
+
+    pub fn partition_candidates(&self) -> Duration {
+        self.partition_candidates
+    }
+
+    pub fn sort_pending_candidates(&self) -> Duration {
+        self.sort_pending_candidates
+    }
+
+    pub fn replay_analysis_parallel(&self) -> Duration {
+        self.replay_analysis_parallel
+    }
+
+    pub fn replay_analysis_worker(&self) -> Duration {
+        self.replay_analysis_worker
+    }
+
+    pub fn replay_analysis_parse_detailed(&self) -> Duration {
+        self.replay_analysis_parse_detailed
+    }
+
+    pub fn replay_analysis_parse_basic_fallback(&self) -> Duration {
+        self.replay_analysis_parse_basic_fallback
+    }
+
+    pub fn replay_analysis_detailed_report(&self) -> Duration {
+        self.replay_analysis_detailed_report
+    }
+
+    pub fn replay_analysis_temp_entry_write(&self) -> Duration {
+        self.replay_analysis_temp_entry_write
+    }
+
+    pub fn replay_analysis_progress_record(&self) -> Duration {
+        self.replay_analysis_progress_record
+    }
+
+    pub fn collect_analyzed_entries(&self) -> Duration {
+        self.collect_analyzed_entries
+    }
+
+    pub fn merge_entries(&self) -> Duration {
+        self.merge_entries
+    }
+
+    pub fn sort_entries(&self) -> Duration {
+        self.sort_entries
+    }
+
+    pub fn cleanup_temp_file(&self) -> Duration {
+        self.cleanup_temp_file
+    }
+
+    pub fn simple_analysis_parallel(&self) -> Duration {
+        self.simple_analysis_parallel
+    }
+
+    pub fn simple_analysis_worker(&self) -> Duration {
+        self.simple_analysis_worker
+    }
+
+    pub fn simple_analysis_parse(&self) -> Duration {
+        self.simple_analysis_parse
+    }
+
+    pub fn canonicalize_entries(&self) -> Duration {
+        self.canonicalize_entries
+    }
+
+    pub fn canonicalize_worker_count(&self) -> usize {
+        self.canonicalize_worker_count
+    }
+
+    pub fn canonicalize_entries_parallel(&self) -> Duration {
+        self.canonicalize_entries_parallel
+    }
+
+    pub fn canonicalize_entries_worker(&self) -> Duration {
+        self.canonicalize_entries_worker
+    }
+
+    pub fn canonicalize_to_json_value_worker(&self) -> Duration {
+        self.canonicalize_to_json_value_worker
+    }
+
+    pub fn canonicalize_json_value_worker(&self) -> Duration {
+        self.canonicalize_json_value_worker
+    }
+
+    pub fn canonicalize_serialize_payload(&self) -> Duration {
+        self.canonicalize_serialize_payload
+    }
+
+    pub fn canonicalize_deserialize_payload(&self) -> Duration {
+        self.canonicalize_deserialize_payload
+    }
+
+    pub fn write_entries(&self) -> Duration {
+        self.write_entries
+    }
+
+    pub fn parallelizable_wall_time(&self) -> Duration {
+        self.collect_candidates_parallel
+            + self.replay_analysis_parallel
+            + self.simple_analysis_parallel
+            + self.canonicalize_entries_parallel
+    }
+
+    pub fn serial_wall_estimate(&self) -> Duration {
+        self.total.saturating_sub(self.parallelizable_wall_time())
+    }
+
+    pub fn serial_wall_fraction(&self) -> f64 {
+        Self::duration_fraction(self.serial_wall_estimate(), self.total)
+    }
+
+    pub fn parallelizable_wall_fraction(&self) -> f64 {
+        Self::duration_fraction(self.parallelizable_wall_time(), self.total)
+    }
+
+    pub fn amdahl_max_speedup_from_serial_fraction(&self) -> Option<f64> {
+        let serial_fraction = self.serial_wall_fraction();
+        (serial_fraction > 0.0).then_some(1.0 / serial_fraction)
+    }
+
+    pub fn format_amdahl_summary(&self) -> String {
+        let max_speedup = self
+            .amdahl_max_speedup_from_serial_fraction()
+            .map(|value| format!("{value:.2}x"))
+            .unwrap_or_else(|| "unbounded".to_string());
+        let merge_and_sort = self.merge_entries + self.sort_entries;
+        let candidate_other = Self::saturating_duration_sub_all(
+            self.collect_candidates_worker,
+            &[
+                self.collect_candidates_hash_lookup,
+                self.collect_candidates_priority,
+            ],
+        );
+        let replay_other = Self::saturating_duration_sub_all(
+            self.replay_analysis_worker,
+            &[
+                self.replay_analysis_parse_detailed,
+                self.replay_analysis_parse_basic_fallback,
+                self.replay_analysis_detailed_report,
+                self.replay_analysis_temp_entry_write,
+                self.replay_analysis_progress_record,
+            ],
+        );
+
+        let mut output = format!(
+            concat!(
+                "Amdahl timings:\n",
+                "  total={:.3}s workers={} files={} candidates={} pending={} reused={} analyzed={}\n",
+                "  serial_wall_estimate={:.3}s ({:.1}%) parallelizable_wall={:.3}s ({:.1}%) max_speedup_from_this_serial_fraction={}\n",
+                "  phases: collect_files={:.3}s resolve_handles={:.3}s load_cache={:.3}s build_pool={:.3}s build_canonical_pool={:.3}s collect_candidates_parallel={:.3}s replay_analysis_parallel={:.3}s collect_results={:.3}s merge_sort={:.3}s canonicalize_total={:.3}s write_file={:.3}s"
+            ),
+            Self::duration_seconds(self.total),
+            self.worker_count,
+            self.total_replay_files,
+            self.candidate_count,
+            self.pending_candidate_count,
+            self.reused_candidate_count,
+            self.analyzed_entry_count,
+            Self::duration_seconds(self.serial_wall_estimate()),
+            self.serial_wall_fraction() * 100.0,
+            Self::duration_seconds(self.parallelizable_wall_time()),
+            self.parallelizable_wall_fraction() * 100.0,
+            max_speedup,
+            Self::duration_seconds(self.collect_replay_files),
+            Self::duration_seconds(self.resolve_main_handles),
+            Self::duration_seconds(self.load_existing_cache),
+            Self::duration_seconds(self.build_thread_pool),
+            Self::duration_seconds(self.build_canonicalize_thread_pool),
+            Self::duration_seconds(self.collect_candidates_parallel),
+            Self::duration_seconds(self.replay_analysis_parallel),
+            Self::duration_seconds(self.collect_analyzed_entries),
+            Self::duration_seconds(merge_and_sort),
+            Self::duration_seconds(self.canonicalize_entries),
+            Self::duration_seconds(self.write_entries),
+        );
+
+        output.push_str(&format!(
+            concat!(
+                "\n  parallel core use: ",
+                "collect_candidates worker_time={:.3}s effective_cores={:.2} capacity_eff={:.1}%; ",
+                "replay_analysis worker_time={:.3}s effective_cores={:.2} capacity_eff={:.1}%; ",
+                "simple_analysis worker_time={:.3}s effective_cores={:.2} capacity_eff={:.1}%; ",
+                "canonicalize_json workers={} worker_time={:.3}s effective_cores={:.2} capacity_eff={:.1}%"
+            ),
+            Self::duration_seconds(self.collect_candidates_worker),
+            Self::effective_cores(
+                self.collect_candidates_worker,
+                self.collect_candidates_parallel
+            ),
+            Self::core_efficiency_percent(
+                self.collect_candidates_worker,
+                self.collect_candidates_parallel,
+                self.worker_count
+            ),
+            Self::duration_seconds(self.replay_analysis_worker),
+            Self::effective_cores(self.replay_analysis_worker, self.replay_analysis_parallel),
+            Self::core_efficiency_percent(
+                self.replay_analysis_worker,
+                self.replay_analysis_parallel,
+                self.worker_count
+            ),
+            Self::duration_seconds(self.simple_analysis_worker),
+            Self::effective_cores(self.simple_analysis_worker, self.simple_analysis_parallel),
+            Self::core_efficiency_percent(
+                self.simple_analysis_worker,
+                self.simple_analysis_parallel,
+                self.worker_count
+            ),
+            self.canonicalize_worker_count,
+            Self::duration_seconds(self.canonicalize_entries_worker),
+            Self::effective_cores(
+                self.canonicalize_entries_worker,
+                self.canonicalize_entries_parallel
+            ),
+            Self::core_efficiency_percent(
+                self.canonicalize_entries_worker,
+                self.canonicalize_entries_parallel,
+                self.canonicalize_worker_count
+            ),
+        ));
+
+        output.push_str(&format!(
+            concat!(
+                "\n  candidate parts: ",
+                "hash_lookup={:.3}s capacity_eff={:.1}% ",
+                "priority={:.3}s capacity_eff={:.1}% ",
+                "other={:.3}s capacity_eff={:.1}%"
+            ),
+            Self::duration_seconds(self.collect_candidates_hash_lookup),
+            Self::core_efficiency_percent(
+                self.collect_candidates_hash_lookup,
+                self.collect_candidates_parallel,
+                self.worker_count
+            ),
+            Self::duration_seconds(self.collect_candidates_priority),
+            Self::core_efficiency_percent(
+                self.collect_candidates_priority,
+                self.collect_candidates_parallel,
+                self.worker_count
+            ),
+            Self::duration_seconds(candidate_other),
+            Self::core_efficiency_percent(
+                candidate_other,
+                self.collect_candidates_parallel,
+                self.worker_count
+            ),
+        ));
+
+        output.push_str(&format!(
+            concat!(
+                "\n  replay parts: ",
+                "parse_detailed={:.3}s capacity_eff={:.1}% ",
+                "detailed_report={:.3}s capacity_eff={:.1}% ",
+                "parse_basic_fallback={:.3}s capacity_eff={:.1}% ",
+                "temp_entry_write={:.3}s capacity_eff={:.1}% ",
+                "progress_record={:.3}s capacity_eff={:.1}% ",
+                "other={:.3}s capacity_eff={:.1}%"
+            ),
+            Self::duration_seconds(self.replay_analysis_parse_detailed),
+            Self::core_efficiency_percent(
+                self.replay_analysis_parse_detailed,
+                self.replay_analysis_parallel,
+                self.worker_count
+            ),
+            Self::duration_seconds(self.replay_analysis_detailed_report),
+            Self::core_efficiency_percent(
+                self.replay_analysis_detailed_report,
+                self.replay_analysis_parallel,
+                self.worker_count
+            ),
+            Self::duration_seconds(self.replay_analysis_parse_basic_fallback),
+            Self::core_efficiency_percent(
+                self.replay_analysis_parse_basic_fallback,
+                self.replay_analysis_parallel,
+                self.worker_count
+            ),
+            Self::duration_seconds(self.replay_analysis_temp_entry_write),
+            Self::core_efficiency_percent(
+                self.replay_analysis_temp_entry_write,
+                self.replay_analysis_parallel,
+                self.worker_count
+            ),
+            Self::duration_seconds(self.replay_analysis_progress_record),
+            Self::core_efficiency_percent(
+                self.replay_analysis_progress_record,
+                self.replay_analysis_parallel,
+                self.worker_count
+            ),
+            Self::duration_seconds(replay_other),
+            Self::core_efficiency_percent(
+                replay_other,
+                self.replay_analysis_parallel,
+                self.worker_count
+            ),
+        ));
+
+        output.push('\n');
+        output.push_str(&Self::format_parse_timing_breakdown(
+            "parse_detailed parts",
+            &self.replay_analysis_parse_detailed_breakdown,
+            self.replay_analysis_parallel,
+            self.worker_count,
+        ));
+
+        output.push('\n');
+        output.push_str(&Self::format_parse_timing_breakdown(
+            "parse_basic_fallback parts",
+            &self.replay_analysis_parse_basic_fallback_breakdown,
+            self.replay_analysis_parallel,
+            self.worker_count,
+        ));
+
+        if self.simple_analysis_worker > Duration::ZERO {
+            output.push('\n');
+            output.push_str(&Self::format_parse_timing_breakdown(
+                "simple_parse parts",
+                &self.simple_analysis_parse_breakdown,
+                self.simple_analysis_parallel,
+                self.worker_count,
+            ));
+        }
+
+        output.push_str(&format!(
+            concat!(
+                "\n  canonicalize parts: ",
+                "json_parallel_wall={:.3}s json_worker={:.3}s capacity_eff={:.1}% ",
+                "to_json={:.3}s capacity_eff={:.1}% ",
+                "canonicalize_value={:.3}s capacity_eff={:.1}% ",
+                "serialize_payload={:.3}s deserialize_payload={:.3}s"
+            ),
+            Self::duration_seconds(self.canonicalize_entries_parallel),
+            Self::duration_seconds(self.canonicalize_entries_worker),
+            Self::core_efficiency_percent(
+                self.canonicalize_entries_worker,
+                self.canonicalize_entries_parallel,
+                self.canonicalize_worker_count
+            ),
+            Self::duration_seconds(self.canonicalize_to_json_value_worker),
+            Self::core_efficiency_percent(
+                self.canonicalize_to_json_value_worker,
+                self.canonicalize_entries_parallel,
+                self.canonicalize_worker_count
+            ),
+            Self::duration_seconds(self.canonicalize_json_value_worker),
+            Self::core_efficiency_percent(
+                self.canonicalize_json_value_worker,
+                self.canonicalize_entries_parallel,
+                self.canonicalize_worker_count
+            ),
+            Self::duration_seconds(self.canonicalize_serialize_payload),
+            Self::duration_seconds(self.canonicalize_deserialize_payload),
+        ));
+
+        output
+    }
+
+    fn format_parse_timing_breakdown(
+        label: &str,
+        timing: &ReplayEntryParseTiming,
+        wall_time: Duration,
+        worker_count: usize,
+    ) -> String {
+        let mut output = format!(
+            concat!(
+                "  {}: total={:.3}s ",
+                "decode_replay={:.3}s capacity_eff={:.1}% ",
+                "extract_fields={:.3}s capacity_eff={:.1}% ",
+                "validate_filters={:.3}s capacity_eff={:.1}% ",
+                "resolve_build={:.3}s capacity_eff={:.1}% ",
+                "map_lookup={:.3}s capacity_eff={:.1}% ",
+                "lobby_metadata={:.3}s capacity_eff={:.1}% ",
+                "length_events={:.3}s capacity_eff={:.1}% ",
+                "identify_mutators={:.3}s capacity_eff={:.1}% ",
+                "messages={:.3}s capacity_eff={:.1}% ",
+                "hash_file={:.3}s capacity_eff={:.1}% ",
+                "file_date={:.3}s capacity_eff={:.1}% ",
+                "event_filter={:.3}s capacity_eff={:.1}% ",
+                "bundle_projection={:.3}s capacity_eff={:.1}% ",
+                "candidate_filter={:.3}s capacity_eff={:.1}% ",
+                "cache_entry_projection={:.3}s capacity_eff={:.1}%"
+            ),
+            label,
+            Self::duration_seconds(timing.total),
+            Self::duration_seconds(timing.base.decode_replay),
+            Self::core_efficiency_percent(timing.base.decode_replay, wall_time, worker_count),
+            Self::duration_seconds(timing.base.extract_fields),
+            Self::core_efficiency_percent(timing.base.extract_fields, wall_time, worker_count),
+            Self::duration_seconds(timing.base.validate_filters),
+            Self::core_efficiency_percent(timing.base.validate_filters, wall_time, worker_count),
+            Self::duration_seconds(timing.base.resolve_build),
+            Self::core_efficiency_percent(timing.base.resolve_build, wall_time, worker_count),
+            Self::duration_seconds(timing.base.map_lookup),
+            Self::core_efficiency_percent(timing.base.map_lookup, wall_time, worker_count),
+            Self::duration_seconds(timing.base.lobby_metadata),
+            Self::core_efficiency_percent(timing.base.lobby_metadata, wall_time, worker_count),
+            Self::duration_seconds(timing.base.length_events),
+            Self::core_efficiency_percent(timing.base.length_events, wall_time, worker_count),
+            Self::duration_seconds(timing.base.identify_mutators),
+            Self::core_efficiency_percent(timing.base.identify_mutators, wall_time, worker_count),
+            Self::duration_seconds(timing.base.collect_messages),
+            Self::core_efficiency_percent(timing.base.collect_messages, wall_time, worker_count),
+            Self::duration_seconds(timing.base.hash_file),
+            Self::core_efficiency_percent(timing.base.hash_file, wall_time, worker_count),
+            Self::duration_seconds(timing.base.file_date),
+            Self::core_efficiency_percent(timing.base.file_date, wall_time, worker_count),
+            Self::duration_seconds(timing.base.detailed_event_filter),
+            Self::core_efficiency_percent(
+                timing.base.detailed_event_filter,
+                wall_time,
+                worker_count,
+            ),
+            Self::duration_seconds(timing.bundle_projection),
+            Self::core_efficiency_percent(timing.bundle_projection, wall_time, worker_count),
+            Self::duration_seconds(timing.candidate_filter),
+            Self::core_efficiency_percent(timing.candidate_filter, wall_time, worker_count),
+            Self::duration_seconds(timing.cache_entry_projection),
+            Self::core_efficiency_percent(timing.cache_entry_projection, wall_time, worker_count),
+        );
+        output.push('\n');
+        output.push_str(&Self::format_decode_timing_breakdown(
+            label,
+            &timing.base.decode_replay_detail,
+            wall_time,
+            worker_count,
+        ));
+        output
+    }
+
+    fn format_decode_timing_breakdown(
+        label: &str,
+        timing: &ReplayParseTiming,
+        wall_time: Duration,
+        worker_count: usize,
+    ) -> String {
+        format!(
+            concat!(
+                "  {} decode: total={:.3}s mpq_bytes={:.1}MB ",
+                "header_read={:.3}s capacity_eff={:.1}% ",
+                "header_decode={:.3}s capacity_eff={:.1}% ",
+                "protocol={:.3}s capacity_eff={:.1}% ",
+                "archive_open={:.3}s capacity_eff={:.1}% ",
+                "mpq_open_file={:.3}s capacity_eff={:.1}% ",
+                "mpq_read_file={:.3}s capacity_eff={:.1}% ",
+                "read_game={:.3}s capacity_eff={:.1}% ",
+                "read_tracker={:.3}s capacity_eff={:.1}% ",
+                "decode_ordered={:.3}s capacity_eff={:.1}% ",
+                "read_details={:.3}s capacity_eff={:.1}% ",
+                "decode_details={:.3}s capacity_eff={:.1}% ",
+                "read_details_backup={:.3}s capacity_eff={:.1}% ",
+                "decode_details_backup={:.3}s capacity_eff={:.1}% ",
+                "read_init={:.3}s capacity_eff={:.1}% ",
+                "decode_init={:.3}s capacity_eff={:.1}% ",
+                "init_fallback={:.3}s capacity_eff={:.1}% ",
+                "read_messages={:.3}s capacity_eff={:.1}% ",
+                "decode_messages={:.3}s capacity_eff={:.1}% ",
+                "read_metadata={:.3}s capacity_eff={:.1}% ",
+                "decode_metadata_json={:.3}s capacity_eff={:.1}% ",
+                "parse_metadata={:.3}s capacity_eff={:.1}% ",
+                "read_attributes={:.3}s capacity_eff={:.1}% ",
+                "decode_attributes={:.3}s capacity_eff={:.1}% ",
+                "parse_attributes={:.3}s capacity_eff={:.1}%"
+            ),
+            label,
+            Self::duration_seconds(timing.total()),
+            timing.mpq_bytes_read() as f64 / (1024.0 * 1024.0),
+            Self::duration_seconds(timing.read_header()),
+            Self::core_efficiency_percent(timing.read_header(), wall_time, worker_count),
+            Self::duration_seconds(timing.decode_header()),
+            Self::core_efficiency_percent(timing.decode_header(), wall_time, worker_count),
+            Self::duration_seconds(timing.resolve_protocol()),
+            Self::core_efficiency_percent(timing.resolve_protocol(), wall_time, worker_count),
+            Self::duration_seconds(timing.open_archive()),
+            Self::core_efficiency_percent(timing.open_archive(), wall_time, worker_count),
+            Self::duration_seconds(timing.mpq_open_file()),
+            Self::core_efficiency_percent(timing.mpq_open_file(), wall_time, worker_count),
+            Self::duration_seconds(timing.mpq_read_file()),
+            Self::core_efficiency_percent(timing.mpq_read_file(), wall_time, worker_count),
+            Self::duration_seconds(timing.read_game_events()),
+            Self::core_efficiency_percent(timing.read_game_events(), wall_time, worker_count),
+            Self::duration_seconds(timing.read_tracker_events()),
+            Self::core_efficiency_percent(timing.read_tracker_events(), wall_time, worker_count),
+            Self::duration_seconds(timing.decode_ordered_events()),
+            Self::core_efficiency_percent(timing.decode_ordered_events(), wall_time, worker_count),
+            Self::duration_seconds(timing.read_details()),
+            Self::core_efficiency_percent(timing.read_details(), wall_time, worker_count),
+            Self::duration_seconds(timing.decode_details()),
+            Self::core_efficiency_percent(timing.decode_details(), wall_time, worker_count),
+            Self::duration_seconds(timing.read_details_backup()),
+            Self::core_efficiency_percent(timing.read_details_backup(), wall_time, worker_count),
+            Self::duration_seconds(timing.decode_details_backup()),
+            Self::core_efficiency_percent(timing.decode_details_backup(), wall_time, worker_count),
+            Self::duration_seconds(timing.read_init_data()),
+            Self::core_efficiency_percent(timing.read_init_data(), wall_time, worker_count),
+            Self::duration_seconds(timing.decode_init_data()),
+            Self::core_efficiency_percent(timing.decode_init_data(), wall_time, worker_count),
+            Self::duration_seconds(timing.init_data_fallback()),
+            Self::core_efficiency_percent(timing.init_data_fallback(), wall_time, worker_count),
+            Self::duration_seconds(timing.read_message_events()),
+            Self::core_efficiency_percent(timing.read_message_events(), wall_time, worker_count),
+            Self::duration_seconds(timing.decode_message_events()),
+            Self::core_efficiency_percent(timing.decode_message_events(), wall_time, worker_count),
+            Self::duration_seconds(timing.read_metadata()),
+            Self::core_efficiency_percent(timing.read_metadata(), wall_time, worker_count),
+            Self::duration_seconds(timing.decode_metadata_json()),
+            Self::core_efficiency_percent(timing.decode_metadata_json(), wall_time, worker_count),
+            Self::duration_seconds(timing.parse_metadata()),
+            Self::core_efficiency_percent(timing.parse_metadata(), wall_time, worker_count),
+            Self::duration_seconds(timing.read_attributes()),
+            Self::core_efficiency_percent(timing.read_attributes(), wall_time, worker_count),
+            Self::duration_seconds(timing.decode_attributes()),
+            Self::core_efficiency_percent(timing.decode_attributes(), wall_time, worker_count),
+            Self::duration_seconds(timing.parse_attributes()),
+            Self::core_efficiency_percent(timing.parse_attributes(), wall_time, worker_count),
+        )
+    }
+
+    fn duration_fraction(part: Duration, total: Duration) -> f64 {
+        let total_seconds = total.as_secs_f64();
+        if total_seconds <= 0.0 {
+            0.0
+        } else {
+            part.as_secs_f64() / total_seconds
+        }
+    }
+
+    fn duration_seconds(duration: Duration) -> f64 {
+        duration.as_secs_f64()
+    }
+
+    fn effective_cores(worker_time: Duration, wall_time: Duration) -> f64 {
+        let wall_seconds = wall_time.as_secs_f64();
+        if wall_seconds <= 0.0 {
+            0.0
+        } else {
+            worker_time.as_secs_f64() / wall_seconds
+        }
+    }
+
+    fn core_efficiency_percent(
+        worker_time: Duration,
+        wall_time: Duration,
+        worker_count: usize,
+    ) -> f64 {
+        if worker_count == 0 {
+            0.0
+        } else {
+            (Self::effective_cores(worker_time, wall_time) / worker_count as f64) * 100.0
+        }
+    }
+
+    fn saturating_duration_sub_all(total: Duration, parts: &[Duration]) -> Duration {
+        parts
+            .iter()
+            .fold(total, |remaining, part| remaining.saturating_sub(*part))
+    }
+}
+
 impl GenerateCacheSummary {
     fn new(
         scanned_replays: usize,
         output_file: PathBuf,
         entries: Vec<CacheReplayEntry>,
         completed: bool,
+        timing_report: GenerateCacheTimingReport,
     ) -> Self {
         Self {
             scanned_replays,
             output_file,
             entries,
             completed,
+            timing_report,
         }
     }
 
@@ -1607,11 +2592,16 @@ impl GenerateCacheSummary {
     pub fn completed(&self) -> bool {
         self.completed
     }
+
+    pub fn timing_report(&self) -> &GenerateCacheTimingReport {
+        &self.timing_report
+    }
 }
 
 struct GeneratedCacheOutput {
     entries: Vec<CacheReplayEntry>,
     completed: bool,
+    timing_report: GenerateCacheTimingReport,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1764,6 +2754,10 @@ impl<'a> GenerateCacheProgressReporter<'a> {
     }
 
     fn add_temp_entry(&self, entry: CacheReplayEntry) {
+        if self.logger.is_none() {
+            return;
+        }
+
         if let Ok(mut temp_entries) = self.temp_entries.lock() {
             temp_entries.push(entry);
         }
@@ -1878,33 +2872,277 @@ impl<'a> GenerateCacheProgressReporter<'a> {
 struct CandidateReplay {
     path: PathBuf,
     hash: String,
+    analysis_priority: ReplayAnalysisFilePriority,
 }
 
-impl CandidateReplay {
-    fn collect(replay_path: &Path) -> Self {
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct CandidateReplayCollectionTiming {
+    total: Duration,
+    hash_lookup: Duration,
+    priority: Duration,
+}
+
+impl CandidateReplayCollectionTiming {
+    fn new(total: Duration, hash_lookup: Duration, priority: Duration) -> Self {
         Self {
-            path: replay_path.to_path_buf(),
-            hash: DetailedReplayAnalyzer::calculate_replay_hash(replay_path),
+            total,
+            hash_lookup,
+            priority,
         }
     }
 
-    fn analyze(
+    fn total(&self) -> Duration {
+        self.total
+    }
+
+    fn hash_lookup(&self) -> Duration {
+        self.hash_lookup
+    }
+
+    fn priority(&self) -> Duration {
+        self.priority
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CandidateReplayCollectionResult {
+    candidate: CandidateReplay,
+    timing: CandidateReplayCollectionTiming,
+}
+
+impl CandidateReplayCollectionResult {
+    fn new(candidate: CandidateReplay, timing: CandidateReplayCollectionTiming) -> Self {
+        Self { candidate, timing }
+    }
+
+    fn timing(&self) -> &CandidateReplayCollectionTiming {
+        &self.timing
+    }
+
+    fn into_candidate(self) -> CandidateReplay {
+        self.candidate
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct CandidateReplayAnalysisTiming {
+    total: Duration,
+    parse_detailed: Duration,
+    parse_detailed_breakdown: ReplayEntryParseTiming,
+    parse_basic_fallback: Duration,
+    parse_basic_fallback_breakdown: ReplayEntryParseTiming,
+    detailed_report: Duration,
+    temp_entry_write: Duration,
+    progress_record: Duration,
+}
+
+impl CandidateReplayAnalysisTiming {
+    fn finish(mut self, total: Duration) -> Self {
+        self.total = total;
+        self
+    }
+
+    fn add_temp_entry_write(&mut self, duration: Duration) {
+        self.temp_entry_write += duration;
+    }
+
+    fn add_progress_record(&mut self, duration: Duration) {
+        self.progress_record += duration;
+    }
+
+    fn total(&self) -> Duration {
+        self.total
+    }
+
+    fn parse_detailed(&self) -> Duration {
+        self.parse_detailed
+    }
+
+    fn parse_detailed_breakdown(&self) -> &ReplayEntryParseTiming {
+        &self.parse_detailed_breakdown
+    }
+
+    fn parse_basic_fallback(&self) -> Duration {
+        self.parse_basic_fallback
+    }
+
+    fn parse_basic_fallback_breakdown(&self) -> &ReplayEntryParseTiming {
+        &self.parse_basic_fallback_breakdown
+    }
+
+    fn detailed_report(&self) -> Duration {
+        self.detailed_report
+    }
+
+    fn temp_entry_write(&self) -> Duration {
+        self.temp_entry_write
+    }
+
+    fn progress_record(&self) -> Duration {
+        self.progress_record
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CandidateReplayAnalysisResult {
+    entry: Option<CacheReplayEntry>,
+    timing: CandidateReplayAnalysisTiming,
+}
+
+impl CandidateReplayAnalysisResult {
+    fn new(entry: Option<CacheReplayEntry>, timing: CandidateReplayAnalysisTiming) -> Self {
+        Self { entry, timing }
+    }
+
+    fn entry(&self) -> Option<&CacheReplayEntry> {
+        self.entry.as_ref()
+    }
+
+    fn timing(&self) -> &CandidateReplayAnalysisTiming {
+        &self.timing
+    }
+
+    fn timing_mut(&mut self) -> &mut CandidateReplayAnalysisTiming {
+        &mut self.timing
+    }
+
+    fn into_parts(self) -> (Option<CacheReplayEntry>, CandidateReplayAnalysisTiming) {
+        (self.entry, self.timing)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct SimpleReplayAnalysisTiming {
+    total: Duration,
+    parse: Duration,
+    parse_breakdown: ReplayEntryParseTiming,
+}
+
+impl SimpleReplayAnalysisTiming {
+    fn new(total: Duration, parse: Duration, parse_breakdown: ReplayEntryParseTiming) -> Self {
+        Self {
+            total,
+            parse,
+            parse_breakdown,
+        }
+    }
+
+    fn total(&self) -> Duration {
+        self.total
+    }
+
+    fn parse(&self) -> Duration {
+        self.parse
+    }
+
+    fn parse_breakdown(&self) -> &ReplayEntryParseTiming {
+        &self.parse_breakdown
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SimpleReplayAnalysisResult {
+    entry: Option<CacheReplayEntry>,
+    timing: SimpleReplayAnalysisTiming,
+}
+
+impl SimpleReplayAnalysisResult {
+    fn new(entry: Option<CacheReplayEntry>, timing: SimpleReplayAnalysisTiming) -> Self {
+        Self { entry, timing }
+    }
+
+    fn timing(&self) -> &SimpleReplayAnalysisTiming {
+        &self.timing
+    }
+
+    fn into_entry(self) -> Option<CacheReplayEntry> {
+        self.entry
+    }
+}
+
+impl CandidateReplay {
+    fn collect_for_cache_lookup_timed(replay_path: &Path) -> CandidateReplayCollectionResult {
+        let total_start = Instant::now();
+        let hash_lookup_start = Instant::now();
+        let digest = DetailedReplayAnalyzer::calculate_replay_file_digest(replay_path);
+        let hash_lookup = hash_lookup_start.elapsed();
+        let priority_start = Instant::now();
+        let analysis_priority =
+            ReplayAnalysisFilePriority::from_size_and_path(digest.size_bytes, replay_path);
+        let priority = priority_start.elapsed();
+        let candidate = Self {
+            path: replay_path.to_path_buf(),
+            hash: digest.hash,
+            analysis_priority,
+        };
+        CandidateReplayCollectionResult::new(
+            candidate,
+            CandidateReplayCollectionTiming::new(total_start.elapsed(), hash_lookup, priority),
+        )
+    }
+
+    fn collect_without_cache_lookup_timed(replay_path: &Path) -> CandidateReplayCollectionResult {
+        let total_start = Instant::now();
+        let priority_start = Instant::now();
+        let analysis_priority = ReplayAnalysisFilePriority::from_path(replay_path);
+        let priority = priority_start.elapsed();
+        let candidate = Self {
+            path: replay_path.to_path_buf(),
+            hash: String::new(),
+            analysis_priority,
+        };
+        CandidateReplayCollectionResult::new(
+            candidate,
+            CandidateReplayCollectionTiming::new(total_start.elapsed(), Duration::ZERO, priority),
+        )
+    }
+
+    fn analyze_timed(
         self,
         main_handles: &HashSet<String>,
         resources: &ReplayAnalysisResources,
-    ) -> Option<CacheReplayEntry> {
-        let Self { path, hash: _ } = self;
-        let Some((basic, parsed)) = CacheReplayEntry::parse_with_options(
+    ) -> CandidateReplayAnalysisResult {
+        let total_start = Instant::now();
+        let mut timing = CandidateReplayAnalysisTiming::default();
+        let Self {
+            path,
+            hash: _,
+            analysis_priority: _,
+        } = self;
+
+        let parsed_detailed = CacheReplayEntry::parse_with_options_timed(
             &path,
             resources,
             ReplayBaseParseOptions {
                 include_events: true,
                 filters: ReplayBaseParseFilters::saved_cache(),
             },
-        ) else {
-            return CacheReplayEntry::parse_basic_with_resources(&path, resources);
+        );
+        timing.parse_detailed = parsed_detailed.timing().total;
+        timing
+            .parse_detailed_breakdown
+            .add(parsed_detailed.timing());
+        let (parsed_detailed, _parse_timing) = parsed_detailed.into_parts();
+
+        let Some((basic, parsed)) = parsed_detailed else {
+            let parse_basic_fallback_start = Instant::now();
+            let parsed_basic = CacheReplayEntry::parse_with_options_timed(
+                &path,
+                resources,
+                ReplayBaseParseOptions {
+                    include_events: false,
+                    filters: ReplayBaseParseFilters::saved_cache(),
+                },
+            );
+            timing.parse_basic_fallback = parse_basic_fallback_start.elapsed();
+            timing
+                .parse_basic_fallback_breakdown
+                .add(parsed_basic.timing());
+            let entry = parsed_basic.into_parts().0.map(|(entry, _)| entry);
+            return CandidateReplayAnalysisResult::new(entry, timing.finish(total_start.elapsed()));
         };
 
+        let detailed_report_start = Instant::now();
         let detailed = DetailedReplayAnalyzer::analyze_parsed_replay_with_cache_entry(
             parsed,
             main_handles,
@@ -1912,14 +3150,18 @@ impl CandidateReplay {
             Some(&basic),
             resources,
         );
+        timing.detailed_report = detailed_report_start.elapsed();
 
         if let Ok(result) = detailed {
             if result.report().has_non_empty_player_stats() {
-                return Some(result.into_cache_entry());
+                return CandidateReplayAnalysisResult::new(
+                    Some(result.into_cache_entry()),
+                    timing.finish(total_start.elapsed()),
+                );
             }
         }
 
-        Some(basic)
+        CandidateReplayAnalysisResult::new(Some(basic), timing.finish(total_start.elapsed()))
     }
 
     fn partition_cached(
@@ -1947,6 +3189,14 @@ impl CandidateReplay {
         }
 
         (reused_entries, pending_candidates)
+    }
+
+    fn sort_pending_by_analysis_priority(pending_candidates: &mut [(String, Self)]) {
+        pending_candidates.sort_by(|left, right| {
+            left.1
+                .analysis_priority
+                .compare_largest_first(&right.1.analysis_priority)
+        });
     }
 }
 
@@ -2053,24 +3303,35 @@ impl DetailedReplayAnalyzer {
         resources: &ReplayAnalysisResources,
         mode: FullAnalysisMode,
     ) -> Result<GeneratedCacheOutput, GenerateCacheError> {
+        let mut timing_report = GenerateCacheTimingReport::default();
+        let collect_replay_files_start = Instant::now();
         let replay_files = DetailedReplayAnalyzer::collect_cache_replay_files(
             &config.account_dir,
             config.recent_replay_count,
         );
+        timing_report.collect_replay_files = collect_replay_files_start.elapsed();
+        timing_report.total_replay_files = replay_files.len();
+
         if mode == FullAnalysisMode::Simple {
             return DetailedReplayAnalyzer::analyze_simple_replays_for_cache_output(
                 replay_files,
                 runtime,
                 resources,
+                timing_report,
             );
         }
 
+        let resolve_main_handles_start = Instant::now();
         let main_handles = DetailedReplayAnalyzer::resolve_main_handles(&config.account_dir);
+        timing_report.resolve_main_handles = resolve_main_handles_start.elapsed();
+
+        let load_existing_cache_start = Instant::now();
         let existing_detailed_cache_entries =
             CacheReplayEntry::load_existing_detailed_cache_entries(
                 config.output_file.as_path(),
                 logger,
             );
+        timing_report.load_existing_cache = load_existing_cache_start.elapsed();
         let temp_file_path =
             DetailedReplayAnalyzer::cache_output_temp_file_path(config.output_file.as_path());
 
@@ -2082,13 +3343,18 @@ impl DetailedReplayAnalyzer {
             HashMap::new()
         } else {
             let worker_count = runtime.resolved_worker_count(replay_files.len());
+            timing_report.worker_count = worker_count;
+            let build_thread_pool_start = Instant::now();
             let thread_pool = ThreadPoolBuilder::new()
                 .num_threads(worker_count)
                 .build()
                 .map_err(|error| GenerateCacheError::ThreadPoolBuildFailed(error.to_string()))?;
+            timing_report.build_thread_pool = build_thread_pool_start.elapsed();
+            let should_collect_cache_lookup_hashes = !existing_detailed_cache_entries.is_empty();
             let stop_requested_for_candidates = stop_requested.clone();
             let stop_controller_for_candidates = stop_controller.clone();
-            let candidate_replays = thread_pool.install(|| {
+            let collect_candidates_start = Instant::now();
+            let candidate_replay_results = thread_pool.install(|| {
                 replay_files
                     .par_iter()
                     .filter_map(|path| {
@@ -2099,15 +3365,37 @@ impl DetailedReplayAnalyzer {
                             stop_requested_for_candidates.store(true, AtomicOrdering::Release);
                             return None;
                         }
-                        Some(CandidateReplay::collect(path))
+                        Some(if should_collect_cache_lookup_hashes {
+                            CandidateReplay::collect_for_cache_lookup_timed(path)
+                        } else {
+                            CandidateReplay::collect_without_cache_lookup_timed(path)
+                        })
                     })
-                    .collect::<Vec<CandidateReplay>>()
+                    .collect::<Vec<CandidateReplayCollectionResult>>()
             });
+            timing_report.collect_candidates_parallel = collect_candidates_start.elapsed();
+            for candidate_result in &candidate_replay_results {
+                timing_report.add_candidate_collection_timing(candidate_result.timing());
+            }
+            let candidate_replays = candidate_replay_results
+                .into_iter()
+                .map(CandidateReplayCollectionResult::into_candidate)
+                .collect::<Vec<CandidateReplay>>();
             let total_candidates = candidate_replays.len();
-            let (mut reused_entries, pending_candidates) = CandidateReplay::partition_cached(
+
+            let partition_candidates_start = Instant::now();
+            let (mut reused_entries, mut pending_candidates) = CandidateReplay::partition_cached(
                 candidate_replays,
                 &existing_detailed_cache_entries,
             );
+            timing_report.partition_candidates = partition_candidates_start.elapsed();
+            timing_report.candidate_count = total_candidates;
+            timing_report.reused_candidate_count = reused_entries.len();
+            timing_report.pending_candidate_count = pending_candidates.len();
+
+            let sort_pending_candidates_start = Instant::now();
+            CandidateReplay::sort_pending_by_analysis_priority(&mut pending_candidates);
+            timing_report.sort_pending_candidates = sort_pending_candidates_start.elapsed();
             let progress = Arc::new(GenerateCacheProgressReporter::new(
                 total_candidates,
                 reused_entries.len(),
@@ -2127,7 +3415,8 @@ impl DetailedReplayAnalyzer {
                     let stop_requested_for_workers = stop_requested.clone();
                     let stop_controller_for_workers = stop_controller.clone();
 
-                    thread_pool.install(|| {
+                    let replay_analysis_start = Instant::now();
+                    let analyzed_results = thread_pool.install(|| {
                         pending_candidates
                             .into_par_iter()
                             .filter_map(|(_, candidate)| {
@@ -2138,20 +3427,47 @@ impl DetailedReplayAnalyzer {
                                     stop_requested_for_workers.store(true, AtomicOrdering::Release);
                                     return None;
                                 }
-                                let entry = candidate.analyze(&main_handles, &resources);
-                                if let Some(entry) = &entry {
+                                let mut result = candidate.analyze_timed(&main_handles, &resources);
+                                if let Some(entry) = result.entry() {
                                     if entry.detailed_analysis {
+                                        let temp_entry_write_start = Instant::now();
                                         progress_for_workers.add_temp_entry(entry.clone());
+                                        result
+                                            .timing_mut()
+                                            .add_temp_entry_write(temp_entry_write_start.elapsed());
                                     }
                                 }
+                                let progress_record_start = Instant::now();
                                 progress_for_workers.record_processed_file();
-                                entry.map(|entry| (entry.hash.clone(), entry))
+                                result
+                                    .timing_mut()
+                                    .add_progress_record(progress_record_start.elapsed());
+                                Some(result)
                             })
-                            .collect::<HashMap<_, _>>()
-                    })
+                            .collect::<Vec<CandidateReplayAnalysisResult>>()
+                    });
+                    timing_report.replay_analysis_parallel = replay_analysis_start.elapsed();
+                    for result in &analyzed_results {
+                        timing_report.add_replay_analysis_timing(result.timing());
+                    }
+
+                    let collect_analyzed_entries_start = Instant::now();
+                    let analyzed_entries = analyzed_results
+                        .into_iter()
+                        .filter_map(|result| {
+                            let (entry, _timing) = result.into_parts();
+                            entry.map(|entry| (entry.hash.clone(), entry))
+                        })
+                        .collect::<HashMap<_, _>>();
+                    timing_report.collect_analyzed_entries =
+                        collect_analyzed_entries_start.elapsed();
+                    timing_report.analyzed_entry_count = analyzed_entries.len();
+                    analyzed_entries
                 };
 
+                let merge_entries_start = Instant::now();
                 reused_entries.extend(analyzed_entries);
+                timing_report.merge_entries += merge_entries_start.elapsed();
                 if stop_requested.load(AtomicOrdering::Acquire) {
                     if let Some(logger) = logger {
                         logger(
@@ -2166,23 +3482,30 @@ impl DetailedReplayAnalyzer {
             }
         };
 
+        let merge_entries_start = Instant::now();
         let mut all_entries = if config.recent_replay_count.is_some() {
             HashMap::new()
         } else {
             existing_detailed_cache_entries
         };
         all_entries.extend(entries);
+        timing_report.merge_entries += merge_entries_start.elapsed();
 
         let mut all_entries = all_entries.into_values().collect::<Vec<_>>();
+        let sort_entries_start = Instant::now();
         all_entries.sort_by(|left, right| left.cmp_cache_order(right));
+        timing_report.sort_entries = sort_entries_start.elapsed();
 
+        let cleanup_temp_file_start = Instant::now();
         if temp_file_path.exists() {
             let _ = fs::remove_file(&temp_file_path);
         }
+        timing_report.cleanup_temp_file = cleanup_temp_file_start.elapsed();
 
         Ok(GeneratedCacheOutput {
             entries: all_entries,
             completed: !stop_requested.load(AtomicOrdering::Acquire),
+            timing_report,
         })
     }
 
@@ -2190,23 +3513,29 @@ impl DetailedReplayAnalyzer {
         replay_files: Vec<PathBuf>,
         runtime: &GenerateCacheRuntimeOptions,
         resources: &ReplayAnalysisResources,
+        mut timing_report: GenerateCacheTimingReport,
     ) -> Result<GeneratedCacheOutput, GenerateCacheError> {
         if replay_files.is_empty() {
             return Ok(GeneratedCacheOutput {
                 entries: Vec::new(),
                 completed: true,
+                timing_report,
             });
         }
 
         let worker_count = runtime.resolved_worker_count(replay_files.len());
+        timing_report.worker_count = worker_count;
+        let build_thread_pool_start = Instant::now();
         let thread_pool = ThreadPoolBuilder::new()
             .num_threads(worker_count)
             .build()
             .map_err(|error| GenerateCacheError::ThreadPoolBuildFailed(error.to_string()))?;
+        timing_report.build_thread_pool = build_thread_pool_start.elapsed();
         let stop_controller = runtime.stop_controller.clone();
         let stop_requested = Arc::new(AtomicBool::new(false));
         let stop_requested_for_workers = stop_requested.clone();
-        let entries = thread_pool.install(|| {
+        let simple_analysis_start = Instant::now();
+        let simple_results = thread_pool.install(|| {
             replay_files
                 .par_iter()
                 .filter_map(|path| {
@@ -2218,25 +3547,48 @@ impl DetailedReplayAnalyzer {
                         return None;
                     }
 
-                    CacheReplayEntry::parse_with_options(
+                    let total_start = Instant::now();
+                    let parse_start = Instant::now();
+                    let parsed = CacheReplayEntry::parse_with_options_timed(
                         path,
                         resources,
                         ReplayBaseParseOptions {
                             include_events: false,
                             filters: ReplayBaseParseFilters::saved_cache(),
                         },
-                    )
-                    .map(|(entry, _)| entry)
+                    );
+                    let parse = parse_start.elapsed();
+                    let (entry, parse_breakdown) = parsed.into_parts();
+                    Some(SimpleReplayAnalysisResult::new(
+                        entry.map(|(entry, _)| entry),
+                        SimpleReplayAnalysisTiming::new(
+                            total_start.elapsed(),
+                            parse,
+                            parse_breakdown,
+                        ),
+                    ))
                 })
-                .collect::<Vec<CacheReplayEntry>>()
+                .collect::<Vec<SimpleReplayAnalysisResult>>()
         });
+        timing_report.simple_analysis_parallel = simple_analysis_start.elapsed();
+        for result in &simple_results {
+            timing_report.add_simple_analysis_timing(result.timing());
+        }
+        let entries = simple_results
+            .into_iter()
+            .filter_map(SimpleReplayAnalysisResult::into_entry)
+            .collect::<Vec<CacheReplayEntry>>();
+        timing_report.analyzed_entry_count = entries.len();
 
         let mut entries = entries;
+        let sort_entries_start = Instant::now();
         entries.sort_by(|left, right| left.cmp_cache_order(right));
+        timing_report.sort_entries = sort_entries_start.elapsed();
 
         Ok(GeneratedCacheOutput {
             entries,
             completed: !stop_requested.load(AtomicOrdering::Acquire),
+            timing_report,
         })
     }
 }
@@ -2517,16 +3869,44 @@ impl CacheReplayEntry {
         resources: &ReplayAnalysisResources,
         options: ReplayBaseParseOptions,
     ) -> Option<(Self, ReplayParsedInputBundle)> {
-        let parsed = ReplayParsedInputBundle::parse(replay_path, resources, options)
-            .ok()
-            .flatten()?;
+        Self::parse_with_options_timed(replay_path, resources, options)
+            .into_parts()
+            .0
+    }
 
-        if !parsed.is_cache_candidate(options.filters) {
-            return None;
+    fn parse_with_options_timed(
+        replay_path: &Path,
+        resources: &ReplayAnalysisResources,
+        options: ReplayBaseParseOptions,
+    ) -> TimedReplayEntryParse {
+        let total_start = Instant::now();
+        let mut timing = ReplayEntryParseTiming::default();
+        let (base_result, base_timing) = resources.parse_replay_base_timed(replay_path, options);
+        timing.base = base_timing;
+
+        let Some(base) = base_result.ok().flatten() else {
+            return TimedReplayEntryParse::new(None, timing.finish(total_start.elapsed()));
+        };
+
+        let bundle_projection_start = Instant::now();
+        let parsed =
+            ReplayParsedInputBundle::from_base_parse(base, resources.cache_generation_data());
+        timing.bundle_projection = bundle_projection_start.elapsed();
+        let Ok(parsed) = parsed else {
+            return TimedReplayEntryParse::new(None, timing.finish(total_start.elapsed()));
+        };
+
+        let candidate_filter_start = Instant::now();
+        let is_cache_candidate = parsed.is_cache_candidate(options.filters);
+        timing.candidate_filter = candidate_filter_start.elapsed();
+        if !is_cache_candidate {
+            return TimedReplayEntryParse::new(None, timing.finish(total_start.elapsed()));
         }
 
+        let cache_entry_projection_start = Instant::now();
         let entry = parsed.cache_entry();
-        Some((entry, parsed))
+        timing.cache_entry_projection = cache_entry_projection_start.elapsed();
+        TimedReplayEntryParse::new(Some((entry, parsed)), timing.finish(total_start.elapsed()))
     }
 
     fn refreshed_for_candidate(&self, path: &Path, hash: &str) -> Self {

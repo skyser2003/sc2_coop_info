@@ -265,7 +265,7 @@ impl AnalyzerCli {
                     &config, &resources, logger, &runtime,
                 )?;
 
-                Ok(format!(
+                let mut output = format!(
                     "Generated cache_overall_stats with {} replay entr{} at {}",
                     summary.scanned_replays(),
                     if summary.scanned_replays() == 1 {
@@ -274,7 +274,10 @@ impl AnalyzerCli {
                         "ies"
                     },
                     summary.output_file().display()
-                ))
+                );
+                output.push('\n');
+                output.push_str(&summary.timing_report().format_amdahl_summary());
+                Ok(output)
             }
             Command::TestCacheOverallStatsDetailedAnalysis(args) => {
                 if args.help_requested {

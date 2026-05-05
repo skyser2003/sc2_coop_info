@@ -144,3 +144,22 @@ fn persist_simple_cache_entries_preserve_existing_simple_entries() {
     let _ = fs::remove_file(&cache_path);
     let _ = fs::remove_dir_all(&cache_dir);
 }
+
+#[test]
+fn serialize_entries_preserves_input_order_after_parallel_canonicalization() {
+    let entries = vec![
+        sample_cached_entry("hash-03", "third.SC2Replay", true),
+        sample_cached_entry("hash-01", "first.SC2Replay", true),
+        sample_cached_entry("hash-02", "second.SC2Replay", false),
+    ];
+
+    let payload = CacheReplayEntry::serialize_entries(&entries).expect("entries should serialize");
+    let serialized =
+        serde_json::from_slice::<Vec<CacheReplayEntry>>(&payload).expect("entries should parse");
+    let hashes = serialized
+        .iter()
+        .map(|entry| entry.hash.as_str())
+        .collect::<Vec<&str>>();
+
+    assert_eq!(hashes, vec!["hash-03", "hash-01", "hash-02"]);
+}

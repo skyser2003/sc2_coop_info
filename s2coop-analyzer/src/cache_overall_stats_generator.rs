@@ -2,6 +2,7 @@ use crate::detailed_replay_analysis::GenerateCacheError;
 use crate::tauri_replay_analysis_impl::{
     ParsedReplayInput, ParsedReplayMessage, ParsedReplayPlayer, ReplayReport,
 };
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value as JsonValue};
 use std::cmp::Ordering;
@@ -9,6 +10,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 use thiserror::Error;
 
 pub use crate::detailed_replay_analysis::{ProtocolBuildValue, ReplayBuildInfo};
@@ -128,6 +130,138 @@ pub struct CacheReplayEntry {
     pub region: String,
     pub result: String,
     pub weekly: bool,
+}
+
+pub struct CanonicalCachePayload {
+    entries: Vec<CacheReplayEntry>,
+    payload: Vec<u8>,
+    timing: CanonicalCachePayloadTiming,
+}
+
+impl CanonicalCachePayload {
+    fn new(
+        entries: Vec<CacheReplayEntry>,
+        payload: Vec<u8>,
+        timing: CanonicalCachePayloadTiming,
+    ) -> Self {
+        Self {
+            entries,
+            payload,
+            timing,
+        }
+    }
+
+    pub fn timing(&self) -> CanonicalCachePayloadTiming {
+        self.timing
+    }
+
+    pub fn into_parts(self) -> (Vec<CacheReplayEntry>, Vec<u8>) {
+        (self.entries, self.payload)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CanonicalCachePayloadTiming {
+    worker_count: usize,
+    canonicalize_entries_parallel: Duration,
+    canonicalize_entries_worker: Duration,
+    to_json_value_worker: Duration,
+    canonicalize_json_value_worker: Duration,
+    serialize_payload: Duration,
+    deserialize_payload: Duration,
+}
+
+impl CanonicalCachePayloadTiming {
+    fn new(
+        worker_count: usize,
+        canonicalize_entries_parallel: Duration,
+        canonicalize_entries_worker: Duration,
+        to_json_value_worker: Duration,
+        canonicalize_json_value_worker: Duration,
+        serialize_payload: Duration,
+    ) -> Self {
+        Self {
+            worker_count,
+            canonicalize_entries_parallel,
+            canonicalize_entries_worker,
+            to_json_value_worker,
+            canonicalize_json_value_worker,
+            serialize_payload,
+            deserialize_payload: Duration::ZERO,
+        }
+    }
+
+    fn with_deserialize_payload(mut self, deserialize_payload: Duration) -> Self {
+        self.deserialize_payload = deserialize_payload;
+        self
+    }
+
+    pub fn worker_count(&self) -> usize {
+        self.worker_count
+    }
+
+    pub fn canonicalize_entries_parallel(&self) -> Duration {
+        self.canonicalize_entries_parallel
+    }
+
+    pub fn canonicalize_entries_worker(&self) -> Duration {
+        self.canonicalize_entries_worker
+    }
+
+    pub fn to_json_value_worker(&self) -> Duration {
+        self.to_json_value_worker
+    }
+
+    pub fn canonicalize_json_value_worker(&self) -> Duration {
+        self.canonicalize_json_value_worker
+    }
+
+    pub fn serialize_payload(&self) -> Duration {
+        self.serialize_payload
+    }
+
+    pub fn deserialize_payload(&self) -> Duration {
+        self.deserialize_payload
+    }
+}
+
+struct TimedCanonicalEntry {
+    value: JsonValue,
+    canonicalize_entry: Duration,
+    to_json_value: Duration,
+    canonicalize_json_value: Duration,
+}
+
+impl TimedCanonicalEntry {
+    fn new(
+        value: JsonValue,
+        canonicalize_entry: Duration,
+        to_json_value: Duration,
+        canonicalize_json_value: Duration,
+    ) -> Self {
+        Self {
+            value,
+            canonicalize_entry,
+            to_json_value,
+            canonicalize_json_value,
+        }
+    }
+
+    fn canonicalize_entry(&self) -> Duration {
+        self.canonicalize_entry
+    }
+
+    fn to_json_value(&self) -> Duration {
+        self.to_json_value
+    }
+
+    fn canonicalize_json_value(&self) -> Duration {
+        self.canonicalize_json_value
+    }
+
+    fn into_value(self) -> JsonValue {
+        self.value
+    }
 }
 
 #[derive(Debug, Error)]
@@ -583,24 +717,86 @@ impl CacheReplayEntry {
     }
 
     pub fn serialize_entries(entries: &[Self]) -> Result<Vec<u8>, serde_json::Error> {
-        let mut canonical_entries = Vec::with_capacity(entries.len());
-        for entry in entries {
-            let value = serde_json::to_value(entry)?;
-            canonical_entries.push(Self::canonicalize_json_value(value));
-        }
-        serde_json::to_vec(&canonical_entries)
+        Self::serialize_entries_with_timing(entries).map(|(payload, _timing)| payload)
+    }
+
+    fn serialize_entries_with_timing(
+        entries: &[Self],
+    ) -> Result<(Vec<u8>, CanonicalCachePayloadTiming), serde_json::Error> {
+        let worker_count = rayon::current_num_threads();
+        let canonicalize_entries_start = Instant::now();
+        let canonical_entries = entries
+            .par_iter()
+            .map(|entry| {
+                let canonicalize_entry_start = Instant::now();
+                let to_json_value_start = Instant::now();
+                let value = serde_json::to_value(entry);
+                let to_json_value = to_json_value_start.elapsed();
+                let value = value.map(Self::canonicalize_json_value);
+                let canonicalize_json_value = canonicalize_entry_start
+                    .elapsed()
+                    .saturating_sub(to_json_value);
+                let canonicalize_entry = canonicalize_entry_start.elapsed();
+                value.map(|value| {
+                    TimedCanonicalEntry::new(
+                        value,
+                        canonicalize_entry,
+                        to_json_value,
+                        canonicalize_json_value,
+                    )
+                })
+            })
+            .collect::<Result<Vec<TimedCanonicalEntry>, serde_json::Error>>()?;
+        let canonicalize_entries_parallel = canonicalize_entries_start.elapsed();
+        let canonicalize_entries_worker = canonical_entries
+            .iter()
+            .fold(Duration::ZERO, |total, entry| {
+                total + entry.canonicalize_entry()
+            });
+        let to_json_value_worker = canonical_entries
+            .iter()
+            .fold(Duration::ZERO, |total, entry| total + entry.to_json_value());
+        let canonicalize_json_value_worker = canonical_entries
+            .iter()
+            .fold(Duration::ZERO, |total, entry| {
+                total + entry.canonicalize_json_value()
+            });
+        let canonical_values = canonical_entries
+            .into_iter()
+            .map(TimedCanonicalEntry::into_value)
+            .collect::<Vec<JsonValue>>();
+
+        let serialize_payload_start = Instant::now();
+        let payload = serde_json::to_vec(&canonical_values)?;
+        let serialize_payload = serialize_payload_start.elapsed();
+        let timing = CanonicalCachePayloadTiming::new(
+            worker_count,
+            canonicalize_entries_parallel,
+            canonicalize_entries_worker,
+            to_json_value_worker,
+            canonicalize_json_value_worker,
+            serialize_payload,
+        );
+
+        Ok((payload, timing))
     }
 
     pub fn canonicalized_entries(entries: &[Self]) -> Result<Vec<Self>, serde_json::Error> {
-        let payload = Self::serialize_entries(entries)?;
-        serde_json::from_slice::<Vec<Self>>(&payload)
+        Self::canonicalized_entries_with_payload(entries).map(|payload| payload.into_parts().0)
     }
 
-    pub fn write_entries(entries: &[Self], path: &Path) -> Result<(), GenerateCacheError> {
-        let path = path.to_path_buf();
-        let payload =
-            Self::serialize_entries(entries).map_err(GenerateCacheError::SerializeFailed)?;
+    pub fn canonicalized_entries_with_payload(
+        entries: &[Self],
+    ) -> Result<CanonicalCachePayload, serde_json::Error> {
+        let (payload, timing) = Self::serialize_entries_with_timing(entries)?;
+        let deserialize_payload_start = Instant::now();
+        let entries = serde_json::from_slice::<Vec<Self>>(&payload)?;
+        let timing = timing.with_deserialize_payload(deserialize_payload_start.elapsed());
+        Ok(CanonicalCachePayload::new(entries, payload, timing))
+    }
 
+    pub(crate) fn write_payload(payload: &[u8], path: &Path) -> Result<(), GenerateCacheError> {
+        let path = path.to_path_buf();
         let temp_file = PathBuf::from(format!("{}.temp", path.display()));
 
         fs::write(&temp_file, payload)
@@ -616,6 +812,12 @@ impl CacheReplayEntry {
             .map_err(|error| GenerateCacheError::TempMoveFailed(temp_file, path.clone(), error))?;
 
         Ok(())
+    }
+
+    pub fn write_entries(entries: &[Self], path: &Path) -> Result<(), GenerateCacheError> {
+        let payload =
+            Self::serialize_entries(entries).map_err(GenerateCacheError::SerializeFailed)?;
+        Self::write_payload(&payload, path)
     }
 
     pub fn load_existing_detailed_cache_entries(
