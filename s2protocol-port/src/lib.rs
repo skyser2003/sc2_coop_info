@@ -16,7 +16,9 @@ pub use crate::events::{
     TrackerEvent, TriggerEventData,
 };
 pub use crate::protocol::{ProtocolStore, ProtocolStoreBuilder};
-pub use crate::replay::{ParsedReplay, ParsedReplayWithEvents, ReplayParseMode, ReplayParser};
+pub use crate::replay::{
+    ParsedReplay, ParsedReplayWithEvents, ReplayParseMode, ReplayParseTiming, ReplayParser,
+};
 pub use crate::replay_data::{
     ReplayAttributeScope, ReplayAttributeValue, ReplayAttributes, ReplayDetails,
     ReplayDetailsPlayer, ReplayGameDescription, ReplayHeader, ReplayInitData, ReplayLobbySlot,
