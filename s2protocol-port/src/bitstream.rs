@@ -68,18 +68,20 @@ impl<'a> BitPackedBuffer<'a> {
             ));
         }
 
+        if self.big_endian {
+            return self.read_bits_big_endian(bits);
+        }
+
+        self.read_bits_little_endian(bits)
+    }
+
+    fn read_bits_big_endian(&mut self, bits: usize) -> Result<u64, DecodeError> {
         if self.next_bits == 0 && bits.is_multiple_of(8) {
             let bytes = bits / 8;
             let raw = self.read_aligned_slice(bytes)?;
             let mut result = 0u64;
-            if self.big_endian {
-                for byte in raw {
-                    result = (result << 8) | u64::from(*byte);
-                }
-            } else {
-                for (index, byte) in raw.iter().enumerate() {
-                    result |= u64::from(*byte) << (index * 8);
-                }
+            for byte in raw {
+                result = (result << 8) | u64::from(*byte);
             }
             return Ok(result);
         }
@@ -107,11 +109,56 @@ impl<'a> BitPackedBuffer<'a> {
             };
             let copy = (self.next & mask) as u64;
 
-            if self.big_endian {
-                result |= copy << (bits - result_bits - copybits as usize);
+            result |= copy << (bits - result_bits - copybits as usize);
+
+            if copybits == 8 {
+                self.next = 0;
+                self.next_bits = 0;
             } else {
-                result |= copy << result_bits;
+                self.next >>= copybits;
+                self.next_bits -= copybits;
             }
+            result_bits += copybits as usize;
+        }
+
+        Ok(result)
+    }
+
+    fn read_bits_little_endian(&mut self, bits: usize) -> Result<u64, DecodeError> {
+        if self.next_bits == 0 && bits.is_multiple_of(8) {
+            let bytes = bits / 8;
+            let raw = self.read_aligned_slice(bytes)?;
+            let mut result = 0u64;
+            for (index, byte) in raw.iter().enumerate() {
+                result |= u64::from(*byte) << (index * 8);
+            }
+            return Ok(result);
+        }
+
+        let mut result: u64 = 0;
+        let mut result_bits: usize = 0;
+
+        while result_bits != bits {
+            if self.next_bits == 0 {
+                if self.used >= self.data.len() {
+                    return Err(DecodeError::Truncated);
+                }
+
+                self.next = self.data[self.used];
+                self.used += 1;
+                self.next_bits = 8;
+            }
+
+            let bits_remaining = bits - result_bits;
+            let copybits = bits_remaining.min(self.next_bits as usize) as u8;
+            let mask = if copybits == 8 {
+                u8::MAX
+            } else {
+                ((1u16 << copybits) - 1) as u8
+            };
+            let copy = (self.next & mask) as u64;
+
+            result |= copy << result_bits;
 
             if copybits == 8 {
                 self.next = 0;
