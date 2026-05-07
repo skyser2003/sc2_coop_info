@@ -8,20 +8,20 @@ use std::{
 use ts_rs::TS;
 
 #[cfg(target_os = "windows")]
-use winreg::enums::HKEY_CURRENT_USER;
-#[cfg(target_os = "windows")]
 use winreg::RegKey;
+#[cfg(target_os = "windows")]
+use winreg::enums::HKEY_CURRENT_USER;
 
 use crate::{
+    TauriOverlayOps,
     overlay_info::{
-        OverlayInfoOps, OverlayPlacement, ResolvedHotkeyBinding, RuntimeFlags,
-        OVERLAY_HOTKEY_BINDINGS, OVERLAY_HOTKEY_DEFAULTS,
+        OVERLAY_HOTKEY_BINDINGS, OVERLAY_HOTKEY_DEFAULTS, OverlayInfoOps, OverlayPlacement,
+        ResolvedHotkeyBinding, RuntimeFlags,
     },
     path_manager,
     performance_overlay::PerformanceGeometry,
     replay_analysis::ReplayAnalysis,
     shared_types::OverlayInitColorsDurationPayload,
-    TauriOverlayOps,
 };
 
 pub type RandomizerChoices = BTreeMap<String, bool>;

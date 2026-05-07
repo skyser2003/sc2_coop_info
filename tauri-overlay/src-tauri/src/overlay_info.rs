@@ -8,8 +8,8 @@ use std::time::SystemTime;
 use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use serde_json::Value;
 use tauri::{
-    menu::{MenuBuilder, MenuItem},
     Emitter, Manager, Runtime, Wry,
+    menu::{MenuBuilder, MenuItem},
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
@@ -789,8 +789,8 @@ impl OverlayInfoOps {
                 let state = app_handle.state::<BackendState>();
                 if !state.try_begin_hotkey_action() {
                     crate::sco_log!(
-                    "[SCO/hotkey] Ignoring '{pressed}' because another hotkey action is running"
-                );
+                        "[SCO/hotkey] Ignoring '{pressed}' because another hotkey action is running"
+                    );
                     return;
                 }
                 let action_name = action.to_string();

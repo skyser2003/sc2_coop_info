@@ -10,12 +10,12 @@ use serde::Serialize;
 use serde_json::{self, Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Arc, Mutex, TryLockError};
+use std::sync::{Arc, Mutex, TryLockError, mpsc};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri_plugin_updater::UpdaterExt;
 
-use tauri::{tray::TrayIconBuilder, AppHandle, Emitter, Manager, State, Wry};
+use tauri::{AppHandle, Emitter, Manager, State, Wry, tray::TrayIconBuilder};
 
 mod app_settings;
 mod backend_state;
@@ -289,7 +289,7 @@ impl TauriOverlayOps {
 
         if let Ok(mut stats) = app.state::<BackendState>().stats_handle().lock() {
             stats.set_detailed_analysis_atstart(next_settings.detailed_analysis_atstart());
-        }
+        };
     }
 }
 
@@ -2170,29 +2170,33 @@ impl TauriOverlayOps {
         replays: &[ReplayInfo],
         replays_slot: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
     ) {
-        if let Ok(mut cache) = replays_slot.lock() {
-            for replay in replays {
-                let replay_hash = ReplayFileIdentity::calculate_hash(&PathBuf::from(&replay.file));
-                if replay_hash.is_empty() {
-                    continue;
-                }
-                match cache.get(&replay_hash) {
-                    Some(existing)
-                        if ReplayInfo::should_keep_existing_detailed_variant(
-                            existing.is_detailed,
-                            replay.is_detailed,
-                        ) => {}
-                    _ => {
-                        cache.retain(|hash, entry| {
-                            hash == &replay_hash || entry.file != replay.file
-                        });
-                        cache.insert(replay_hash.clone(), replay.clone());
+        match replays_slot.lock() {
+            Ok(mut cache) => {
+                for replay in replays {
+                    let replay_hash =
+                        ReplayFileIdentity::calculate_hash(&PathBuf::from(&replay.file));
+                    if replay_hash.is_empty() {
+                        continue;
+                    }
+                    match cache.get(&replay_hash) {
+                        Some(existing)
+                            if ReplayInfo::should_keep_existing_detailed_variant(
+                                existing.is_detailed,
+                                replay.is_detailed,
+                            ) => {}
+                        _ => {
+                            cache.retain(|hash, entry| {
+                                hash == &replay_hash || entry.file != replay.file
+                            });
+                            cache.insert(replay_hash.clone(), replay.clone());
+                        }
                     }
                 }
             }
-        } else {
-            crate::sco_log!("[SCO/stats] failed to update shared replay cache after scan");
-        }
+            Err(_) => {
+                crate::sco_log!("[SCO/stats] failed to update shared replay cache after scan");
+            }
+        };
     }
 }
 
@@ -2455,20 +2459,25 @@ impl TauriOverlayOps {
             TauriOverlayOps::emit_replay_scan_progress(&app_for_progress, true);
 
             let (progress_tx, progress_rx) = mpsc::channel::<ProgressEmitterCommand>();
-            let progress_handle = thread::spawn(move || loop {
-                match progress_rx.recv_timeout(Duration::from_millis(150)) {
-                    Ok(ProgressEmitterCommand::Stop) => {
-                        TauriOverlayOps::emit_replay_scan_progress(&app_for_progress_updates, true);
-                        break;
-                    }
-                    Err(mpsc::RecvTimeoutError::Timeout) => {
-                        TauriOverlayOps::emit_replay_scan_progress(
-                            &app_for_progress_updates,
-                            false,
-                        );
-                    }
-                    Err(mpsc::RecvTimeoutError::Disconnected) => {
-                        break;
+            let progress_handle = thread::spawn(move || {
+                loop {
+                    match progress_rx.recv_timeout(Duration::from_millis(150)) {
+                        Ok(ProgressEmitterCommand::Stop) => {
+                            TauriOverlayOps::emit_replay_scan_progress(
+                                &app_for_progress_updates,
+                                true,
+                            );
+                            break;
+                        }
+                        Err(mpsc::RecvTimeoutError::Timeout) => {
+                            TauriOverlayOps::emit_replay_scan_progress(
+                                &app_for_progress_updates,
+                                false,
+                            );
+                        }
+                        Err(mpsc::RecvTimeoutError::Disconnected) => {
+                            break;
+                        }
                     }
                 }
             });
@@ -2567,10 +2576,15 @@ impl TauriOverlayOps {
                 &all_replays,
                 &shared_replay_cache_slot,
             );
-            if let Ok(mut current_files) = current_replay_files_slot.lock() {
-                *current_files = current_replay_files;
-            } else {
-                crate::sco_log!("[SCO/stats] failed to update current replay file set after scan");
+            match current_replay_files_slot.lock() {
+                Ok(mut current_files) => {
+                    *current_files = current_replay_files;
+                }
+                Err(_) => {
+                    crate::sco_log!(
+                        "[SCO/stats] failed to update current replay file set after scan"
+                    );
+                }
             }
 
             if include_detailed {
@@ -3031,9 +3045,9 @@ impl TauriOverlayOps {
             Some(resources) => resources,
             None => {
                 crate::sco_log!(
-                "[SCO/watch] parse abort file='{}' reason=replay_analysis_resources_unavailable",
-                path.to_string_lossy()
-            );
+                    "[SCO/watch] parse abort file='{}' reason=replay_analysis_resources_unavailable",
+                    path.to_string_lossy()
+                );
                 return None;
             }
         };
@@ -3081,9 +3095,13 @@ impl TauriOverlayOps {
 
             if size_bytes < MIN_REPLAY_SIZE_BYTES {
                 crate::sco_log!(
-                "[SCO/watch] parse wait file='{}' attempt={}/{} reason=size_below_min min={} current={}",
-                file, attempt_num, MAX_ATTEMPTS, MIN_REPLAY_SIZE_BYTES, size_bytes
-            );
+                    "[SCO/watch] parse wait file='{}' attempt={}/{} reason=size_below_min min={} current={}",
+                    file,
+                    attempt_num,
+                    MAX_ATTEMPTS,
+                    MIN_REPLAY_SIZE_BYTES,
+                    size_bytes
+                );
                 previous_size = Some(size_bytes);
                 if attempt + 1 < MAX_ATTEMPTS {
                     thread::sleep(RETRY_DELAY);
@@ -3094,9 +3112,12 @@ impl TauriOverlayOps {
             match previous_size {
                 None => {
                     crate::sco_log!(
-                    "[SCO/watch] parse wait file='{}' attempt={}/{} reason=awaiting_size_stability size={}",
-                    file, attempt_num, MAX_ATTEMPTS, size_bytes
-                );
+                        "[SCO/watch] parse wait file='{}' attempt={}/{} reason=awaiting_size_stability size={}",
+                        file,
+                        attempt_num,
+                        MAX_ATTEMPTS,
+                        size_bytes
+                    );
                     previous_size = Some(size_bytes);
                     if attempt + 1 < MAX_ATTEMPTS {
                         thread::sleep(RETRY_DELAY);
@@ -3105,9 +3126,13 @@ impl TauriOverlayOps {
                 }
                 Some(previous) if previous != size_bytes => {
                     crate::sco_log!(
-                    "[SCO/watch] parse wait file='{}' attempt={}/{} reason=size_changed previous={} current={}",
-                    file, attempt_num, MAX_ATTEMPTS, previous, size_bytes
-                );
+                        "[SCO/watch] parse wait file='{}' attempt={}/{} reason=size_changed previous={} current={}",
+                        file,
+                        attempt_num,
+                        MAX_ATTEMPTS,
+                        previous,
+                        size_bytes
+                    );
                     previous_size = Some(size_bytes);
                     if attempt + 1 < MAX_ATTEMPTS {
                         thread::sleep(RETRY_DELAY);
@@ -3139,11 +3164,11 @@ impl TauriOverlayOps {
                     );
                     if attempt + 1 < MAX_ATTEMPTS {
                         crate::sco_log!(
-                        "[SCO/watch] parse retry scheduled file='{}' next_attempt={} wait_ms={}",
-                        file,
-                        attempt_num + 1,
-                        RETRY_DELAY.as_millis()
-                    );
+                            "[SCO/watch] parse retry scheduled file='{}' next_attempt={} wait_ms={}",
+                            file,
+                            attempt_num + 1,
+                            RETRY_DELAY.as_millis()
+                        );
                         thread::sleep(RETRY_DELAY);
                     }
                     continue;
@@ -3163,18 +3188,18 @@ impl TauriOverlayOps {
             };
             if replay.result != "Unparsed" {
                 crate::sco_log!(
-                "[SCO/watch] parse success file='{}' attempt={}/{} result='{}' main='{}' ally='{}' main_comm='{}' ally_comm='{}' map='{}' length={}",
-                file,
-                attempt_num,
-                MAX_ATTEMPTS,
-                replay.result,
-                replay.main().name,
-                replay.ally().name,
-                replay.main_commander(),
-                replay.ally_commander(),
-                replay.map,
-                replay.length
-            );
+                    "[SCO/watch] parse success file='{}' attempt={}/{} result='{}' main='{}' ally='{}' main_comm='{}' ally_comm='{}' map='{}' length={}",
+                    file,
+                    attempt_num,
+                    MAX_ATTEMPTS,
+                    replay.result,
+                    replay.main().name,
+                    replay.ally().name,
+                    replay.main_commander(),
+                    replay.ally_commander(),
+                    replay.map,
+                    replay.length
+                );
                 return Some((replay, cache_entry));
             }
             crate::sco_log!(
@@ -3250,7 +3275,7 @@ impl TauriOverlayOps {
                 return Err(format!(
                     "Failed to read detailed-analysis cache '{}': {error}",
                     cache_path.display()
-                ))
+                ));
             }
         };
 
@@ -3448,24 +3473,26 @@ impl TauriOverlayOps {
             .unwrap_or_else(|| ReplayFileIdentity::calculate_hash(path));
         if replay.main_commander().trim().is_empty() && replay.ally_commander().trim().is_empty() {
             crate::sco_log!(
-            "[SCO/watch] parsed replay ignored file='{}' reason=missing_commanders main='{}' ally='{}'",
-            replay.file, replay.main_commander(), replay.ally_commander()
-        );
+                "[SCO/watch] parsed replay ignored file='{}' reason=missing_commanders main='{}' ally='{}'",
+                replay.file,
+                replay.main_commander(),
+                replay.ally_commander()
+            );
             handled_files.insert(file);
             return ReplayProcessOutcome::Ignored;
         }
 
         handled_files.insert(file);
         crate::sco_log!(
-        "[SCO/watch] replay accepted file='{}' date={} result='{}' main='{}' ally='{}' main_comm='{}' ally_comm='{}'",
-        replay.file,
-        replay.date,
-        replay.result,
-        replay.main().name,
-        replay.ally().name,
-        replay.main_commander(),
-        replay.ally_commander()
-    );
+            "[SCO/watch] replay accepted file='{}' date={} result='{}' main='{}' ally='{}' main_comm='{}' ally_comm='{}'",
+            replay.file,
+            replay.date,
+            replay.result,
+            replay.main().name,
+            replay.ally().name,
+            replay.main_commander(),
+            replay.ally_commander()
+        );
         state.upsert_replay_in_memory_cache(&replay_hash, &replay);
         state.record_session_result(&replay.result);
         let settings = state.read_settings_memory();
@@ -3546,15 +3573,15 @@ impl TauriOverlayOps {
         let replay = parsed.oriented_for_main_identity(&main_names, &main_handles);
 
         crate::sco_log!(
-        "[SCO/show] replay accepted file='{}' date={} result='{}' main='{}' ally='{}' main_comm='{}' ally_comm='{}'",
-        replay.file,
-        replay.date,
-        replay.result,
-        replay.main().name,
-        replay.ally().name,
-        replay.main_commander(),
-        replay.ally_commander()
-    );
+            "[SCO/show] replay accepted file='{}' date={} result='{}' main='{}' ally='{}' main_comm='{}' ally_comm='{}'",
+            replay.file,
+            replay.date,
+            replay.result,
+            replay.main().name,
+            replay.ally().name,
+            replay.main_commander(),
+            replay.ally_commander()
+        );
 
         let replay_hash = cache_entry
             .as_ref()
@@ -4044,7 +4071,7 @@ impl TauriOverlayOps {
             if let Some(window) = app.get_webview_window(label) {
                 let _ = window.hide();
                 let _ = window.destroy();
-            }
+            };
         }
 
         app.exit(exit_code);
@@ -5036,12 +5063,15 @@ pub fn run() {
                     tray_builder = tray_builder.icon(icon.clone());
                 }
 
-                if let Ok(tray) = tray_builder.build(app) {
-                    if let Ok(mut tray_slot) = app.state::<TrayState>().tray_icon.lock() {
-                        *tray_slot = Some(tray);
+                match tray_builder.build(app) {
+                    Ok(tray) => {
+                        if let Ok(mut tray_slot) = app.state::<TrayState>().tray_icon.lock() {
+                            *tray_slot = Some(tray);
+                        };
                     }
-                } else {
-                    crate::sco_log!("Failed to build system tray icon");
+                    Err(_) => {
+                        crate::sco_log!("Failed to build system tray icon");
+                    }
                 }
             }
 

@@ -7,8 +7,8 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use crate::{
-    replay_analysis::WeeklyRowPayload, AppSettings, CommanderUnitRollup, ReplayInfo, StatsSnapshot,
-    TauriOverlayOps,
+    AppSettings, CommanderUnitRollup, ReplayInfo, StatsSnapshot, TauriOverlayOps,
+    replay_analysis::WeeklyRowPayload,
 };
 
 pub struct TestHelperOps;

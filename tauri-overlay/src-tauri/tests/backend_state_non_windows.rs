@@ -2,8 +2,8 @@
 
 use sco_tauri_overlay::{BackendState, ReplayInfo, ReplayPlayerInfo, StatsState};
 use sco_tauri_overlay::{ReplayAnalysis, TestHelperOps};
-use serde_json::json;
 use serde_json::Value;
+use serde_json::json;
 use std::sync::Arc;
 
 #[test]

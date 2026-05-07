@@ -5,10 +5,10 @@ use s2coop_analyzer::cache_overall_stats_generator::{
 };
 use sco_tauri_overlay::TestHelperOps;
 use sco_tauri_overlay::{
-    persist_detailed_cache_entry_to_path, BackendState, ReplayInfo, ReplayPlayerInfo, StatsState,
+    BackendState, ReplayInfo, ReplayPlayerInfo, StatsState, persist_detailed_cache_entry_to_path,
 };
-use serde_json::json;
 use serde_json::Value;
+use serde_json::json;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -199,9 +199,11 @@ fn upsert_replay_in_memory_cache_refreshes_ready_stats_with_detailed_data() {
 
     assert_eq!(stats.games(), 2);
     assert_eq!(stats.message(), "Scanned 2 replay file(s).");
-    assert!(analysis
-        .get("UnitData")
-        .is_some_and(|value| !value.is_null()));
+    assert!(
+        analysis
+            .get("UnitData")
+            .is_some_and(|value| !value.is_null())
+    );
 }
 
 #[test]

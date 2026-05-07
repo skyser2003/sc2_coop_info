@@ -342,11 +342,7 @@ impl CacheOverallStatsFile {
             return 0.0;
         }
         let rounded = (value * 1_000_000.0).round() / 1_000_000.0;
-        if rounded == 0.0 {
-            0.0
-        } else {
-            rounded
-        }
+        if rounded == 0.0 { 0.0 } else { rounded }
     }
 }
 
@@ -876,7 +872,7 @@ impl CacheReplayEntry {
                 return Err(GenerateCacheError::ReadExistingCache(
                     cache_path.to_path_buf(),
                     error,
-                ))
+                ));
             }
         };
 

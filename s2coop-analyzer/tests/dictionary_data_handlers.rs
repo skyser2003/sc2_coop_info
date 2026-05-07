@@ -49,8 +49,10 @@ fn shared_dictionary_handlers_load_expected_dictionary_entries() {
         .expect("Cold is the Void weekly mutation should exist");
     assert!(!cold_is_the_void.map.is_empty());
     assert!(!cold_is_the_void.mutators.is_empty());
-    assert!(cold_is_the_void
-        .mutators
-        .iter()
-        .all(|mutator| mutator.chars().all(|ch| ch.is_alphanumeric())));
+    assert!(
+        cold_is_the_void
+            .mutators
+            .iter()
+            .all(|mutator| mutator.chars().all(|ch| ch.is_alphanumeric()))
+    );
 }

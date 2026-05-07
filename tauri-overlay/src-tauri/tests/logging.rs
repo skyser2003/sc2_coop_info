@@ -1,7 +1,7 @@
 use sco_tauri_overlay::TestHelperOps;
 use sco_tauri_overlay::{AppSettings, TauriOverlayOps};
-use serde_json::json;
 use serde_json::Value;
+use serde_json::json;
 use std::path::{Path, PathBuf};
 
 #[test]
@@ -31,14 +31,18 @@ fn logs_file_path_from_settings_path(settings_path: &Path) -> PathBuf {
 
 #[test]
 fn logging_setting_respects_boolean_flag() {
-    assert!(AppSettings::merge_settings_with_defaults(json!({
-        "enable_logging": true,
-    }))
-    .enable_logging());
-    assert!(!AppSettings::merge_settings_with_defaults(json!({
-        "enable_logging": false,
-    }))
-    .enable_logging());
+    assert!(
+        AppSettings::merge_settings_with_defaults(json!({
+            "enable_logging": true,
+        }))
+        .enable_logging()
+    );
+    assert!(
+        !AppSettings::merge_settings_with_defaults(json!({
+            "enable_logging": false,
+        }))
+        .enable_logging()
+    );
     assert!(AppSettings::merge_settings_with_defaults(json!({})).enable_logging());
 }
 

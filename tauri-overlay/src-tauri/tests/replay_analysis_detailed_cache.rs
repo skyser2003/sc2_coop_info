@@ -254,12 +254,16 @@ fn load_detailed_analysis_replays_snapshot_from_path_recovers_temp_cache_entries
     let replays = TestHelperOps::load_detailed_analysis_replays_snapshot_from_path(&cache_path, 0);
 
     assert_eq!(replays.len(), 2);
-    assert!(replays
-        .iter()
-        .any(|replay| replay.file() == existing_replay_path.display().to_string()));
-    assert!(replays
-        .iter()
-        .any(|replay| replay.file() == recovered_replay_path.display().to_string()));
+    assert!(
+        replays
+            .iter()
+            .any(|replay| replay.file() == existing_replay_path.display().to_string())
+    );
+    assert!(
+        replays
+            .iter()
+            .any(|replay| replay.file() == recovered_replay_path.display().to_string())
+    );
     assert!(
         !temp_path.exists(),
         "temp cache should be removed after recovery"
@@ -269,12 +273,16 @@ fn load_detailed_analysis_replays_snapshot_from_path_recovers_temp_cache_entries
     let persisted_entries = serde_json::from_slice::<Vec<CacheReplayEntry>>(&persisted_payload)
         .expect("persisted cache should parse");
     assert_eq!(persisted_entries.len(), 2);
-    assert!(persisted_entries
-        .iter()
-        .any(|entry| entry.file == existing_entry.file));
-    assert!(persisted_entries
-        .iter()
-        .any(|entry| entry.file == recovered_entry.file));
+    assert!(
+        persisted_entries
+            .iter()
+            .any(|entry| entry.file == existing_entry.file)
+    );
+    assert!(
+        persisted_entries
+            .iter()
+            .any(|entry| entry.file == recovered_entry.file)
+    );
 
     let _ = std::fs::remove_file(&cache_path);
     let _ = std::fs::remove_file(&existing_replay_path);
@@ -325,12 +333,16 @@ fn load_detailed_analysis_replays_snapshot_from_path_persists_simple_temp_entry_
     let persisted_entries = serde_json::from_slice::<Vec<CacheReplayEntry>>(&persisted_payload)
         .expect("persisted cache should parse");
     assert_eq!(persisted_entries.len(), 2);
-    assert!(persisted_entries
-        .iter()
-        .any(|entry| entry.file == existing_entry.file && entry.detailed_analysis));
-    assert!(persisted_entries
-        .iter()
-        .any(|entry| entry.file == recovered_entry.file && !entry.detailed_analysis));
+    assert!(
+        persisted_entries
+            .iter()
+            .any(|entry| entry.file == existing_entry.file && entry.detailed_analysis)
+    );
+    assert!(
+        persisted_entries
+            .iter()
+            .any(|entry| entry.file == recovered_entry.file && !entry.detailed_analysis)
+    );
 
     let _ = std::fs::remove_file(&cache_path);
     let _ = std::fs::remove_file(&existing_replay_path);

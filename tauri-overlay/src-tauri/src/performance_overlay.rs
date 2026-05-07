@@ -5,7 +5,7 @@ use serde::Serialize;
 use sysinfo::{Networks, ProcessesToUpdate, System};
 use tauri::{Emitter, Manager, Runtime, Wry};
 
-use crate::{shared_types::PerformanceVisibilityPayload, AppSettings, BackendState};
+use crate::{AppSettings, BackendState, shared_types::PerformanceVisibilityPayload};
 
 pub(crate) const PERFORMANCE_VISIBILITY_EVENT: &str = "sco://performance-visibility";
 
@@ -490,8 +490,8 @@ impl PerformanceOverlayOps {
                     PerformanceOverlayOps::emit_performance_script(
                         &app,
                         &format!(
-                        "window.updatePerformanceStats && window.updatePerformanceStats({encoded});"
-                    ),
+                            "window.updatePerformanceStats && window.updatePerformanceStats({encoded});"
+                        ),
                     );
                 }
 

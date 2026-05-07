@@ -1,6 +1,6 @@
 use sco_tauri_overlay::AppSettings;
-use serde_json::json;
 use serde_json::Value;
+use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn unique_temp_settings_path() -> std::path::PathBuf {

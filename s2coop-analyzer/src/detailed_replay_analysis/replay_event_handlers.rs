@@ -575,11 +575,7 @@ impl ReplayEventHandlerHelpers {
             floor + 1.0
         } else {
             let floor_is_even = ((floor / 2.0).fract()).abs() < eps;
-            if floor_is_even {
-                floor
-            } else {
-                floor + 1.0
-            }
+            if floor_is_even { floor } else { floor + 1.0 }
         };
 
         rounded_scaled / factor

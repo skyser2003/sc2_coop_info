@@ -1,7 +1,7 @@
 use sco_tauri_overlay::{AppSettings, ReplayInfo, ReplayPlayerInfo, TauriOverlayOps};
 use sco_tauri_overlay::{PathManagerOps, ReplayAnalysis, ReplayAnalysisOps, TestHelperOps};
-use serde_json::json;
 use serde_json::Value;
+use serde_json::json;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
@@ -94,10 +94,12 @@ fn rebuild_snapshot_without_detailed_data_uses_null_unit_data() {
 
     let snapshot = TestHelperOps::build_rebuild_snapshot(&replays, false);
 
-    assert!(snapshot
-        .analysis()
-        .get("UnitData")
-        .is_some_and(Value::is_null));
+    assert!(
+        snapshot
+            .analysis()
+            .get("UnitData")
+            .is_some_and(Value::is_null)
+    );
 }
 
 #[test]
@@ -258,9 +260,11 @@ fn map_fastest_payload_includes_player_metadata() {
     assert_eq!(players[0]["prestige"], json!(0));
     assert_eq!(
         players[0]["prestige_name"],
-        json!(dictionary
-            .prestige_name("Raynor", 0)
-            .expect("Raynor prestige 0 should exist"))
+        json!(
+            dictionary
+                .prestige_name("Raynor", 0)
+                .expect("Raynor prestige 0 should exist")
+        )
     );
 
     assert_eq!(players[1]["name"], json!("Ally"));
@@ -272,9 +276,11 @@ fn map_fastest_payload_includes_player_metadata() {
     assert_eq!(players[1]["prestige"], json!(2));
     assert_eq!(
         players[1]["prestige_name"],
-        json!(dictionary
-            .prestige_name("Karax", 2)
-            .expect("Karax prestige 2 should exist"))
+        json!(
+            dictionary
+                .prestige_name("Karax", 2)
+                .expect("Karax prestige 2 should exist")
+        )
     );
 }
 
@@ -335,10 +341,10 @@ fn map_fastest_prefers_oldest_replay_when_lengths_tie() {
 
     assert_eq!(
         fastest.get("date"),
-        Some(&json!(ReplayAnalysisOps::parse_replay_timestamp_seconds(
-            "2019:01:02:03:04:05"
-        )
-        .expect("older replay timestamp should parse")))
+        Some(&json!(
+            ReplayAnalysisOps::parse_replay_timestamp_seconds("2019:01:02:03:04:05")
+                .expect("older replay timestamp should parse")
+        ))
     );
     assert_eq!(fastest.get("difficulty"), Some(&json!("Normal")));
     assert_eq!(fastest.get("enemy_race"), Some(&json!("Terran")));
@@ -415,10 +421,10 @@ fn miner_evacuation_fastest_payload_matches_reference_fastest_replay() {
     assert_eq!(fastest.get("enemy_race"), Some(&json!("테란")));
     assert_eq!(
         fastest.get("date"),
-        Some(&json!(ReplayAnalysisOps::parse_replay_timestamp_seconds(
-            "2018:09:30:22:12:24"
-        )
-        .expect("reference timestamp should parse")))
+        Some(&json!(
+            ReplayAnalysisOps::parse_replay_timestamp_seconds("2018:09:30:22:12:24")
+                .expect("reference timestamp should parse")
+        ))
     );
 
     let players = fastest
@@ -428,10 +434,12 @@ fn miner_evacuation_fastest_payload_matches_reference_fastest_replay() {
     assert_eq!(players.len(), 2);
 
     assert_eq!(players[0]["name"], fastest["main"]);
-    assert!(snapshot
-        .main_handles()
-        .iter()
-        .any(|handle| Some(handle.as_str()) == players[0]["handle"].as_str()));
+    assert!(
+        snapshot
+            .main_handles()
+            .iter()
+            .any(|handle| Some(handle.as_str()) == players[0]["handle"].as_str())
+    );
     assert_eq!(players[0]["commander"], json!("Abathur"));
     assert_eq!(players[0]["apm"], json!(123));
     assert_eq!(players[0]["mastery_level"], json!(0));
@@ -446,14 +454,18 @@ fn miner_evacuation_fastest_payload_matches_reference_fastest_replay() {
     assert_eq!(players[1]["masteries"], json!([0, 0, 0, 0, 0, 0]));
     assert_eq!(players[1]["prestige_name"], json!("Chief Engineer"));
 
-    assert!(snapshot
-        .main_players()
-        .iter()
-        .any(|name| Some(name.as_str()) == players[0]["name"].as_str()));
-    assert!(snapshot
-        .main_handles()
-        .iter()
-        .any(|handle| Some(handle.as_str()) == players[0]["handle"].as_str()));
+    assert!(
+        snapshot
+            .main_players()
+            .iter()
+            .any(|name| Some(name.as_str()) == players[0]["name"].as_str())
+    );
+    assert!(
+        snapshot
+            .main_handles()
+            .iter()
+            .any(|handle| Some(handle.as_str()) == players[0]["handle"].as_str())
+    );
 }
 
 #[test]

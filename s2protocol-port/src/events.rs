@@ -1,5 +1,5 @@
-use crate::decoder::{EventDecodePlan, EventSpecialDataDecoder, TypeDecoder, TypeInfo};
 use crate::DecodeError;
+use crate::decoder::{EventDecodePlan, EventSpecialDataDecoder, TypeDecoder, TypeInfo};
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct TriggerEventData {

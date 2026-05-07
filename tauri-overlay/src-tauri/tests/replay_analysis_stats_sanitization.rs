@@ -1,6 +1,6 @@
 use sco_tauri_overlay::{ReplayAnalysis, TestHelperOps};
 use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn sanitized_stats_replay() -> ReplayInfo {
     let mut replay = ReplayInfo::with_players(
@@ -77,12 +77,15 @@ fn rebuild_player_rows_fast_sanitizes_fields_without_full_replay_clone() {
     let rows = ReplayAnalysis::rebuild_player_rows_fast(&[replay]);
 
     assert_eq!(rows.len(), 2);
-    assert!(rows
-        .iter()
-        .any(|row| { row.player == "Main Player" && row.commander == "Raynor" }));
-    assert!(!rows
-        .iter()
-        .any(|row| { row.player == "<b>Main Player</b>" || row.commander == "<b>Raynor</b>" }));
+    assert!(
+        rows.iter()
+            .any(|row| { row.player == "Main Player" && row.commander == "Raynor" })
+    );
+    assert!(
+        !rows
+            .iter()
+            .any(|row| { row.player == "<b>Main Player</b>" || row.commander == "<b>Raynor</b>" })
+    );
 }
 
 #[test]

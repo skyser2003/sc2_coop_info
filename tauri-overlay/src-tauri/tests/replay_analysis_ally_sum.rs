@@ -1,7 +1,7 @@
 use sco_tauri_overlay::TestHelperOps;
 use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo};
-use serde_json::json;
 use serde_json::Value;
+use serde_json::json;
 
 fn test_map_id(raw: &str) -> String {
     TestHelperOps::canonicalize_map_id(raw).expect("map id should resolve")

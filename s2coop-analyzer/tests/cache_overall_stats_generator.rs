@@ -131,15 +131,21 @@ fn persist_simple_cache_entries_preserve_existing_simple_entries() {
         .expect("persisted cache should deserialize");
 
     assert_eq!(persisted_entries.len(), 3);
-    assert!(persisted_entries
-        .iter()
-        .any(|entry| entry.hash == existing_detailed.hash && entry.detailed_analysis));
-    assert!(persisted_entries
-        .iter()
-        .any(|entry| entry.hash == existing_simple.hash && !entry.detailed_analysis));
-    assert!(persisted_entries
-        .iter()
-        .any(|entry| entry.hash == new_simple.hash && !entry.detailed_analysis));
+    assert!(
+        persisted_entries
+            .iter()
+            .any(|entry| entry.hash == existing_detailed.hash && entry.detailed_analysis)
+    );
+    assert!(
+        persisted_entries
+            .iter()
+            .any(|entry| entry.hash == existing_simple.hash && !entry.detailed_analysis)
+    );
+    assert!(
+        persisted_entries
+            .iter()
+            .any(|entry| entry.hash == new_simple.hash && !entry.detailed_analysis)
+    );
 
     let _ = fs::remove_file(&cache_path);
     let _ = fs::remove_dir_all(&cache_dir);

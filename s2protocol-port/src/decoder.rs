@@ -2550,11 +2550,7 @@ impl<'a> VersionedDecoder<'a> {
             shift += 7;
         }
 
-        if negative {
-            Ok(-value)
-        } else {
-            Ok(value)
-        }
+        if negative { Ok(-value) } else { Ok(value) }
     }
 
     fn skip_instance(&mut self) -> Result<(), DecodeError> {
@@ -2607,7 +2603,7 @@ impl<'a> VersionedDecoder<'a> {
             _ => {
                 return Err(DecodeError::Corrupted(format!(
                     "invalid skip marker {skip}"
-                )))
+                )));
             }
         }
         Ok(())

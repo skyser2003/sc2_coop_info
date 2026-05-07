@@ -1,6 +1,6 @@
 use sco_tauri_overlay::AppSettings;
-use serde_json::json;
 use serde_json::Value;
+use serde_json::json;
 
 #[test]
 fn overlay_runtime_settings_defaults_to_visible_charts() {
@@ -85,12 +85,16 @@ fn replay_overlay_after_game_setting_defaults_to_enabled() {
 
 #[test]
 fn replay_overlay_after_game_setting_uses_saved_value() {
-    assert!(!AppSettings::merge_settings_with_defaults(json!({
-        "show_replay_info_after_game": false,
-    }))
-    .show_replay_info_after_game());
-    assert!(AppSettings::merge_settings_with_defaults(json!({
-        "show_replay_info_after_game": true,
-    }))
-    .show_replay_info_after_game());
+    assert!(
+        !AppSettings::merge_settings_with_defaults(json!({
+            "show_replay_info_after_game": false,
+        }))
+        .show_replay_info_after_game()
+    );
+    assert!(
+        AppSettings::merge_settings_with_defaults(json!({
+            "show_replay_info_after_game": true,
+        }))
+        .show_replay_info_after_game()
+    );
 }

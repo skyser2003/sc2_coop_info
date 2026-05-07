@@ -28,7 +28,7 @@ use crate::shared_types::{
 };
 use crate::{
     AppSettings, CommanderUnitRollup, ReplayChatMessage, ReplayInfo, ReplayPlayerInfo,
-    StatsSnapshot, StatsState, TauriOverlayOps, UnitStatsRollup, UNLIMITED_REPLAY_LIMIT,
+    StatsSnapshot, StatsState, TauriOverlayOps, UNLIMITED_REPLAY_LIMIT, UnitStatsRollup,
 };
 
 const PRESTIGE_TRACKING_START_YMD: u32 = 20200726;
@@ -4713,11 +4713,7 @@ impl ReplayAnalysisOps {
             .canonicalize_coop_map_id(&display_name)
             .unwrap_or(display_name);
         let key = ReplayAnalysisOps::normalize_lookup_key(&comparable_name);
-        if key.is_empty() {
-            None
-        } else {
-            Some(key)
-        }
+        if key.is_empty() { None } else { Some(key) }
     }
 
     fn resolve_weekly_mutation_name_with_dictionary(

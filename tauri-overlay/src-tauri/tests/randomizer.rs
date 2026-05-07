@@ -11,10 +11,12 @@ fn randomizer_catalog_exposes_prestige_metadata() {
     assert!(!payload.mutators.is_empty());
     assert_eq!(payload.brutal_plus.len(), 6);
     assert_eq!(payload.prestige_names["Abathur"].en[0], "Evolution Master");
-    assert!(!payload
-        .mutators
-        .iter()
-        .any(|mutator| mutator.id == "Random"));
+    assert!(
+        !payload
+            .mutators
+            .iter()
+            .any(|mutator| mutator.id == "Random")
+    );
 }
 
 #[test]
@@ -46,9 +48,11 @@ fn randomizer_defaults_to_p0_when_saved_choices_are_empty() {
             assert_eq!(prestige, 0);
             assert_eq!(map_race, "");
             assert_eq!(mastery_indices.len(), 3);
-            assert!(mastery_indices
-                .iter()
-                .all(|value| matches!(value, Some(0 | 30))));
+            assert!(
+                mastery_indices
+                    .iter()
+                    .all(|value| matches!(value, Some(0 | 30)))
+            );
         }
         other => panic!("expected commander result, got {other:?}"),
     }
@@ -119,9 +123,11 @@ fn randomizer_all_in_mode_assigns_one_side_of_each_mastery_pair() {
             assert_eq!(commander, "Abathur");
             assert_eq!(prestige, 1);
             assert!(matches!(map_race.as_str(), "Terran" | "Protoss" | "Zerg"));
-            assert!(mastery_indices
-                .iter()
-                .all(|value| matches!(value, Some(0 | 30))));
+            assert!(
+                mastery_indices
+                    .iter()
+                    .all(|value| matches!(value, Some(0 | 30)))
+            );
         }
         other => panic!("expected commander result, got {other:?}"),
     }

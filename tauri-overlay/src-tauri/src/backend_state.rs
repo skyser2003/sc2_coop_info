@@ -2,8 +2,8 @@ use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     thread,
     time::{SystemTime, UNIX_EPOCH},
@@ -20,9 +20,9 @@ use crate::shared_types::{
     OverlayPlayerStatsPayload, OverlayPlayerStatsRow, ReplayScanProgressPayload,
 };
 use crate::{
+    AnalysisMode, AppSettings, ReplayInfo, StatsState, TauriOverlayOps, UNLIMITED_REPLAY_LIMIT,
     overlay_info::{ResolvedHotkeyBinding, RuntimeFlags},
     replay_analysis::ReplayAnalysis,
-    AnalysisMode, AppSettings, ReplayInfo, StatsState, TauriOverlayOps, UNLIMITED_REPLAY_LIMIT,
 };
 
 #[derive(Default)]
@@ -1020,15 +1020,22 @@ impl BackendState {
 
             match replay_state.lock() {
                 Ok(state) => {
-                    if let Ok(mut cache) = state.replays.lock() {
-                        for replay in replays {
-                            let replay_hash = ReplayFileIdentity::calculate_hash(
-                                &std::path::PathBuf::from(&replay.file),
-                            );
-                            BackendStateOps::upsert_replay_map(&mut cache, &replay_hash, &replay);
+                    match state.replays.lock() {
+                        Ok(mut cache) => {
+                            for replay in replays {
+                                let replay_hash = ReplayFileIdentity::calculate_hash(
+                                    &std::path::PathBuf::from(&replay.file),
+                                );
+                                BackendStateOps::upsert_replay_map(
+                                    &mut cache,
+                                    &replay_hash,
+                                    &replay,
+                                );
+                            }
                         }
-                    } else {
-                        crate::sco_log!("[SCO/players] failed to update player replay cache");
+                        Err(_) => {
+                            crate::sco_log!("[SCO/players] failed to update player replay cache");
+                        }
                     }
 
                     if let Ok(mut selected_file) = state.selected_replay_file.lock() {

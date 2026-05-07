@@ -23,8 +23,8 @@ use std::io;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{
-    atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering},
     Arc,
+    atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering},
 };
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
@@ -35,8 +35,8 @@ use crate::stats_counter_core::{
     ReplayDroneCommandEventKind, ReplayDroneIdentifierCore, ReplayStatsCounterCore,
     StatsCounterDictionaries,
 };
-use rayon::iter::{IntoParallelRefIterator, ParallelBridge, ParallelIterator};
 use rayon::ThreadPoolBuilder;
+use rayon::iter::{IntoParallelRefIterator, ParallelBridge, ParallelIterator};
 use replay_event_handlers::{
     IdentifiedWavesMap, ReplayEventHandlers, ReplayEventStringSets, ReplayMapAnalysisFlags,
     ReplayPlayerIdSet, StatsCounterTarget, UnitBornOrInitEventFields, UnitDiedEventFields,
@@ -3946,11 +3946,7 @@ impl DetailedReplayAnalyzer {
     }
 
     fn clamp_nonnegative_to_u64(value: i64) -> u64 {
-        if value <= 0 {
-            0
-        } else {
-            value as u64
-        }
+        if value <= 0 { 0 } else { value as u64 }
     }
 
     fn count_for_pid(values: &[i64], pid: i64) -> i64 {

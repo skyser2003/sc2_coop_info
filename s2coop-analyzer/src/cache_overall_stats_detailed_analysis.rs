@@ -14,8 +14,7 @@ use thiserror::Error;
 use walkdir::WalkDir;
 
 const NUMERIC_ABS_TOLERANCE: f64 = 1e-9;
-const PYTHON_TEST_ID: &str =
-    "tests.test_cache_overall_stats_detailed_analysis.TestCacheOverallStatsDetailedAnalysis.test_detailed_analysis_generates_cache_overall_stats";
+const PYTHON_TEST_ID: &str = "tests.test_cache_overall_stats_detailed_analysis.TestCacheOverallStatsDetailedAnalysis.test_detailed_analysis_generates_cache_overall_stats";
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TestCacheOverallStatsDetailedAnalysisArgs {
@@ -870,17 +869,19 @@ impl CachePayloadDiff {
             return Ok(lines.join("\n"));
         }
 
-        Err(TestCacheOverallStatsDetailedAnalysisError::ComparisonFailed {
-            details: format!(
-                "{label}: byte-level difference detected.\nexpected={}\nactual={}\nDiff summary (all differences):\n{}\n{label} are different.\nexpected={}\nactual={}\nnumeric_abs_tolerance={}\nDiff summary:\n{}",
-                expected_path.display(),
-                actual_path.display(),
-                all_differences_report,
-                expected_path.display(),
-                actual_path.display(),
-                PythonValueFormat::general_float(abs_tolerance),
-                all_differences_report,
-            ),
-        })
+        Err(
+            TestCacheOverallStatsDetailedAnalysisError::ComparisonFailed {
+                details: format!(
+                    "{label}: byte-level difference detected.\nexpected={}\nactual={}\nDiff summary (all differences):\n{}\n{label} are different.\nexpected={}\nactual={}\nnumeric_abs_tolerance={}\nDiff summary:\n{}",
+                    expected_path.display(),
+                    actual_path.display(),
+                    all_differences_report,
+                    expected_path.display(),
+                    actual_path.display(),
+                    PythonValueFormat::general_float(abs_tolerance),
+                    all_differences_report,
+                ),
+            },
+        )
     }
 }
