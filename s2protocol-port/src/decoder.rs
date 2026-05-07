@@ -837,7 +837,10 @@ impl ProtocolDefinition {
             .map(|reader| reader.next_matching_event(&include_event))
             .transpose()?
             .flatten();
-        let mut events = Vec::new();
+        let mut events = Vec::with_capacity(Self::ordered_event_capacity_hint(
+            game_contents,
+            tracker_contents,
+        ));
 
         while next_game.is_some() || next_tracker.is_some() {
             let take_game = match (&next_game, &next_tracker) {
@@ -867,6 +870,13 @@ impl ProtocolDefinition {
         }
 
         Ok(events)
+    }
+
+    fn ordered_event_capacity_hint(game_contents: &[u8], tracker_contents: Option<&[u8]>) -> usize {
+        let bytes = game_contents
+            .len()
+            .saturating_add(tracker_contents.map_or(0, <[u8]>::len));
+        (bytes / 32).max(128)
     }
 
     pub fn decode_replay_header(&self, contents: &[u8]) -> Result<Value, DecodeError> {
