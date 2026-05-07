@@ -1,6 +1,10 @@
 [workspace]
-members = ["src-tauri"]
-resolver = "2"
+members = ["s2coop-analyzer", "s2protocol-port", "tauri-overlay/src-tauri"]
+resolver = "3"
+
+[workspace.dependencies]
+s2coop-analyzer = { path = "s2coop-analyzer" }
+s2protocol-port = { path = "s2protocol-port" }
 
 [profile.dev.package.s2coop-analyzer]
 opt-level = 3

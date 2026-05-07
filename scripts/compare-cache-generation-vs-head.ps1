@@ -18,6 +18,11 @@ $currentPrettyOutput = Join-Path $tempRoot "current-cache_overall_stats_pretty.j
 $comparisonPrettyOutput = Join-Path $tempRoot "comparison-cache_overall_stats_pretty.json"
 $shouldKeepArtifacts = $KeepArtifacts.IsPresent
 $cargoJobs = [Math]::Max(1, [int][Math]::Floor([Environment]::ProcessorCount / 2))
+$cliExecutableName = if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) {
+    "s2coop-analyzer-cli.exe"
+} else {
+    "s2coop-analyzer-cli"
+}
 
 function Import-EnvFile {
     param([string]$Path)
@@ -184,6 +189,8 @@ try {
         "--release",
         "--jobs",
         $cargoJobs.ToString(),
+        "--target-dir",
+        ([System.IO.Path]::Combine($repoRoot, "target")),
         "--manifest-path",
         "s2coop-analyzer/Cargo.toml",
         "--bin",
@@ -205,14 +212,16 @@ try {
         "--release",
         "--jobs",
         $cargoJobs.ToString(),
+        "--target-dir",
+        ([System.IO.Path]::Combine($comparisonWorktree, "target")),
         "--manifest-path",
         "s2coop-analyzer/Cargo.toml",
         "--bin",
         "s2coop-analyzer-cli"
     ) -WorkingDirectory $comparisonWorktree
 
-    $currentExe = Join-Path $repoRoot "s2coop-analyzer\target\release\s2coop-analyzer-cli.exe"
-    $comparisonExe = Join-Path $comparisonWorktree "s2coop-analyzer\target\release\s2coop-analyzer-cli.exe"
+    $currentExe = [System.IO.Path]::Combine($repoRoot, "target", "release", $cliExecutableName)
+    $comparisonExe = [System.IO.Path]::Combine($comparisonWorktree, "target", "release", $cliExecutableName)
 
     $currentRun = Invoke-GenerateCache -ExePath $currentExe -AccountDir $benchmarkAccountDir -OutputFile $currentOutput
     $comparisonRun = Invoke-GenerateCache -ExePath $comparisonExe -AccountDir $benchmarkAccountDir -OutputFile $comparisonOutput

@@ -13,7 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
-s2protocol-port = { path = "../s2protocol-port" }
+s2protocol-port = { workspace = true }
 md5 = "0.7"
 indexmap = { version = "2", features = ["serde"] }
 indicatif = "0.17"

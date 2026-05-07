@@ -8,8 +8,8 @@ edition = "2021"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-s2protocol-port = { path = "../../s2protocol-port" }
-s2coop-analyzer = { path = "../../s2coop-analyzer", default-features = false }
+s2protocol-port = { workspace = true }
+s2coop-analyzer = { workspace = true }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 tauri = { version = "2", features = ["tray-icon"] }
