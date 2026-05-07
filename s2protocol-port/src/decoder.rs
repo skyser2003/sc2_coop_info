@@ -975,6 +975,10 @@ pub(crate) trait TypeDecoder {
     fn i64_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<Option<i64>, DecodeError>;
     fn f64_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<Option<f64>, DecodeError>;
     fn string_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<Option<String>, DecodeError>;
+    fn bools_from_bitarray_typeinfo(
+        &mut self,
+        typeinfo: &TypeInfo,
+    ) -> Result<Vec<bool>, DecodeError>;
     fn skip_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<(), DecodeError>;
     fn visit_struct_fields_from_typeinfo<K, S, F>(
         &mut self,
@@ -1621,51 +1625,11 @@ impl EventSpecialDataDecoder {
         Ok(values)
     }
 
-    fn bools_from_bitarray_value(value: Value) -> Result<Vec<bool>, DecodeError> {
-        let Value::Array(items) = value else {
-            return Err(DecodeError::Corrupted(
-                "selection remove mask bitarray decoded to non-array".into(),
-            ));
-        };
-        let [length_value, bits_value]: [Value; 2] = items.try_into().map_err(|_| {
-            DecodeError::Corrupted("selection remove mask bitarray has invalid shape".into())
-        })?;
-        let length = length_value
-            .as_u64()
-            .and_then(|value| usize::try_from(value).ok())
-            .ok_or_else(|| {
-                DecodeError::Corrupted("selection remove mask bitarray length is invalid".into())
-            })?;
-
-        match bits_value {
-            Value::Int(bits) => {
-                let bits = u128::try_from(bits).map_err(|_| {
-                    DecodeError::Corrupted("selection remove mask bitarray is negative".into())
-                })?;
-                Ok((0..length)
-                    .map(|index| ((bits >> index) & 1) != 0)
-                    .collect())
-            }
-            Value::Bytes(bytes) => {
-                let mut bits = Vec::with_capacity(length);
-                for index in 0..length {
-                    let byte = bytes.get(index / 8).copied().unwrap_or_default();
-                    let bit_offset = 7 - (index % 8);
-                    bits.push(((byte >> bit_offset) & 1) != 0);
-                }
-                Ok(bits)
-            }
-            _ => Err(DecodeError::Corrupted(
-                "selection remove mask bitarray data is invalid".into(),
-            )),
-        }
-    }
-
     fn decode_bitarray_bools<D: TypeDecoder>(
         decoder: &mut D,
         typeinfo: &TypeInfo,
     ) -> Result<Vec<bool>, DecodeError> {
-        Self::bools_from_bitarray_value(decoder.instance_from_typeinfo(typeinfo)?)
+        decoder.bools_from_bitarray_typeinfo(typeinfo)
     }
 
     fn decode_selection_remove_mask<D: TypeDecoder>(
@@ -1939,6 +1903,30 @@ impl<'a> BitPackedDecoder<'a> {
             Value::Int(length as i128),
             Value::Bytes(bytes),
         ]))
+    }
+
+    fn bitarray_bools(&mut self, typeinfo: &TypeInfo) -> Result<Vec<bool>, DecodeError> {
+        if typeinfo.op() != TypeOp::BitArray {
+            return Err(DecodeError::UnexpectedType(format!(
+                "typeid={} op={} does not decode to bitarray",
+                typeinfo.typeid(),
+                typeinfo.op_name()
+            )));
+        }
+
+        let length = self.int(typeinfo.length_bounds()?)? as usize;
+        if length <= 64 {
+            let bits = self.buffer.read_bits(length)?;
+            return Ok((0..length)
+                .map(|index| ((bits >> index) & 1) != 0)
+                .collect());
+        }
+
+        let mut values = Vec::with_capacity(length);
+        for _ in 0..length {
+            values.push(self.buffer.read_bits(1)? != 0);
+        }
+        Ok(values)
     }
 
     fn blob(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
@@ -2464,6 +2452,13 @@ impl TypeDecoder for BitPackedDecoder<'_> {
         }
     }
 
+    fn bools_from_bitarray_typeinfo(
+        &mut self,
+        typeinfo: &TypeInfo,
+    ) -> Result<Vec<bool>, DecodeError> {
+        self.bitarray_bools(typeinfo)
+    }
+
     fn skip_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<(), DecodeError> {
         self.skip_value(typeinfo)
     }
@@ -2708,6 +2703,42 @@ impl<'a> VersionedDecoder<'a> {
             Value::Int(length as i128),
             Value::Int(value),
         ]))
+    }
+
+    fn bitarray_bools(&mut self, typeinfo: &TypeInfo) -> Result<Vec<bool>, DecodeError> {
+        if typeinfo.op() != TypeOp::BitArray {
+            return Err(DecodeError::UnexpectedType(format!(
+                "typeid={} op={} does not decode to bitarray",
+                typeinfo.typeid(),
+                typeinfo.op_name()
+            )));
+        }
+
+        self.expect_skip(1)?;
+        let length = self.vint()? as usize;
+        let bytes = length.div_ceil(8);
+        let raw = self.buffer.read_aligned_slice(bytes)?;
+
+        if length > 127 {
+            let mut bits = Vec::with_capacity(length);
+            for index in 0..length {
+                let byte = raw.get(index / 8).copied().unwrap_or_default();
+                let bit_offset = 7 - (index % 8);
+                bits.push(((byte >> bit_offset) & 1) != 0);
+            }
+            return Ok(bits);
+        }
+
+        let mut value: i128 = 0;
+        for byte in raw {
+            value = (value << 8) | i128::from(*byte);
+        }
+        let bits = u128::try_from(value).map_err(|_| {
+            DecodeError::Corrupted("selection remove mask bitarray is negative".into())
+        })?;
+        Ok((0..length)
+            .map(|index| ((bits >> index) & 1) != 0)
+            .collect())
     }
 
     fn blob(&mut self, _typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
@@ -3239,6 +3270,13 @@ impl TypeDecoder for VersionedDecoder<'_> {
             TypeOp::Real64 => Ok(self.real64()?.as_f64().map(|value| value.to_string())),
             _ => Ok(Some(self.integer_from_typeinfo(typeinfo)?.to_string())),
         }
+    }
+
+    fn bools_from_bitarray_typeinfo(
+        &mut self,
+        typeinfo: &TypeInfo,
+    ) -> Result<Vec<bool>, DecodeError> {
+        self.bitarray_bools(typeinfo)
     }
 
     fn skip_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<(), DecodeError> {
