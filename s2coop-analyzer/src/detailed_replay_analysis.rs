@@ -35,7 +35,7 @@ use crate::stats_counter_core::{
     ReplayDroneCommandEventKind, ReplayDroneIdentifierCore, ReplayStatsCounterCore,
     StatsCounterDictionaries,
 };
-use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IntoParallelRefIterator, ParallelBridge, ParallelIterator};
 use rayon::ThreadPoolBuilder;
 use replay_event_handlers::{
     IdentifiedWavesMap, ReplayEventHandlers, ReplayEventStringSets, ReplayMapAnalysisFlags,
@@ -3098,20 +3098,16 @@ impl CandidateReplay {
     }
 
     fn analyze_timed(
-        self,
+        &self,
         main_handles: &HashSet<String>,
         resources: &ReplayAnalysisResources,
     ) -> CandidateReplayAnalysisResult {
         let total_start = Instant::now();
         let mut timing = CandidateReplayAnalysisTiming::default();
-        let Self {
-            path,
-            hash: _,
-            analysis_priority: _,
-        } = self;
+        let path = self.path.as_path();
 
         let parsed_detailed = CacheReplayEntry::parse_with_options_timed(
-            &path,
+            path,
             resources,
             ReplayBaseParseOptions {
                 include_events: true,
@@ -3127,7 +3123,7 @@ impl CandidateReplay {
         let Some((basic, parsed)) = parsed_detailed else {
             let parse_basic_fallback_start = Instant::now();
             let parsed_basic = CacheReplayEntry::parse_with_options_timed(
-                &path,
+                path,
                 resources,
                 ReplayBaseParseOptions {
                     include_events: false,
@@ -3418,8 +3414,10 @@ impl DetailedReplayAnalyzer {
                     let replay_analysis_start = Instant::now();
                     let analyzed_results = thread_pool.install(|| {
                         pending_candidates
-                            .into_par_iter()
-                            .filter_map(|(_, candidate)| {
+                            .into_iter()
+                            .map(|(_, candidate)| candidate)
+                            .par_bridge()
+                            .filter_map(|candidate| {
                                 if stop_controller_for_workers
                                     .as_ref()
                                     .is_some_and(|controller| controller.stop_requested())
