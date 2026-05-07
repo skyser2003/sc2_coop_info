@@ -97,6 +97,7 @@ impl<'a> BitPackedBuffer<'a> {
         if self.next_bits == 0 {
             match bits {
                 8 => return self.read_aligned_u8(),
+                16 => return self.read_aligned_u16_big_endian(),
                 32 => return self.read_aligned_u32_big_endian(),
                 _ => {}
             }
@@ -158,6 +159,7 @@ impl<'a> BitPackedBuffer<'a> {
         if self.next_bits == 0 {
             match bits {
                 8 => return self.read_aligned_u8(),
+                16 => return self.read_aligned_u16_little_endian(),
                 32 => return self.read_aligned_u32_little_endian(),
                 _ => {}
             }
@@ -238,6 +240,28 @@ impl<'a> BitPackedBuffer<'a> {
 
         let value = self.data[self.used];
         self.used += 1;
+        Ok(u64::from(value))
+    }
+
+    fn read_aligned_u16_big_endian(&mut self) -> Result<u64, DecodeError> {
+        let end = self.used.checked_add(2).ok_or(DecodeError::Truncated)?;
+        if end > self.data.len() {
+            return Err(DecodeError::Truncated);
+        }
+
+        let value = u16::from_be_bytes([self.data[self.used], self.data[self.used + 1]]);
+        self.used = end;
+        Ok(u64::from(value))
+    }
+
+    fn read_aligned_u16_little_endian(&mut self) -> Result<u64, DecodeError> {
+        let end = self.used.checked_add(2).ok_or(DecodeError::Truncated)?;
+        if end > self.data.len() {
+            return Err(DecodeError::Truncated);
+        }
+
+        let value = u16::from_le_bytes([self.data[self.used], self.data[self.used + 1]]);
+        self.used = end;
         Ok(u64::from(value))
     }
 
