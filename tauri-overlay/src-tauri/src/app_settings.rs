@@ -413,23 +413,21 @@ impl AppSettingsOps {
     fn get_default_accounts_folder() -> String {
         if let Ok(sc2_key) = RegKey::predef(HKEY_CURRENT_USER)
             .open_subkey(r"Software\Blizzard Entertainment\StarCraft II")
+            && let Ok(path) = sc2_key.get_value::<String, &str>("InstallPath")
         {
-            if let Ok(path) = sc2_key.get_value::<String, &str>("InstallPath") {
-                let accounts_folder = Path::new(&path).join("Accounts");
-                if let Some(accounts_str) = accounts_folder.to_str() {
-                    return accounts_str.to_string();
-                }
+            let accounts_folder = Path::new(&path).join("Accounts");
+            if let Some(accounts_str) = accounts_folder.to_str() {
+                return accounts_str.to_string();
             }
         }
 
         if let Ok(shell_folders) = RegKey::predef(HKEY_CURRENT_USER)
             .open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders")
+            && let Ok(documents) = shell_folders.get_value::<String, &str>("Personal")
         {
-            if let Ok(documents) = shell_folders.get_value::<String, &str>("Personal") {
-                let accounts_folder = Path::new(&documents).join("StarCraft II").join("Accounts");
-                if let Some(accounts_str) = accounts_folder.to_str() {
-                    return accounts_str.to_string();
-                }
+            let accounts_folder = Path::new(&documents).join("StarCraft II").join("Accounts");
+            if let Some(accounts_str) = accounts_folder.to_str() {
+                return accounts_str.to_string();
             }
         }
 

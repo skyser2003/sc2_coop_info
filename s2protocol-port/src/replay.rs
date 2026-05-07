@@ -8,7 +8,7 @@ use crate::{
 };
 use mpq::Archive;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -33,6 +33,21 @@ pub struct ParsedReplayWithEvents {
     replay: ParsedReplay,
     events: Vec<ReplayEvent>,
     timing: ReplayParseTiming,
+}
+
+struct ParsedReplayParts {
+    path: String,
+    base_build: u32,
+    header: ReplayHeader,
+    details: Option<ReplayDetails>,
+    details_backup: Option<ReplayDetails>,
+    init_data: Option<ReplayInitData>,
+    metadata: Option<ReplayMetadata>,
+    game_events: Vec<GameEvent>,
+    message_events: Vec<MessageEvent>,
+    tracker_events: Vec<TrackerEvent>,
+    attributes: Option<ReplayAttributes>,
+    attribute_scopes: Vec<ReplayAttributeScope>,
 }
 
 impl ParsedReplayWithEvents {
@@ -66,33 +81,20 @@ impl ParsedReplayWithEvents {
 }
 
 impl ParsedReplay {
-    fn new(
-        path: String,
-        base_build: u32,
-        header: ReplayHeader,
-        details: Option<ReplayDetails>,
-        details_backup: Option<ReplayDetails>,
-        init_data: Option<ReplayInitData>,
-        metadata: Option<ReplayMetadata>,
-        game_events: Vec<GameEvent>,
-        message_events: Vec<MessageEvent>,
-        tracker_events: Vec<TrackerEvent>,
-        attributes: Option<ReplayAttributes>,
-        attribute_scopes: Vec<ReplayAttributeScope>,
-    ) -> Self {
+    fn new(parts: ParsedReplayParts) -> Self {
         Self {
-            path,
-            base_build,
-            header,
-            details,
-            details_backup,
-            init_data,
-            metadata,
-            game_events,
-            message_events,
-            tracker_events,
-            attributes,
-            attribute_scopes,
+            path: parts.path,
+            base_build: parts.base_build,
+            header: parts.header,
+            details: parts.details,
+            details_backup: parts.details_backup,
+            init_data: parts.init_data,
+            metadata: parts.metadata,
+            game_events: parts.game_events,
+            message_events: parts.message_events,
+            tracker_events: parts.tracker_events,
+            attributes: parts.attributes,
+            attribute_scopes: parts.attribute_scopes,
         }
     }
 
@@ -436,10 +438,10 @@ impl ReplayParser {
                 Err(_) => continue,
             };
 
-            if let Ok(value) = protocol.decode_replay_initdata(raw) {
-                if let Ok(parsed) = ReplayInitData::from_value(value) {
-                    return Some(parsed);
-                }
+            if let Ok(value) = protocol.decode_replay_initdata(raw)
+                && let Ok(parsed) = ReplayInitData::from_value(value)
+            {
+                return Some(parsed);
             }
         }
 
@@ -525,7 +527,7 @@ impl ReplayParser {
             u32::from_le_bytes([header[8], header[9], header[10], header[11]]) as usize;
 
         let mut content = vec![0u8; user_data_header_size];
-        file.seek(SeekFrom::Current(0))?;
+        file.stream_position()?;
         file.read_exact(&mut content)?;
 
         Ok(content)
@@ -943,8 +945,8 @@ impl ReplayParser {
         };
 
         let build_result_start = Instant::now();
-        let replay = ParsedReplay::new(
-            path.display().to_string(),
+        let replay = ParsedReplay::new(ParsedReplayParts {
+            path: path.display().to_string(),
             base_build,
             header,
             details,
@@ -956,7 +958,7 @@ impl ReplayParser {
             tracker_events,
             attributes,
             attribute_scopes,
-        );
+        });
         timing.build_result = build_result_start.elapsed();
         let timing = timing.finish(total_start.elapsed());
         Ok(ParsedReplayWithEvents::new(replay, ordered_events, timing))

@@ -18,7 +18,7 @@ fn update_analysis_replay_cache_slots_populates_shared_cache() {
     let replays = Arc::new(Mutex::new(HashMap::<String, ReplayInfo>::new()));
     let replay = replay_with_file("cached.SC2Replay", "Victory");
 
-    TauriOverlayOps::update_analysis_replay_cache_slots(&[replay.clone()], &replays);
+    TauriOverlayOps::update_analysis_replay_cache_slots(std::slice::from_ref(&replay), &replays);
 
     let shared_cache = replays
         .lock()
@@ -40,8 +40,8 @@ fn update_analysis_replay_cache_slots_preserves_entries_missing_from_update() {
     let existing = replay_with_file("existing.SC2Replay", "Victory");
     let incoming = replay_with_file("incoming.SC2Replay", "Defeat");
 
-    TauriOverlayOps::update_analysis_replay_cache_slots(&[existing.clone()], &replays);
-    TauriOverlayOps::update_analysis_replay_cache_slots(&[incoming.clone()], &replays);
+    TauriOverlayOps::update_analysis_replay_cache_slots(std::slice::from_ref(&existing), &replays);
+    TauriOverlayOps::update_analysis_replay_cache_slots(std::slice::from_ref(&incoming), &replays);
 
     let shared_cache = replays
         .lock()

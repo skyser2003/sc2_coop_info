@@ -568,10 +568,10 @@ impl BackendState {
 
         self.replace_active_settings(&sanitized);
 
-        if previous_start_with_windows != sanitized.start_with_windows() {
-            if let Err(error) = sanitized.sync_start_with_windows_registration() {
-                crate::sco_log!("[SCO/settings] Failed to sync start_with_windows: {error}");
-            }
+        if previous_start_with_windows != sanitized.start_with_windows()
+            && let Err(error) = sanitized.sync_start_with_windows_registration()
+        {
+            crate::sco_log!("[SCO/settings] Failed to sync start_with_windows: {error}");
         }
 
         Ok(())
@@ -713,20 +713,19 @@ impl BackendState {
         let settings = self.read_settings_memory();
         let account_root = settings.account_folder().trim().to_string();
 
-        if !account_root.is_empty() {
-            if let Ok(cache) = self.discovered_main_names.lock() {
-                if let Some(cached) = cache.get(&account_root) {
-                    return cached.clone();
-                }
-            }
+        if !account_root.is_empty()
+            && let Ok(cache) = self.discovered_main_names.lock()
+            && let Some(cached) = cache.get(&account_root)
+        {
+            return cached.clone();
         }
 
         let names = settings.configured_main_names();
 
-        if !account_root.is_empty() {
-            if let Ok(mut cache) = self.discovered_main_names.lock() {
-                cache.insert(account_root, names.clone());
-            }
+        if !account_root.is_empty()
+            && let Ok(mut cache) = self.discovered_main_names.lock()
+        {
+            cache.insert(account_root, names.clone());
         }
 
         names
@@ -736,20 +735,19 @@ impl BackendState {
         let settings = self.read_settings_memory();
         let account_root = settings.account_folder().trim().to_string();
 
-        if !account_root.is_empty() {
-            if let Ok(cache) = self.discovered_main_handles.lock() {
-                if let Some(cached) = cache.get(&account_root) {
-                    return cached.clone();
-                }
-            }
+        if !account_root.is_empty()
+            && let Ok(cache) = self.discovered_main_handles.lock()
+            && let Some(cached) = cache.get(&account_root)
+        {
+            return cached.clone();
         }
 
         let handles = settings.configured_main_handles();
 
-        if !account_root.is_empty() {
-            if let Ok(mut cache) = self.discovered_main_handles.lock() {
-                cache.insert(account_root, handles.clone());
-            }
+        if !account_root.is_empty()
+            && let Ok(mut cache) = self.discovered_main_handles.lock()
+        {
+            cache.insert(account_root, handles.clone());
         }
 
         handles

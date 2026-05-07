@@ -212,10 +212,10 @@ impl CacheAnalysisPaths {
         match manifest_dir_str {
             Ok(manifest_dir_str) => PathBuf::from(manifest_dir_str),
             Err(_) => {
-                if let Ok(abs) = std::env::current_exe() {
-                    if let Some(parent) = abs.parent() {
-                        return parent.to_path_buf();
-                    }
+                if let Ok(abs) = std::env::current_exe()
+                    && let Some(parent) = abs.parent()
+                {
+                    return parent.to_path_buf();
                 }
 
                 PathBuf::from("./")

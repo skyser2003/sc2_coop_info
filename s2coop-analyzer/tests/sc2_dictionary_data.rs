@@ -55,10 +55,10 @@ pub(crate) fn resolve_sc2_dictionary_data_dir(required_files: &[&str]) -> Result
     );
     add_ancestor_candidates(&mut candidates, &mut seen, cwd.as_path());
 
-    if let Ok(current_exe) = std::env::current_exe() {
-        if let Some(parent) = current_exe.parent() {
-            add_ancestor_candidates(&mut candidates, &mut seen, parent);
-        }
+    if let Ok(current_exe) = std::env::current_exe()
+        && let Some(parent) = current_exe.parent()
+    {
+        add_ancestor_candidates(&mut candidates, &mut seen, parent);
     }
 
     for candidate in candidates {

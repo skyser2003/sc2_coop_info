@@ -352,24 +352,15 @@ impl ReplayStatsCommanderCache {
     }
 
     fn build_uses_zagara_baneling_value_adjustment(commander: CommanderKind) -> bool {
-        match commander {
-            CommanderKind::Zagara => true,
-            _ => false,
-        }
+        matches!(commander, CommanderKind::Zagara)
     }
 
     fn build_uses_tychus_first_outlaw_discount(commander: CommanderKind) -> bool {
-        match commander {
-            CommanderKind::Tychus => true,
-            _ => false,
-        }
+        matches!(commander, CommanderKind::Tychus)
     }
 
     fn build_uses_dehaka_army_value_spike_filter(commander: CommanderKind) -> bool {
-        match commander {
-            CommanderKind::Dehaka => true,
-            _ => false,
-        }
+        matches!(commander, CommanderKind::Dehaka)
     }
 }
 
@@ -652,16 +643,15 @@ impl UnitCostRules {
         let mut rules = Self::default();
 
         match commander_cache.commander() {
-            CommanderKind::Abathur => match commander_cache.prestige() {
-                PrestigeKind::EssenceHoarder => {
+            CommanderKind::Abathur => {
+                if commander_cache.prestige() == PrestigeKind::EssenceHoarder {
                     rules
                         .after_non_zero_check
                         .push(UnitCostRule::scale_gas_all(1.2));
                 }
-                _ => {}
-            },
-            CommanderKind::Alarak => match commander_cache.prestige() {
-                PrestigeKind::ShadowOfDeath => {
+            }
+            CommanderKind::Alarak => {
+                if commander_cache.prestige() == PrestigeKind::ShadowOfDeath {
                     rules
                         .before_non_zero_check
                         .push(UnitCostRule::replace_exact([
@@ -672,33 +662,30 @@ impl UnitCostRules {
                             ("VoidRayTaldarim", TotalUnitCost::from_slice(&[125.0, 75.0])),
                         ]));
                 }
-                _ => {}
-            },
-            CommanderKind::Artanis => match commander_cache.prestige() {
-                PrestigeKind::ValorousInspirator => {
+            }
+            CommanderKind::Artanis => {
+                if commander_cache.prestige() == PrestigeKind::ValorousInspirator {
                     rules.after_non_zero_check.push(UnitCostRule::scale_except(
                         ["PhotonCannon", "Observer", "ObserverSiegeMode"],
                         1.3,
                         1.3,
                     ));
                 }
-                _ => {}
-            },
-            CommanderKind::Fenix => match commander_cache.prestige() {
-                PrestigeKind::NetworkAdministrator => {
+            }
+            CommanderKind::Fenix => {
+                if commander_cache.prestige() == PrestigeKind::NetworkAdministrator {
                     rules.after_non_zero_check.push(UnitCostRule::scale_except(
                         ["PhotonCannon", "Observer", "ObserverSiegeMode"],
                         0.5,
                         0.5,
                     ));
                 }
-                _ => {}
-            },
+            }
             CommanderKind::Horner => {
                 Self::add_horner_rules(&mut rules, commander_cache.prestige());
             }
-            CommanderKind::Karax => match commander_cache.prestige() {
-                PrestigeKind::TemplarApparent => {
+            CommanderKind::Karax => {
+                if commander_cache.prestige() == PrestigeKind::TemplarApparent {
                     rules.after_non_zero_check.push(UnitCostRule::scale_except(
                         [
                             "ShieldBattery",
@@ -711,8 +698,7 @@ impl UnitCostRules {
                         0.6,
                     ));
                 }
-                _ => {}
-            },
+            }
             CommanderKind::Kerrigan => {
                 if let Some(coef) = commander_cache.kerrigan_gas_factor() {
                     rules
@@ -726,8 +712,8 @@ impl UnitCostRules {
             CommanderKind::Raynor => {
                 Self::add_raynor_rules(&mut rules, commander_cache.prestige());
             }
-            CommanderKind::Stetmann => match commander_cache.prestige() {
-                PrestigeKind::OilBaron => {
+            CommanderKind::Stetmann => {
+                if commander_cache.prestige() == PrestigeKind::OilBaron {
                     rules
                         .after_non_zero_check
                         .push(UnitCostRule::scale_mineral_except(
@@ -742,10 +728,9 @@ impl UnitCostRules {
                             1.4,
                         ));
                 }
-                _ => {}
-            },
-            CommanderKind::Stukov => match commander_cache.prestige() {
-                PrestigeKind::FrightfulFleshwelder => {
+            }
+            CommanderKind::Stukov => {
+                if commander_cache.prestige() == PrestigeKind::FrightfulFleshwelder {
                     rules.after_non_zero_check.push(UnitCostRule::scale_exact(
                         [
                             "SILiberator",
@@ -759,10 +744,9 @@ impl UnitCostRules {
                         0.7,
                     ));
                 }
-                _ => {}
-            },
-            CommanderKind::Swann => match commander_cache.prestige() {
-                PrestigeKind::GreaseMonkey => {
+            }
+            CommanderKind::Swann => {
+                if commander_cache.prestige() == PrestigeKind::GreaseMonkey {
                     rules
                         .after_non_zero_check
                         .push(UnitCostRule::scale_gas_except(
@@ -775,23 +759,21 @@ impl UnitCostRules {
                             1.5,
                         ));
                 }
-                _ => {}
-            },
-            CommanderKind::Tychus => match commander_cache.prestige() {
-                PrestigeKind::TechnicalRecruiter => {
+            }
+            CommanderKind::Tychus => {
+                if commander_cache.prestige() == PrestigeKind::TechnicalRecruiter {
                     rules.after_non_zero_check.push(UnitCostRule::scale_except(
                         ["TychusSCVAutoTurret"],
                         1.5,
                         1.5,
                     ));
                 }
-                _ => {}
-            },
+            }
             CommanderKind::Zagara => {
                 Self::add_zagara_rules(&mut rules, commander_cache.prestige());
             }
-            CommanderKind::Zeratul => match commander_cache.prestige() {
-                PrestigeKind::KnowledgeSeeker => {
+            CommanderKind::Zeratul => {
+                if commander_cache.prestige() == PrestigeKind::KnowledgeSeeker {
                     rules.after_non_zero_check.push(UnitCostRule::scale_except(
                         [
                             "ZeratulObserver",
@@ -804,8 +786,7 @@ impl UnitCostRules {
                         1.25,
                     ));
                 }
-                _ => {}
-            },
+            }
             CommanderKind::Dehaka | CommanderKind::Other => {}
         }
 
@@ -1044,27 +1025,24 @@ impl ReplayDroneIdentifierCore {
                         .and_then(|value| value.TargetUnit.as_ref())
                         .and_then(|value| value.m_snapshotPoint.as_ref())
                         .and_then(parse_snapshot_point)
+                        && !self.refineries.contains(&snapshot_key)
                     {
-                        if !self.refineries.contains(&snapshot_key) {
-                            self.drones += 1;
-                            self.refineries.insert(snapshot_key);
-                        }
+                        self.drones += 1;
+                        self.refineries.insert(snapshot_key);
                     }
                 }
             }
             ReplayDroneCommandEventKind::CommandUpdateTargetUnit => {
-                if self.recently_used {
-                    if let Some(snapshot_key) = event
+                if self.recently_used
+                    && let Some(snapshot_key) = event
                         .m_target
                         .as_ref()
                         .and_then(|value| value.m_snapshotPoint.as_ref())
                         .and_then(parse_snapshot_point)
-                    {
-                        if !self.refineries.contains(&snapshot_key) {
-                            self.drones += 1;
-                            self.refineries.insert(snapshot_key);
-                        }
-                    }
+                    && !self.refineries.contains(&snapshot_key)
+                {
+                    self.drones += 1;
+                    self.refineries.insert(snapshot_key);
                 }
             }
         }
@@ -1248,21 +1226,20 @@ impl ReplayStatsCounterCore {
     fn calculate_army_value(&mut self, unit_counts: &indexmap::IndexMap<String, [i64; 4]>) -> i64 {
         let mut total = 0.0_f64;
         for (unit, values) in unit_counts {
-            let cost = self.unit_cost(&unit);
+            let cost = self.unit_cost(unit);
             total +=
                 self.calculate_total_unit_value(unit, values[0] as f64, values[1] as f64, &cost);
         }
 
         total += self.army_value_offset;
 
-        if self.commander_cache.uses_tychus_first_outlaw_discount() && !self.tychus_has_first_outlaw
-        {
-            if unit_counts
+        if self.commander_cache.uses_tychus_first_outlaw_discount()
+            && !self.tychus_has_first_outlaw
+            && unit_counts
                 .keys()
                 .any(|unit| self.dictionaries.contains_outlaw(unit))
-            {
-                self.tychus_has_first_outlaw = true;
-            }
+        {
+            self.tychus_has_first_outlaw = true;
         }
         if self.tychus_has_first_outlaw && total > 600.0 {
             total -= 600.0;

@@ -75,7 +75,7 @@ impl CliProgressBar {
             return;
         }
 
-        progress_bar.println(message.to_string());
+        progress_bar.println(message);
     }
 }
 

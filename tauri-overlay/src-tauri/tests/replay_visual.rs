@@ -3,8 +3,8 @@ use s2protocol_port::{
     SnapshotPoint, SnapshotPointValue, TrackerEvent, UnitTag,
 };
 use sco_tauri_overlay::{
-    ReplayVisualBuildInput, ReplayVisualDictionaries, ReplayVisualOps, ReplayVisualOwnerKind,
-    ReplayVisualPlayer, ReplayVisualUnitGroup,
+    ReplayVisualBuildInput, ReplayVisualDictionaries, ReplayVisualMapSize, ReplayVisualOps,
+    ReplayVisualOwnerKind, ReplayVisualPlayer, ReplayVisualReplayInfo, ReplayVisualUnitGroup,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -163,12 +163,8 @@ fn visual_dictionaries_with_omitted_units() -> ReplayVisualDictionaries {
 
 fn visual_input() -> ReplayVisualBuildInput {
     ReplayVisualBuildInput::new(
-        "synthetic.SC2Replay",
-        "Void Launch",
-        "Victory",
-        180.0,
-        200.0,
-        200.0,
+        ReplayVisualReplayInfo::new("synthetic.SC2Replay", "Void Launch", "Victory", 180.0),
+        ReplayVisualMapSize::new(200.0, 200.0),
         vec![
             ReplayVisualPlayer {
                 player_id: 1,

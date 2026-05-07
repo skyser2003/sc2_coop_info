@@ -216,13 +216,12 @@ impl ParsedReplayInput {
                 continue;
             };
 
-            if player.commander.trim().is_empty() {
-                if let Some(commander_name) = commander_by_player
+            if player.commander.trim().is_empty()
+                && let Some(commander_name) = commander_by_player
                     .get(&pid)
                     .filter(|value| !value.trim().is_empty())
-                {
-                    player.commander = commander_name.clone();
-                }
+            {
+                player.commander = commander_name.clone();
             }
 
             if let Some(prestige_name) = prestige_by_player
@@ -351,16 +350,16 @@ impl ReplayReportDetailedInput {
     }
 
     pub(crate) fn selected_main_player_pid(&self, main_player_handles: &HashSet<String>) -> u8 {
-        if let Some(positions) = self.positions.as_ref() {
-            if matches!(positions.main, 1 | 2) {
-                return positions.main;
-            }
+        if let Some(positions) = self.positions.as_ref()
+            && matches!(positions.main, 1 | 2)
+        {
+            return positions.main;
         }
 
-        if let Some(main_position) = self.main_position {
-            if matches!(main_position, 1 | 2) {
-                return main_position;
-            }
+        if let Some(main_position) = self.main_position
+            && matches!(main_position, 1 | 2)
+        {
+            return main_position;
         }
 
         self.parser.selected_main_player_pid(main_player_handles)

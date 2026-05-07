@@ -19,10 +19,10 @@ impl PathManagerOps {
 
 impl PathManagerOps {
     fn is_prod_env() -> bool {
-        if let Ok(mode) = env::var("SC2_RUNTIME_MODE") {
-            if mode.to_lowercase() == "production" {
-                return true;
-            }
+        if let Ok(mode) = env::var("SC2_RUNTIME_MODE")
+            && mode.to_lowercase() == "production"
+        {
+            return true;
         }
 
         !tauri::is_dev()
@@ -60,10 +60,10 @@ impl PathManagerOps {
         } else {
             let cur_path = current_exe();
 
-            if let Ok(cur_path) = cur_path {
-                if let Some(cur_dir) = cur_path.parent() {
-                    return cur_dir.join("data");
-                }
+            if let Ok(cur_path) = cur_path
+                && let Some(cur_dir) = cur_path.parent()
+            {
+                return cur_dir.join("data");
             }
         }
 

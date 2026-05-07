@@ -44,18 +44,24 @@ pub use command_payloads::{
 pub use game_launch_detector::{GameLaunchDetector, GameLaunchStatus};
 pub use logging::LoggingOps;
 pub use monitor_settings::{MonitorDescriptor, MonitorSettingsOps};
-pub use overlay_info::{OverlayInfoOps, ResolvedHotkeyBinding};
+pub use overlay_info::{
+    OverlayInfoOps, OverlayMonitorGeometry, OverlayWindowBoundsInput, OverlayWindowOffsets,
+    OverlayWindowScale, ResolvedHotkeyBinding,
+};
 pub use path_manager::PathManagerOps;
 pub use randomizer::{RandomizerMutatorResult, RandomizerOps, RandomizerRequest, RandomizerResult};
-pub use replay_analysis::{PlayerRowPayload, ReplayAnalysis, ReplayAnalysisOps, WeeklyRowPayload};
+pub use replay_analysis::{
+    PlayerRowPayload, ReplayAnalysis, ReplayAnalysisOps, StatsResponseBuildInput, WeeklyRowPayload,
+};
 pub use replay_info::{
     CommanderUnitRollup, GamesRowPayload, ReplayChatMessage, ReplayChatPayload, ReplayInfo,
     ReplayPlayerInfo, UnitStatsRollup,
 };
 pub use replay_visual::{
     ReplayVisualAssault, ReplayVisualBuildInput, ReplayVisualContext, ReplayVisualDictionaries,
-    ReplayVisualFrame, ReplayVisualOps, ReplayVisualOwnerKind, ReplayVisualPayload,
-    ReplayVisualPlayer, ReplayVisualUnit, ReplayVisualUnitCount, ReplayVisualUnitGroup,
+    ReplayVisualFrame, ReplayVisualMapSize, ReplayVisualOps, ReplayVisualOwnerKind,
+    ReplayVisualPayload, ReplayVisualPlayer, ReplayVisualReplayInfo, ReplayVisualUnit,
+    ReplayVisualUnitCount, ReplayVisualUnitGroup,
 };
 pub use shared_types::*;
 pub use stats_state::{
@@ -266,22 +272,19 @@ impl TauriOverlayOps {
                 show_charts,
             );
         }
-        if overlay_hotkeys_changed {
-            if let Err(error) = overlay_info::OverlayInfoOps::register_overlay_hotkeys(app) {
-                crate::sco_log!("[SCO/hotkey] Failed to reload hotkeys: {error}");
-            }
+        if overlay_hotkeys_changed
+            && let Err(error) = overlay_info::OverlayInfoOps::register_overlay_hotkeys(app)
+        {
+            crate::sco_log!("[SCO/hotkey] Failed to reload hotkeys: {error}");
         }
-        if overlay_placement_changed {
-            if let Some(window) = app.get_webview_window("overlay") {
-                if let Err(error) =
-                    overlay_info::OverlayInfoOps::apply_overlay_placement_from_settings(
-                        &window,
-                        &next_settings,
-                    )
-                {
-                    crate::sco_log!("[SCO/overlay] Failed to apply overlay placement: {error}");
-                }
-            }
+        if overlay_placement_changed
+            && let Some(window) = app.get_webview_window("overlay")
+            && let Err(error) = overlay_info::OverlayInfoOps::apply_overlay_placement_from_settings(
+                &window,
+                &next_settings,
+            )
+        {
+            crate::sco_log!("[SCO/overlay] Failed to apply overlay placement: {error}");
         }
         if performance_runtime_changed {
             performance_overlay::PerformanceOverlayOps::apply_settings(app);
@@ -1793,13 +1796,13 @@ impl TauriOverlayOps {
         let temp_path = PathBuf::from(format!("{}_temp", cache_path.display()));
 
         for path in [cache_path, temp_path] {
-            if let Err(error) = std::fs::remove_file(&path) {
-                if error.kind() != std::io::ErrorKind::NotFound {
-                    crate::sco_log!(
-                        "[SCO/cache] failed to delete analysis cache file '{}': {error}",
-                        path.display()
-                    );
-                }
+            if let Err(error) = std::fs::remove_file(&path)
+                && error.kind() != std::io::ErrorKind::NotFound
+            {
+                crate::sco_log!(
+                    "[SCO/cache] failed to delete analysis cache file '{}': {error}",
+                    path.display()
+                );
             }
         }
     }
@@ -2521,28 +2524,28 @@ impl TauriOverlayOps {
                 }
             };
 
-            if let Ok(mut guard) = analysis_state.lock() {
-                if include_detailed {
-                    let replay_count = analysis_outcome.reported_replay_count();
-                    if analysis_outcome.analysis_completed() {
-                        guard.set_analysis_running_status(mode, "refreshing replay summaries");
-                        guard.set_message(format!(
-                            "Generated '{}' with {} replay entr{}.",
-                            PathManagerOps::get_cache_path().display(),
-                            replay_count,
-                            if replay_count == 1 { "y" } else { "ies" }
-                        ));
-                    } else {
-                        guard.set_analysis_running(false);
-                        guard.set_detailed_analysis_status(TauriOverlayOps::analysis_status_text(
-                            mode, "stopped",
-                        ));
-                        guard.set_message(format!(
-                            "Detailed analysis stopped after saving {} replay entr{}.",
-                            replay_count,
-                            if replay_count == 1 { "y" } else { "ies" }
-                        ));
-                    }
+            if let Ok(mut guard) = analysis_state.lock()
+                && include_detailed
+            {
+                let replay_count = analysis_outcome.reported_replay_count();
+                if analysis_outcome.analysis_completed() {
+                    guard.set_analysis_running_status(mode, "refreshing replay summaries");
+                    guard.set_message(format!(
+                        "Generated '{}' with {} replay entr{}.",
+                        PathManagerOps::get_cache_path().display(),
+                        replay_count,
+                        if replay_count == 1 { "y" } else { "ies" }
+                    ));
+                } else {
+                    guard.set_analysis_running(false);
+                    guard.set_detailed_analysis_status(TauriOverlayOps::analysis_status_text(
+                        mode, "stopped",
+                    ));
+                    guard.set_message(format!(
+                        "Detailed analysis stopped after saving {} replay entr{}.",
+                        replay_count,
+                        if replay_count == 1 { "y" } else { "ies" }
+                    ));
                 }
             }
 
@@ -3554,10 +3557,10 @@ impl TauriOverlayOps {
         crate::sco_log!("[SCO/show] processing existing replay file='{}'", file);
 
         let replay_hash = ReplayFileIdentity::calculate_hash(path);
-        if let Some(existing) = state.cached_replay_by_hash(&replay_hash) {
-            if existing.is_detailed {
-                return (ReplayProcessOutcome::Processed, Some(existing));
-            }
+        if let Some(existing) = state.cached_replay_by_hash(&replay_hash)
+            && existing.is_detailed
+        {
+            return (ReplayProcessOutcome::Processed, Some(existing));
         }
 
         let resources = state.replay_analysis_resources().ok();
@@ -4372,13 +4375,15 @@ async fn config_stats_get(
         let (main_names, main_handles, scan_progress, dictionary) = state_snapshot;
         let payload = match dictionary.as_deref() {
             Some(dictionary) => ReplayAnalysis::build_stats_response_with_dictionary(
-                &path_for_worker,
-                &stats,
-                &replays,
-                &stats_current_replay_files,
-                scan_progress.clone(),
-                &main_names,
-                &main_handles,
+                StatsResponseBuildInput::new(
+                    &path_for_worker,
+                    &stats,
+                    &replays,
+                    &stats_current_replay_files,
+                    scan_progress.clone(),
+                    &main_names,
+                    &main_handles,
+                ),
                 dictionary,
             )?,
             None => match stats.try_lock() {
@@ -4791,21 +4796,18 @@ async fn config_stats_action(
             );
         }
         "set_detailed_analysis_atstart" => {
-            if let Some(payload) = body.as_ref() {
-                if let Some(enabled) = payload.get("enabled").and_then(Value::as_bool) {
-                    stats.set_detailed_analysis_atstart(enabled);
-                    if let Err(error) =
-                        state.persist_bool_setting("detailed_analysis_atstart", enabled)
-                    {
-                        crate::sco_log!(
-                            "[SCO/settings] Failed to save detailed_analysis_atstart: {error}"
-                        );
-                    }
-                    stats.set_message(TauriOverlayOps::analysis_at_start_message(enabled));
+            if let Some(payload) = body.as_ref()
+                && let Some(enabled) = payload.get("enabled").and_then(Value::as_bool)
+            {
+                stats.set_detailed_analysis_atstart(enabled);
+                if let Err(error) = state.persist_bool_setting("detailed_analysis_atstart", enabled)
+                {
                     crate::sco_log!(
-                        "[SCO/stats] set_detailed_analysis_atstart requested: {enabled}"
+                        "[SCO/settings] Failed to save detailed_analysis_atstart: {error}"
                     );
                 }
+                stats.set_message(TauriOverlayOps::analysis_at_start_message(enabled));
+                crate::sco_log!("[SCO/stats] set_detailed_analysis_atstart requested: {enabled}");
             }
             crate::sco_log!(
                 "[SCO/stats] set_detailed_analysis_atstart completed in {}ms",
@@ -4947,46 +4949,38 @@ pub fn run() {
                 }
             }
             tauri::WindowEvent::Moved(_) => {
-                if window.label() == "performance" {
-                    if let Some(performance_window) =
+                if window.label() == "performance"
+                    && let Some(performance_window) =
                         window.app_handle().get_webview_window("performance")
                     {
                         performance_overlay::PerformanceOverlayOps::persist_geometry(&performance_window);
                     }
-                }
             }
             tauri::WindowEvent::Resized(_) => {
-                if window.label() == "overlay" {
-                    if let Some(overlay_window) = window.app_handle().get_webview_window("overlay")
-                    {
-                        if let Err(error) = overlay_info::OverlayInfoOps::stabilize_overlay_bounds(&overlay_window)
+                if window.label() == "overlay"
+                    && let Some(overlay_window) = window.app_handle().get_webview_window("overlay")
+                        && let Err(error) = overlay_info::OverlayInfoOps::stabilize_overlay_bounds(&overlay_window)
                         {
                             crate::sco_log!(
                                 "[SCO/overlay] Failed to stabilize overlay bounds after resize: {error}"
                             );
                         }
-                    }
-                }
-                if window.label() == "performance" {
-                    if let Some(performance_window) =
+                if window.label() == "performance"
+                    && let Some(performance_window) =
                         window.app_handle().get_webview_window("performance")
                     {
                         performance_overlay::PerformanceOverlayOps::persist_geometry(&performance_window);
                     }
-                }
             }
             tauri::WindowEvent::ScaleFactorChanged { .. } => {
-                if window.label() == "overlay" {
-                    if let Some(overlay_window) = window.app_handle().get_webview_window("overlay")
-                    {
-                        if let Err(error) = overlay_info::OverlayInfoOps::stabilize_overlay_bounds(&overlay_window)
+                if window.label() == "overlay"
+                    && let Some(overlay_window) = window.app_handle().get_webview_window("overlay")
+                        && let Err(error) = overlay_info::OverlayInfoOps::stabilize_overlay_bounds(&overlay_window)
                         {
                             crate::sco_log!(
                                 "[SCO/overlay] Failed to stabilize overlay bounds after scale change: {error}"
                             );
                         }
-                    }
-                }
             }
             _ => {}
         })
@@ -5030,11 +5024,10 @@ pub fn run() {
             let _ = app
                 .get_webview_window("overlay")
                 .and_then(|w| w.set_ignore_cursor_events(true).ok());
-            if let Some(window) = app.get_webview_window("overlay") {
-                if let Err(error) = overlay_info::OverlayInfoOps::apply_overlay_placement(&window) {
+            if let Some(window) = app.get_webview_window("overlay")
+                && let Err(error) = overlay_info::OverlayInfoOps::apply_overlay_placement(&window) {
                     crate::sco_log!("Could not apply saved overlay placement: {error}");
                 }
-            }
             let _ = app
                 .get_webview_window("performance")
                 .and_then(|w| w.set_always_on_top(true).ok());
@@ -5047,11 +5040,10 @@ pub fn run() {
             let _ = app
                 .get_webview_window("performance")
                 .and_then(|w| w.set_ignore_cursor_events(true).ok());
-            if let Some(window) = app.get_webview_window("performance") {
-                if let Err(error) = performance_overlay::PerformanceOverlayOps::apply_saved_geometry(&window) {
+            if let Some(window) = app.get_webview_window("performance")
+                && let Err(error) = performance_overlay::PerformanceOverlayOps::apply_saved_geometry(&window) {
                     crate::sco_log!("Could not apply saved performance placement: {error}");
                 }
-            }
 
             if let Some(tray_menu) = overlay_info::OverlayInfoOps::build_tray_menu(app.app_handle()) {
                 let mut tray_builder = TrayIconBuilder::new()

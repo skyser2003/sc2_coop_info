@@ -39,8 +39,9 @@ use rayon::ThreadPoolBuilder;
 use rayon::iter::{IntoParallelRefIterator, ParallelBridge, ParallelIterator};
 use replay_event_handlers::{
     IdentifiedWavesMap, ReplayEventHandlers, ReplayEventStringSets, ReplayMapAnalysisFlags,
-    ReplayPlayerIdSet, StatsCounterTarget, UnitBornOrInitEventFields, UnitDiedEventFields,
-    UnitStateMap, UnitTypeChangeEventFields, UnitTypeCountMap, WaveUnitsState,
+    ReplayPlayerIdSet, StatsCounterTarget, TextListMapping, UnitBornOrInitEventFields,
+    UnitBornOrInitUnitIds, UnitDiedEventFields, UnitEventPosition, UnitSnapshot, UnitStateMap,
+    UnitTypeChangeEventFields, UnitTypeCountMap, WaveUnitsState,
 };
 
 const LOCUST_SOURCE_UNITS: [&str; 5] = [
@@ -86,6 +87,160 @@ const CUSTOM_KILL_ICON_KEYS: [&str; 10] = [
 ];
 
 type UnitStats = (i64, i64, i64, f64);
+
+struct ReplayMutatorIdentificationInput<'a> {
+    events: &'a [ReplayEvent],
+    mutators_all: &'a [String],
+    mutators_ui: &'a [String],
+    mutator_ids: &'a crate::dictionary_data::MutatorIdsJson,
+    cached_mutators: &'a crate::dictionary_data::CachedMutatorsJson,
+    extension: bool,
+    mm: bool,
+    mutator_context: Option<&'a ReplayMutatorParseContext>,
+}
+
+struct FillUnitKillsAndIconsInput<'a> {
+    base_icons: &'a BTreeMap<String, u64>,
+    player: i64,
+    main_player: i64,
+    unit_counts: &'a UnitTypeCountMap,
+    ally_kills_counted_toward_main: i64,
+    killcounts: &'a [i64],
+    unit_name_dict: &'a UnitNamesJson,
+    unit_add_kills_to: &'a UnitAddKillsToJson,
+    unit_add_losses_to: &'a HashMap<String, String>,
+    analysis_sets: &'a ReplayAnalysisSets,
+}
+
+struct UpgradeEventHandlerInput<'a> {
+    upg_name: &'a str,
+    upg_pid: i64,
+    upgrade_count: i64,
+    main_player: i64,
+    ally_player: i64,
+    commander_upgrades: &'a HashMap<String, String>,
+    mastery_upgrade_indices: &'a HashMap<String, i64>,
+    prestige_upgrade_names: &'a HashMap<String, String>,
+}
+
+struct UnitBornOrInitHandlerInput<'event, 'unit> {
+    event: &'event UnitBornOrInitEventFields<'unit>,
+    main_player: i64,
+    ally_player: i64,
+    amon_players: &'event ReplayPlayerIdSet,
+    unit_dict: &'event mut UnitStateMap,
+    start_time: f64,
+    unit_type_dict_main: &'event mut UnitTypeCountMap,
+    unit_type_dict_ally: &'event mut UnitTypeCountMap,
+    unit_type_dict_amon: &'event mut UnitTypeCountMap,
+    mutator_dehaka_drag_unit_ids: &'event mut HashSet<i64>,
+    murvar_spawns: &'event mut HashSet<i64>,
+    glevig_spawns: &'event mut HashSet<i64>,
+    broodlord_broodlings: &'event mut HashSet<i64>,
+    outlaw_order: &'event mut Vec<String>,
+    outlaw_order_seen: &'event mut HashSet<String>,
+    wave_units: &'event mut WaveUnitsState,
+    identified_waves: &'event mut IdentifiedWavesMap,
+    abathur_kill_locusts: &'event mut HashSet<i64>,
+    last_biomass_position: [i64; 3],
+    revival_types: &'event HashMap<String, String>,
+    primal_combat_predecessors: &'event HashMap<String, String>,
+    tychus_outlaws: &'event HashSet<String>,
+    units_in_waves: &'event HashSet<String>,
+    string_sets: &'event ReplayEventStringSets,
+}
+
+struct UnitTypeChangeHandlerInput<'event, 'unit> {
+    event: &'event UnitTypeChangeEventFields<'unit>,
+    map_flags: &'event ReplayMapAnalysisFlags,
+    main_player: i64,
+    ally_player: i64,
+    amon_players: &'event ReplayPlayerIdSet,
+    unit_dict: &'event mut UnitStateMap,
+    unit_type_dict_main: &'event mut UnitTypeCountMap,
+    unit_type_dict_ally: &'event mut UnitTypeCountMap,
+    unit_type_dict_amon: &'event mut UnitTypeCountMap,
+    start_time: f64,
+    bonus_timings: &'event mut Vec<f64>,
+    legacy_spawn_filter_unit_id: i64,
+    glevig_spawns: &'event HashSet<i64>,
+    murvar_spawns: &'event HashSet<i64>,
+    zagaras_dummy_zerglings: &'event mut HashSet<i64>,
+    broodlord_broodlings: &'event HashSet<i64>,
+    research_vessel_landed_timing: Option<i64>,
+    units_killed_in_morph: &'event HashSet<String>,
+    unit_name_dict: &'event UnitNamesJson,
+    unit_add_losses_to: &'event HashSet<String>,
+    dont_count_morphs: &'event HashSet<String>,
+    string_sets: &'event ReplayEventStringSets,
+}
+
+struct UnitOwnerChangeHandlerInput<'a> {
+    event_unit_id: i64,
+    map_flags: &'a ReplayMapAnalysisFlags,
+    control_pid: i64,
+    main_player: i64,
+    ally_player: i64,
+    amon_players: &'a ReplayPlayerIdSet,
+    unit_dict: &'a mut UnitStateMap,
+    game_time: f64,
+    bonus_timings: &'a mut Vec<f64>,
+    mw_bonus_initial_timing: &'a mut [f64; 2],
+}
+
+struct UnitDiedKillStatsHandlerInput<'a> {
+    killed_row: Option<&'a UnitSnapshot>,
+    killing_player: Option<i64>,
+    gameloop: i64,
+    main_player: i64,
+    ally_player: i64,
+    amon_players: &'a ReplayPlayerIdSet,
+    killcounts: &'a mut [i64],
+    ally_kills_transfer_to_main: bool,
+    last_aoe_unit_killed: &'a mut [Option<(String, f64)>],
+    ally_kills_counted_toward_main: i64,
+    do_not_count_kills: &'a HashSet<String>,
+    aoe_units: &'a HashSet<String>,
+}
+
+struct UnitDiedDetailHandlerInput<'event, 'snapshot> {
+    event: &'event UnitDiedEventFields,
+    killed_row: &'snapshot UnitSnapshot,
+    map_flags: &'event ReplayMapAnalysisFlags,
+    main_player: i64,
+    ally_player: i64,
+    amon_players: &'event ReplayPlayerIdSet,
+    unit_id: i64,
+    unit_type_dict_main: &'event mut UnitTypeCountMap,
+    unit_type_dict_ally: &'event mut UnitTypeCountMap,
+    unit_type_dict_amon: &'event mut UnitTypeCountMap,
+    unit_dict: &'event UnitStateMap,
+    dt_ht_ignore: &'event mut [i64],
+    start_time: f64,
+    commander_by_player: &'event HashMap<i64, String>,
+    killbot_feed: &'event mut [i64],
+    custom_kill_count: &'event mut replay_event_handlers::NestedPlayerCountMap,
+    used_mutator_spider_mines: &'event mut HashSet<i64>,
+    bonus_timings: &'event mut Vec<f64>,
+    abathur_kill_locusts: &'event HashSet<i64>,
+    mutator_dehaka_drag_unit_ids: &'event HashSet<i64>,
+    murvar_spawns: &'event HashSet<i64>,
+    glevig_spawns: &'event HashSet<i64>,
+    broodlord_broodlings: &'event HashSet<i64>,
+    unit_killed_by: &'event mut TextListMapping,
+    mind_controlled_units: &'event HashSet<i64>,
+    zagaras_dummy_zerglings: &'event HashSet<i64>,
+    last_aoe_unit_killed: &'event [Option<(String, f64)>],
+    commander_no_units: &'event HashMap<String, Vec<String>>,
+    commander_no_units_values: &'event HashSet<String>,
+    hfts_units: &'event HashSet<String>,
+    tus_units: &'event HashSet<String>,
+    do_not_count_kills: &'event HashSet<String>,
+    self_killing_units: &'event HashSet<String>,
+    duplicating_units: &'event HashSet<String>,
+    salvage_units: &'event HashSet<String>,
+    string_sets: &'event ReplayEventStringSets,
+}
 
 pub struct DetailedReplayAnalyzer;
 
@@ -838,14 +993,16 @@ impl DetailedReplayAnalyzer {
             let identify_mutators_start = Instant::now();
             let mutator_context = ReplayMutatorParseContext::from_init_data(&init_data);
             let (mutators, weekly) = DetailedReplayAnalyzer::identify_mutators_for_replay(
-                &events,
-                &inputs.mutators_all,
-                &inputs.mutators_ui,
-                &inputs.mutator_ids,
-                &inputs.cached_mutators,
-                extension,
-                is_mm_replay,
-                Some(&mutator_context),
+                ReplayMutatorIdentificationInput {
+                    events: &events,
+                    mutators_all: inputs.mutators_all,
+                    mutators_ui: inputs.mutators_ui,
+                    mutator_ids: inputs.mutator_ids,
+                    cached_mutators: inputs.cached_mutators,
+                    extension,
+                    mm: is_mm_replay,
+                    mutator_context: Some(&mutator_context),
+                },
             );
             timing.identify_mutators = identify_mutators_start.elapsed();
 
@@ -1339,15 +1496,18 @@ impl DetailedReplayAnalyzer {
     }
 
     fn identify_mutators_for_replay(
-        events: &[ReplayEvent],
-        mutators_all: &[String],
-        mutators_ui: &[String],
-        mutator_ids: &crate::dictionary_data::MutatorIdsJson,
-        cached_mutators: &crate::dictionary_data::CachedMutatorsJson,
-        extension: bool,
-        mm: bool,
-        mutator_context: Option<&ReplayMutatorParseContext>,
+        input: ReplayMutatorIdentificationInput<'_>,
     ) -> (Vec<String>, bool) {
+        let ReplayMutatorIdentificationInput {
+            events,
+            mutators_all,
+            mutators_ui,
+            mutator_ids,
+            cached_mutators,
+            extension,
+            mm,
+            mutator_context,
+        } = input;
         let mut mutators = Vec::new();
         let mut weekly = false;
 
@@ -1372,34 +1532,31 @@ impl DetailedReplayAnalyzer {
             }
         }
 
-        if extension {
-            if let Some(context) = mutator_context {
-                for handle in &context.cache_handles {
-                    let cached = DetailedReplayAnalyzer::cache_handle_id(handle);
-                    if cached.is_empty() {
-                        continue;
-                    }
-                    if let Some(mutator_id) = cached_mutators.get(&cached) {
-                        mutators.push(mutator_id.clone());
-                        weekly = true;
-                    }
+        if extension && let Some(context) = mutator_context {
+            for handle in &context.cache_handles {
+                let cached = DetailedReplayAnalyzer::cache_handle_id(handle);
+                if cached.is_empty() {
+                    continue;
+                }
+                if let Some(mutator_id) = cached_mutators.get(&cached) {
+                    mutators.push(mutator_id.clone());
+                    weekly = true;
                 }
             }
         }
 
-        if !extension {
-            if let Some(context) = mutator_context {
-                if context.brutal_plus_difficulty > 0 {
-                    for key in &context.retry_mutation_indexes {
-                        if *key <= 0 {
-                            continue;
-                        }
-                        if let Ok(index) = usize::try_from(*key - 1) {
-                            if let Some(mutator) = mutators_all.get(index) {
-                                mutators.push(mutator.clone());
-                            }
-                        }
-                    }
+        if !extension
+            && let Some(context) = mutator_context
+            && context.brutal_plus_difficulty > 0
+        {
+            for key in &context.retry_mutation_indexes {
+                if *key <= 0 {
+                    continue;
+                }
+                if let Ok(index) = usize::try_from(*key - 1)
+                    && let Some(mutator) = mutators_all.get(index)
+                {
+                    mutators.push(mutator.clone());
                 }
             }
         }
@@ -1452,33 +1609,30 @@ impl DetailedReplayAnalyzer {
                     }
                 }
 
-                if let ReplayEvent::Tracker(event) = event {
-                    if kind == ReplayEventKind::TrackerUpgrade
-                        && matches!(event.m_player_id, Some(1 | 2))
-                    {
-                        let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
-                        if upgrade_name.contains("Spray") {
-                            break;
-                        }
+                if let ReplayEvent::Tracker(event) = event
+                    && kind == ReplayEventKind::TrackerUpgrade
+                    && matches!(event.m_player_id, Some(1 | 2))
+                {
+                    let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
+                    if upgrade_name.contains("Spray") {
+                        break;
                     }
                 }
             }
 
             let mut panel = 1_i64;
             for action in actions {
-                if (41..=83).contains(&action) {
-                    if let Some(new_mutator) =
+                if (41..=83).contains(&action)
+                    && let Some(new_mutator) =
                         DetailedReplayAnalyzer::mutator_from_button(action, panel, mutators_ui)
+                {
+                    if !mutators.contains(&new_mutator) || new_mutator == "Random" {
+                        mutators.push(new_mutator);
+                    } else if new_mutator != "Random"
+                        && let Some(position) =
+                            mutators.iter().position(|value| value == &new_mutator)
                     {
-                        if !mutators.contains(&new_mutator) || new_mutator == "Random" {
-                            mutators.push(new_mutator);
-                        } else if new_mutator != "Random" {
-                            if let Some(position) =
-                                mutators.iter().position(|value| value == &new_mutator)
-                            {
-                                mutators.remove(position);
-                            }
-                        }
+                        mutators.remove(position);
                     }
                 }
 
@@ -1489,12 +1643,11 @@ impl DetailedReplayAnalyzer {
                     panel += 1;
                 }
 
-                if (88..=106).contains(&action) {
-                    if let Ok(index) = usize::try_from((action - 88) / 2) {
-                        if index < mutators.len() {
-                            mutators.remove(index);
-                        }
-                    }
+                if (88..=106).contains(&action)
+                    && let Ok(index) = usize::try_from((action - 88) / 2)
+                    && index < mutators.len()
+                {
+                    mutators.remove(index);
                 }
             }
         }
@@ -3148,13 +3301,13 @@ impl CandidateReplay {
         );
         timing.detailed_report = detailed_report_start.elapsed();
 
-        if let Ok(result) = detailed {
-            if result.report().has_non_empty_player_stats() {
-                return CandidateReplayAnalysisResult::new(
-                    Some(result.into_cache_entry()),
-                    timing.finish(total_start.elapsed()),
-                );
-            }
+        if let Ok(result) = detailed
+            && result.report().has_non_empty_player_stats()
+        {
+            return CandidateReplayAnalysisResult::new(
+                Some(result.into_cache_entry()),
+                timing.finish(total_start.elapsed()),
+            );
         }
 
         CandidateReplayAnalysisResult::new(Some(basic), timing.finish(total_start.elapsed()))
@@ -3425,15 +3578,15 @@ impl DetailedReplayAnalyzer {
                                     stop_requested_for_workers.store(true, AtomicOrdering::Release);
                                     return None;
                                 }
-                                let mut result = candidate.analyze_timed(&main_handles, &resources);
-                                if let Some(entry) = result.entry() {
-                                    if entry.detailed_analysis {
-                                        let temp_entry_write_start = Instant::now();
-                                        progress_for_workers.add_temp_entry(entry.clone());
-                                        result
-                                            .timing_mut()
-                                            .add_temp_entry_write(temp_entry_write_start.elapsed());
-                                    }
+                                let mut result = candidate.analyze_timed(&main_handles, resources);
+                                if let Some(entry) = result.entry()
+                                    && entry.detailed_analysis
+                                {
+                                    let temp_entry_write_start = Instant::now();
+                                    progress_for_workers.add_temp_entry(entry.clone());
+                                    result
+                                        .timing_mut()
+                                        .add_temp_entry_write(temp_entry_write_start.elapsed());
                                 }
                                 let progress_record_start = Instant::now();
                                 progress_for_workers.record_processed_file();
@@ -4013,7 +4166,7 @@ impl DetailedReplayAnalyzer {
             Some(double_remainder) if double_remainder < denominator => quotient,
             Some(double_remainder) if double_remainder > denominator => quotient + 1,
             Some(_) => {
-                if quotient % 2 == 0 {
+                if quotient.is_multiple_of(2) {
                     quotient
                 } else {
                     quotient + 1
@@ -4160,17 +4313,20 @@ impl DetailedReplayAnalyzer {
     }
 
     fn fill_unit_kills_and_icons(
-        base_icons: &BTreeMap<String, u64>,
-        player: i64,
-        main_player: i64,
-        unit_counts: &UnitTypeCountMap,
-        ally_kills_counted_toward_main: i64,
-        killcounts: &[i64],
-        unit_name_dict: &UnitNamesJson,
-        unit_add_kills_to: &UnitAddKillsToJson,
-        unit_add_losses_to: &HashMap<String, String>,
-        analysis_sets: &ReplayAnalysisSets,
+        input: FillUnitKillsAndIconsInput<'_>,
     ) -> (BTreeMap<String, UnitStats>, BTreeMap<String, u64>) {
+        let FillUnitKillsAndIconsInput {
+            base_icons,
+            player,
+            main_player,
+            unit_counts,
+            ally_kills_counted_toward_main,
+            killcounts,
+            unit_name_dict,
+            unit_add_kills_to,
+            unit_add_losses_to,
+            analysis_sets,
+        } = input;
         let mut icons = base_icons.clone();
         for (unit_name, values) in unit_counts {
             let created = values[0];
@@ -4226,11 +4382,11 @@ impl DetailedReplayAnalyzer {
                 0.0
             };
 
-            if unit_name == "Zweihaka" {
-                if let Some((dehaka_created, dehaka_lost)) = dehaka_created_lost {
-                    created = dehaka_created;
-                    lost = dehaka_lost;
-                }
+            if unit_name == "Zweihaka"
+                && let Some((dehaka_created, dehaka_lost)) = dehaka_created_lost
+            {
+                created = dehaka_created;
+                lost = dehaka_lost;
             }
 
             units.insert(
@@ -4688,14 +4844,18 @@ impl DetailedReplayAnalyzer {
                     let upg_pid = event.m_player_id.unwrap_or_default();
                     let upgrade_count = event.m_count.unwrap_or_default();
                     let update = ReplayEventHandlers::replay_handle_upgrade_event_fields(
-                        upg_name.as_str(),
-                        upg_pid,
-                        upgrade_count,
-                        main_player,
-                        ally_player,
-                        &dictionaries.replay_analysis_data.commander_upgrades,
-                        &analysis_sets.mastery_upgrade_indices,
-                        &analysis_sets.prestige_upgrade_names,
+                        UpgradeEventHandlerInput {
+                            upg_name: upg_name.as_str(),
+                            upg_pid,
+                            upgrade_count,
+                            main_player,
+                            ally_player,
+                            commander_upgrades: &dictionaries
+                                .replay_analysis_data
+                                .commander_upgrades,
+                            mastery_upgrade_indices: &analysis_sets.mastery_upgrade_indices,
+                            prestige_upgrade_names: &analysis_sets.prestige_upgrade_names,
+                        },
                     );
 
                     if let Some(target) = update.target() {
@@ -4726,12 +4886,11 @@ impl DetailedReplayAnalyzer {
                     }
 
                     if let Some(mastery_idx) = update.mastery_index() {
-                        if let Some(row) = mastery_by_player.get_mut(&upg_pid) {
-                            if let Ok(index) = usize::try_from(mastery_idx) {
-                                if index < row.len() {
-                                    row[index] = update.upgrade_count();
-                                }
-                            }
+                        if let Some(row) = mastery_by_player.get_mut(&upg_pid)
+                            && let Ok(index) = usize::try_from(mastery_idx)
+                            && index < row.len()
+                        {
+                            row[index] = update.upgrade_count();
                         }
 
                         if let Some(target) = update.target() {
@@ -4771,38 +4930,46 @@ impl DetailedReplayAnalyzer {
                     let event_fields = UnitBornOrInitEventFields::new(
                         event.m_unit_type_name.as_deref().unwrap_or_default(),
                         event.m_creator_ability_name.as_deref(),
-                        DetailedReplayAnalyzer::replay_event_unitid(event).unwrap_or_default(),
-                        DetailedReplayAnalyzer::replay_creator_unitid(event),
+                        UnitBornOrInitUnitIds::new(
+                            DetailedReplayAnalyzer::replay_event_unitid(event).unwrap_or_default(),
+                            DetailedReplayAnalyzer::replay_creator_unitid(event),
+                        ),
                         event.m_control_player_id.unwrap_or_default(),
                         event.game_loop,
-                        event.m_x.unwrap_or_default(),
-                        event.m_y.unwrap_or_default(),
+                        UnitEventPosition::new(
+                            event.m_x.unwrap_or_default(),
+                            event.m_y.unwrap_or_default(),
+                        ),
                     );
                     let update = ReplayEventHandlers::replay_handle_unit_born_or_init_event_fields(
-                        &event_fields,
-                        main_player,
-                        ally_player,
-                        &amon_player_ids_set,
-                        &mut unit_dict,
-                        start_time,
-                        &mut unit_type_dict_main,
-                        &mut unit_type_dict_ally,
-                        &mut unit_type_dict_amon,
-                        &mut mutator_dehaka_drag_unit_ids,
-                        &mut murvar_spawns,
-                        &mut glevig_spawns,
-                        &mut broodlord_broodlings,
-                        &mut outlaw_order,
-                        &mut outlaw_order_seen,
-                        &mut wave_units,
-                        &mut identified_waves,
-                        &mut abathur_kill_locusts,
-                        last_biomass_position,
-                        &dictionaries.replay_analysis_data.revival_types,
-                        &dictionaries.replay_analysis_data.primal_combat_predecessors,
-                        tychus_outlaws_set,
-                        &dictionaries.units_in_waves,
-                        event_string_sets,
+                        UnitBornOrInitHandlerInput {
+                            event: &event_fields,
+                            main_player,
+                            ally_player,
+                            amon_players: &amon_player_ids_set,
+                            unit_dict: &mut unit_dict,
+                            start_time,
+                            unit_type_dict_main: &mut unit_type_dict_main,
+                            unit_type_dict_ally: &mut unit_type_dict_ally,
+                            unit_type_dict_amon: &mut unit_type_dict_amon,
+                            mutator_dehaka_drag_unit_ids: &mut mutator_dehaka_drag_unit_ids,
+                            murvar_spawns: &mut murvar_spawns,
+                            glevig_spawns: &mut glevig_spawns,
+                            broodlord_broodlings: &mut broodlord_broodlings,
+                            outlaw_order: &mut outlaw_order,
+                            outlaw_order_seen: &mut outlaw_order_seen,
+                            wave_units: &mut wave_units,
+                            identified_waves: &mut identified_waves,
+                            abathur_kill_locusts: &mut abathur_kill_locusts,
+                            last_biomass_position,
+                            revival_types: &dictionaries.replay_analysis_data.revival_types,
+                            primal_combat_predecessors: &dictionaries
+                                .replay_analysis_data
+                                .primal_combat_predecessors,
+                            tychus_outlaws: tychus_outlaws_set,
+                            units_in_waves: dictionaries.units_in_waves,
+                            string_sets: event_string_sets,
+                        },
                     );
                     unit_id = update.unit_id();
                     last_biomass_position = update.last_biomass_position();
@@ -4852,28 +5019,30 @@ impl DetailedReplayAnalyzer {
                         event.game_loop,
                     );
                     let update = ReplayEventHandlers::replay_handle_unit_type_change_event_fields(
-                        &event_fields,
-                        &map_flags,
-                        main_player,
-                        ally_player,
-                        &amon_player_ids_set,
-                        &mut unit_dict,
-                        &mut unit_type_dict_main,
-                        &mut unit_type_dict_ally,
-                        &mut unit_type_dict_amon,
-                        start_time,
-                        &mut bonus_timings,
-                        unit_id,
-                        &glevig_spawns,
-                        &murvar_spawns,
-                        &mut zagaras_dummy_zerglings,
-                        &broodlord_broodlings,
-                        research_vessel_landed_timing,
-                        units_killed_in_morph_set,
-                        &dictionaries.unit_name_dict,
-                        unit_add_losses_to_set,
-                        dont_count_morphs_set,
-                        event_string_sets,
+                        UnitTypeChangeHandlerInput {
+                            event: &event_fields,
+                            map_flags: &map_flags,
+                            main_player,
+                            ally_player,
+                            amon_players: &amon_player_ids_set,
+                            unit_dict: &mut unit_dict,
+                            unit_type_dict_main: &mut unit_type_dict_main,
+                            unit_type_dict_ally: &mut unit_type_dict_ally,
+                            unit_type_dict_amon: &mut unit_type_dict_amon,
+                            start_time,
+                            bonus_timings: &mut bonus_timings,
+                            legacy_spawn_filter_unit_id: unit_id,
+                            glevig_spawns: &glevig_spawns,
+                            murvar_spawns: &murvar_spawns,
+                            zagaras_dummy_zerglings: &mut zagaras_dummy_zerglings,
+                            broodlord_broodlings: &broodlord_broodlings,
+                            research_vessel_landed_timing,
+                            units_killed_in_morph: units_killed_in_morph_set,
+                            unit_name_dict: dictionaries.unit_name_dict,
+                            unit_add_losses_to: unit_add_losses_to_set,
+                            dont_count_morphs: dont_count_morphs_set,
+                            string_sets: event_string_sets,
+                        },
                     );
                     research_vessel_landed_timing = update.landed_timing();
 
@@ -4907,16 +5076,18 @@ impl DetailedReplayAnalyzer {
                     let control_pid = event.m_control_player_id.unwrap_or_default();
                     let game_time = event.game_loop as f64 / 16.0 - start_time;
                     let update = ReplayEventHandlers::replay_handle_unit_owner_change_event_fields(
-                        changed_unit_id,
-                        &map_flags,
-                        control_pid,
-                        main_player,
-                        ally_player,
-                        &amon_player_ids_set,
-                        &mut unit_dict,
-                        game_time,
-                        &mut bonus_timings,
-                        &mut mw_bonus_initial_timing,
+                        UnitOwnerChangeHandlerInput {
+                            event_unit_id: changed_unit_id,
+                            map_flags: &map_flags,
+                            control_pid,
+                            main_player,
+                            ally_player,
+                            amon_players: &amon_player_ids_set,
+                            unit_dict: &mut unit_dict,
+                            game_time,
+                            bonus_timings: &mut bonus_timings,
+                            mw_bonus_initial_timing: &mut mw_bonus_initial_timing,
+                        },
                     );
 
                     if let Some(mindcontrolled_unit_id) = update.mind_controlled_unit_id() {
@@ -4955,31 +5126,31 @@ impl DetailedReplayAnalyzer {
                     if !event_unit_in_dict {
                         let killed_unit_type =
                             event.m_unit_type_name.as_deref().unwrap_or_default();
-                        if !do_not_count_kills_set.contains(killed_unit_type) {
-                            if let Some(killer_player) = event.m_killer_player_id {
-                                if let Ok(index) = usize::try_from(killer_player) {
-                                    if let Some(value) = killcounts.get_mut(index) {
-                                        *value += 1;
-                                    }
-                                }
-                            }
+                        if !do_not_count_kills_set.contains(killed_unit_type)
+                            && let Some(killer_player) = event.m_killer_player_id
+                            && let Ok(index) = usize::try_from(killer_player)
+                            && let Some(value) = killcounts.get_mut(index)
+                        {
+                            *value += 1;
                         }
                     }
 
                     ally_kills_counted_toward_main =
                         ReplayEventHandlers::replay_handle_unit_died_kill_stats_event_fields(
-                            killed_snapshot,
-                            event.m_killer_player_id,
-                            event.game_loop,
-                            main_player,
-                            ally_player,
-                            &amon_player_ids_set,
-                            &mut killcounts,
-                            ally_kills_transfer_to_main,
-                            &mut last_aoe_unit_killed,
-                            ally_kills_counted_toward_main,
-                            do_not_count_kills_set,
-                            aoe_units_set,
+                            UnitDiedKillStatsHandlerInput {
+                                killed_row: killed_snapshot,
+                                killing_player: event.m_killer_player_id,
+                                gameloop: event.game_loop,
+                                main_player,
+                                ally_player,
+                                amon_players: &amon_player_ids_set,
+                                killcounts: &mut killcounts,
+                                ally_kills_transfer_to_main,
+                                last_aoe_unit_killed: &mut last_aoe_unit_killed,
+                                ally_kills_counted_toward_main,
+                                do_not_count_kills: do_not_count_kills_set,
+                                aoe_units: aoe_units_set,
+                            },
                         );
                     timings.finish("event.unit_died_kill_stats", handler_started);
 
@@ -4999,42 +5170,46 @@ impl DetailedReplayAnalyzer {
                         event.m_y.unwrap_or_default(),
                     );
                     let update = ReplayEventHandlers::replay_handle_unit_died_detail_event_fields(
-                        &event_fields,
-                        killed_snapshot,
-                        &map_flags,
-                        main_player,
-                        ally_player,
-                        &amon_player_ids_set,
-                        unit_id,
-                        &mut unit_type_dict_main,
-                        &mut unit_type_dict_ally,
-                        &mut unit_type_dict_amon,
-                        &unit_dict,
-                        &mut dt_ht_ignore,
-                        start_time,
-                        &commander_by_player,
-                        &mut killbot_feed,
-                        &mut custom_kill_count,
-                        &mut used_mutator_spider_mines,
-                        &mut bonus_timings,
-                        &abathur_kill_locusts,
-                        &mutator_dehaka_drag_unit_ids,
-                        &murvar_spawns,
-                        &glevig_spawns,
-                        &broodlord_broodlings,
-                        &mut unit_killed_by,
-                        &mind_controlled_units,
-                        &zagaras_dummy_zerglings,
-                        &last_aoe_unit_killed,
-                        &dictionaries.replay_analysis_data.commander_no_units,
-                        commander_no_units_values_set,
-                        &dictionaries.hfts_units,
-                        &dictionaries.tus_units,
-                        do_not_count_kills_set,
-                        self_killing_units_set,
-                        duplicating_units_set,
-                        salvage_units_set,
-                        event_string_sets,
+                        UnitDiedDetailHandlerInput {
+                            event: &event_fields,
+                            killed_row: killed_snapshot,
+                            map_flags: &map_flags,
+                            main_player,
+                            ally_player,
+                            amon_players: &amon_player_ids_set,
+                            unit_id,
+                            unit_type_dict_main: &mut unit_type_dict_main,
+                            unit_type_dict_ally: &mut unit_type_dict_ally,
+                            unit_type_dict_amon: &mut unit_type_dict_amon,
+                            unit_dict: &unit_dict,
+                            dt_ht_ignore: &mut dt_ht_ignore,
+                            start_time,
+                            commander_by_player: &commander_by_player,
+                            killbot_feed: &mut killbot_feed,
+                            custom_kill_count: &mut custom_kill_count,
+                            used_mutator_spider_mines: &mut used_mutator_spider_mines,
+                            bonus_timings: &mut bonus_timings,
+                            abathur_kill_locusts: &abathur_kill_locusts,
+                            mutator_dehaka_drag_unit_ids: &mutator_dehaka_drag_unit_ids,
+                            murvar_spawns: &murvar_spawns,
+                            glevig_spawns: &glevig_spawns,
+                            broodlord_broodlings: &broodlord_broodlings,
+                            unit_killed_by: &mut unit_killed_by,
+                            mind_controlled_units: &mind_controlled_units,
+                            zagaras_dummy_zerglings: &zagaras_dummy_zerglings,
+                            last_aoe_unit_killed: &last_aoe_unit_killed,
+                            commander_no_units: &dictionaries
+                                .replay_analysis_data
+                                .commander_no_units,
+                            commander_no_units_values: commander_no_units_values_set,
+                            hfts_units: dictionaries.hfts_units,
+                            tus_units: dictionaries.tus_units,
+                            do_not_count_kills: do_not_count_kills_set,
+                            self_killing_units: self_killing_units_set,
+                            duplicating_units: duplicating_units_set,
+                            salvage_units: salvage_units_set,
+                            string_sets: event_string_sets,
+                        },
                     );
                     unit_id = update.current_unit_id();
 
@@ -5098,7 +5273,7 @@ impl DetailedReplayAnalyzer {
             .collect::<Vec<String>>();
         let comp = DetailedReplayAnalyzer::enemy_comp_from_identified_waves(
             &identified_waves,
-            &dictionaries.unit_comp_dict,
+            dictionaries.unit_comp_dict,
         );
         timings.finish("post.bonus_comp", bonus_comp_started);
 
@@ -5115,32 +5290,34 @@ impl DetailedReplayAnalyzer {
         timings.finish("post.custom_kill_icons", custom_icons_started);
 
         let main_units_started = timings.start();
-        let (main_units, mut main_icons) = DetailedReplayAnalyzer::fill_unit_kills_and_icons(
-            &main_icons_base,
-            main_player,
-            main_player,
-            &unit_type_dict_main,
-            ally_kills_counted_toward_main,
-            &killcounts,
-            &dictionaries.unit_name_dict,
-            &dictionaries.unit_add_kills_to,
-            &dictionaries.replay_analysis_data.unit_add_losses_to,
-            analysis_sets,
-        );
+        let (main_units, mut main_icons) =
+            DetailedReplayAnalyzer::fill_unit_kills_and_icons(FillUnitKillsAndIconsInput {
+                base_icons: &main_icons_base,
+                player: main_player,
+                main_player,
+                unit_counts: &unit_type_dict_main,
+                ally_kills_counted_toward_main,
+                killcounts: &killcounts,
+                unit_name_dict: dictionaries.unit_name_dict,
+                unit_add_kills_to: dictionaries.unit_add_kills_to,
+                unit_add_losses_to: &dictionaries.replay_analysis_data.unit_add_losses_to,
+                analysis_sets,
+            });
         timings.finish("post.main_units_icons", main_units_started);
         let ally_units_started = timings.start();
-        let (ally_units, mut ally_icons) = DetailedReplayAnalyzer::fill_unit_kills_and_icons(
-            &ally_icons_base,
-            ally_player,
-            main_player,
-            &unit_type_dict_ally,
-            ally_kills_counted_toward_main,
-            &killcounts,
-            &dictionaries.unit_name_dict,
-            &dictionaries.unit_add_kills_to,
-            &dictionaries.replay_analysis_data.unit_add_losses_to,
-            analysis_sets,
-        );
+        let (ally_units, mut ally_icons) =
+            DetailedReplayAnalyzer::fill_unit_kills_and_icons(FillUnitKillsAndIconsInput {
+                base_icons: &ally_icons_base,
+                player: ally_player,
+                main_player,
+                unit_counts: &unit_type_dict_ally,
+                ally_kills_counted_toward_main,
+                killcounts: &killcounts,
+                unit_name_dict: dictionaries.unit_name_dict,
+                unit_add_kills_to: dictionaries.unit_add_kills_to,
+                unit_add_losses_to: &dictionaries.replay_analysis_data.unit_add_losses_to,
+                analysis_sets,
+            });
         timings.finish("post.ally_units_icons", ally_units_started);
 
         let killbot_icons_started = timings.start();
@@ -5159,8 +5336,8 @@ impl DetailedReplayAnalyzer {
             &unit_type_dict_amon,
             &killcounts,
             &amon_player_ids_set,
-            &dictionaries.unit_name_dict,
-            &dictionaries.unit_add_kills_to,
+            dictionaries.unit_name_dict,
+            dictionaries.unit_add_kills_to,
             &dictionaries.replay_analysis_data.unit_add_losses_to,
             analysis_sets,
         );

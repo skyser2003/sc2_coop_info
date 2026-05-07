@@ -157,6 +157,42 @@ pub struct ReplayVisualBuildInput {
 }
 
 #[derive(Clone, Debug)]
+pub struct ReplayVisualReplayInfo {
+    file: String,
+    map: String,
+    result: String,
+    duration_seconds: f64,
+}
+
+impl ReplayVisualReplayInfo {
+    pub fn new(
+        file: impl Into<String>,
+        map: impl Into<String>,
+        result: impl Into<String>,
+        duration_seconds: f64,
+    ) -> Self {
+        Self {
+            file: file.into(),
+            map: map.into(),
+            result: result.into(),
+            duration_seconds,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ReplayVisualMapSize {
+    width: f64,
+    height: f64,
+}
+
+impl ReplayVisualMapSize {
+    pub fn new(width: f64, height: f64) -> Self {
+        Self { width, height }
+    }
+}
+
+#[derive(Clone, Debug)]
 struct ReplayVisualLiveUnit {
     id: i64,
     tag_index: i64,
@@ -394,22 +430,18 @@ impl ReplayVisualDictionaries {
 
 impl ReplayVisualBuildInput {
     pub fn new(
-        file: impl Into<String>,
-        map: impl Into<String>,
-        result: impl Into<String>,
-        duration_seconds: f64,
-        map_width: f64,
-        map_height: f64,
+        replay: ReplayVisualReplayInfo,
+        map_size: ReplayVisualMapSize,
         players: Vec<ReplayVisualPlayer>,
         main_player_id: i64,
     ) -> Self {
         Self {
-            file: file.into(),
-            map: map.into(),
-            result: result.into(),
-            duration_seconds,
-            map_width,
-            map_height,
+            file: replay.file,
+            map: replay.map,
+            result: replay.result,
+            duration_seconds: replay.duration_seconds,
+            map_width: map_size.width,
+            map_height: map_size.height,
             players,
             main_player_id,
         }
@@ -851,7 +883,7 @@ impl ReplayVisualTimelineBuilder {
         selected_unit_ids.iter().any(|unit_id| {
             self.live_units
                 .get(unit_id)
-                .is_some_and(|live_unit| ReplayVisualOps::is_tychus_medivac_proxy_unit(live_unit))
+                .is_some_and(ReplayVisualOps::is_tychus_medivac_proxy_unit)
         })
     }
 
@@ -1481,12 +1513,8 @@ impl ReplayVisualOps {
             metadata.Duration
         };
         ReplayVisualBuildInput::new(
-            context.file(),
-            map_name,
-            result,
-            duration_seconds,
-            map_width,
-            map_height,
+            ReplayVisualReplayInfo::new(context.file(), map_name, result, duration_seconds),
+            ReplayVisualMapSize::new(map_width, map_height),
             Self::players_from_details(details, context.main_player_id()),
             context.main_player_id(),
         )

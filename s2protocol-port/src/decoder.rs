@@ -104,21 +104,20 @@ impl<T: Clone> TagLookup<T> {
             .and_then(|width| width.checked_add(1))
             .and_then(|width| usize::try_from(width).ok());
         let dense_threshold = entries.len().saturating_mul(4).max(16);
-        if min_tag >= 0 {
-            if let Some(dense_len) = dense_len {
-                if dense_len <= dense_threshold {
-                    let mut dense_entries = vec![None; dense_len];
-                    for (tag, value) in entries {
-                        let index = usize::try_from(tag - min_tag)
-                            .map_err(|_| DecodeError::Corrupted("tag index out of range".into()))?;
-                        dense_entries[index] = Some(value);
-                    }
-                    return Ok(Some(Self::Dense {
-                        min_tag,
-                        entries: Arc::from(dense_entries),
-                    }));
-                }
+        if min_tag >= 0
+            && let Some(dense_len) = dense_len
+            && dense_len <= dense_threshold
+        {
+            let mut dense_entries = vec![None; dense_len];
+            for (tag, value) in entries {
+                let index = usize::try_from(tag - min_tag)
+                    .map_err(|_| DecodeError::Corrupted("tag index out of range".into()))?;
+                dense_entries[index] = Some(value);
             }
+            return Ok(Some(Self::Dense {
+                min_tag,
+                entries: Arc::from(dense_entries),
+            }));
         }
 
         Ok(Some(Self::Sparse(Arc::new(sparse))))
@@ -510,7 +509,7 @@ pub(crate) struct TaggedEventDecodePlan<F> {
 
 #[derive(Debug, Clone)]
 pub(crate) enum TaggedEventFieldPlan<F> {
-    Decode { field: F, typeinfo: TypeInfo },
+    Decode { field: F, typeinfo: Box<TypeInfo> },
     Skip,
     Nested(Arc<TaggedEventDecodePlan<F>>),
 }
@@ -551,6 +550,71 @@ pub struct ProtocolDefinition {
     replay_header_typeid: usize,
     game_details_typeid: usize,
     replay_initdata_typeid: usize,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ProtocolEventTypeInfos {
+    game: Arc<[Option<EventTypeInfo<GameEventField>>]>,
+    message: Arc<[Option<EventTypeInfo<MessageEventField>>]>,
+    tracker: Arc<[Option<EventTypeInfo<TrackerEventField>>]>,
+}
+
+impl ProtocolEventTypeInfos {
+    pub(crate) fn new(
+        game: Arc<[Option<EventTypeInfo<GameEventField>>]>,
+        message: Arc<[Option<EventTypeInfo<MessageEventField>>]>,
+        tracker: Arc<[Option<EventTypeInfo<TrackerEventField>>]>,
+    ) -> Self {
+        Self {
+            game,
+            message,
+            tracker,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ProtocolEventTypeIds {
+    game_eventid: usize,
+    message_eventid: usize,
+    tracker_eventid: Option<usize>,
+    svaruint32: usize,
+    replay_userid: Option<usize>,
+}
+
+impl ProtocolEventTypeIds {
+    pub(crate) fn new(
+        game_eventid: usize,
+        message_eventid: usize,
+        tracker_eventid: Option<usize>,
+        svaruint32: usize,
+        replay_userid: Option<usize>,
+    ) -> Self {
+        Self {
+            game_eventid,
+            message_eventid,
+            tracker_eventid,
+            svaruint32,
+            replay_userid,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ReplayTypeIds {
+    header: usize,
+    details: usize,
+    initdata: usize,
+}
+
+impl ReplayTypeIds {
+    pub(crate) fn new(header: usize, details: usize, initdata: usize) -> Self {
+        Self {
+            header,
+            details,
+            initdata,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -641,41 +705,34 @@ impl ProtocolDefinition {
     pub(crate) fn new(
         build: u32,
         typeinfos: Arc<[TypeInfo]>,
-        game_event_typeinfos: Arc<[Option<EventTypeInfo<GameEventField>>]>,
-        message_event_typeinfos: Arc<[Option<EventTypeInfo<MessageEventField>>]>,
-        tracker_event_typeinfos: Arc<[Option<EventTypeInfo<TrackerEventField>>]>,
-        game_eventid_typeid: usize,
-        message_eventid_typeid: usize,
-        tracker_eventid_typeid: Option<usize>,
-        svaruint32_typeid: usize,
-        replay_userid_typeid: Option<usize>,
-        replay_header_typeid: usize,
-        game_details_typeid: usize,
-        replay_initdata_typeid: usize,
+        event_typeinfos: ProtocolEventTypeInfos,
+        event_typeids: ProtocolEventTypeIds,
+        replay_typeids: ReplayTypeIds,
     ) -> Result<Self, DecodeError> {
         let game_event_header = EventHeaderDecodePlan::new(
             typeinfos.as_ref(),
-            game_eventid_typeid,
-            svaruint32_typeid,
-            replay_userid_typeid,
+            event_typeids.game_eventid,
+            event_typeids.svaruint32,
+            event_typeids.replay_userid,
             true,
             false,
         )?;
         let message_event_header = EventHeaderDecodePlan::new(
             typeinfos.as_ref(),
-            message_eventid_typeid,
-            svaruint32_typeid,
-            replay_userid_typeid,
+            event_typeids.message_eventid,
+            event_typeids.svaruint32,
+            event_typeids.replay_userid,
             true,
             false,
         )?;
-        let tracker_event_header = tracker_eventid_typeid
+        let tracker_event_header = event_typeids
+            .tracker_eventid
             .map(|eventid_typeid| {
                 EventHeaderDecodePlan::new(
                     typeinfos.as_ref(),
                     eventid_typeid,
-                    svaruint32_typeid,
-                    replay_userid_typeid,
+                    event_typeids.svaruint32,
+                    event_typeids.replay_userid,
                     false,
                     true,
                 )
@@ -685,15 +742,15 @@ impl ProtocolDefinition {
         Ok(Self {
             build,
             typeinfos,
-            game_event_typeinfos,
-            message_event_typeinfos,
-            tracker_event_typeinfos,
+            game_event_typeinfos: event_typeinfos.game,
+            message_event_typeinfos: event_typeinfos.message,
+            tracker_event_typeinfos: event_typeinfos.tracker,
             game_event_header,
             message_event_header,
             tracker_event_header,
-            replay_header_typeid,
-            game_details_typeid,
-            replay_initdata_typeid,
+            replay_header_typeid: replay_typeids.header,
+            game_details_typeid: replay_typeids.details,
+            replay_initdata_typeid: replay_typeids.initdata,
         })
     }
 
@@ -1106,7 +1163,7 @@ impl EventPlanCompiler {
                 } else if let Some(selected_field) = select_field("__parent") {
                     TaggedEventFieldPlan::Decode {
                         field: selected_field,
-                        typeinfo: child_typeinfo,
+                        typeinfo: Box::new(child_typeinfo),
                     }
                 } else {
                     TaggedEventFieldPlan::Skip
@@ -1114,7 +1171,7 @@ impl EventPlanCompiler {
             } else if let Some(selected_field) = select_field(field.name()) {
                 TaggedEventFieldPlan::Decode {
                     field: selected_field,
-                    typeinfo: child_typeinfo,
+                    typeinfo: Box::new(child_typeinfo),
                 }
             } else {
                 TaggedEventFieldPlan::Skip
@@ -1926,12 +1983,10 @@ impl<'a> BitPackedDecoder<'a> {
                 } else {
                     self.skip_from_typeinfo(parent_typeinfo)?;
                 }
+            } else if let Some(selected_field) = select_field(field.name()) {
+                on_field(self, selected_field, child_typeinfo)?;
             } else {
-                if let Some(selected_field) = select_field(field.name()) {
-                    on_field(self, selected_field, child_typeinfo)?;
-                } else {
-                    self.skip_from_typeinfo(child_typeinfo)?;
-                }
+                self.skip_from_typeinfo(child_typeinfo)?;
             }
         }
 
@@ -2564,7 +2619,7 @@ impl<'a> VersionedDecoder<'a> {
             }
             1 => {
                 let bits = self.vint()? as usize;
-                let bytes = (bits + 7) / 8;
+                let bytes = bits.div_ceil(8);
                 self.buffer.skip_aligned_bytes(bytes)?;
             }
             2 => {
@@ -2627,7 +2682,7 @@ impl<'a> VersionedDecoder<'a> {
         self.expect_skip(1)?;
         let _ = typeinfo;
         let length = self.vint()? as usize;
-        let bytes = (length + 7) / 8;
+        let bytes = length.div_ceil(8);
 
         if length > 127 {
             let raw = self.buffer.read_aligned_bytes(bytes)?;
@@ -3003,7 +3058,7 @@ impl<'a> VersionedDecoder<'a> {
 impl BitPackedDecoder<'_> {
     fn read_bits_as_bytes(&mut self, bits: usize) -> Result<Vec<u8>, DecodeError> {
         let mut remaining = bits;
-        let mut out = Vec::with_capacity((bits + 7) / 8);
+        let mut out = Vec::with_capacity(bits.div_ceil(8));
         let mut current = 0u8;
         let mut current_bits = 0u8;
 

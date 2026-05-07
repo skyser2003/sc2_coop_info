@@ -561,16 +561,14 @@ impl RandomizerOps {
         let mut combinations = Vec::<Vec<usize>>::new();
         for count in count_min..=max_count {
             let mut current = Vec::<usize>::new();
-            RandomizerOps::collect_point_matched_combinations(
+            let mut search = PointMatchedCombinationSearch::new(
                 pool,
                 count,
                 points_min,
                 points_max,
-                0,
-                &mut current,
-                0,
                 &mut combinations,
             );
+            search.collect(0, &mut current, 0);
         }
 
         if combinations.is_empty() {
@@ -581,41 +579,47 @@ impl RandomizerOps {
     }
 }
 
-impl RandomizerOps {
-    fn collect_point_matched_combinations(
-        pool: &[RandomizerMutatorEntry],
+struct PointMatchedCombinationSearch<'a, 'b> {
+    pool: &'a [RandomizerMutatorEntry],
+    target_count: usize,
+    points_min: u32,
+    points_max: u32,
+    combinations: &'b mut Vec<Vec<usize>>,
+}
+
+impl<'a, 'b> PointMatchedCombinationSearch<'a, 'b> {
+    fn new(
+        pool: &'a [RandomizerMutatorEntry],
         target_count: usize,
         points_min: u32,
         points_max: u32,
-        start_index: usize,
-        current: &mut Vec<usize>,
-        current_points: u32,
-        combinations: &mut Vec<Vec<usize>>,
-    ) {
-        if current.len() == target_count {
-            if (points_min..=points_max).contains(&current_points) {
-                combinations.push(current.clone());
+        combinations: &'b mut Vec<Vec<usize>>,
+    ) -> Self {
+        Self {
+            pool,
+            target_count,
+            points_min,
+            points_max,
+            combinations,
+        }
+    }
+
+    fn collect(&mut self, start_index: usize, current: &mut Vec<usize>, current_points: u32) {
+        if current.len() == self.target_count {
+            if (self.points_min..=self.points_max).contains(&current_points) {
+                self.combinations.push(current.clone());
             }
             return;
         }
 
-        for index in start_index..pool.len() {
-            let next_points = current_points.saturating_add(pool[index].points);
-            if next_points > points_max {
+        for index in start_index..self.pool.len() {
+            let next_points = current_points.saturating_add(self.pool[index].points);
+            if next_points > self.points_max {
                 continue;
             }
 
             current.push(index);
-            RandomizerOps::collect_point_matched_combinations(
-                pool,
-                target_count,
-                points_min,
-                points_max,
-                index + 1,
-                current,
-                next_points,
-                combinations,
-            );
+            self.collect(index + 1, current, next_points);
             current.pop();
         }
     }

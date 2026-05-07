@@ -1,5 +1,6 @@
 use crate::decoder::{
-    EventPlanCompiler, EventPlanKind, EventTypeInfo, ProtocolDefinition, TypeInfo,
+    EventPlanCompiler, EventPlanKind, EventTypeInfo, ProtocolDefinition, ProtocolEventTypeIds,
+    ProtocolEventTypeInfos, ReplayTypeIds, TypeInfo,
 };
 use crate::error::DecodeError;
 use crate::events::{GameEventField, MessageEventField, TrackerEventField};
@@ -91,17 +92,23 @@ impl ProtocolStore {
             let build_def = ProtocolDefinition::new(
                 build,
                 typeinfos,
-                game_event_typeinfos,
-                message_event_typeinfos,
-                tracker_event_typeinfos,
-                ProtocolJson::to_usize(proto, "game_eventid_typeid")?,
-                ProtocolJson::to_usize(proto, "message_eventid_typeid")?,
-                ProtocolJson::to_usize_opt(proto, "tracker_eventid_typeid"),
-                ProtocolJson::to_usize(proto, "svaruint32_typeid")?,
-                ProtocolJson::to_usize_opt(proto, "replay_userid_typeid"),
-                ProtocolJson::to_usize(proto, "replay_header_typeid")?,
-                ProtocolJson::to_usize(proto, "game_details_typeid")?,
-                ProtocolJson::to_usize(proto, "replay_initdata_typeid")?,
+                ProtocolEventTypeInfos::new(
+                    game_event_typeinfos,
+                    message_event_typeinfos,
+                    tracker_event_typeinfos,
+                ),
+                ProtocolEventTypeIds::new(
+                    ProtocolJson::to_usize(proto, "game_eventid_typeid")?,
+                    ProtocolJson::to_usize(proto, "message_eventid_typeid")?,
+                    ProtocolJson::to_usize_opt(proto, "tracker_eventid_typeid"),
+                    ProtocolJson::to_usize(proto, "svaruint32_typeid")?,
+                    ProtocolJson::to_usize_opt(proto, "replay_userid_typeid"),
+                ),
+                ReplayTypeIds::new(
+                    ProtocolJson::to_usize(proto, "replay_header_typeid")?,
+                    ProtocolJson::to_usize(proto, "game_details_typeid")?,
+                    ProtocolJson::to_usize(proto, "replay_initdata_typeid")?,
+                ),
             )?;
 
             latest = latest.max(build);

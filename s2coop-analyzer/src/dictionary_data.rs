@@ -641,64 +641,62 @@ impl DictionaryDataLoader {
     }
 
     fn load_shared_dictionary_data(
-        data_dir: &PathBuf,
+        data_dir: &Path,
     ) -> Result<Sc2DictionaryData, DictionaryDataError> {
         let prestige_names_json =
-            Self::load_dictionary_json::<PrestigeNamesJson>(&data_dir, "prestige_names.json")?;
+            Self::load_dictionary_json::<PrestigeNamesJson>(data_dir, "prestige_names.json")?;
         let prestige_names = Self::parse_prestige_names_i64(&prestige_names_json)?;
         let prestige_names_with_u64_levels =
             Self::parse_prestige_names_with_u64_levels(&prestige_names);
-        let map_names = Self::load_dictionary_json::<MapNamesJson>(&data_dir, "map_names.json")?;
+        let map_names = Self::load_dictionary_json::<MapNamesJson>(data_dir, "map_names.json")?;
         let bonus_objectives =
-            Self::load_dictionary_json::<BonusObjectivesJson>(&data_dir, "bonus_objectives.json")?;
+            Self::load_dictionary_json::<BonusObjectivesJson>(data_dir, "bonus_objectives.json")?;
         let commander_mind_control_units =
-            Self::load_dictionary_json::<McUnitsJson>(&data_dir, "mc_units.json")?;
-        let mutators_json = Self::load_dictionary_json::<MutatorsJson>(&data_dir, "mutators.json")?;
+            Self::load_dictionary_json::<McUnitsJson>(data_dir, "mc_units.json")?;
+        let mutators_json = Self::load_dictionary_json::<MutatorsJson>(data_dir, "mutators.json")?;
         let mutators_exclude_ids_json = Self::load_dictionary_json::<MutatorsExcludeIdsJson>(
-            &data_dir,
+            data_dir,
             "mutators_exclude_ids.json",
         )?;
         let mutators_all = Self::build_mutator_list_all(&mutators_json);
         let mutators_ui = Self::build_mutators_ui(&mutators_all, &mutators_exclude_ids_json);
         let units_to_stats_json =
-            Self::load_dictionary_json::<UnitsToStatsJson>(&data_dir, "units_to_stats.json")?;
+            Self::load_dictionary_json::<UnitsToStatsJson>(data_dir, "units_to_stats.json")?;
         let units_to_stats = Self::parse_string_set(&units_to_stats_json);
         let amon_player_ids =
-            Self::load_dictionary_json::<AmonPlayerIdsJson>(&data_dir, "amon_player_ids.json")?;
+            Self::load_dictionary_json::<AmonPlayerIdsJson>(data_dir, "amon_player_ids.json")?;
         let amon_player_ids_as_sets = Self::parse_amon_player_ids_as_sets(&amon_player_ids);
-        let prestige_upgrades = Self::load_dictionary_json::<PrestigeUpgradesJson>(
-            &data_dir,
-            "prestige_upgrades.json",
-        )?;
+        let prestige_upgrades =
+            Self::load_dictionary_json::<PrestigeUpgradesJson>(data_dir, "prestige_upgrades.json")?;
         let unit_name_dict =
-            Self::load_dictionary_json::<UnitNamesJson>(&data_dir, "unit_names.json")?;
+            Self::load_dictionary_json::<UnitNamesJson>(data_dir, "unit_names.json")?;
         let unit_add_kills_to =
-            Self::load_dictionary_json::<UnitAddKillsToJson>(&data_dir, "unit_add_kills_to.json")?;
+            Self::load_dictionary_json::<UnitAddKillsToJson>(data_dir, "unit_add_kills_to.json")?;
         let unit_comp_dict_json =
-            Self::load_dictionary_json::<UnitCompDictJson>(&data_dir, "unit_comp_dict.json")?;
+            Self::load_dictionary_json::<UnitCompDictJson>(data_dir, "unit_comp_dict.json")?;
         let unit_comp_dict = Self::parse_unit_comp_dict(&unit_comp_dict_json);
         let unit_base_costs =
-            Self::load_dictionary_json::<UnitBaseCostsJson>(&data_dir, "unit_base_costs.json")?;
+            Self::load_dictionary_json::<UnitBaseCostsJson>(data_dir, "unit_base_costs.json")?;
         let unit_base_costs_as_tuples = Self::parse_unit_base_costs_as_tuples(&unit_base_costs);
         let mutator_ids =
-            Self::load_dictionary_json::<MutatorIdsJson>(&data_dir, "mutator_ids.json")?;
+            Self::load_dictionary_json::<MutatorIdsJson>(data_dir, "mutator_ids.json")?;
         let mutator_name_to_id_lookup = mutator_ids
             .iter()
             .map(|(id, name)| (name.clone(), id.clone()))
             .collect::<HashMap<String, String>>();
         let mutator_points =
-            Self::load_dictionary_json::<MutatorPointsJson>(&data_dir, "mutator_points.json")?;
+            Self::load_dictionary_json::<MutatorPointsJson>(data_dir, "mutator_points.json")?;
         let cached_mutators =
-            Self::load_dictionary_json::<CachedMutatorsJson>(&data_dir, "cached_mutators.json")?;
+            Self::load_dictionary_json::<CachedMutatorsJson>(data_dir, "cached_mutators.json")?;
         let mutator_brutal_plus = Self::load_dictionary_json::<MutatorBrutalPlusJson>(
-            &data_dir,
+            data_dir,
             "mutator_brutal_plus.json",
         )?;
         Self::validate_mutator_brutal_plus(&mutator_brutal_plus)?;
         let weekly_mutations_json =
-            Self::load_dictionary_json::<WeeklyMutationsJson>(&data_dir, "weekly_mutations.json")?;
+            Self::load_dictionary_json::<WeeklyMutationsJson>(data_dir, "weekly_mutations.json")?;
         let weekly_mutation_date_json = Self::load_dictionary_json::<WeeklyMutationDateJson>(
-            &data_dir,
+            data_dir,
             "weekly_mutation_date.json",
         )?;
         if !weekly_mutations_json.contains_key(&weekly_mutation_date_json.name) {
@@ -721,39 +719,39 @@ impl DictionaryDataLoader {
         }
         let weekly_mutations_as_sets = Self::parse_weekly_mutations(&weekly_mutations_json);
         let replay_analysis_data = Self::load_dictionary_json::<ReplayAnalysisDataJson>(
-            &data_dir,
+            data_dir,
             "replay_analysis_data.json",
         )?;
         let co_mastery_upgrades = Self::load_dictionary_json::<CoMasteryUpgradesJson>(
-            &data_dir,
+            data_dir,
             "co_mastery_upgrades.json",
         )?;
         let units_in_waves_json =
-            Self::load_dictionary_json::<UnitsInWavesJson>(&data_dir, "units_in_waves.json")?;
+            Self::load_dictionary_json::<UnitsInWavesJson>(data_dir, "units_in_waves.json")?;
         let units_in_waves = Self::parse_string_set(&units_in_waves_json);
         let hfts_units_json =
-            Self::load_dictionary_json::<HftsUnitsJson>(&data_dir, "hfts_units.json")?;
+            Self::load_dictionary_json::<HftsUnitsJson>(data_dir, "hfts_units.json")?;
         let hfts_units = Self::parse_string_set(&hfts_units_json);
         let tus_units_json =
-            Self::load_dictionary_json::<TusUnitsJson>(&data_dir, "tus_units.json")?;
+            Self::load_dictionary_json::<TusUnitsJson>(data_dir, "tus_units.json")?;
         let tus_units = Self::parse_string_set(&tus_units_json);
         let royal_guards_json =
-            Self::load_dictionary_json::<RoyalGuardsJson>(&data_dir, "royal_guards.json")?;
+            Self::load_dictionary_json::<RoyalGuardsJson>(data_dir, "royal_guards.json")?;
         let royal_guards = Self::parse_string_set(&royal_guards_json);
         let horners_units_json =
-            Self::load_dictionary_json::<HornersUnitsJson>(&data_dir, "horners_units.json")?;
+            Self::load_dictionary_json::<HornersUnitsJson>(data_dir, "horners_units.json")?;
         let horners_units = Self::parse_string_set(&horners_units_json);
         let tychus_base_upgrades_json = Self::load_dictionary_json::<TychusBaseUpgradesJson>(
-            &data_dir,
+            data_dir,
             "tychus_base_upgrades.json",
         )?;
         let tychus_base_upgrades = Self::parse_string_set(&tychus_base_upgrades_json);
         let tychus_ultimate_upgrades_json = Self::load_dictionary_json::<TychusUltimateUpgradesJson>(
-            &data_dir,
+            data_dir,
             "tychus_ultimate_upgrades.json",
         )?;
         let tychus_ultimate_upgrades = Self::parse_string_set(&tychus_ultimate_upgrades_json);
-        let outlaws_json = Self::load_dictionary_json::<OutlawsJson>(&data_dir, "outlaws.json")?;
+        let outlaws_json = Self::load_dictionary_json::<OutlawsJson>(data_dir, "outlaws.json")?;
         let outlaws = Self::parse_string_set(&outlaws_json);
         let map_key_to_id_lookup = Self::build_map_key_to_id_lookup(&map_names);
         let map_id_to_english_lookup = Self::build_map_id_to_english_lookup(&map_names);
@@ -860,10 +858,10 @@ impl DictionaryDataLoader {
             Self::add_default_data_dir_ancestors(&mut candidates, &mut seen, current_dir.as_path());
         }
 
-        if let Ok(current_exe) = std::env::current_exe() {
-            if let Some(parent) = current_exe.parent() {
-                Self::add_default_data_dir_ancestors(&mut candidates, &mut seen, parent);
-            }
+        if let Ok(current_exe) = std::env::current_exe()
+            && let Some(parent) = current_exe.parent()
+        {
+            Self::add_default_data_dir_ancestors(&mut candidates, &mut seen, parent);
         }
 
         candidates

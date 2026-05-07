@@ -37,6 +37,67 @@ const MASTERY_DISTRIBUTION_RATIO_SCALE: u64 = 100_000;
 type MasteryDistributionCounts = [BTreeMap<u64, u64>; 3];
 type MasteryDistributionByPrestigeCounts = [MasteryDistributionCounts; 4];
 
+struct FastestMapPlayerInput<'a> {
+    name: &'a str,
+    handle: &'a str,
+    commander: &'a str,
+    apm: u64,
+    mastery_level: u64,
+    masteries: &'a [u64],
+    prestige: u64,
+}
+
+struct PlayerReplayRecord<'a> {
+    player_name: &'a str,
+    handle: &'a str,
+    commander: &'a str,
+    replay_is_victory: bool,
+    apm: u64,
+    kill_fraction: f64,
+    replay_date: u64,
+}
+
+struct PlayerUnitRollupInput<'a> {
+    commander_name: &'a str,
+    units_payload: &'a Value,
+    player_kills: u64,
+    player_handle: &'a str,
+    main_handles: &'a HashSet<String>,
+    dictionary: &'a Sc2DictionaryData,
+}
+
+pub struct StatsResponseBuildInput<'a> {
+    path: &'a str,
+    stats: &'a Arc<Mutex<StatsState>>,
+    replays: &'a Arc<Mutex<HashMap<String, ReplayInfo>>>,
+    stats_current_replay_files: &'a Arc<Mutex<HashSet<String>>>,
+    scan_progress: ReplayScanProgressPayload,
+    main_names: &'a HashSet<String>,
+    main_handles: &'a HashSet<String>,
+}
+
+impl<'a> StatsResponseBuildInput<'a> {
+    pub fn new(
+        path: &'a str,
+        stats: &'a Arc<Mutex<StatsState>>,
+        replays: &'a Arc<Mutex<HashMap<String, ReplayInfo>>>,
+        stats_current_replay_files: &'a Arc<Mutex<HashSet<String>>>,
+        scan_progress: ReplayScanProgressPayload,
+        main_names: &'a HashSet<String>,
+        main_handles: &'a HashSet<String>,
+    ) -> Self {
+        Self {
+            path,
+            stats,
+            replays,
+            stats_current_replay_files,
+            scan_progress,
+            main_names,
+            main_handles,
+        }
+    }
+}
+
 struct ScanInFlightGuard<'a> {
     flag: &'a AtomicBool,
 }
@@ -282,7 +343,7 @@ impl ReplayAnalysisOps {
 
 impl ReplayAnalysisOps {
     fn record_mastery_distribution(target: &mut MasteryDistributionCounts, raw_values: &[u64]) {
-        for pair_index in 0..3 {
+        for (pair_index, counts) in target.iter_mut().enumerate().take(3) {
             let left = raw_values.get(pair_index * 2).copied().unwrap_or(0);
             let right = raw_values.get(pair_index * 2 + 1).copied().unwrap_or(0);
             let pair_total = left.saturating_add(right);
@@ -295,7 +356,7 @@ impl ReplayAnalysisOps {
                 .checked_div(pair_total)
                 .unwrap_or(0)
                 .min(MASTERY_DISTRIBUTION_RATIO_SCALE);
-            let entry = target[pair_index].entry(bucket).or_insert(0);
+            let entry = counts.entry(bucket).or_insert(0);
             *entry = entry.saturating_add(1);
         }
     }
@@ -375,25 +436,21 @@ struct FastestMapPlayer {
 
 impl ReplayAnalysisOps {
     fn fastest_map_player_value_with_dictionary(
-        name: &str,
-        handle: &str,
-        commander: &str,
-        apm: u64,
-        mastery_level: u64,
-        masteries: &[u64],
-        prestige: u64,
+        input: FastestMapPlayerInput<'_>,
         dictionary: &Sc2DictionaryData,
     ) -> Value {
         ReplayAnalysisOps::report_value(&FastestMapPlayer {
-            name: TauriOverlayOps::sanitize_replay_text(name),
-            handle: handle.to_string(),
-            commander: TauriOverlayOps::sanitize_replay_text(commander),
-            apm,
-            mastery_level,
-            masteries: TauriOverlayOps::normalize_mastery_values(masteries),
-            prestige,
+            name: TauriOverlayOps::sanitize_replay_text(input.name),
+            handle: input.handle.to_string(),
+            commander: TauriOverlayOps::sanitize_replay_text(input.commander),
+            apm: input.apm,
+            mastery_level: input.mastery_level,
+            masteries: TauriOverlayOps::normalize_mastery_values(input.masteries),
+            prestige: input.prestige,
             prestige_name: ReplayAnalysisOps::fastest_map_prestige_name_with_dictionary(
-                commander, prestige, dictionary,
+                input.commander,
+                input.prestige,
+                dictionary,
             ),
         })
     }
@@ -785,43 +842,34 @@ struct MapAggregate {
 }
 
 impl PlayerAggregate {
-    fn record_replay(
-        &mut self,
-        player_name: &str,
-        handle: &str,
-        commander: &str,
-        replay_is_victory: bool,
-        apm: u64,
-        kill_fraction: f64,
-        replay_date: u64,
-    ) {
-        let sanitized_name = TauriOverlayOps::sanitize_replay_text(player_name);
+    fn record_replay(&mut self, record: PlayerReplayRecord<'_>) {
+        let sanitized_name = TauriOverlayOps::sanitize_replay_text(record.player_name);
         if !sanitized_name.is_empty() {
             self.names
                 .entry(sanitized_name)
-                .and_modify(|last_seen| *last_seen = (*last_seen).max(replay_date))
-                .or_insert(replay_date);
+                .and_modify(|last_seen| *last_seen = (*last_seen).max(record.replay_date))
+                .or_insert(record.replay_date);
         }
-        let sanitized_handle = TauriOverlayOps::sanitize_replay_text(handle);
+        let sanitized_handle = TauriOverlayOps::sanitize_replay_text(record.handle);
         if !sanitized_handle.is_empty() {
             self.handles.insert(sanitized_handle);
         }
-        if !commander.is_empty() {
-            self.commander = commander.to_string();
+        if !record.commander.is_empty() {
+            self.commander = record.commander.to_string();
             self.commander_counts
-                .entry(commander.to_string())
+                .entry(record.commander.to_string())
                 .and_modify(|count| *count = count.saturating_add(1))
                 .or_insert(1);
         }
-        if replay_is_victory {
+        if record.replay_is_victory {
             self.wins = self.wins.saturating_add(1);
         } else {
             self.losses = self.losses.saturating_add(1);
         }
-        self.apm_values.push(apm);
-        self.kill_fractions.push(kill_fraction);
-        if replay_date > self.last_seen {
-            self.last_seen = replay_date;
+        self.apm_values.push(record.apm);
+        self.kill_fractions.push(record.kill_fraction);
+        if record.replay_date > self.last_seen {
+            self.last_seen = record.replay_date;
         }
     }
 
@@ -1125,13 +1173,11 @@ impl ReplayAnalysisOps {
                 "[SCO/cache] failed to persist recovered cache '{}': {error}",
                 cache_path.display()
             );
-        } else {
-            if let Err(error) = std::fs::remove_file(&temp_path) {
-                crate::sco_log!(
-                    "[SCO/cache] failed to remove recovered temp cache '{}': {error}",
-                    temp_path.display()
-                );
-            }
+        } else if let Err(error) = std::fs::remove_file(&temp_path) {
+            crate::sco_log!(
+                "[SCO/cache] failed to remove recovered temp cache '{}': {error}",
+                temp_path.display()
+            );
         }
 
         entries
@@ -1244,15 +1290,15 @@ impl ReplayAnalysisOps {
 
         let mc_unit = dictionary.commander_mind_control_unit(&commander);
         let mut mc_unit_bonus_kills = 0_i64;
-        if let Some(mc_unit_name) = mc_unit {
-            if replay_units.iter().any(|(unit, _)| unit == mc_unit_name) {
-                for (unit, row) in &replay_units {
-                    if row.created.is_explicit_zero()
-                        || (commander != "Fenix" && unit == "Disruptor")
-                        || (commander != "Tychus" && unit == "Auto-Turret")
-                    {
-                        mc_unit_bonus_kills = mc_unit_bonus_kills.saturating_add(row.kills);
-                    }
+        if let Some(mc_unit_name) = mc_unit
+            && replay_units.iter().any(|(unit, _)| unit == mc_unit_name)
+        {
+            for (unit, row) in &replay_units {
+                if row.created.is_explicit_zero()
+                    || (commander != "Fenix" && unit == "Disruptor")
+                    || (commander != "Tychus" && unit == "Auto-Turret")
+                {
+                    mc_unit_bonus_kills = mc_unit_bonus_kills.saturating_add(row.kills);
                 }
             }
         }
@@ -1346,31 +1392,26 @@ impl ReplayAnalysisOps {
 }
 
 impl ReplayAnalysisOps {
-    pub fn append_player_units_to_rollups_with_dictionary(
+    fn append_player_units_to_rollups_with_dictionary(
         main_rollup: &mut std::collections::BTreeMap<String, CommanderUnitRollup>,
         ally_rollup: &mut std::collections::BTreeMap<String, CommanderUnitRollup>,
-        commander_name: &str,
-        units_payload: &Value,
-        player_kills: u64,
-        player_handle: &str,
-        main_handles: &HashSet<String>,
-        dictionary: &Sc2DictionaryData,
+        input: PlayerUnitRollupInput<'_>,
     ) {
-        if ReplayAnalysis::is_main_player_by_handle(player_handle, main_handles) {
+        if ReplayAnalysis::is_main_player_by_handle(input.player_handle, input.main_handles) {
             ReplayAnalysisOps::append_units_to_rollup_with_dictionary(
                 main_rollup,
-                commander_name,
-                units_payload,
-                player_kills,
-                dictionary,
+                input.commander_name,
+                input.units_payload,
+                input.player_kills,
+                input.dictionary,
             );
         } else {
             ReplayAnalysisOps::append_units_to_rollup_with_dictionary(
                 ally_rollup,
-                commander_name,
-                units_payload,
-                player_kills,
-                dictionary,
+                input.commander_name,
+                input.units_payload,
+                input.player_kills,
+                input.dictionary,
             );
         }
     }
@@ -2291,14 +2332,13 @@ impl ReplayAnalysis {
                 map_entry.victory_length_sum += replay.accurate_length;
                 map_entry.victory_games += 1;
 
-                if replay.is_detailed {
-                    if let Some(total) = map_bonus_total {
-                        if total > 0 {
-                            let completed = (replay.bonus.len() as u64).min(total);
-                            map_entry.bonus_fraction_sum += completed as f64 / total as f64;
-                            map_entry.bonus_games += 1;
-                        }
-                    }
+                if replay.is_detailed
+                    && let Some(total) = map_bonus_total
+                    && total > 0
+                {
+                    let completed = (replay.bonus.len() as u64).min(total);
+                    map_entry.bonus_fraction_sum += completed as f64 / total as f64;
+                    map_entry.bonus_games += 1;
                 }
 
                 let has_no_fastest = !map_entry.fastest_length.is_finite();
@@ -2578,28 +2618,28 @@ impl ReplayAnalysis {
 
             if !main_player_name.is_empty() {
                 let p1 = player_values.entry(main_player_name).or_default();
-                p1.record_replay(
-                    &replay.main().name,
-                    &replay.main().handle,
-                    &main_commander_text,
+                p1.record_replay(PlayerReplayRecord {
+                    player_name: &replay.main().name,
+                    handle: &replay.main().handle,
+                    commander: &main_commander_text,
                     replay_is_victory,
-                    replay.main_apm(),
-                    main_kill_fraction,
-                    replay.date,
-                );
+                    apm: replay.main_apm(),
+                    kill_fraction: main_kill_fraction,
+                    replay_date: replay.date,
+                });
             }
 
             if !ally_player_name.is_empty() {
                 let p2 = player_values.entry(ally_player_name).or_default();
-                p2.record_replay(
-                    &replay.ally().name,
-                    &replay.ally().handle,
-                    &ally_commander_text,
+                p2.record_replay(PlayerReplayRecord {
+                    player_name: &replay.ally().name,
+                    handle: &replay.ally().handle,
+                    commander: &ally_commander_text,
                     replay_is_victory,
-                    replay.ally_apm(),
-                    ally_kill_fraction,
-                    replay.date,
-                );
+                    apm: replay.ally_apm(),
+                    kill_fraction: ally_kill_fraction,
+                    replay_date: replay.date,
+                });
             }
         }
 
@@ -2653,23 +2693,27 @@ impl ReplayAnalysis {
                 aggregate.fastest_length
             };
             let fastest_p1 = ReplayAnalysisOps::fastest_map_player_value_with_dictionary(
-                &aggregate.fastest_p1,
-                &aggregate.fastest_p1_handle,
-                &aggregate.fastest_p1_commander,
-                aggregate.fastest_p1_apm,
-                aggregate.fastest_p1_mastery_level,
-                &aggregate.fastest_p1_masteries,
-                aggregate.fastest_p1_prestige,
+                FastestMapPlayerInput {
+                    name: &aggregate.fastest_p1,
+                    handle: &aggregate.fastest_p1_handle,
+                    commander: &aggregate.fastest_p1_commander,
+                    apm: aggregate.fastest_p1_apm,
+                    mastery_level: aggregate.fastest_p1_mastery_level,
+                    masteries: &aggregate.fastest_p1_masteries,
+                    prestige: aggregate.fastest_p1_prestige,
+                },
                 dictionary,
             );
             let fastest_p2 = ReplayAnalysisOps::fastest_map_player_value_with_dictionary(
-                &aggregate.fastest_p2,
-                &aggregate.fastest_p2_handle,
-                &aggregate.fastest_p2_commander,
-                aggregate.fastest_p2_apm,
-                aggregate.fastest_p2_mastery_level,
-                &aggregate.fastest_p2_masteries,
-                aggregate.fastest_p2_prestige,
+                FastestMapPlayerInput {
+                    name: &aggregate.fastest_p2,
+                    handle: &aggregate.fastest_p2_handle,
+                    commander: &aggregate.fastest_p2_commander,
+                    apm: aggregate.fastest_p2_apm,
+                    mastery_level: aggregate.fastest_p2_mastery_level,
+                    masteries: &aggregate.fastest_p2_masteries,
+                    prestige: aggregate.fastest_p2_prestige,
+                },
                 dictionary,
             );
             let p1_is_main = ReplayAnalysis::is_main_player_identity(
@@ -3045,22 +3089,26 @@ impl ReplayAnalysis {
                 ReplayAnalysisOps::append_player_units_to_rollups_with_dictionary(
                     &mut main_rollup,
                     &mut ally_rollup,
-                    replay.main_commander(),
-                    replay.main_units(),
-                    replay.main_kills(),
-                    &replay.main().handle,
-                    main_handles,
-                    dictionary,
+                    PlayerUnitRollupInput {
+                        commander_name: replay.main_commander(),
+                        units_payload: replay.main_units(),
+                        player_kills: replay.main_kills(),
+                        player_handle: &replay.main().handle,
+                        main_handles,
+                        dictionary,
+                    },
                 );
                 ReplayAnalysisOps::append_player_units_to_rollups_with_dictionary(
                     &mut main_rollup,
                     &mut ally_rollup,
-                    replay.ally_commander(),
-                    replay.ally_units(),
-                    replay.ally_kills(),
-                    &replay.ally().handle,
-                    main_handles,
-                    dictionary,
+                    PlayerUnitRollupInput {
+                        commander_name: replay.ally_commander(),
+                        units_payload: replay.ally_units(),
+                        player_kills: replay.ally_kills(),
+                        player_handle: &replay.ally().handle,
+                        main_handles,
+                        dictionary,
+                    },
                 );
                 append_amon_units(&replay.amon_units);
             }
@@ -3131,29 +3179,29 @@ impl ReplayAnalysis {
             if !p1_name.is_empty() {
                 let p1_handle_key = ReplayAnalysis::normalized_handle_key(&replay.main().handle);
                 let p1 = player_values.entry(p1_handle_key).or_default();
-                p1.record_replay(
-                    &p1_name,
-                    &replay.main().handle,
-                    &main_commander,
+                p1.record_replay(PlayerReplayRecord {
+                    player_name: &p1_name,
+                    handle: &replay.main().handle,
+                    commander: &main_commander,
                     replay_is_victory,
-                    replay.main_apm(),
-                    main_kill_fraction,
-                    replay.date,
-                );
+                    apm: replay.main_apm(),
+                    kill_fraction: main_kill_fraction,
+                    replay_date: replay.date,
+                });
             }
 
             if !p2_name.is_empty() {
                 let p2_handle_key = ReplayAnalysis::normalized_handle_key(&replay.ally().handle);
                 let p2 = player_values.entry(p2_handle_key).or_default();
-                p2.record_replay(
-                    &p2_name,
-                    &replay.ally().handle,
-                    &ally_commander,
+                p2.record_replay(PlayerReplayRecord {
+                    player_name: &p2_name,
+                    handle: &replay.ally().handle,
+                    commander: &ally_commander,
                     replay_is_victory,
-                    replay.ally_apm(),
-                    ally_kill_fraction,
-                    replay.date,
-                );
+                    apm: replay.ally_apm(),
+                    kill_fraction: ally_kill_fraction,
+                    replay_date: replay.date,
+                });
             }
         }
 
@@ -3257,11 +3305,11 @@ impl ReplayAnalysis {
             }
 
             let lower = trimmed.to_ascii_lowercase();
-            if let Some(rest) = lower.strip_prefix("b+") {
-                if let Ok(level) = rest.trim().parse::<u64>() {
-                    let level = level.min(6);
-                    return (100 + level as i64, format!("B+{level}"));
-                }
+            if let Some(rest) = lower.strip_prefix("b+")
+                && let Ok(level) = rest.trim().parse::<u64>()
+            {
+                let level = level.min(6);
+                return (100 + level as i64, format!("B+{level}"));
             }
 
             let rank = if lower == "casual" {
@@ -4267,15 +4315,15 @@ impl ReplayAnalysis {
         }
 
         let replay_date_seconds = replay.date_seconds_for_filter();
-        if let Some(min_date) = min_date_seconds {
-            if replay_date_seconds <= min_date {
-                return false;
-            }
+        if let Some(min_date) = min_date_seconds
+            && replay_date_seconds <= min_date
+        {
+            return false;
         }
-        if let Some(max_date) = max_date_seconds {
-            if replay_date_seconds >= max_date {
-                return false;
-            }
+        if let Some(max_date) = max_date_seconds
+            && replay_date_seconds >= max_date
+        {
+            return false;
         }
 
         if !include_sub_15 && replay.main_commander_level() < 15 {
@@ -4442,6 +4490,24 @@ impl ReplayAnalysis {
     ) -> Result<Value, String> {
         let dictionary = Sc2DictionaryData::default();
         Self::build_stats_response_with_dictionary(
+            StatsResponseBuildInput::new(
+                path,
+                stats,
+                replays,
+                stats_current_replay_files,
+                scan_progress,
+                main_names,
+                main_handles,
+            ),
+            &dictionary,
+        )
+    }
+
+    pub fn build_stats_response_with_dictionary(
+        input: StatsResponseBuildInput<'_>,
+        dictionary: &Sc2DictionaryData,
+    ) -> Result<Value, String> {
+        let StatsResponseBuildInput {
             path,
             stats,
             replays,
@@ -4449,20 +4515,7 @@ impl ReplayAnalysis {
             scan_progress,
             main_names,
             main_handles,
-            &dictionary,
-        )
-    }
-
-    pub fn build_stats_response_with_dictionary(
-        path: &str,
-        stats: &Arc<Mutex<StatsState>>,
-        replays: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
-        stats_current_replay_files: &Arc<Mutex<HashSet<String>>>,
-        scan_progress: ReplayScanProgressPayload,
-        main_names: &HashSet<String>,
-        main_handles: &HashSet<String>,
-        dictionary: &Sc2DictionaryData,
-    ) -> Result<Value, String> {
+        } = input;
         let mut response = match stats.try_lock() {
             Ok(state) => state.as_payload(scan_progress.clone()),
             Err(error) => match error {

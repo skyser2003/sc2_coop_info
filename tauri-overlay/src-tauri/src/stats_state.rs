@@ -3,6 +3,16 @@ use crate::{AppSettings, ReplayInfo, StatsStatePayload, TauriOverlayOps};
 use s2coop_analyzer::cache_overall_stats_generator::CacheReplayEntry;
 use serde_json::Value;
 
+pub(crate) type StatsStateParts = (
+    bool,
+    u64,
+    Vec<String>,
+    Vec<String>,
+    Value,
+    std::collections::BTreeMap<String, LocalizedLabels>,
+    String,
+);
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StartupAnalysisTrigger {
     Setup,
@@ -345,17 +355,7 @@ impl StatsSnapshot {
         }
     }
 
-    pub(crate) fn into_parts(
-        self,
-    ) -> (
-        bool,
-        u64,
-        Vec<String>,
-        Vec<String>,
-        Value,
-        std::collections::BTreeMap<String, LocalizedLabels>,
-        String,
-    ) {
+    pub(crate) fn into_parts(self) -> StatsStateParts {
         (
             self.ready,
             self.games,

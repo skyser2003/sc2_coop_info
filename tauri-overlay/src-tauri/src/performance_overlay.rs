@@ -453,10 +453,10 @@ impl PerformanceOverlayOps {
 impl PerformanceOverlayOps {
     pub(crate) fn apply_settings(app: &tauri::AppHandle<Wry>) {
         let settings = app.state::<BackendState>().read_settings_memory();
-        if let Some(window) = app.get_webview_window("performance") {
-            if let Err(error) = PerformanceOverlayOps::apply_saved_geometry(&window) {
-                crate::sco_log!("[SCO/performance] Failed to apply geometry: {error}");
-            }
+        if let Some(window) = app.get_webview_window("performance")
+            && let Err(error) = PerformanceOverlayOps::apply_saved_geometry(&window)
+        {
+            crate::sco_log!("[SCO/performance] Failed to apply geometry: {error}");
         }
 
         if settings.performance_show_enabled() {

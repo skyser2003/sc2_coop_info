@@ -68,7 +68,7 @@ impl<'a> BitPackedBuffer<'a> {
             ));
         }
 
-        if self.next_bits == 0 && bits % 8 == 0 {
+        if self.next_bits == 0 && bits.is_multiple_of(8) {
             let bytes = bits / 8;
             let raw = self.read_aligned_slice(bytes)?;
             let mut result = 0u64;

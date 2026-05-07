@@ -484,18 +484,91 @@ impl OverlayInfoOps {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct OverlayMonitorGeometry {
+    monitor_x: i32,
+    monitor_y: i32,
+    monitor_width: u32,
+    monitor_height: u32,
+}
+
+impl OverlayMonitorGeometry {
+    pub fn new(monitor_x: i32, monitor_y: i32, monitor_width: u32, monitor_height: u32) -> Self {
+        Self {
+            monitor_x,
+            monitor_y,
+            monitor_width,
+            monitor_height,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct OverlayWindowScale {
+    width_ratio: f64,
+    height_ratio: f64,
+}
+
+impl OverlayWindowScale {
+    pub fn new(width_ratio: f64, height_ratio: f64) -> Self {
+        Self {
+            width_ratio,
+            height_ratio,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OverlayWindowOffsets {
+    top_offset: i32,
+    right_offset: i32,
+    subtract_height: i32,
+}
+
+impl OverlayWindowOffsets {
+    pub fn new(top_offset: i32, right_offset: i32, subtract_height: i32) -> Self {
+        Self {
+            top_offset,
+            right_offset,
+            subtract_height,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct OverlayWindowBoundsInput {
+    geometry: OverlayMonitorGeometry,
+    scale: OverlayWindowScale,
+    offsets: OverlayWindowOffsets,
+}
+
+impl OverlayWindowBoundsInput {
+    pub fn new(
+        geometry: OverlayMonitorGeometry,
+        scale: OverlayWindowScale,
+        offsets: OverlayWindowOffsets,
+    ) -> Self {
+        Self {
+            geometry,
+            scale,
+            offsets,
+        }
+    }
+}
+
 impl OverlayInfoOps {
     pub fn overlay_window_bounds_for_monitor(
-        monitor_x: i32,
-        monitor_y: i32,
-        monitor_width: u32,
-        monitor_height: u32,
-        width_ratio: f64,
-        height_ratio: f64,
-        top_offset: i32,
-        right_offset: i32,
-        subtract_height: i32,
+        input: OverlayWindowBoundsInput,
     ) -> (tauri::PhysicalSize<u32>, tauri::PhysicalPosition<i32>) {
+        let monitor_x = input.geometry.monitor_x;
+        let monitor_y = input.geometry.monitor_y;
+        let monitor_width = input.geometry.monitor_width;
+        let monitor_height = input.geometry.monitor_height;
+        let width_ratio = input.scale.width_ratio;
+        let height_ratio = input.scale.height_ratio;
+        let top_offset = input.offsets.top_offset;
+        let right_offset = input.offsets.right_offset;
+        let subtract_height = input.offsets.subtract_height;
         if monitor_width == 0 || monitor_height == 0 {
             let size = tauri::PhysicalSize {
                 width: 1,
@@ -597,17 +670,21 @@ impl OverlayInfoOps {
     ) -> Result<(), String> {
         let settings = settings_value.overlay_placement();
         let selected = OverlayInfoOps::selected_monitor_from_settings(window, settings_value)?;
-        let (size, _) = OverlayInfoOps::overlay_window_bounds_for_monitor(
-            selected.position_x(),
-            selected.position_y(),
-            selected.width(),
-            selected.height(),
-            settings.width(),
-            settings.height(),
-            settings.top_offset(),
-            settings.right_offset(),
-            settings.subtract_height(),
-        );
+        let (size, _) =
+            OverlayInfoOps::overlay_window_bounds_for_monitor(OverlayWindowBoundsInput::new(
+                OverlayMonitorGeometry::new(
+                    selected.position_x(),
+                    selected.position_y(),
+                    selected.width(),
+                    selected.height(),
+                ),
+                OverlayWindowScale::new(settings.width(), settings.height()),
+                OverlayWindowOffsets::new(
+                    settings.top_offset(),
+                    settings.right_offset(),
+                    settings.subtract_height(),
+                ),
+            ));
         let provisional_position = tauri::PhysicalPosition {
             x: selected.position_x(),
             y: selected.position_y(),
@@ -641,17 +718,21 @@ impl OverlayInfoOps {
     ) -> Result<(), String> {
         let settings = settings_value.overlay_placement();
         let selected = OverlayInfoOps::selected_monitor_from_settings(window, settings_value)?;
-        let (target_size, _) = OverlayInfoOps::overlay_window_bounds_for_monitor(
-            selected.position_x(),
-            selected.position_y(),
-            selected.width(),
-            selected.height(),
-            settings.width(),
-            settings.height(),
-            settings.top_offset(),
-            settings.right_offset(),
-            settings.subtract_height(),
-        );
+        let (target_size, _) =
+            OverlayInfoOps::overlay_window_bounds_for_monitor(OverlayWindowBoundsInput::new(
+                OverlayMonitorGeometry::new(
+                    selected.position_x(),
+                    selected.position_y(),
+                    selected.width(),
+                    selected.height(),
+                ),
+                OverlayWindowScale::new(settings.width(), settings.height()),
+                OverlayWindowOffsets::new(
+                    settings.top_offset(),
+                    settings.right_offset(),
+                    settings.subtract_height(),
+                ),
+            ));
         let current_size = window
             .outer_size()
             .map_err(|error| format!("Failed to read overlay size: {error}"))?;
@@ -912,10 +993,10 @@ impl OverlayInfoOps {
         path: &str,
     ) -> Result<(), String> {
         let state = app.state::<BackendState>();
-        if let Some(previous_path) = state.active_hotkey_reassign_path() {
-            if previous_path != path {
-                OverlayInfoOps::end_hotkey_reassign(app, &previous_path)?;
-            }
+        if let Some(previous_path) = state.active_hotkey_reassign_path()
+            && previous_path != path
+        {
+            OverlayInfoOps::end_hotkey_reassign(app, &previous_path)?;
         }
 
         state.set_active_hotkey_reassign_path(Some(path.to_string()));
