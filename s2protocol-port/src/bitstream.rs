@@ -75,6 +75,20 @@ impl<'a> BitPackedBuffer<'a> {
         self.read_bits_little_endian(bits)
     }
 
+    pub(crate) fn read_u8(&mut self) -> Result<u8, DecodeError> {
+        if self.next_bits == 0 {
+            if self.used >= self.data.len() {
+                return Err(DecodeError::Truncated);
+            }
+
+            let value = self.data[self.used];
+            self.used += 1;
+            return Ok(value);
+        }
+
+        Ok(self.read_bits(8)? as u8)
+    }
+
     fn read_bits_big_endian(&mut self, bits: usize) -> Result<u64, DecodeError> {
         if bits == 1 {
             return self.read_one_bit();

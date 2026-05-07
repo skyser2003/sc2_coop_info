@@ -902,10 +902,7 @@ impl ProtocolDefinition {
             return Ok(Value::Object(object));
         }
 
-        object.insert(
-            "source".to_string(),
-            Value::Int(buffer.read_bits(8)? as i128),
-        );
+        object.insert("source".to_string(), Value::Int(buffer.read_u8()? as i128));
         object.insert(
             "mapNamespace".to_string(),
             Value::Int(buffer.read_bits(32)? as i128),
@@ -919,7 +916,7 @@ impl ProtocolDefinition {
         while !buffer.done() {
             let namespace = buffer.read_bits(32)?;
             let attrid = buffer.read_bits(32)?;
-            let scope = buffer.read_bits(8)?;
+            let scope = u64::from(buffer.read_u8()?);
             let raw = buffer.read_aligned_array::<4>()?;
 
             let mut value_bytes = raw.into_iter().rev().collect::<Vec<u8>>();
@@ -2593,7 +2590,7 @@ impl<'a> VersionedDecoder<'a> {
     }
 
     fn expect_skip(&mut self, expected: u8) -> Result<(), DecodeError> {
-        let marker = self.buffer.read_bits(8)? as u8;
+        let marker = self.buffer.read_u8()?;
         if marker != expected {
             Err(DecodeError::Corrupted(format!(
                 "unexpected versioned skip marker expected {expected} got {marker}"
@@ -2604,13 +2601,13 @@ impl<'a> VersionedDecoder<'a> {
     }
 
     fn vint(&mut self) -> Result<i128, DecodeError> {
-        let mut b = self.buffer.read_bits(8)? as u8;
+        let mut b = self.buffer.read_u8()?;
         let negative = (b & 1) != 0;
         let mut value: i128 = ((u16::from(b) >> 1) & 0x3f) as i128;
         let mut shift = 6;
 
         while (b & 0x80) != 0 {
-            b = self.buffer.read_bits(8)? as u8;
+            b = self.buffer.read_u8()?;
             value |= ((u16::from(b) & 0x7f) as i128) << shift;
             shift += 7;
         }
@@ -2619,7 +2616,7 @@ impl<'a> VersionedDecoder<'a> {
     }
 
     fn skip_instance(&mut self) -> Result<(), DecodeError> {
-        let skip = self.buffer.read_bits(8)? as u8;
+        let skip = self.buffer.read_u8()?;
         match skip {
             0 => {
                 let length = self.vint()? as usize;
@@ -2641,7 +2638,7 @@ impl<'a> VersionedDecoder<'a> {
                 self.skip_instance()?;
             }
             4 => {
-                let exists = self.buffer.read_bits(8)? != 0;
+                let exists = self.buffer.read_u8()? != 0;
                 if exists {
                     self.skip_instance()?;
                 }
@@ -2721,7 +2718,7 @@ impl<'a> VersionedDecoder<'a> {
 
     fn bool(&mut self) -> Result<Value, DecodeError> {
         self.expect_skip(6)?;
-        Ok(Value::Bool(self.buffer.read_bits(8)? != 0))
+        Ok(Value::Bool(self.buffer.read_u8()? != 0))
     }
 
     fn choice(&mut self, typeinfo: &TypeInfo) -> Result<BTreeMap<String, Value>, DecodeError> {
@@ -2753,7 +2750,7 @@ impl<'a> VersionedDecoder<'a> {
 
     fn optional(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
         self.expect_skip(4)?;
-        let exists = self.buffer.read_bits(8)? != 0;
+        let exists = self.buffer.read_u8()? != 0;
         if !exists {
             return Ok(Value::Null);
         }
@@ -2926,7 +2923,7 @@ impl<'a> VersionedDecoder<'a> {
         }
 
         self.expect_skip(4)?;
-        let exists = self.buffer.read_bits(8)? != 0;
+        let exists = self.buffer.read_u8()? != 0;
         if !exists {
             return Ok(false);
         }
@@ -3168,7 +3165,7 @@ impl TypeDecoder for VersionedDecoder<'_> {
             TypeOp::Null => Ok(None),
             TypeOp::Optional => {
                 self.expect_skip(4)?;
-                let exists = self.buffer.read_bits(8)? != 0;
+                let exists = self.buffer.read_u8()? != 0;
                 if !exists {
                     return Ok(None);
                 }
@@ -3190,7 +3187,7 @@ impl TypeDecoder for VersionedDecoder<'_> {
             TypeOp::Null => Ok(None),
             TypeOp::Optional => {
                 self.expect_skip(4)?;
-                let exists = self.buffer.read_bits(8)? != 0;
+                let exists = self.buffer.read_u8()? != 0;
                 if !exists {
                     return Ok(None);
                 }
@@ -3212,7 +3209,7 @@ impl TypeDecoder for VersionedDecoder<'_> {
             TypeOp::Null => Ok(None),
             TypeOp::Optional => {
                 self.expect_skip(4)?;
-                let exists = self.buffer.read_bits(8)? != 0;
+                let exists = self.buffer.read_u8()? != 0;
                 if !exists {
                     return Ok(None);
                 }
@@ -3236,7 +3233,7 @@ impl TypeDecoder for VersionedDecoder<'_> {
             }
             TypeOp::Bool => {
                 self.expect_skip(6)?;
-                Ok(Some((self.buffer.read_bits(8)? != 0).to_string()))
+                Ok(Some((self.buffer.read_u8()? != 0).to_string()))
             }
             TypeOp::Real32 => Ok(self.real32()?.as_f64().map(|value| value.to_string())),
             TypeOp::Real64 => Ok(self.real64()?.as_f64().map(|value| value.to_string())),
