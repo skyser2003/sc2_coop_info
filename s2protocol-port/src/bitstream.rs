@@ -69,10 +69,10 @@ impl<'a> BitPackedBuffer<'a> {
         }
 
         if self.big_endian {
-            return self.read_bits_big_endian(bits);
+            return self.read_bits_with_order::<true>(bits);
         }
 
-        self.read_bits_little_endian(bits)
+        self.read_bits_with_order::<false>(bits)
     }
 
     pub(crate) fn read_u8(&mut self) -> Result<u8, DecodeError> {
@@ -89,28 +89,23 @@ impl<'a> BitPackedBuffer<'a> {
         Ok(self.read_bits(8)? as u8)
     }
 
-    fn read_bits_big_endian(&mut self, bits: usize) -> Result<u64, DecodeError> {
+    fn read_bits_with_order<const BIG_ENDIAN: bool>(
+        &mut self,
+        bits: usize,
+    ) -> Result<u64, DecodeError> {
         if bits == 1 {
             return self.read_one_bit();
         }
 
-        if self.next_bits == 0 {
-            match bits {
-                8 => return self.read_aligned_u8(),
-                16 => return self.read_aligned_u16_big_endian(),
-                32 => return self.read_aligned_u32_big_endian(),
-                _ => {}
-            }
+        if self.next_bits == 0
+            && let Some(result) = self.read_aligned_fixed_width::<BIG_ENDIAN>(bits)
+        {
+            return result;
         }
 
         if self.next_bits == 0 && bits.is_multiple_of(8) {
             let bytes = bits / 8;
-            let raw = self.read_aligned_slice(bytes)?;
-            let mut result = 0u64;
-            for byte in raw {
-                result = (result << 8) | u64::from(*byte);
-            }
-            return Ok(result);
+            return self.read_aligned_integer::<BIG_ENDIAN>(bytes);
         }
 
         let mut result: u64 = 0;
@@ -136,69 +131,11 @@ impl<'a> BitPackedBuffer<'a> {
             };
             let copy = (self.next & mask) as u64;
 
-            result |= copy << (bits - result_bits - copybits as usize);
-
-            if copybits == 8 {
-                self.next = 0;
-                self.next_bits = 0;
+            if BIG_ENDIAN {
+                result |= copy << (bits - result_bits - copybits as usize);
             } else {
-                self.next >>= copybits;
-                self.next_bits -= copybits;
+                result |= copy << result_bits;
             }
-            result_bits += copybits as usize;
-        }
-
-        Ok(result)
-    }
-
-    fn read_bits_little_endian(&mut self, bits: usize) -> Result<u64, DecodeError> {
-        if bits == 1 {
-            return self.read_one_bit();
-        }
-
-        if self.next_bits == 0 {
-            match bits {
-                8 => return self.read_aligned_u8(),
-                16 => return self.read_aligned_u16_little_endian(),
-                32 => return self.read_aligned_u32_little_endian(),
-                _ => {}
-            }
-        }
-
-        if self.next_bits == 0 && bits.is_multiple_of(8) {
-            let bytes = bits / 8;
-            let raw = self.read_aligned_slice(bytes)?;
-            let mut result = 0u64;
-            for (index, byte) in raw.iter().enumerate() {
-                result |= u64::from(*byte) << (index * 8);
-            }
-            return Ok(result);
-        }
-
-        let mut result: u64 = 0;
-        let mut result_bits: usize = 0;
-
-        while result_bits != bits {
-            if self.next_bits == 0 {
-                if self.used >= self.data.len() {
-                    return Err(DecodeError::Truncated);
-                }
-
-                self.next = self.data[self.used];
-                self.used += 1;
-                self.next_bits = 8;
-            }
-
-            let bits_remaining = bits - result_bits;
-            let copybits = bits_remaining.min(self.next_bits as usize) as u8;
-            let mask = if copybits == 8 {
-                u8::MAX
-            } else {
-                ((1u16 << copybits) - 1) as u8
-            };
-            let copy = (self.next & mask) as u64;
-
-            result |= copy << result_bits;
 
             if copybits == 8 {
                 self.next = 0;
@@ -233,68 +170,48 @@ impl<'a> BitPackedBuffer<'a> {
         Ok(bit)
     }
 
-    fn read_aligned_u8(&mut self) -> Result<u64, DecodeError> {
-        if self.used >= self.data.len() {
-            return Err(DecodeError::Truncated);
+    fn read_aligned_fixed_width<const BIG_ENDIAN: bool>(
+        &mut self,
+        bits: usize,
+    ) -> Option<Result<u64, DecodeError>> {
+        match bits {
+            8 => Some(self.read_u8().map(u64::from)),
+            16 => Some(self.read_aligned_array::<2>().map(|bytes| {
+                let value = if BIG_ENDIAN {
+                    u16::from_be_bytes(bytes)
+                } else {
+                    u16::from_le_bytes(bytes)
+                };
+                u64::from(value)
+            })),
+            32 => Some(self.read_aligned_array::<4>().map(|bytes| {
+                let value = if BIG_ENDIAN {
+                    u32::from_be_bytes(bytes)
+                } else {
+                    u32::from_le_bytes(bytes)
+                };
+                u64::from(value)
+            })),
+            _ => None,
         }
-
-        let value = self.data[self.used];
-        self.used += 1;
-        Ok(u64::from(value))
     }
 
-    fn read_aligned_u16_big_endian(&mut self) -> Result<u64, DecodeError> {
-        let end = self.used.checked_add(2).ok_or(DecodeError::Truncated)?;
-        if end > self.data.len() {
-            return Err(DecodeError::Truncated);
+    fn read_aligned_integer<const BIG_ENDIAN: bool>(
+        &mut self,
+        bytes: usize,
+    ) -> Result<u64, DecodeError> {
+        let raw = self.read_aligned_slice(bytes)?;
+        let mut result = 0u64;
+        if BIG_ENDIAN {
+            for byte in raw {
+                result = (result << 8) | u64::from(*byte);
+            }
+        } else {
+            for (index, byte) in raw.iter().enumerate() {
+                result |= u64::from(*byte) << (index * 8);
+            }
         }
-
-        let value = u16::from_be_bytes([self.data[self.used], self.data[self.used + 1]]);
-        self.used = end;
-        Ok(u64::from(value))
-    }
-
-    fn read_aligned_u16_little_endian(&mut self) -> Result<u64, DecodeError> {
-        let end = self.used.checked_add(2).ok_or(DecodeError::Truncated)?;
-        if end > self.data.len() {
-            return Err(DecodeError::Truncated);
-        }
-
-        let value = u16::from_le_bytes([self.data[self.used], self.data[self.used + 1]]);
-        self.used = end;
-        Ok(u64::from(value))
-    }
-
-    fn read_aligned_u32_big_endian(&mut self) -> Result<u64, DecodeError> {
-        let end = self.used.checked_add(4).ok_or(DecodeError::Truncated)?;
-        if end > self.data.len() {
-            return Err(DecodeError::Truncated);
-        }
-
-        let value = u32::from_be_bytes([
-            self.data[self.used],
-            self.data[self.used + 1],
-            self.data[self.used + 2],
-            self.data[self.used + 3],
-        ]);
-        self.used = end;
-        Ok(u64::from(value))
-    }
-
-    fn read_aligned_u32_little_endian(&mut self) -> Result<u64, DecodeError> {
-        let end = self.used.checked_add(4).ok_or(DecodeError::Truncated)?;
-        if end > self.data.len() {
-            return Err(DecodeError::Truncated);
-        }
-
-        let value = u32::from_le_bytes([
-            self.data[self.used],
-            self.data[self.used + 1],
-            self.data[self.used + 2],
-            self.data[self.used + 3],
-        ]);
-        self.used = end;
-        Ok(u64::from(value))
+        Ok(result)
     }
 
     pub(crate) fn skip_bits(&mut self, bits: usize) -> Result<(), DecodeError> {
