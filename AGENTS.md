@@ -21,3 +21,4 @@
 - DO NOT use static/global variables to share states among the process internally, like OnceLock/Mutex/etc.
 - Limit cargo build cpu to half of maximum cores available.
 - Frontend styling should consider both dark mode and light mode.
+- After editing rust code, run 'cargo clippy' and fix simple warnings.
