@@ -14,6 +14,7 @@
 - When running comparison test for performance, always run a few times, alternating the order of the test.
 - DO NOT copy & paste duplicate codes everywhere.  Make then into one shared function.
 - DO NOT use Rust/C++ macro or other kinds of code generation unless there is no other option than macro.
+- ALWAYS CHECK whether there aren't any sensitive/personal/secret values in the commit before commiting.
 
 # Project specific
 - Make sure all codes and tests run in windows/mac/linux.
