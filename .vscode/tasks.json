@@ -1,0 +1,101 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Run generation",
+            "type": "shell",
+            "command": "cargo run --release --manifest-path s2coop-analyzer/Cargo.toml --bin s2coop-analyzer-cli -- generate-cache --account-dir $accountDir --output $currentOut",
+            "group": {
+                "kind": "build"
+            },
+            "problemMatcher": ["$rustc"],
+            "options": {
+                "env": {
+                    "PYTHONPATH": "tests"
+                },
+                "executable": "pwsh.exe"
+            }
+        },
+        {
+            "label": "Run json prettier",
+            "type": "shell",
+            "command": "cargo test --release --test cache_overall_stats_pretty -- --exact --nocapture",
+            "group": {
+                "kind": "build"
+            },
+            "problemMatcher": ["$rustc"],
+            "options": {
+                "executable": "pwsh.exe",
+                "cwd": "${workspaceFolder}/s2coop-analyzer"
+            }
+        },
+        {
+            "label": "Push to release",
+            "type": "shell",
+            "command": "git rebase main release && git push --all && git switch main",
+            "group": {
+                "kind": "build"
+            },
+            "problemMatcher": ["$rustc"],
+            "options": {
+                "executable": "pwsh.exe",
+                "cwd": "${workspaceFolder}"
+            }
+        },
+        {
+            "label": "Compare cache generation vs Git Ref",
+            "type": "shell",
+            "command": "pwsh.exe",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                "${workspaceFolder}/scripts/compare-cache-generation-vs-head.ps1",
+                "-ComparisonRef",
+                "${input:compareCacheGitRef}"
+            ],
+            "group": {
+                "kind": "build"
+            },
+            "problemMatcher": [],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
+        },
+        {
+            "label": "Compare cache generation vs Git Ref (10 alternating)",
+            "type": "shell",
+            "command": "pwsh.exe",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                "${workspaceFolder}/scripts/compare-cache-generation-vs-head.ps1",
+                "-ComparisonRef",
+                "${input:compareCacheGitRef}",
+                "-Runs",
+                "10",
+                "-Workers",
+                "8",
+                "-AnalyzerTimings"
+            ],
+            "group": {
+                "kind": "build"
+            },
+            "problemMatcher": [],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
+        }
+    ],
+    "inputs": [
+        {
+            "id": "compareCacheGitRef",
+            "type": "promptString",
+            "description": "Git ref to compare cache generation against",
+            "default": "HEAD"
+        }
+    ]
+}

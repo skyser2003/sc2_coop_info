@@ -1,5 +1,8 @@
 # Dev
 .vscode
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/extensions.json
 **/target/
 tauri-overlay/src-tauri/generated/
 tauri-overlay/dist/
