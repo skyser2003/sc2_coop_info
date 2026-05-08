@@ -432,6 +432,7 @@ struct ReplayParsedContext {
 #[derive(Debug, Clone)]
 struct ReplayDetailedParseContext {
     events: Vec<ReplayEvent>,
+    event_kinds: Vec<ReplayEventKind>,
     start_time: f64,
     end_time: f64,
 }
@@ -1040,11 +1041,22 @@ impl DetailedReplayAnalyzer {
             let detailed_event_filter_start = Instant::now();
             let detailed = if options.include_events {
                 let mut retained_events = events;
-                retained_events.retain(ReplayEventKind::needed_for_replay_report_analysis_event);
+                let mut retained_event_kinds = Vec::with_capacity(retained_events.len());
+                retained_events.retain(|event| {
+                    let event_kind = ReplayEventKind::from_event(event);
+                    if event_kind.needed_for_replay_report_analysis() {
+                        retained_event_kinds.push(event_kind);
+                        true
+                    } else {
+                        false
+                    }
+                });
                 timing.events_retained_len = retained_events.len();
                 timing.events_retained_capacity = retained_events.capacity();
+                debug_assert_eq!(retained_events.len(), retained_event_kinds.len());
                 Some(ReplayDetailedParseContext {
                     events: retained_events,
+                    event_kinds: retained_event_kinds,
                     start_time: start_time.as_f64(),
                     end_time,
                 })
@@ -1106,10 +1118,10 @@ impl DetailedReplayAnalyzer {
         }
     }
 
-    fn collect_user_leave_times(events: &[ReplayEvent]) -> IndexMap<i64, f64> {
+    fn collect_user_leave_times(context: &ReplayDetailedParseContext) -> IndexMap<i64, f64> {
         let mut user_leave_times = IndexMap::new();
-        for event in events {
-            if ReplayEventKind::from_event(event) != ReplayEventKind::GameUserLeave {
+        for (event, event_kind) in context.events.iter().zip(context.event_kinds.iter()) {
+            if *event_kind != ReplayEventKind::GameUserLeave {
                 continue;
             }
             let user = DetailedReplayAnalyzer::event_user_id(event)
@@ -1219,9 +1231,9 @@ impl ReplayEventKind {
         !matches!(Self::from_name(event_name), Self::Other)
     }
 
-    fn needed_for_replay_report_analysis_event(event: &ReplayEvent) -> bool {
+    fn needed_for_replay_report_analysis(self) -> bool {
         matches!(
-            Self::from_event(event),
+            self,
             Self::GameUserLeave
                 | Self::GameCommand
                 | Self::GameCommandUpdateTargetUnit
@@ -3840,7 +3852,7 @@ impl ReplayParsedInputBundle {
         let user_leave_times = self
             .detailed
             .as_ref()
-            .map(|context| DetailedReplayAnalyzer::collect_user_leave_times(&context.events))
+            .map(DetailedReplayAnalyzer::collect_user_leave_times)
             .unwrap_or_default();
         ParsedReplayMessage::sorted_with_leave_events(&self.parser.messages, &user_leave_times)
     }
@@ -4722,6 +4734,7 @@ impl DetailedReplayAnalyzer {
         } = parsed;
         let ReplayDetailedParseContext {
             events,
+            event_kinds,
             start_time,
             end_time,
         } = detailed.ok_or_else(|| {
@@ -4824,8 +4837,7 @@ impl DetailedReplayAnalyzer {
         let ally_leave_transfer_threshold = end_time * 0.5;
         let mut ally_kills_transfer_to_main = false;
         let event_loop_started = timings.start();
-        for event in &events {
-            let current_event_kind = ReplayEventKind::from_event(event);
+        for (event, current_event_kind) in events.iter().zip(event_kinds.iter().copied()) {
             timings.increment_event_kind(current_event_kind);
             let event_gameloop = DetailedReplayAnalyzer::event_gameloop(event);
 

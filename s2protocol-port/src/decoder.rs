@@ -815,6 +815,11 @@ impl ProtocolDefinition {
     where
         F: Fn(&str) -> bool,
     {
+        let game_event_filter =
+            EventTypeInfoFilter::from_typeinfos(&self.game_event_typeinfos, &include_event);
+        let tracker_event_filter =
+            EventTypeInfoFilter::from_typeinfos(&self.tracker_event_typeinfos, &include_event);
+
         let mut game_reader = EventStreamReader::<_, GameEvent>::new(
             BitPackedDecoder::new(game_contents, Arc::clone(&self.typeinfos)),
             &self.game_event_typeinfos,
@@ -831,10 +836,10 @@ impl ProtocolDefinition {
             _ => None,
         };
 
-        let mut next_game = game_reader.next_matching_event(&include_event)?;
+        let mut next_game = game_reader.next_matching_event(&game_event_filter)?;
         let mut next_tracker = tracker_reader
             .as_mut()
-            .map(|reader| reader.next_matching_event(&include_event))
+            .map(|reader| reader.next_matching_event(&tracker_event_filter))
             .transpose()?
             .flatten();
         let mut events = Vec::with_capacity(Self::ordered_event_capacity_hint(
@@ -856,14 +861,14 @@ impl ProtocolDefinition {
                 if let Some(event) = next_game.take() {
                     events.push(ReplayEvent::Game(event));
                 }
-                next_game = game_reader.next_matching_event(&include_event)?;
+                next_game = game_reader.next_matching_event(&game_event_filter)?;
             } else {
                 if let Some(event) = next_tracker.take() {
                     events.push(ReplayEvent::Tracker(event));
                 }
                 next_tracker = tracker_reader
                     .as_mut()
-                    .map(|reader| reader.next_matching_event(&include_event))
+                    .map(|reader| reader.next_matching_event(&tracker_event_filter))
                     .transpose()?
                     .flatten();
             }
@@ -3567,6 +3572,40 @@ where
     finished: bool,
 }
 
+enum EventTypeInfoFilter {
+    All,
+    Included(Vec<bool>),
+}
+
+impl EventTypeInfoFilter {
+    fn from_typeinfos<F, E>(event_typeinfos: &[Option<EventTypeInfo<E>>], include_event: &F) -> Self
+    where
+        F: Fn(&str) -> bool,
+    {
+        Self::Included(
+            event_typeinfos
+                .iter()
+                .map(|event_typeinfo| {
+                    event_typeinfo
+                        .as_ref()
+                        .is_some_and(|event_typeinfo| include_event(event_typeinfo.name()))
+                })
+                .collect(),
+        )
+    }
+
+    fn includes(&self, event_id: u32) -> bool {
+        match self {
+            Self::All => true,
+            Self::Included(included) => usize::try_from(event_id)
+                .ok()
+                .and_then(|index| included.get(index))
+                .copied()
+                .unwrap_or(false),
+        }
+    }
+}
+
 impl<'a, D, T> EventStreamReader<'a, D, T>
 where
     D: TypeDecoder + HeaderIntegerDecoder,
@@ -3588,13 +3627,13 @@ where
     }
 
     fn next_event(&mut self) -> Result<Option<T>, DecodeError> {
-        self.next_matching_event(&|_| true)
+        self.next_matching_event(&EventTypeInfoFilter::All)
     }
 
-    fn next_matching_event<F>(&mut self, include_event: &F) -> Result<Option<T>, DecodeError>
-    where
-        F: Fn(&str) -> bool,
-    {
+    fn next_matching_event(
+        &mut self,
+        include_event: &EventTypeInfoFilter,
+    ) -> Result<Option<T>, DecodeError> {
         loop {
             if self.finished || self.decoder.done() {
                 self.finished = true;
@@ -3632,7 +3671,7 @@ where
                     DecodeError::Corrupted(format!("eventid({eventid}) missing decode plan"))
                 })?;
 
-                if !include_event(event_typeinfo.name()) {
+                if !include_event.includes(eventid) {
                     self.decoder.skip_event_fields_from_plan(plan)?;
                     return Ok(None);
                 }
