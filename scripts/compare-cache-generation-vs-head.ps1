@@ -3,6 +3,9 @@ param(
     [Alias("HeadRef")]
     [string]$ComparisonRef = "HEAD",
     [Nullable[int]]$RecentReplayCount = $null,
+    [int]$Runs = 1,
+    [Nullable[int]]$Workers = $null,
+    [switch]$AnalyzerTimings,
     [switch]$KeepArtifacts
 )
 
@@ -24,6 +27,14 @@ $cliExecutableName = if ([System.Runtime.InteropServices.RuntimeInformation]::Is
     "s2coop-analyzer-cli"
 }
 
+if ($Runs -le 0) {
+    throw "Runs must be greater than zero."
+}
+
+if ($null -ne $Workers -and $Workers -le 0) {
+    throw "Workers must be greater than zero when supplied."
+}
+
 function Import-EnvFile {
     param([string]$Path)
 
@@ -35,6 +46,9 @@ function Import-EnvFile {
         $trimmed = $line.Trim()
         if ([string]::IsNullOrWhiteSpace($trimmed) -or $trimmed.StartsWith("#")) {
             continue
+        }
+        if ($trimmed.StartsWith("export ")) {
+            $trimmed = $trimmed.Substring(7).Trim()
         }
 
         $parts = $trimmed -split "=", 2
@@ -87,13 +101,30 @@ function Invoke-GenerateCache {
     param(
         [string]$ExePath,
         [string]$AccountDir,
-        [string]$OutputFile
+        [string]$OutputFile,
+        [Nullable[int]]$WorkerCount,
+        [bool]$EnableAnalyzerTimings
     )
 
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $arguments = @("generate-cache", "--account-dir", $AccountDir, "--output", $OutputFile)
+    if ($null -ne $WorkerCount) {
+        $arguments += @("--workers", $WorkerCount.ToString())
+    }
+
+    $previousTimingValue = [Environment]::GetEnvironmentVariable("S2COOP_ANALYZER_TIMINGS")
+    if ($EnableAnalyzerTimings) {
+        Set-Item -Path "Env:S2COOP_ANALYZER_TIMINGS" -Value "1"
+    }
     $output = & $ExePath @arguments 2>&1
     $exitCode = $LASTEXITCODE
+    if ($EnableAnalyzerTimings) {
+        if ($null -eq $previousTimingValue) {
+            Remove-Item -Path "Env:S2COOP_ANALYZER_TIMINGS" -ErrorAction SilentlyContinue
+        } else {
+            Set-Item -Path "Env:S2COOP_ANALYZER_TIMINGS" -Value $previousTimingValue
+        }
+    }
     $stopwatch.Stop()
 
     if ($exitCode -ne 0) {
@@ -102,11 +133,27 @@ function Invoke-GenerateCache {
     }
 
     $entryCount = ((Get-Content -LiteralPath $OutputFile -Raw | ConvertFrom-Json) | Measure-Object).Count
+    $outputText = ($output | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine
+    $analyzerTotalSeconds = $null
+    $decodeOrderedSeconds = $null
+    $detailedReportSeconds = $null
+    if ($outputText -match "total=([0-9.]+)s") {
+        $analyzerTotalSeconds = [double]$Matches[1]
+    }
+    if ($outputText -match "decode_ordered=([0-9.]+)s") {
+        $decodeOrderedSeconds = [double]$Matches[1]
+    }
+    if ($outputText -match "detailed_report=([0-9.]+)s") {
+        $detailedReportSeconds = [double]$Matches[1]
+    }
 
     [PSCustomObject]@{
         ElapsedSeconds = $stopwatch.Elapsed.TotalSeconds
         EntryCount = $entryCount
-        Output = ($output | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine
+        AnalyzerTotalSeconds = $analyzerTotalSeconds
+        DecodeOrderedSeconds = $decodeOrderedSeconds
+        DetailedReportSeconds = $detailedReportSeconds
+        Output = $outputText
     }
 }
 
@@ -167,10 +214,48 @@ function New-RecentReplaySubset {
     return $replayFiles.Count
 }
 
+function Get-AlternatingVariant {
+    param([int]$RunIndex)
+
+    $phase = $RunIndex % 4
+    if ($phase -eq 0 -or $phase -eq 3) {
+        return "comparison"
+    }
+
+    return "current"
+}
+
+function Get-MeanSeconds {
+    param(
+        [object[]]$Rows,
+        [string]$PropertyName
+    )
+
+    $values = @($Rows |
+        ForEach-Object { $_.$PropertyName } |
+        Where-Object { $null -ne $_ })
+    if ($values.Count -eq 0) {
+        return $null
+    }
+
+    return ($values | Measure-Object -Average).Average
+}
+
+function Format-OptionalSeconds {
+    param([Nullable[double]]$Value)
+
+    if ($null -eq $Value) {
+        return "n/a"
+    }
+
+    return ("{0:N3}" -f $Value)
+}
+
 New-Item -ItemType Directory -Path $tempRoot | Out-Null
 
 try {
     Import-EnvFile -Path (Join-Path $repoRoot ".env")
+    Import-EnvFile -Path (Join-Path $repoRoot ".envrc")
     $accountDir = Resolve-AccountDir
     $benchmarkAccountDir = $accountDir
     $selectedReplayCount = $null
@@ -223,21 +308,118 @@ try {
     $currentExe = [System.IO.Path]::Combine($repoRoot, "target", "release", $cliExecutableName)
     $comparisonExe = [System.IO.Path]::Combine($comparisonWorktree, "target", "release", $cliExecutableName)
 
-    $currentRun = Invoke-GenerateCache -ExePath $currentExe -AccountDir $benchmarkAccountDir -OutputFile $currentOutput
-    $comparisonRun = Invoke-GenerateCache -ExePath $comparisonExe -AccountDir $benchmarkAccountDir -OutputFile $comparisonOutput
+    $runRows = New-Object System.Collections.Generic.List[object]
+    for ($runIndex = 0; $runIndex -lt $Runs; $runIndex++) {
+        $runNumber = $runIndex + 1
+        $variant = if ($Runs -eq 1) { "comparison" } else { Get-AlternatingVariant -RunIndex $runIndex }
+        $exePath = if ($variant -eq "current") { $currentExe } else { $comparisonExe }
+        $outputPrefix = "{0:D2}-{1}" -f $runNumber, $variant
+        $outputFile = Join-Path $tempRoot ($outputPrefix + "-cache_overall_stats.json")
+        $prettyOutputFile = Join-Path $tempRoot ($outputPrefix + "-cache_overall_stats_pretty.json")
+        $run = Invoke-GenerateCache `
+            -ExePath $exePath `
+            -AccountDir $benchmarkAccountDir `
+            -OutputFile $outputFile `
+            -WorkerCount $Workers `
+            -EnableAnalyzerTimings $AnalyzerTimings.IsPresent
+        $digest = Get-FileDigest -Path $outputFile
+        $prettyDigest = Get-OptionalFileDigest -Path $prettyOutputFile
+        $row = [PSCustomObject]@{
+            Run = $runNumber
+            Variant = $variant
+            ElapsedSeconds = $run.ElapsedSeconds
+            AnalyzerTotalSeconds = $run.AnalyzerTotalSeconds
+            DecodeOrderedSeconds = $run.DecodeOrderedSeconds
+            DetailedReportSeconds = $run.DetailedReportSeconds
+            EntryCount = $run.EntryCount
+            Hash = $digest.Hash
+            Size = $digest.Size
+            PrettyHash = if ($null -eq $prettyDigest) { $null } else { $prettyDigest.Hash }
+            PrettySize = if ($null -eq $prettyDigest) { $null } else { $prettyDigest.Size }
+            OutputFile = $outputFile
+        }
+        $runRows.Add($row)
 
-    $currentDigest = Get-FileDigest -Path $currentOutput
-    $comparisonDigest = Get-FileDigest -Path $comparisonOutput
-    $currentPrettyDigest = Get-OptionalFileDigest -Path $currentPrettyOutput
-    $comparisonPrettyDigest = Get-OptionalFileDigest -Path $comparisonPrettyOutput
-
-    $mainEqual = $currentDigest.Hash -eq $comparisonDigest.Hash -and $currentDigest.Size -eq $comparisonDigest.Size
-    $prettyEqual = $null
-    if ($null -ne $currentPrettyDigest -and $null -ne $comparisonPrettyDigest) {
-        $prettyEqual = $currentPrettyDigest.Hash -eq $comparisonPrettyDigest.Hash -and $currentPrettyDigest.Size -eq $comparisonPrettyDigest.Size
+        Write-Host (
+            "Run {0:D2} {1}: elapsed={2:N3}s analyzer_total={3} decode_ordered={4} detailed_report={5} entries={6} sha={7}" -f `
+                $runNumber,
+                $variant,
+                $row.ElapsedSeconds,
+                (Format-OptionalSeconds -Value $row.AnalyzerTotalSeconds),
+                (Format-OptionalSeconds -Value $row.DecodeOrderedSeconds),
+                (Format-OptionalSeconds -Value $row.DetailedReportSeconds),
+                $row.EntryCount,
+                $row.Hash.Substring(0, 16)
+        )
     }
-    $deltaSeconds = $currentRun.ElapsedSeconds - $comparisonRun.ElapsedSeconds
-    $ratio = if ($comparisonRun.ElapsedSeconds -le 0) { 0.0 } else { $currentRun.ElapsedSeconds / $comparisonRun.ElapsedSeconds }
+
+    if ($Runs -eq 1) {
+        $currentRun = Invoke-GenerateCache `
+            -ExePath $currentExe `
+            -AccountDir $benchmarkAccountDir `
+            -OutputFile $currentOutput `
+            -WorkerCount $Workers `
+            -EnableAnalyzerTimings $AnalyzerTimings.IsPresent
+        $currentDigest = Get-FileDigest -Path $currentOutput
+        $currentPrettyDigest = Get-OptionalFileDigest -Path $currentPrettyOutput
+        $runRows.Add([PSCustomObject]@{
+            Run = 2
+            Variant = "current"
+            ElapsedSeconds = $currentRun.ElapsedSeconds
+            AnalyzerTotalSeconds = $currentRun.AnalyzerTotalSeconds
+            DecodeOrderedSeconds = $currentRun.DecodeOrderedSeconds
+            DetailedReportSeconds = $currentRun.DetailedReportSeconds
+            EntryCount = $currentRun.EntryCount
+            Hash = $currentDigest.Hash
+            Size = $currentDigest.Size
+            PrettyHash = if ($null -eq $currentPrettyDigest) { $null } else { $currentPrettyDigest.Hash }
+            PrettySize = if ($null -eq $currentPrettyDigest) { $null } else { $currentPrettyDigest.Size }
+            OutputFile = $currentOutput
+        })
+    }
+
+    $currentRows = @($runRows | Where-Object { $_.Variant -eq "current" })
+    $comparisonRows = @($runRows | Where-Object { $_.Variant -eq "comparison" })
+    $currentMean = Get-MeanSeconds -Rows $currentRows -PropertyName "ElapsedSeconds"
+    $comparisonMean = Get-MeanSeconds -Rows $comparisonRows -PropertyName "ElapsedSeconds"
+    $currentAnalyzerMean = Get-MeanSeconds -Rows $currentRows -PropertyName "AnalyzerTotalSeconds"
+    $comparisonAnalyzerMean = Get-MeanSeconds -Rows $comparisonRows -PropertyName "AnalyzerTotalSeconds"
+    $currentDecodeMean = Get-MeanSeconds -Rows $currentRows -PropertyName "DecodeOrderedSeconds"
+    $comparisonDecodeMean = Get-MeanSeconds -Rows $comparisonRows -PropertyName "DecodeOrderedSeconds"
+    $currentDetailedMean = Get-MeanSeconds -Rows $currentRows -PropertyName "DetailedReportSeconds"
+    $comparisonDetailedMean = Get-MeanSeconds -Rows $comparisonRows -PropertyName "DetailedReportSeconds"
+
+    $mainDigestKeys = @($runRows | ForEach-Object { "$($_.Hash):$($_.Size)" } | Sort-Object -Unique)
+    $prettyDigestRows = @($runRows | Where-Object { $null -ne $_.PrettyHash })
+    $prettyDigestKeys = @($prettyDigestRows | ForEach-Object { "$($_.PrettyHash):$($_.PrettySize)" } | Sort-Object -Unique)
+    $mainEqual = $mainDigestKeys.Count -eq 1
+    $prettyEqual = if ($prettyDigestRows.Count -eq 0) { $null } else { $prettyDigestKeys.Count -eq 1 }
+    $entryCounts = @($runRows | Select-Object -ExpandProperty EntryCount -Unique)
+    $deltaSeconds = if ($null -eq $currentMean -or $null -eq $comparisonMean) { $null } else { $currentMean - $comparisonMean }
+    $ratio = if ($null -eq $currentMean -or $null -eq $comparisonMean -or $comparisonMean -le 0.0) { $null } else { $currentMean / $comparisonMean }
+    $csvPath = Join-Path $tempRoot "cache-generation-comparison-runs.csv"
+    $summaryPath = Join-Path $tempRoot "cache-generation-comparison-summary.json"
+    $runRows | Export-Csv -NoTypeInformation -Path $csvPath
+    [PSCustomObject]@{
+        ComparisonRef = $ComparisonRef
+        ComparisonCommit = $comparisonCommit
+        Runs = $Runs
+        Workers = $Workers
+        AnalyzerTimings = $AnalyzerTimings.IsPresent
+        CurrentMeanSeconds = $currentMean
+        ComparisonMeanSeconds = $comparisonMean
+        DeltaSeconds = $deltaSeconds
+        RuntimeRatio = $ratio
+        CurrentAnalyzerMeanSeconds = $currentAnalyzerMean
+        ComparisonAnalyzerMeanSeconds = $comparisonAnalyzerMean
+        CurrentDecodeOrderedMeanSeconds = $currentDecodeMean
+        ComparisonDecodeOrderedMeanSeconds = $comparisonDecodeMean
+        CurrentDetailedReportMeanSeconds = $currentDetailedMean
+        ComparisonDetailedReportMeanSeconds = $comparisonDetailedMean
+        MainCacheByteIdentical = $mainEqual
+        PrettyCacheByteIdentical = $prettyEqual
+        EntryCounts = $entryCounts
+    } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $summaryPath
 
     Write-Host "Comparison ref: $ComparisonRef"
     Write-Host "Comparison commit: $comparisonCommit"
@@ -248,28 +430,49 @@ try {
     } else {
         Write-Host "Replay scope: all replay files"
     }
-    Write-Host "Current entry count: $($currentRun.EntryCount)"
-    Write-Host "Comparison entry count: $($comparisonRun.EntryCount)"
+    Write-Host "Runs: $Runs"
+    if ($null -ne $Workers) {
+        Write-Host "Workers: $Workers"
+    }
+    Write-Host "Analyzer timings: $($AnalyzerTimings.IsPresent)"
+    Write-Host "Current runs: $($currentRows.Count)"
+    Write-Host "Comparison runs: $($comparisonRows.Count)"
+    Write-Host "Entry counts: $($entryCounts -join ', ')"
     Write-Host "Main cache byte-identical: $mainEqual"
     if ($null -eq $prettyEqual) {
         Write-Host "Pretty cache byte-identical: not compared"
-        Write-Host "Current pretty cache generated: $($null -ne $currentPrettyDigest)"
-        Write-Host "Comparison pretty cache generated: $($null -ne $comparisonPrettyDigest)"
+        Write-Host "Pretty cache generated runs: $($prettyDigestRows.Count)"
     } else {
         Write-Host "Pretty cache byte-identical: $prettyEqual"
     }
-    Write-Host ("Current elapsed seconds: {0:N3}" -f $currentRun.ElapsedSeconds)
-    Write-Host ("Comparison elapsed seconds: {0:N3}" -f $comparisonRun.ElapsedSeconds)
-    Write-Host ("Delta seconds (current - comparison): {0:N3}" -f $deltaSeconds)
-    Write-Host ("Runtime ratio (current / comparison): {0:N4}x" -f $ratio)
-    Write-Host "Current output: $currentOutput"
-    Write-Host "Comparison output: $comparisonOutput"
+    Write-Host ("Current elapsed mean seconds: {0}" -f (Format-OptionalSeconds -Value $currentMean))
+    Write-Host ("Comparison elapsed mean seconds: {0}" -f (Format-OptionalSeconds -Value $comparisonMean))
+    Write-Host ("Delta mean seconds (current - comparison): {0}" -f (Format-OptionalSeconds -Value $deltaSeconds))
+    if ($null -eq $ratio) {
+        Write-Host "Runtime ratio (current / comparison): n/a"
+    } else {
+        Write-Host ("Runtime ratio (current / comparison): {0:N4}x" -f $ratio)
+    }
+    if ($AnalyzerTimings.IsPresent) {
+        Write-Host ("Current analyzer total mean seconds: {0}" -f (Format-OptionalSeconds -Value $currentAnalyzerMean))
+        Write-Host ("Comparison analyzer total mean seconds: {0}" -f (Format-OptionalSeconds -Value $comparisonAnalyzerMean))
+        Write-Host ("Current decode_ordered mean seconds: {0}" -f (Format-OptionalSeconds -Value $currentDecodeMean))
+        Write-Host ("Comparison decode_ordered mean seconds: {0}" -f (Format-OptionalSeconds -Value $comparisonDecodeMean))
+        Write-Host ("Current detailed_report mean seconds: {0}" -f (Format-OptionalSeconds -Value $currentDetailedMean))
+        Write-Host ("Comparison detailed_report mean seconds: {0}" -f (Format-OptionalSeconds -Value $comparisonDetailedMean))
+    }
     if (-not $mainEqual -or ($null -ne $prettyEqual -and -not $prettyEqual)) {
         $shouldKeepArtifacts = $true
         Write-Host "Artifacts kept for inspection: $tempRoot"
     } elseif ($KeepArtifacts) {
         $shouldKeepArtifacts = $true
         Write-Host "Artifacts kept by request: $tempRoot"
+    }
+    if ($shouldKeepArtifacts) {
+        Write-Host "Run CSV: $csvPath"
+        Write-Host "Summary JSON: $summaryPath"
+    } else {
+        Write-Host "Run CSV and summary JSON are temporary; pass -KeepArtifacts to keep them."
     }
 }
 finally {
