@@ -67,6 +67,8 @@ fn generate_cache_parallel_runs_are_deterministic() {
     let timing_summary = first_summary.timing_report().format_amdahl_summary();
     assert!(timing_summary.contains("parse_detailed parts"));
     assert!(timing_summary.contains("parse_detailed parts decode"));
+    assert!(timing_summary.contains("allocation counters"));
+    assert!(timing_summary.contains("canonical_payload_bytes"));
 
     let first_entries: Vec<CacheReplayEntry> = serde_json::from_str(
         &fs::read_to_string(first_output).expect("first cache file should exist"),

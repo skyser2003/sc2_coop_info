@@ -518,6 +518,10 @@ struct ReplayBaseParseTiming {
     early_filter: Duration,
     decode_replay: Duration,
     decode_replay_detail: ReplayParseTiming,
+    events_decoded_len: usize,
+    events_decoded_capacity: usize,
+    events_retained_len: usize,
+    events_retained_capacity: usize,
     extract_fields: Duration,
     validate_filters: Duration,
     resolve_build: Duration,
@@ -543,6 +547,10 @@ impl ReplayBaseParseTiming {
         self.early_filter += other.early_filter;
         self.decode_replay += other.decode_replay;
         self.decode_replay_detail.add(&other.decode_replay_detail);
+        self.events_decoded_len += other.events_decoded_len;
+        self.events_decoded_capacity += other.events_decoded_capacity;
+        self.events_retained_len += other.events_retained_len;
+        self.events_retained_capacity += other.events_retained_capacity;
         self.extract_fields += other.extract_fields;
         self.validate_filters += other.validate_filters;
         self.resolve_build += other.resolve_build;
@@ -854,6 +862,8 @@ impl DetailedReplayAnalyzer {
                 timing.decode_replay_detail.add(parsed.timing());
                 (parsed.take_replay(), Vec::new())
             };
+            timing.events_decoded_len = events.len();
+            timing.events_decoded_capacity = events.capacity();
             timing.decode_replay = decode_replay_start.elapsed();
 
             let extract_fields_start = Instant::now();
@@ -1027,14 +1037,19 @@ impl DetailedReplayAnalyzer {
             timing.file_date = file_date_start.elapsed();
 
             let detailed_event_filter_start = Instant::now();
-            let detailed = options.include_events.then(|| ReplayDetailedParseContext {
-                events: events
-                    .into_iter()
-                    .filter(ReplayEventKind::needed_for_replay_report_analysis_event)
-                    .collect(),
-                start_time: start_time.as_f64(),
-                end_time,
-            });
+            let detailed = if options.include_events {
+                let mut retained_events = events;
+                retained_events.retain(ReplayEventKind::needed_for_replay_report_analysis_event);
+                timing.events_retained_len = retained_events.len();
+                timing.events_retained_capacity = retained_events.capacity();
+                Some(ReplayDetailedParseContext {
+                    events: retained_events,
+                    start_time: start_time.as_f64(),
+                    end_time,
+                })
+            } else {
+                None
+            };
             timing.detailed_event_filter = detailed_event_filter_start.elapsed();
 
             let build_base_start = Instant::now();
@@ -1759,8 +1774,14 @@ pub struct GenerateCacheTimingReport {
     replay_analysis_parse_detailed_breakdown: ReplayEntryParseTiming,
     replay_analysis_parse_basic_fallback: Duration,
     replay_analysis_parse_basic_fallback_breakdown: ReplayEntryParseTiming,
+    replay_events_decoded_len: usize,
+    replay_events_decoded_capacity: usize,
+    replay_events_retained_len: usize,
+    replay_events_retained_capacity: usize,
     replay_analysis_detailed_report: Duration,
     replay_analysis_temp_entry_write: Duration,
+    replay_analysis_temp_persisted_entries: usize,
+    replay_analysis_temp_persisted_bytes: usize,
     replay_analysis_progress_record: Duration,
     collect_analyzed_entries: Duration,
     merge_entries: Duration,
@@ -1778,6 +1799,8 @@ pub struct GenerateCacheTimingReport {
     canonicalize_json_value_worker: Duration,
     canonicalize_serialize_payload: Duration,
     canonicalize_deserialize_payload: Duration,
+    canonicalize_value_count: usize,
+    canonicalize_payload_bytes: usize,
     write_entries: Duration,
     total: Duration,
 }
@@ -2052,6 +2075,8 @@ impl GenerateCacheTimingReport {
         self.canonicalize_json_value_worker = timing.canonicalize_json_value_worker();
         self.canonicalize_serialize_payload = timing.serialize_payload();
         self.canonicalize_deserialize_payload = timing.deserialize_payload();
+        self.canonicalize_value_count = timing.canonical_value_count();
+        self.canonicalize_payload_bytes = timing.payload_bytes();
     }
 
     fn add_candidate_collection_timing(&mut self, timing: &CandidateReplayCollectionTiming) {
@@ -2065,6 +2090,17 @@ impl GenerateCacheTimingReport {
         self.replay_analysis_parse_detailed += timing.parse_detailed();
         self.replay_analysis_parse_detailed_breakdown
             .add(timing.parse_detailed_breakdown());
+        self.replay_events_decoded_len += timing.parse_detailed_breakdown().base.events_decoded_len;
+        self.replay_events_decoded_capacity += timing
+            .parse_detailed_breakdown()
+            .base
+            .events_decoded_capacity;
+        self.replay_events_retained_len +=
+            timing.parse_detailed_breakdown().base.events_retained_len;
+        self.replay_events_retained_capacity += timing
+            .parse_detailed_breakdown()
+            .base
+            .events_retained_capacity;
         self.replay_analysis_parse_basic_fallback += timing.parse_basic_fallback();
         self.replay_analysis_parse_basic_fallback_breakdown
             .add(timing.parse_basic_fallback_breakdown());
@@ -2078,6 +2114,11 @@ impl GenerateCacheTimingReport {
         self.simple_analysis_parse += timing.parse();
         self.simple_analysis_parse_breakdown
             .add(timing.parse_breakdown());
+    }
+
+    fn set_temp_persist_stats(&mut self, entries: usize, bytes: usize) {
+        self.replay_analysis_temp_persisted_entries = entries;
+        self.replay_analysis_temp_persisted_bytes = bytes;
     }
 
     pub fn worker_count(&self) -> usize {
@@ -2448,6 +2489,24 @@ impl GenerateCacheTimingReport {
             ),
         ));
 
+        output.push_str(&format!(
+            concat!(
+                "\n  allocation counters: ",
+                "events_decoded_len={} events_decoded_capacity={} ",
+                "events_retained_len={} events_retained_capacity={} ",
+                "temp_persisted_entries={} temp_persisted_bytes={} ",
+                "canonical_values={} canonical_payload_bytes={}"
+            ),
+            self.replay_events_decoded_len,
+            self.replay_events_decoded_capacity,
+            self.replay_events_retained_len,
+            self.replay_events_retained_capacity,
+            self.replay_analysis_temp_persisted_entries,
+            self.replay_analysis_temp_persisted_bytes,
+            self.canonicalize_value_count,
+            self.canonicalize_payload_bytes,
+        ));
+
         output.push('\n');
         output.push_str(&Self::format_parse_timing_breakdown(
             "parse_detailed parts",
@@ -2797,6 +2856,8 @@ struct GenerateCacheProgressReporter<'a> {
     next_temp_save_target: AtomicUsize,
     temp_file_path: PathBuf,
     temp_entries: std::sync::Mutex<Vec<CacheReplayEntry>>,
+    temp_persisted_entries: AtomicUsize,
+    temp_persisted_bytes: AtomicUsize,
 }
 
 impl<'a> GenerateCacheProgressReporter<'a> {
@@ -2828,6 +2889,8 @@ impl<'a> GenerateCacheProgressReporter<'a> {
             )),
             temp_file_path,
             temp_entries: std::sync::Mutex::new(Vec::new()),
+            temp_persisted_entries: AtomicUsize::new(0),
+            temp_persisted_bytes: AtomicUsize::new(0),
         }
     }
 
@@ -2927,10 +2990,12 @@ impl<'a> GenerateCacheProgressReporter<'a> {
         }
 
         let mut content = String::new();
+        let mut serialized_entries = 0_usize;
         for entry in entries {
             if let Ok(json) = serde_json::to_string(&entry) {
                 content.push_str(&json);
                 content.push('\n');
+                serialized_entries += 1;
             }
         }
 
@@ -2940,9 +3005,21 @@ impl<'a> GenerateCacheProgressReporter<'a> {
                 .append(true)
                 .open(&self.temp_file_path)?
                 .write_all(content.as_bytes())?;
+            self.temp_persisted_entries
+                .fetch_add(serialized_entries, AtomicOrdering::Relaxed);
+            self.temp_persisted_bytes
+                .fetch_add(content.len(), AtomicOrdering::Relaxed);
         }
 
         Ok(())
+    }
+
+    fn temp_persisted_entries(&self) -> usize {
+        self.temp_persisted_entries.load(AtomicOrdering::Relaxed)
+    }
+
+    fn temp_persisted_bytes(&self) -> usize {
+        self.temp_persisted_bytes.load(AtomicOrdering::Relaxed)
     }
 
     fn emit(&self, message: String) {
@@ -3629,6 +3706,10 @@ impl DetailedReplayAnalyzer {
                 } else {
                     progress.log_completion();
                 }
+                timing_report.set_temp_persist_stats(
+                    progress.temp_persisted_entries(),
+                    progress.temp_persisted_bytes(),
+                );
                 reused_entries
             }
         };

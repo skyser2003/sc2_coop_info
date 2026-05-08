@@ -169,28 +169,11 @@ pub struct CanonicalCachePayloadTiming {
     canonicalize_json_value_worker: Duration,
     serialize_payload: Duration,
     deserialize_payload: Duration,
+    canonical_value_count: usize,
+    payload_bytes: usize,
 }
 
 impl CanonicalCachePayloadTiming {
-    fn new(
-        worker_count: usize,
-        canonicalize_entries_parallel: Duration,
-        canonicalize_entries_worker: Duration,
-        to_json_value_worker: Duration,
-        canonicalize_json_value_worker: Duration,
-        serialize_payload: Duration,
-    ) -> Self {
-        Self {
-            worker_count,
-            canonicalize_entries_parallel,
-            canonicalize_entries_worker,
-            to_json_value_worker,
-            canonicalize_json_value_worker,
-            serialize_payload,
-            deserialize_payload: Duration::ZERO,
-        }
-    }
-
     fn with_deserialize_payload(mut self, deserialize_payload: Duration) -> Self {
         self.deserialize_payload = deserialize_payload;
         self
@@ -222,6 +205,14 @@ impl CanonicalCachePayloadTiming {
 
     pub fn deserialize_payload(&self) -> Duration {
         self.deserialize_payload
+    }
+
+    pub fn canonical_value_count(&self) -> usize {
+        self.canonical_value_count
+    }
+
+    pub fn payload_bytes(&self) -> usize {
+        self.payload_bytes
     }
 }
 
@@ -765,14 +756,19 @@ impl CacheReplayEntry {
         let serialize_payload_start = Instant::now();
         let payload = serde_json::to_vec(&canonical_values)?;
         let serialize_payload = serialize_payload_start.elapsed();
-        let timing = CanonicalCachePayloadTiming::new(
+        let canonical_value_count = canonical_values.len();
+        let payload_bytes = payload.len();
+        let timing = CanonicalCachePayloadTiming {
             worker_count,
             canonicalize_entries_parallel,
             canonicalize_entries_worker,
             to_json_value_worker,
             canonicalize_json_value_worker,
             serialize_payload,
-        );
+            deserialize_payload: Duration::ZERO,
+            canonical_value_count,
+            payload_bytes,
+        };
 
         Ok((payload, timing))
     }
