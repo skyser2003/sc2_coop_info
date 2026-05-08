@@ -2855,9 +2855,15 @@ struct GenerateCacheProgressReporter<'a> {
     next_report_target: AtomicUsize,
     next_temp_save_target: AtomicUsize,
     temp_file_path: PathBuf,
-    temp_entries: std::sync::Mutex<Vec<CacheReplayEntry>>,
+    temp_entries: std::sync::Mutex<TempEntryBuffer>,
     temp_persisted_entries: AtomicUsize,
     temp_persisted_bytes: AtomicUsize,
+}
+
+#[derive(Debug, Default)]
+struct TempEntryBuffer {
+    bytes: Vec<u8>,
+    entries: usize,
 }
 
 impl<'a> GenerateCacheProgressReporter<'a> {
@@ -2888,7 +2894,7 @@ impl<'a> GenerateCacheProgressReporter<'a> {
                 initial_processed_files,
             )),
             temp_file_path,
-            temp_entries: std::sync::Mutex::new(Vec::new()),
+            temp_entries: std::sync::Mutex::new(TempEntryBuffer::default()),
             temp_persisted_entries: AtomicUsize::new(0),
             temp_persisted_bytes: AtomicUsize::new(0),
         }
@@ -2969,47 +2975,42 @@ impl<'a> GenerateCacheProgressReporter<'a> {
         ));
     }
 
-    fn add_temp_entry(&self, entry: CacheReplayEntry) {
+    fn add_temp_entry(&self, entry: &CacheReplayEntry) {
         if self.logger.is_none() {
             return;
         }
 
+        let mut line = Vec::new();
+        if serde_json::to_writer(&mut line, entry).is_err() {
+            return;
+        }
+        line.push(b'\n');
+
         if let Ok(mut temp_entries) = self.temp_entries.lock() {
-            temp_entries.push(entry);
+            temp_entries.entries += 1;
+            temp_entries.bytes.extend_from_slice(&line);
         }
     }
 
     fn save_temp_entries(&self) -> Result<(), std::io::Error> {
-        let entries = match self.temp_entries.lock() {
-            Ok(mut temp_entries) => temp_entries.drain(..).collect::<Vec<_>>(),
+        let pending = match self.temp_entries.lock() {
+            Ok(mut temp_entries) => std::mem::take(&mut *temp_entries),
             Err(_) => return Ok(()),
         };
 
-        if entries.is_empty() {
+        if pending.entries == 0 || pending.bytes.is_empty() {
             return Ok(());
         }
 
-        let mut content = String::new();
-        let mut serialized_entries = 0_usize;
-        for entry in entries {
-            if let Ok(json) = serde_json::to_string(&entry) {
-                content.push_str(&json);
-                content.push('\n');
-                serialized_entries += 1;
-            }
-        }
-
-        if !content.is_empty() {
-            std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&self.temp_file_path)?
-                .write_all(content.as_bytes())?;
-            self.temp_persisted_entries
-                .fetch_add(serialized_entries, AtomicOrdering::Relaxed);
-            self.temp_persisted_bytes
-                .fetch_add(content.len(), AtomicOrdering::Relaxed);
-        }
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.temp_file_path)?
+            .write_all(&pending.bytes)?;
+        self.temp_persisted_entries
+            .fetch_add(pending.entries, AtomicOrdering::Relaxed);
+        self.temp_persisted_bytes
+            .fetch_add(pending.bytes.len(), AtomicOrdering::Relaxed);
 
         Ok(())
     }
@@ -3660,7 +3661,7 @@ impl DetailedReplayAnalyzer {
                                     && entry.detailed_analysis
                                 {
                                     let temp_entry_write_start = Instant::now();
-                                    progress_for_workers.add_temp_entry(entry.clone());
+                                    progress_for_workers.add_temp_entry(entry);
                                     result
                                         .timing_mut()
                                         .add_temp_entry_write(temp_entry_write_start.elapsed());
