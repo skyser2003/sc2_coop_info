@@ -975,6 +975,20 @@ pub(crate) trait TypeDecoder {
     fn i64_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<Option<i64>, DecodeError>;
     fn f64_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<Option<f64>, DecodeError>;
     fn string_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<Option<String>, DecodeError>;
+    fn optional_exists_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<bool, DecodeError>;
+    fn array_length_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<usize, DecodeError>;
+    fn int_i64_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<Option<i64>, DecodeError>;
+    #[inline(always)]
+    fn append_i64_values_from_typeinfo(
+        &mut self,
+        typeinfo: &TypeInfo,
+        values: &mut Vec<i64>,
+    ) -> Result<(), DecodeError>
+    where
+        Self: Sized,
+    {
+        append_i64_values_from_typeinfo(self, typeinfo, values)
+    }
     fn bools_from_bitarray_typeinfo(
         &mut self,
         typeinfo: &TypeInfo,
@@ -1033,6 +1047,45 @@ pub(crate) trait TypeDecoder {
     ) -> Result<(), DecodeError>
     where
         Self: Sized;
+}
+
+#[inline(always)]
+fn append_i64_values_from_typeinfo<D: TypeDecoder + ?Sized>(
+    decoder: &mut D,
+    typeinfo: &TypeInfo,
+    values: &mut Vec<i64>,
+) -> Result<(), DecodeError> {
+    match typeinfo.op() {
+        TypeOp::Null => decoder.skip_from_typeinfo(typeinfo),
+        TypeOp::Optional => {
+            if !decoder.optional_exists_from_typeinfo(typeinfo)? {
+                return Ok(());
+            }
+
+            let typeid = typeinfo.child_typeid()?;
+            let typeinfos = decoder.typeinfos();
+            let child_typeinfo = EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), typeid)?;
+            append_i64_values_from_typeinfo(decoder, child_typeinfo, values)
+        }
+        TypeOp::Int => {
+            if let Some(value) = decoder.int_i64_from_typeinfo(typeinfo)? {
+                values.push(value);
+            }
+            Ok(())
+        }
+        TypeOp::Array => {
+            let length = decoder.array_length_from_typeinfo(typeinfo)?;
+            values.reserve(length);
+            let typeid = typeinfo.child_typeid()?;
+            let typeinfos = decoder.typeinfos();
+            let child_typeinfo = EventPlanCompiler::lookup_typeinfo(typeinfos.as_ref(), typeid)?;
+            for _ in 0..length {
+                append_i64_values_from_typeinfo(decoder, child_typeinfo, values)?;
+            }
+            Ok(())
+        }
+        _ => decoder.skip_from_typeinfo(typeinfo),
+    }
 }
 
 trait HeaderIntegerDecoder {
@@ -1586,34 +1639,7 @@ impl EventSpecialDataDecoder {
         typeinfo: &TypeInfo,
         values: &mut Vec<i64>,
     ) -> Result<(), DecodeError> {
-        match typeinfo.op() {
-            TypeOp::Null => {
-                decoder.skip_from_typeinfo(typeinfo)?;
-                Ok(())
-            }
-            TypeOp::Optional => {
-                decoder.visit_optional_child_from_typeinfo(
-                    typeinfo,
-                    &mut |decoder, child_typeinfo| {
-                        Self::collect_i64_values(decoder, child_typeinfo, values)
-                    },
-                )?;
-                Ok(())
-            }
-            TypeOp::Int => {
-                if let Some(value) = decoder.i64_from_typeinfo(typeinfo)? {
-                    values.push(value);
-                }
-                Ok(())
-            }
-            TypeOp::Array => decoder.visit_array_elements_from_typeinfo(
-                typeinfo,
-                &mut |decoder, child_typeinfo| {
-                    Self::collect_i64_values(decoder, child_typeinfo, values)
-                },
-            ),
-            _ => decoder.skip_from_typeinfo(typeinfo),
-        }
+        decoder.append_i64_values_from_typeinfo(typeinfo, values)
     }
 
     pub(crate) fn decode_i64_values_from_typeinfo<D: TypeDecoder>(
@@ -2452,6 +2478,21 @@ impl TypeDecoder for BitPackedDecoder<'_> {
         }
     }
 
+    #[inline(always)]
+    fn optional_exists_from_typeinfo(&mut self, _typeinfo: &TypeInfo) -> Result<bool, DecodeError> {
+        self.optional_exists()
+    }
+
+    #[inline(always)]
+    fn array_length_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<usize, DecodeError> {
+        Ok(self.int(typeinfo.length_bounds()?)? as usize)
+    }
+
+    #[inline(always)]
+    fn int_i64_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<Option<i64>, DecodeError> {
+        Ok(i64::try_from(self.int(typeinfo.int_bounds()?)?).ok())
+    }
+
     fn bools_from_bitarray_typeinfo(
         &mut self,
         typeinfo: &TypeInfo,
@@ -3270,6 +3311,24 @@ impl TypeDecoder for VersionedDecoder<'_> {
             TypeOp::Real64 => Ok(self.real64()?.as_f64().map(|value| value.to_string())),
             _ => Ok(Some(self.integer_from_typeinfo(typeinfo)?.to_string())),
         }
+    }
+
+    #[inline(always)]
+    fn optional_exists_from_typeinfo(&mut self, _typeinfo: &TypeInfo) -> Result<bool, DecodeError> {
+        self.expect_skip(4)?;
+        Ok(self.buffer.read_u8()? != 0)
+    }
+
+    #[inline(always)]
+    fn array_length_from_typeinfo(&mut self, _typeinfo: &TypeInfo) -> Result<usize, DecodeError> {
+        self.expect_skip(0)?;
+        Ok(self.vint()? as usize)
+    }
+
+    #[inline(always)]
+    fn int_i64_from_typeinfo(&mut self, _typeinfo: &TypeInfo) -> Result<Option<i64>, DecodeError> {
+        self.expect_skip(9)?;
+        Ok(i64::try_from(self.vint()?).ok())
     }
 
     fn bools_from_bitarray_typeinfo(
