@@ -16,6 +16,7 @@ use s2protocol_port::{
     ReplayMetadata, ReplayParseMode, ReplayParseTiming, ReplayParser, TrackerEvent,
 };
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
@@ -4655,9 +4656,10 @@ impl DetailedReplayAnalyzer {
         resources: &ReplayAnalysisResources,
     ) -> Result<DetailedReplayAnalysisResult, DetailedReplayAnalysisError> {
         let dictionaries = resources.cache_generation_data();
-        let fallback_basic = basic_cache_entry
-            .cloned()
-            .unwrap_or_else(|| parsed.cache_entry());
+        let fallback_basic = match basic_cache_entry {
+            Some(entry) => Cow::Borrowed(entry),
+            None => Cow::Owned(parsed.cache_entry()),
+        };
         let cache_persistable = parsed.is_saved_cache_candidate();
         let report = DetailedReplayAnalyzer::analyze_replay_file_impl(
             main_player_handles,
@@ -4668,7 +4670,7 @@ impl DetailedReplayAnalyzer {
         )?;
         let cache_entry = CacheReplayEntry::from_report_with_basic(
             &report,
-            Some(&fallback_basic),
+            Some(fallback_basic.as_ref()),
             hidden_created_lost,
         );
 
