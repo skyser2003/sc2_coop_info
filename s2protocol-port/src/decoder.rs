@@ -1872,7 +1872,7 @@ impl<'a> BitPackedDecoder<'a> {
     }
 
     fn optional_exists(&mut self) -> Result<bool, DecodeError> {
-        Ok(self.buffer.read_bits(1)? != 0)
+        self.buffer.read_bool()
     }
 
     fn array(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
@@ -1924,7 +1924,7 @@ impl<'a> BitPackedDecoder<'a> {
 
         let mut values = Vec::with_capacity(length);
         for _ in 0..length {
-            values.push(self.buffer.read_bits(1)? != 0);
+            values.push(self.buffer.read_bool()?);
         }
         Ok(values)
     }
@@ -2145,7 +2145,7 @@ impl<'a> BitPackedDecoder<'a> {
                 Ok(())
             }
             TypeOp::Bool => {
-                self.buffer.read_bits(1)?;
+                self.buffer.read_bool()?;
                 Ok(())
             }
             TypeOp::Choice => {
@@ -2310,7 +2310,7 @@ impl<'a> BitPackedDecoder<'a> {
             TypeOp::Array => self.array(typeinfo),
             TypeOp::BitArray => self.bitarray(typeinfo),
             TypeOp::Blob => self.blob(typeinfo),
-            TypeOp::Bool => Ok(Value::Bool(self.buffer.read_bits(1)? != 0)),
+            TypeOp::Bool => Ok(Value::Bool(self.buffer.read_bool()?)),
             TypeOp::Choice => Ok(Value::Object(self.choice(typeinfo)?)),
             TypeOp::Fourcc => self.fourcc(),
             TypeOp::Int => Ok(Value::Int(self.int(typeinfo.int_bounds()?)?)),
@@ -2445,7 +2445,7 @@ impl TypeDecoder for BitPackedDecoder<'_> {
                 let bytes = self.buffer.read_aligned_slice(4)?;
                 Ok(Some(String::from_utf8_lossy(bytes).into_owned()))
             }
-            TypeOp::Bool => Ok(Some((self.buffer.read_bits(1)? != 0).to_string())),
+            TypeOp::Bool => Ok(Some(self.buffer.read_bool()?.to_string())),
             TypeOp::Real32 => Ok(self.real32()?.as_f64().map(|value| value.to_string())),
             TypeOp::Real64 => Ok(self.real64()?.as_f64().map(|value| value.to_string())),
             _ => Ok(Some(self.integer_from_typeinfo(typeinfo)?.to_string())),
@@ -3101,7 +3101,7 @@ impl BitPackedDecoder<'_> {
         let mut current_bits = 0u8;
 
         while remaining > 0 {
-            let bit = self.buffer.read_bits(1)? as u8;
+            let bit = u8::from(self.buffer.read_bool()?);
             current = (current << 1) | (bit & 1);
             current_bits += 1;
             remaining -= 1;

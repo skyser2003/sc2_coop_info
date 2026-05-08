@@ -89,6 +89,10 @@ impl<'a> BitPackedBuffer<'a> {
         Ok(self.read_bits(8)? as u8)
     }
 
+    pub(crate) fn read_bool(&mut self) -> Result<bool, DecodeError> {
+        Ok(self.read_one_bit()? != 0)
+    }
+
     fn read_bits_with_order<const BIG_ENDIAN: bool>(
         &mut self,
         bits: usize,
