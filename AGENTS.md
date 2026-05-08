@@ -11,6 +11,7 @@
 - Put implementation of a single struct in one place unless really required to put in other places.
 - Keep struct fields private, and use constructor/getter/setter to access them.
 - Follow the 5 concepts of OOP - encapsulation, abstraction, inheritance, polymorphism, and composition.
+- When running comparison test for performance, always run a few times, alternating the order of the test.
 
 # Project specific
 - Make sure all codes and tests run in windows/mac/linux.
