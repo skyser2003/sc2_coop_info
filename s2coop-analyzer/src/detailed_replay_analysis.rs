@@ -13,7 +13,8 @@ use chrono::{DateTime, Local};
 use indexmap::IndexMap;
 use s2protocol_port::{
     ProtocolStore, ProtocolStoreBuilder, ReplayDetails, ReplayEvent, ReplayInitData,
-    ReplayMetadata, ReplayParseMode, ReplayParseTiming, ReplayParser, TrackerEvent,
+    ReplayMetadata, ReplayParseMode, ReplayParseOptions, ReplayParseTiming, ReplayParser,
+    TrackerEvent,
 };
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -839,15 +840,17 @@ impl DetailedReplayAnalyzer {
 
             let decode_replay_start = Instant::now();
             let (mut parsed, events) = if options.include_events {
-                let mut parsed = ReplayParser::parse_file_with_store_ordered_events_filtered(
-                    replay_path,
-                    protocol_store,
-                    ReplayEventKind::needed_for_detailed_analysis_name,
-                )
-                .map_err(|error| ReplayBaseParseError::ReplayParse {
-                    path: replay_path.display().to_string(),
-                    message: error.to_string(),
-                })?;
+                let mut parsed =
+                    ReplayParser::parse_file_with_store_ordered_events_filtered_options(
+                        replay_path,
+                        protocol_store,
+                        ReplayEventKind::needed_for_detailed_analysis_name,
+                        ReplayParseOptions::new().with_decode_attributes(false),
+                    )
+                    .map_err(|error| ReplayBaseParseError::ReplayParse {
+                        path: replay_path.display().to_string(),
+                        message: error.to_string(),
+                    })?;
                 timing.decode_replay_detail.add(parsed.timing());
                 let events = parsed.take_events();
                 (parsed.take_replay(), events)

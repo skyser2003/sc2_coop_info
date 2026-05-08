@@ -178,6 +178,34 @@ pub enum ReplayParseMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReplayParseOptions {
+    decode_attributes: bool,
+}
+
+impl Default for ReplayParseOptions {
+    fn default() -> Self {
+        Self {
+            decode_attributes: true,
+        }
+    }
+}
+
+impl ReplayParseOptions {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_decode_attributes(mut self, decode_attributes: bool) -> Self {
+        self.decode_attributes = decode_attributes;
+        self
+    }
+
+    fn decode_attributes(self) -> bool {
+        self.decode_attributes
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ReplayEventDecodeMode {
     None,
     Split,
@@ -630,18 +658,33 @@ impl ReplayParser {
         store: &crate::protocol::ProtocolStore,
         mode: ReplayParseMode,
     ) -> Result<ParsedReplayWithEvents, DecodeError> {
+        Self::parse_file_with_store_timed_options(path, store, mode, ReplayParseOptions::default())
+    }
+
+    pub fn parse_file_with_store_timed_options(
+        path: &Path,
+        store: &crate::protocol::ProtocolStore,
+        mode: ReplayParseMode,
+        options: ReplayParseOptions,
+    ) -> Result<ParsedReplayWithEvents, DecodeError> {
         let event_mode = match mode {
             ReplayParseMode::Simple => ReplayEventDecodeMode::None,
             ReplayParseMode::Detailed => ReplayEventDecodeMode::Split,
         };
-        Self::parse_file_with_store_internal(path, store, event_mode, None)
+        Self::parse_file_with_store_internal(path, store, event_mode, None, options)
     }
 
     pub fn parse_file_with_store_ordered_events(
         path: &Path,
         store: &crate::protocol::ProtocolStore,
     ) -> Result<ParsedReplayWithEvents, DecodeError> {
-        Self::parse_file_with_store_internal(path, store, ReplayEventDecodeMode::Ordered, None)
+        Self::parse_file_with_store_internal(
+            path,
+            store,
+            ReplayEventDecodeMode::Ordered,
+            None,
+            ReplayParseOptions::default(),
+        )
     }
 
     pub fn parse_file_with_store_ordered_events_filtered<F>(
@@ -652,11 +695,29 @@ impl ReplayParser {
     where
         F: Fn(&str) -> bool,
     {
+        Self::parse_file_with_store_ordered_events_filtered_options(
+            path,
+            store,
+            include_event,
+            ReplayParseOptions::default(),
+        )
+    }
+
+    pub fn parse_file_with_store_ordered_events_filtered_options<F>(
+        path: &Path,
+        store: &crate::protocol::ProtocolStore,
+        include_event: F,
+        options: ReplayParseOptions,
+    ) -> Result<ParsedReplayWithEvents, DecodeError>
+    where
+        F: Fn(&str) -> bool,
+    {
         Self::parse_file_with_store_internal(
             path,
             store,
             ReplayEventDecodeMode::Ordered,
             Some(&include_event),
+            options,
         )
     }
 
@@ -706,6 +767,7 @@ impl ReplayParser {
         store: &crate::protocol::ProtocolStore,
         event_mode: ReplayEventDecodeMode,
         include_ordered_event: Option<&dyn Fn(&str) -> bool>,
+        options: ReplayParseOptions,
     ) -> Result<ParsedReplayWithEvents, DecodeError> {
         let total_start = Instant::now();
         let mut timing = ReplayParseTiming::default();
@@ -921,25 +983,29 @@ impl ReplayParser {
             None => None,
         };
 
-        let (attributes, attribute_scopes) = if let Some(raw) = {
-            let (raw, read_timing) =
-                Self::read_mpq_file_timed(&mut archive, "replay.attributes.events")?;
-            timing.add_mpq_read(&read_timing);
-            timing.read_attributes = read_timing.open_file + read_timing.read_file;
-            raw
-        } {
-            let decode_attributes_start = Instant::now();
-            let value = protocol
-                .decode_replay_attributes_events(&raw)
-                .map_err(|err| {
-                    DecodeError::Corrupted(format!("decode replay.attributes.events: {err}"))
-                })?;
-            timing.decode_attributes = decode_attributes_start.elapsed();
-            let parse_attributes_start = Instant::now();
-            let attributes = ReplayAttributes::from_value(value)?;
-            timing.parse_attributes = parse_attributes_start.elapsed();
-            let scopes = attributes.scope_attributes();
-            (Some(attributes), scopes)
+        let (attributes, attribute_scopes) = if options.decode_attributes() {
+            if let Some(raw) = {
+                let (raw, read_timing) =
+                    Self::read_mpq_file_timed(&mut archive, "replay.attributes.events")?;
+                timing.add_mpq_read(&read_timing);
+                timing.read_attributes = read_timing.open_file + read_timing.read_file;
+                raw
+            } {
+                let decode_attributes_start = Instant::now();
+                let value = protocol
+                    .decode_replay_attributes_events(&raw)
+                    .map_err(|err| {
+                        DecodeError::Corrupted(format!("decode replay.attributes.events: {err}"))
+                    })?;
+                timing.decode_attributes = decode_attributes_start.elapsed();
+                let parse_attributes_start = Instant::now();
+                let attributes = ReplayAttributes::from_value(value)?;
+                timing.parse_attributes = parse_attributes_start.elapsed();
+                let scopes = attributes.scope_attributes();
+                (Some(attributes), scopes)
+            } else {
+                (None, Vec::new())
+            }
         } else {
             (None, Vec::new())
         };

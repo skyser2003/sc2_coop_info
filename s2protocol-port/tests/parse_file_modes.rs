@@ -1,6 +1,7 @@
-use s2protocol_port::{ProtocolStoreBuilder, ReplayParseMode, ReplayParser};
+use s2protocol_port::{ProtocolStoreBuilder, ReplayParseMode, ReplayParseOptions, ReplayParser};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 fn read_env_file_value(env_file: &Path, key: &str) -> Option<String> {
     let content = fs::read_to_string(env_file).ok()?;
@@ -112,4 +113,35 @@ fn replay_parse_mode_controls_event_streams() {
     assert!(simple.tracker_events().is_empty());
     assert!(!detailed.game_events().is_empty());
     assert!(!detailed.tracker_events().is_empty());
+}
+
+#[test]
+fn replay_parse_options_can_skip_attributes() {
+    let Some(account_dir) = resolve_account_dir() else {
+        eprintln!("skipping parse-options regression test: no SC2 account directory configured");
+        return;
+    };
+    let Some(replay_path) = find_replay(&account_dir, "잘못된 전쟁 (63).SC2Replay") else {
+        eprintln!(
+            "skipping parse-options regression test: replay not found under {}",
+            account_dir.display()
+        );
+        return;
+    };
+
+    let store = ProtocolStoreBuilder::build().expect("protocol store should build");
+    let parsed = ReplayParser::parse_file_with_store_ordered_events_filtered_options(
+        &replay_path,
+        &store,
+        |_| true,
+        ReplayParseOptions::new().with_decode_attributes(false),
+    )
+    .expect("ordered replay parser should read the replay");
+
+    assert!(!parsed.events().is_empty());
+    assert!(parsed.replay().attributes().is_none());
+    assert!(parsed.replay().attribute_scopes().is_empty());
+    assert_eq!(parsed.timing().read_attributes(), Duration::ZERO);
+    assert_eq!(parsed.timing().decode_attributes(), Duration::ZERO);
+    assert_eq!(parsed.timing().parse_attributes(), Duration::ZERO);
 }
