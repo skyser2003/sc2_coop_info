@@ -978,6 +978,25 @@ pub(crate) trait TypeDecoder {
     fn optional_exists_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<bool, DecodeError>;
     fn array_length_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<usize, DecodeError>;
     fn int_i64_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<Option<i64>, DecodeError>;
+    fn blob_bytes_from_typeinfo<'data>(
+        &'data mut self,
+        typeinfo: &TypeInfo,
+    ) -> Result<&'data [u8], DecodeError>;
+    fn fourcc_bytes_from_typeinfo<'data>(
+        &'data mut self,
+        typeinfo: &TypeInfo,
+    ) -> Result<&'data [u8], DecodeError>;
+    #[inline(always)]
+    fn mark_trigger_text_from_typeinfo(
+        &mut self,
+        typeinfo: &TypeInfo,
+        result: &mut TriggerEventData,
+    ) -> Result<(), DecodeError>
+    where
+        Self: Sized,
+    {
+        mark_trigger_text_from_typeinfo(self, typeinfo, result)
+    }
     #[inline(always)]
     fn append_i64_values_from_typeinfo(
         &mut self,
@@ -1082,6 +1101,27 @@ fn append_i64_values_from_typeinfo<D: TypeDecoder + ?Sized>(
             for _ in 0..length {
                 append_i64_values_from_typeinfo(decoder, child_typeinfo, values)?;
             }
+            Ok(())
+        }
+        _ => decoder.skip_from_typeinfo(typeinfo),
+    }
+}
+
+#[inline(always)]
+fn mark_trigger_text_from_typeinfo<D: TypeDecoder + ?Sized>(
+    decoder: &mut D,
+    typeinfo: &TypeInfo,
+    result: &mut TriggerEventData,
+) -> Result<(), DecodeError> {
+    match typeinfo.op() {
+        TypeOp::Blob => {
+            let bytes = decoder.blob_bytes_from_typeinfo(typeinfo)?;
+            EventSpecialDataDecoder::mark_trigger_text_bytes(result, bytes);
+            Ok(())
+        }
+        TypeOp::Fourcc => {
+            let bytes = decoder.fourcc_bytes_from_typeinfo(typeinfo)?;
+            EventSpecialDataDecoder::mark_trigger_text_bytes(result, bytes);
             Ok(())
         }
         _ => decoder.skip_from_typeinfo(typeinfo),
@@ -1254,11 +1294,18 @@ impl EventPlanCompiler {
 pub(crate) struct EventSpecialDataDecoder;
 
 impl EventSpecialDataDecoder {
-    fn mark_trigger_text(result: &mut TriggerEventData, text: &str) {
-        if text.contains("SelectionChanged") {
+    fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
+        haystack
+            .windows(needle.len())
+            .any(|window| window == needle)
+    }
+
+    fn mark_trigger_text_bytes(result: &mut TriggerEventData, bytes: &[u8]) {
+        if !result.contains_selection_changed && Self::contains_subslice(bytes, b"SelectionChanged")
+        {
             result.contains_selection_changed = true;
         }
-        if text.contains("None") {
+        if !result.contains_none && Self::contains_subslice(bytes, b"None") {
             result.contains_none = true;
         }
     }
@@ -1345,10 +1392,7 @@ impl EventSpecialDataDecoder {
                 },
             ),
             TypeOp::Blob | TypeOp::Fourcc => {
-                if let Some(text) = decoder.string_from_typeinfo(typeinfo)? {
-                    Self::mark_trigger_text(result, &text);
-                }
-                Ok(())
+                decoder.mark_trigger_text_from_typeinfo(typeinfo, result)
             }
             _ => decoder.skip_from_typeinfo(typeinfo),
         }
@@ -2493,6 +2537,23 @@ impl TypeDecoder for BitPackedDecoder<'_> {
         Ok(i64::try_from(self.int(typeinfo.int_bounds()?)?).ok())
     }
 
+    #[inline(always)]
+    fn blob_bytes_from_typeinfo<'data>(
+        &'data mut self,
+        typeinfo: &TypeInfo,
+    ) -> Result<&'data [u8], DecodeError> {
+        let length = self.int(typeinfo.length_bounds()?)? as usize;
+        self.buffer.read_aligned_slice(length)
+    }
+
+    #[inline(always)]
+    fn fourcc_bytes_from_typeinfo<'data>(
+        &'data mut self,
+        _typeinfo: &TypeInfo,
+    ) -> Result<&'data [u8], DecodeError> {
+        self.buffer.read_aligned_slice(4)
+    }
+
     fn bools_from_bitarray_typeinfo(
         &mut self,
         typeinfo: &TypeInfo,
@@ -3329,6 +3390,25 @@ impl TypeDecoder for VersionedDecoder<'_> {
     fn int_i64_from_typeinfo(&mut self, _typeinfo: &TypeInfo) -> Result<Option<i64>, DecodeError> {
         self.expect_skip(9)?;
         Ok(i64::try_from(self.vint()?).ok())
+    }
+
+    #[inline(always)]
+    fn blob_bytes_from_typeinfo<'data>(
+        &'data mut self,
+        _typeinfo: &TypeInfo,
+    ) -> Result<&'data [u8], DecodeError> {
+        self.expect_skip(2)?;
+        let length = self.vint()? as usize;
+        self.buffer.read_aligned_slice(length)
+    }
+
+    #[inline(always)]
+    fn fourcc_bytes_from_typeinfo<'data>(
+        &'data mut self,
+        _typeinfo: &TypeInfo,
+    ) -> Result<&'data [u8], DecodeError> {
+        self.expect_skip(7)?;
+        self.buffer.read_aligned_slice(4)
     }
 
     fn bools_from_bitarray_typeinfo(
