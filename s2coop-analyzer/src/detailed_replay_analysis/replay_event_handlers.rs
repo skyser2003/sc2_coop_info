@@ -12,10 +12,8 @@ pub(super) type IdentifiedWavesMap = BTreeMap<i64, Vec<String>>;
 
 const PLAYER_ID_INDEXED_LIMIT: usize = 17;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct ReplayEventStringSets {
-    custom_kill_count_categories: HashMap<String, String>,
-}
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(super) struct ReplayEventStringSets;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct ReplayPlayerIdSet {
@@ -78,9 +76,7 @@ pub(super) type UnitStateMap = HashMap<i64, UnitSnapshot>;
 
 impl ReplayEventStringSets {
     pub(super) fn new() -> Self {
-        Self {
-            custom_kill_count_categories: Self::custom_kill_count_categories(),
-        }
+        Self
     }
 
     fn contains_murvar_spawn_unit(&self, unit_type: &str) -> bool {
@@ -134,71 +130,26 @@ impl ReplayEventStringSets {
     }
 
     fn custom_kill_count_category(&self, unit_type: &str) -> Option<&str> {
-        self.custom_kill_count_categories
-            .get(unit_type)
-            .map(String::as_str)
-    }
-
-    fn custom_kill_count_categories() -> HashMap<String, String> {
-        let mut categories = HashMap::new();
-        Self::insert_custom_kill_count_category(&mut categories, "shuttles", &["ProtossFrigate"]);
-        Self::insert_custom_kill_count_category(
-            &mut categories,
-            "propagators",
-            &["MutatorPropagator"],
-        );
-        Self::insert_custom_kill_count_category(
-            &mut categories,
-            "minesweeper",
-            &[
-                "MutatorSpiderMine",
-                "MutatorSpiderMineBurrowed",
-                "WidowMineBurrowed",
-                "WidowMine",
-            ],
-        );
-        Self::insert_custom_kill_count_category(&mut categories, "voidrifts", &["MutatorVoidRift"]);
-        Self::insert_custom_kill_count_category(
-            &mut categories,
-            "turkey",
-            &["MutatorTurkey", "MutatorTurking", "MutatorInfestedTurkey"],
-        );
-        Self::insert_custom_kill_count_category(
-            &mut categories,
-            "voidreanimators",
-            &["MutatorVoidReanimator"],
-        );
-        Self::insert_custom_kill_count_category(
-            &mut categories,
-            "deadofnight",
-            &[
-                "InfestableBiodome",
-                "JarbanInfestibleColonistHut",
-                "InfestedMercHaven",
-                "InfestableHut",
-            ],
-        );
-        Self::insert_custom_kill_count_category(
-            &mut categories,
-            "missilecommand",
-            &[
-                "MutatorMissileSplitterChild",
-                "MutatorMissileNuke",
-                "MutatorMissileSplitter",
-                "MutatorMissileStandard",
-                "MutatorMissilePointDefense",
-            ],
-        );
-        categories
-    }
-
-    fn insert_custom_kill_count_category(
-        categories: &mut HashMap<String, String>,
-        category: &str,
-        unit_types: &[&str],
-    ) {
-        for unit_type in unit_types {
-            categories.insert((*unit_type).to_owned(), category.to_owned());
+        match unit_type {
+            "ProtossFrigate" => Some("shuttles"),
+            "MutatorPropagator" => Some("propagators"),
+            "MutatorSpiderMine"
+            | "MutatorSpiderMineBurrowed"
+            | "WidowMineBurrowed"
+            | "WidowMine" => Some("minesweeper"),
+            "MutatorVoidRift" => Some("voidrifts"),
+            "MutatorTurkey" | "MutatorTurking" | "MutatorInfestedTurkey" => Some("turkey"),
+            "MutatorVoidReanimator" => Some("voidreanimators"),
+            "InfestableBiodome"
+            | "JarbanInfestibleColonistHut"
+            | "InfestedMercHaven"
+            | "InfestableHut" => Some("deadofnight"),
+            "MutatorMissileSplitterChild"
+            | "MutatorMissileNuke"
+            | "MutatorMissileSplitter"
+            | "MutatorMissileStandard"
+            | "MutatorMissilePointDefense" => Some("missilecommand"),
+            _ => None,
         }
     }
 }
