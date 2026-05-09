@@ -15,7 +15,7 @@
         "@emotion/react": "^11.14.0",
         "@emotion/styled": "^11.14.1",
         "@mui/material": "^7.3.8",
-        "@tauri-apps/api": "^2.10.1",
+        "@tauri-apps/api": "^2.11.0",
         "@tauri-apps/plugin-opener": "^2.5.3",
         "@tauri-apps/plugin-updater": "^2.10.0",
         "@zumer/snapdom": "^2.0.0-dev.4",
