@@ -38,6 +38,7 @@ test("auto-expired replay overlay uses the same fade-out before clearing replay 
             mainPrestige: "Renegade Commander",
             allyPrestige: "Queen of Blades",
             comp: "Terran",
+            enemy: "Terran",
             player_stats: null,
             mutators: [],
             result: "Victory",

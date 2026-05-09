@@ -198,6 +198,7 @@ test("overlay text heights stay aligned across english and korean", async ({
             mainPrestige: "Renegade Commander",
             allyPrestige: "Queen of Blades",
             comp: "Terran",
+            enemy: "Terran",
             player_stats: null,
             mutators: [],
             result: "Victory",

@@ -11,6 +11,7 @@ import {
     LanguageManager,
 } from "../../i18n/languageManager";
 import type { OverlayReplayPayload } from "../../../bindings/overlay";
+import { RaceIcon } from "../../components/RaceIcon";
 
 const showmutators = true;
 const maxUnits = 5;
@@ -74,6 +75,7 @@ type CommanderSection = {
     icons: ReactNode[];
     prestige: string;
     prestigeColor: string | null;
+    raceIconLabel: string | null;
     masteryRows: MasteryRow[];
     masteryColor: string | null;
     unitRows: UnitRow[];
@@ -720,6 +722,7 @@ export default function GameStatText({
                     statsPayload.mainPrestige,
                 ),
                 prestigeColor: p1Color,
+                raceIconLabel: null,
                 masteryRows: buildMasteryRows(
                     readNumericArray(statsPayload.mainMasteries),
                     masteryLabelsFor(statsPayload.mainCommander),
@@ -744,6 +747,7 @@ export default function GameStatText({
                     statsPayload.allyPrestige,
                 ),
                 prestigeColor: p2Color,
+                raceIconLabel: null,
                 masteryRows: buildMasteryRows(
                     readNumericArray(statsPayload.allyMasteries),
                     masteryLabelsFor(statsPayload.allyCommander),
@@ -765,6 +769,7 @@ export default function GameStatText({
                 icons: [],
                 prestige: overlayLocalize(statsPayload.comp),
                 prestigeColor: amonColor,
+                raceIconLabel: overlayEnglish(statsPayload.enemy),
                 masteryRows: [],
                 masteryColor: null,
                 unitRows: buildUnitRows(
@@ -1048,7 +1053,19 @@ export default function GameStatText({
                                 color: section.prestigeColor ?? undefined,
                             }}
                         >
-                            {section.prestige}
+                            {section.raceIconLabel == null ? (
+                                section.prestige
+                            ) : (
+                                <span className="enemy-race-label">
+                                    <RaceIcon
+                                        label={section.raceIconLabel}
+                                        className="enemy-race-icon"
+                                    />
+                                    <span className="enemy-race-text">
+                                        {section.prestige}
+                                    </span>
+                                </span>
+                            )}
                         </div>
                         {index < 2 ? (
                             <div

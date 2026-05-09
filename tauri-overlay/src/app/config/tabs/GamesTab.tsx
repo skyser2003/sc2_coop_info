@@ -28,6 +28,7 @@ import type {
     DifficultyFilters,
     MutatorData,
 } from "../types";
+import { RaceIcon } from "../../components/RaceIcon";
 
 type GamesTabState = {
     isBusy: boolean;
@@ -853,6 +854,15 @@ export default function GamesTab({
                                     const rowMutators = readMutators(
                                         row.mutators,
                                     );
+                                    const enemyRaceLabel = asTableValue(
+                                        languageManager.localize(
+                                            row.enemy || "Unknown",
+                                        ),
+                                    );
+                                    const enemyRaceIconLabel =
+                                        languageManager.englishLabel(
+                                            row.enemy || "Unknown",
+                                        );
                                     return (
                                         <tr
                                             key={`${file || "row"}-${idx}`}
@@ -893,11 +903,21 @@ export default function GamesTab({
                                                 {p2Label}
                                             </td>
                                             <td>
-                                                {asTableValue(
-                                                    languageManager.localize(
-                                                        row.enemy || "Unknown",
-                                                    ),
-                                                )}
+                                                <span
+                                                    className={styles.raceLabel}
+                                                >
+                                                    <RaceIcon
+                                                        label={
+                                                            enemyRaceIconLabel
+                                                        }
+                                                        className={
+                                                            styles.raceIcon
+                                                        }
+                                                    />
+                                                    <span>
+                                                        {enemyRaceLabel}
+                                                    </span>
+                                                </span>
                                             </td>
                                             <td>
                                                 {formatDurationSeconds(

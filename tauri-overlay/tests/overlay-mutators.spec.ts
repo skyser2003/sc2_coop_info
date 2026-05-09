@@ -168,6 +168,7 @@ test("overlay renders all mutator icons for replay payloads", async ({
             mainPrestige: "",
             allyPrestige: "",
             comp: "Terran",
+            enemy: "Terran",
         });
     });
 

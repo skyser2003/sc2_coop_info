@@ -387,6 +387,46 @@
     text-shadow: 0.1vh 0.1vh 0.1vh black;
 }
 
+.overlayPageRoot :global(.enemy-race-label) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45vh;
+    max-width: 100%;
+    min-width: 0;
+    vertical-align: top;
+}
+
+.overlayPageRoot :global(.enemy-race-icon) {
+    width: 1.45vh;
+    height: 1.45vh;
+    flex: 0 0 1.45vh;
+    color: #cbd5e1;
+    filter: drop-shadow(0.1vh 0.1vh 0.1vh black);
+}
+
+.overlayPageRoot :global(.enemy-race-icon[data-race="terran"]) {
+    color: #60a5fa;
+}
+
+.overlayPageRoot :global(.enemy-race-icon[data-race="zerg"]) {
+    color: #c084fc;
+}
+
+.overlayPageRoot :global(.enemy-race-icon[data-race="protoss"]) {
+    color: #facc15;
+}
+
+.overlayPageRoot :global(.enemy-race-icon[data-race="random"]) {
+    color: #a78bfa;
+}
+
+.overlayPageRoot :global(.enemy-race-text) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .overlayPageRoot :global(.mastery) {
     font-size: 1.5vh;
     text-shadow: 0.1vh 0.1vh 0.1vh black;

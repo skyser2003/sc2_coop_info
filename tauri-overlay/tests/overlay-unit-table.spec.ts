@@ -163,6 +163,7 @@ function buildReplayPayload(): OverlayReplayPayload {
         Defeat: 0,
         fastest: false,
         comp: "Terran",
+        enemy: "Terran",
     };
 }
 

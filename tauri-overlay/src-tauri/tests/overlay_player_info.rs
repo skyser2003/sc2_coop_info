@@ -16,6 +16,7 @@ fn sample_replay() -> ReplayInfo {
     );
     replay.set_file(TestHelperOps::test_replay_path("example.SC2Replay"));
     replay.set_result("Victory");
+    replay.set_enemy("Zerg");
     replay
 }
 
@@ -62,6 +63,7 @@ fn overlay_payload_omits_session_counts_when_disabled() {
 
     assert_eq!(payload.victory, None);
     assert_eq!(payload.defeat, None);
+    assert_eq!(payload.enemy, "Zerg");
     assert_eq!(payload.new_replay, Some(true));
 }
 

@@ -195,6 +195,7 @@ test("show charts setting controls replay chart visibility in the overlay", asyn
             mainPrestige: "Renegade Commander",
             allyPrestige: "Queen of Blades",
             comp: "Terran",
+            enemy: "Terran",
             player_stats: {
                 1: {
                     name: "Player One",
@@ -324,6 +325,7 @@ test("charts render from semantic main and ally player stats", async ({
             mainPrestige: "Renegade Commander",
             allyPrestige: "Queen of Blades",
             comp: "Terran",
+            enemy: "Terran",
             player_stats: {
                 1: {
                     name: "Player Two",

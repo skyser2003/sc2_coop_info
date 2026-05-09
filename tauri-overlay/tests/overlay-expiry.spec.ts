@@ -37,6 +37,7 @@ test("expired overlay replay data clears and falls back to NO DATA on manual tog
             mainPrestige: "Renegade Commander",
             allyPrestige: "Queen of Blades",
             comp: "Terran",
+            enemy: "Terran",
             player_stats: null,
             mutators: [],
             result: "Victory",

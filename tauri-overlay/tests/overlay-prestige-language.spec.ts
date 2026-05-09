@@ -153,6 +153,7 @@ test("overlay prestige labels follow the selected language", async ({
             mainPrestige: "Renegade Commander",
             allyPrestige: "Queen of Blades",
             comp: "Terran",
+            enemy: "Terran",
             player_stats: null,
             mutators: [],
             result: "Victory",

@@ -38,6 +38,7 @@ test("manual replay overlay hide fades the full stats panel before removing it",
             mainPrestige: "Renegade Commander",
             allyPrestige: "Queen of Blades",
             comp: "Terran",
+            enemy: "Terran",
             player_stats: {
                 army: { p1: [1, 2], p2: [2, 3], labels: ["0:00", "0:10"] },
                 supply: { p1: [10, 20], p2: [8, 18], labels: ["0:00", "0:10"] },

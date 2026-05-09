@@ -389,6 +389,45 @@
     text-overflow: ellipsis;
 }
 
+.configPage .raceLabel {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    max-inline-size: 100%;
+    min-inline-size: 0;
+    vertical-align: middle;
+}
+
+.configPage .raceLabel span {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.configPage .raceIcon {
+    inline-size: 1.25rem;
+    block-size: 1.25rem;
+    flex: 0 0 1.25rem;
+    color: var(--config-subtle-strong, #cbd5e1);
+    filter: drop-shadow(0 1px 1px rgb(0 0 0 / 45%));
+}
+
+.configPage .raceIcon[data-race="terran"] {
+    color: #2563eb;
+}
+
+.configPage .raceIcon[data-race="zerg"] {
+    color: #9333ea;
+}
+
+.configPage .raceIcon[data-race="protoss"] {
+    color: #eab308;
+}
+
+.configPage .raceIcon[data-race="random"] {
+    color: #7c3aed;
+}
+
 .configPage .gamesActionsCell {
     display: flex;
     justify-content: flex-end;

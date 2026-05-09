@@ -217,6 +217,7 @@ pub struct OverlayReplayPayload {
     pub allykills: u32,
     pub result: String,
     pub difficulty: String,
+    pub enemy: String,
     pub length: u32,
     #[serde(rename = "B+")]
     pub brutal_plus: u32,

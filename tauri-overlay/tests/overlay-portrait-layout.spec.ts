@@ -126,6 +126,7 @@ test("overlay layout stays within portrait viewport width", async ({
             mainPrestige: "Renegade Commander",
             allyPrestige: "Queen of Blades",
             comp: "Terran",
+            enemy: "Terran",
             player_stats: {
                 1: {
                     name: "Player One",
