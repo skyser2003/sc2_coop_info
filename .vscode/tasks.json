@@ -51,7 +51,7 @@
                 "-ExecutionPolicy",
                 "Bypass",
                 "-File",
-                "${workspaceFolder}/scripts/compare-cache-generation-vs-head.ps1",
+                "${workspaceFolder}/scripts/compare-cache-generation.ps1",
                 "-ComparisonRef",
                 "${input:compareCacheGitRef}"
             ],
@@ -72,14 +72,11 @@
                 "-ExecutionPolicy",
                 "Bypass",
                 "-File",
-                "${workspaceFolder}/scripts/compare-cache-generation-vs-head.ps1",
+                "${workspaceFolder}/scripts/compare-cache-generation-alternating.ps1",
                 "-ComparisonRef",
                 "${input:compareCacheGitRef}",
-                "-Runs",
-                "10",
                 "-Workers",
-                "8",
-                "-AnalyzerTimings"
+                "8"
             ],
             "group": {
                 "kind": "build"

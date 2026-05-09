@@ -11,26 +11,24 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-$scriptPath = Join-Path $PSScriptRoot "compare-cache-generation-vs-head.ps1"
-$arguments = @(
-    "-ComparisonRef",
-    $ComparisonRef,
-    "-Runs",
-    "10",
-    "-Workers",
-    $Workers.ToString()
-)
+$scriptPath = Join-Path $PSScriptRoot "compare-cache-generation.ps1"
+$arguments = @{
+    ComparisonRef = $ComparisonRef
+    Runs = 10
+    Workers = $Workers
+    WarmupRunsPerVariant = 1
+}
 
 if ($null -ne $RecentReplayCount) {
-    $arguments += @("-RecentReplayCount", $RecentReplayCount.Value.ToString())
+    $arguments.RecentReplayCount = $RecentReplayCount
 }
 
 if (-not $NoAnalyzerTimings.IsPresent) {
-    $arguments += "-AnalyzerTimings"
+    $arguments.AnalyzerTimings = $true
 }
 
 if ($KeepArtifacts.IsPresent) {
-    $arguments += "-KeepArtifacts"
+    $arguments.KeepArtifacts = $true
 }
 
 & $scriptPath @arguments

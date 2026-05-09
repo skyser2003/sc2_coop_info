@@ -5,6 +5,7 @@ param(
     [Nullable[int]]$RecentReplayCount = $null,
     [int]$Runs = 1,
     [Nullable[int]]$Workers = $null,
+    [int]$WarmupRunsPerVariant = 1,
     [switch]$AnalyzerTimings,
     [switch]$KeepArtifacts
 )
@@ -33,6 +34,10 @@ if ($Runs -le 0) {
 
 if ($null -ne $Workers -and $Workers -le 0) {
     throw "Workers must be greater than zero when supplied."
+}
+
+if ($WarmupRunsPerVariant -ne 1) {
+    throw "WarmupRunsPerVariant must be exactly 1."
 }
 
 function Import-EnvFile {
@@ -154,6 +159,51 @@ function Invoke-GenerateCache {
         DecodeOrderedSeconds = $decodeOrderedSeconds
         DetailedReportSeconds = $detailedReportSeconds
         Output = $outputText
+    }
+}
+
+function Remove-GeneratedCacheOutputs {
+    param([string]$OutputFile)
+
+    $directory = Split-Path -Parent $OutputFile
+    $name = [System.IO.Path]::GetFileNameWithoutExtension($OutputFile)
+    $extension = [System.IO.Path]::GetExtension($OutputFile)
+    $prettyOutputFile = Join-Path $directory ($name + "_pretty" + $extension)
+
+    foreach ($path in @($OutputFile, $prettyOutputFile)) {
+        if (Test-Path -LiteralPath $path -PathType Leaf) {
+            Remove-Item -LiteralPath $path -Force
+        }
+    }
+}
+
+function Invoke-WarmupGenerateCache {
+    param(
+        [string]$Variant,
+        [string]$ExePath,
+        [string]$AccountDir,
+        [Nullable[int]]$WorkerCount,
+        [bool]$EnableAnalyzerTimings
+    )
+
+    $outputFile = Join-Path $tempRoot ("warmup-{0}-cache_overall_stats.json" -f $Variant)
+    Write-Host ("Warm-up {0}: starting" -f $Variant)
+    try {
+        $run = Invoke-GenerateCache `
+            -ExePath $ExePath `
+            -AccountDir $AccountDir `
+            -OutputFile $outputFile `
+            -WorkerCount $WorkerCount `
+            -EnableAnalyzerTimings $EnableAnalyzerTimings
+        Write-Host (
+            "Warm-up {0}: elapsed={1:N3}s entries={2} discarded" -f `
+                $Variant,
+                $run.ElapsedSeconds,
+                $run.EntryCount
+        )
+    }
+    finally {
+        Remove-GeneratedCacheOutputs -OutputFile $outputFile
     }
 }
 
@@ -308,6 +358,21 @@ try {
     $currentExe = [System.IO.Path]::Combine($repoRoot, "target", "release", $cliExecutableName)
     $comparisonExe = [System.IO.Path]::Combine($comparisonWorktree, "target", "release", $cliExecutableName)
 
+    for ($warmupIndex = 0; $warmupIndex -lt $WarmupRunsPerVariant; $warmupIndex++) {
+        Invoke-WarmupGenerateCache `
+            -Variant "comparison" `
+            -ExePath $comparisonExe `
+            -AccountDir $benchmarkAccountDir `
+            -WorkerCount $Workers `
+            -EnableAnalyzerTimings $AnalyzerTimings.IsPresent
+        Invoke-WarmupGenerateCache `
+            -Variant "current" `
+            -ExePath $currentExe `
+            -AccountDir $benchmarkAccountDir `
+            -WorkerCount $Workers `
+            -EnableAnalyzerTimings $AnalyzerTimings.IsPresent
+    }
+
     $runRows = New-Object System.Collections.Generic.List[object]
     for ($runIndex = 0; $runIndex -lt $Runs; $runIndex++) {
         $runNumber = $runIndex + 1
@@ -404,6 +469,7 @@ try {
         ComparisonRef = $ComparisonRef
         ComparisonCommit = $comparisonCommit
         Runs = $Runs
+        WarmupRunsPerVariant = $WarmupRunsPerVariant
         Workers = $Workers
         AnalyzerTimings = $AnalyzerTimings.IsPresent
         CurrentMeanSeconds = $currentMean
@@ -431,6 +497,7 @@ try {
         Write-Host "Replay scope: all replay files"
     }
     Write-Host "Runs: $Runs"
+    Write-Host "Warm-up runs per variant: $WarmupRunsPerVariant"
     if ($null -ne $Workers) {
         Write-Host "Workers: $Workers"
     }
