@@ -45,7 +45,7 @@ fn generate_cache_parallel_runs_are_deterministic() {
     let first_output = temp_dir.path().join("cache_overall_stats_first");
     let second_output = temp_dir.path().join("cache_overall_stats_second");
 
-    let runtime = GenerateCacheRuntimeOptions::default();
+    let runtime = GenerateCacheRuntimeOptions::default().with_timings_enabled(true);
     let first_config = GenerateCacheConfig::new(account_dir.clone(), first_output.clone());
     let first_summary =
         DetailedReplayAnalyzer::analyze_full_detailed(&first_config, &resources, None, &runtime)
@@ -84,6 +84,30 @@ fn generate_cache_parallel_runs_are_deterministic() {
 
     assert_eq!(first_entries, second_entries);
     assert!(first_entries.is_empty());
+}
+
+#[test]
+fn generate_cache_timings_can_be_disabled() {
+    let resources = common::load_replay_resources();
+    let temp_dir = TempDir::new().expect("failed to create tempdir");
+    let account_dir = temp_dir.path().join("Accounts").join("1-S2-1-42");
+    write_replay_file(&account_dir.join("Replay.SC2Replay"));
+
+    let output_file = temp_dir.path().join("cache_overall_stats");
+    let config = GenerateCacheConfig::new(temp_dir.path().join("Accounts"), output_file);
+    let runtime = GenerateCacheRuntimeOptions::default().with_timings_enabled(false);
+
+    let summary =
+        DetailedReplayAnalyzer::analyze_full_detailed(&config, &resources, None, &runtime)
+            .expect("cache generation should succeed");
+
+    assert!(!summary.timing_report().enabled());
+    assert!(
+        summary
+            .timing_report()
+            .format_amdahl_summary()
+            .contains("S2COOP_ANALYZER_TIMINGS=1")
+    );
 }
 
 #[test]

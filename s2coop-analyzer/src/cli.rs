@@ -275,8 +275,10 @@ impl AnalyzerCli {
                     },
                     summary.output_file().display()
                 );
-                output.push('\n');
-                output.push_str(&summary.timing_report().format_amdahl_summary());
+                if summary.timing_report().enabled() {
+                    output.push('\n');
+                    output.push_str(&summary.timing_report().format_amdahl_summary());
+                }
                 Ok(output)
             }
             Command::TestCacheOverallStatsDetailedAnalysis(args) => {
