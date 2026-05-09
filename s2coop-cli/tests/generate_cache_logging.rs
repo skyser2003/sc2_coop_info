@@ -1,4 +1,4 @@
-use s2coop_analyzer::cli::AnalyzerCli;
+use s2coop_cli::app::CliApplication;
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -28,7 +28,7 @@ fn cli_generate_cache_emits_legacy_style_logs() {
     }
     let output_file = temp_dir.path().join("cache_overall_stats");
     let args = vec![
-        "s2coop-analyzer-cli".to_string(),
+        "s2coop-cli".to_string(),
         "generate-cache".to_string(),
         "--account-dir".to_string(),
         account_dir.display().to_string(),
@@ -45,7 +45,7 @@ fn cli_generate_cache_emits_legacy_style_logs() {
             .push(message);
     };
 
-    let output = AnalyzerCli::run_with_logger(&args, &logger).expect("cli should run");
+    let output = CliApplication::run_with_logger(&args, &logger).expect("cli should run");
     assert!(output.contains("Generated cache_overall_stats"));
     assert!(output_file.is_file());
 

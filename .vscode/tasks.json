@@ -4,7 +4,7 @@
         {
             "label": "Run generation",
             "type": "shell",
-            "command": "cargo run --release --manifest-path s2coop-analyzer/Cargo.toml --bin s2coop-analyzer-cli -- generate-cache --account-dir $accountDir --output $currentOut",
+            "command": "cargo run --release --manifest-path s2coop-cli/Cargo.toml --bin s2coop-cli -- generate-cache --account-dir $accountDir --output $currentOut",
             "group": {
                 "kind": "build"
             },
@@ -45,14 +45,17 @@
         {
             "label": "Compare cache generation vs Git Ref",
             "type": "shell",
-            "command": "pwsh.exe",
+            "command": "cargo",
             "args": [
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                "${workspaceFolder}/scripts/compare-cache-generation.ps1",
-                "-ComparisonRef",
+                "run",
+                "--release",
+                "--manifest-path",
+                "${workspaceFolder}/s2coop-cli/Cargo.toml",
+                "--bin",
+                "s2coop-cli",
+                "--",
+                "compare-cache-generation",
+                "--comparison-ref",
                 "${input:compareCacheGitRef}"
             ],
             "group": {
@@ -66,16 +69,19 @@
         {
             "label": "Compare cache generation vs Git Ref (10 alternating)",
             "type": "shell",
-            "command": "pwsh.exe",
+            "command": "cargo",
             "args": [
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                "${workspaceFolder}/scripts/compare-cache-generation-alternating.ps1",
-                "-ComparisonRef",
+                "run",
+                "--release",
+                "--manifest-path",
+                "${workspaceFolder}/s2coop-cli/Cargo.toml",
+                "--bin",
+                "s2coop-cli",
+                "--",
+                "compare-cache-generation-alternating",
+                "--comparison-ref",
                 "${input:compareCacheGitRef}",
-                "-Workers",
+                "--workers",
                 "8"
             ],
             "group": {

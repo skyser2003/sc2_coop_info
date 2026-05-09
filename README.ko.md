@@ -44,6 +44,8 @@
 - `s2coop-analyzer`
   - 리플레이 및 통계 분석 로직
   - 캐시 생성
+- `s2coop-cli`
+  - 캐시 생성 비교 및 벤치마크 도구
 - `s2protocol-port`
   - SC2 리플레이 프로토콜 파싱 지원
 

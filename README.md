@@ -44,6 +44,8 @@ The current app is centered around the `tauri-overlay` desktop application and R
 - `s2coop-analyzer`
   - replay/statistics analysis logic
   - cache generation
+- `s2coop-cli`
+  - cache-generation comparison and benchmark helpers
 - `s2protocol-port`
   - SC2 replay protocol parsing support
 
@@ -138,6 +140,13 @@ npm install
 cargo tauri build
 ```
 
+### CLI
+
+```powershell
+cargo run --release --bin s2coop-cli -- generate-cache --account-dir <DIR> --output cache_overall_stats.json
+cargo run --release --bin s2coop-cli -- compare-cache-generation --comparison-ref HEAD --runs 1
+```
+
 ## Notes About Settings And Usage
 
 - The app expects access to your StarCraft II account folder to analyze replays.
@@ -154,6 +163,7 @@ cargo tauri build
 
 - Frontend: React, Vite, Material UI, Tauri API
 - Backend: Rust, Tauri
+- CLI: `s2coop-cli`
 
 ## Repository Status
 
