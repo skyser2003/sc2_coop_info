@@ -33,6 +33,12 @@ pub struct ParsedReplayWithEvents {
     replay: ParsedReplay,
     events: Vec<ReplayEvent>,
     timing: ReplayParseTiming,
+    ordered_events_decoded_count: usize,
+}
+
+struct OrderedEventDecodeResult {
+    events: Vec<ReplayEvent>,
+    decoded_count: usize,
 }
 
 struct ParsedReplayParts {
@@ -51,11 +57,17 @@ struct ParsedReplayParts {
 }
 
 impl ParsedReplayWithEvents {
-    fn new(replay: ParsedReplay, events: Vec<ReplayEvent>, timing: ReplayParseTiming) -> Self {
+    fn new_with_ordered_events_decoded_count(
+        replay: ParsedReplay,
+        events: Vec<ReplayEvent>,
+        timing: ReplayParseTiming,
+        ordered_events_decoded_count: usize,
+    ) -> Self {
         Self {
             replay,
             events,
             timing,
+            ordered_events_decoded_count,
         }
     }
 
@@ -69,6 +81,10 @@ impl ParsedReplayWithEvents {
 
     pub fn timing(&self) -> &ReplayParseTiming {
         &self.timing
+    }
+
+    pub fn ordered_events_decoded_count(&self) -> usize {
+        self.ordered_events_decoded_count
     }
 
     pub fn take_replay(self) -> ParsedReplay {
@@ -565,40 +581,6 @@ impl ReplayParser {
         Ok(header.base_build())
     }
 
-    fn decode_replay_ordered_events_with_store_fallback(
-        store: &crate::protocol::ProtocolStore,
-        protocol: &crate::decoder::ProtocolDefinition,
-        build: u32,
-        game_raw: &[u8],
-        tracker_raw: Option<&[u8]>,
-    ) -> Result<Vec<ReplayEvent>, DecodeError> {
-        match protocol.decode_replay_ordered_events(game_raw, tracker_raw) {
-            Ok(events) => Ok(events),
-            Err(error) => {
-                let Some(tracker_raw) = tracker_raw else {
-                    return Err(error);
-                };
-
-                let game_events = match protocol.decode_replay_game_events(game_raw) {
-                    Ok(events) => events,
-                    Err(_) => return Err(error),
-                };
-                let tracker_events = Self::decode_replay_tracker_events_with_store_fallback(
-                    store,
-                    build,
-                    tracker_raw,
-                )
-                .unwrap_or_default();
-
-                let mut events = Vec::with_capacity(game_events.len() + tracker_events.len());
-                events.extend(game_events.into_iter().map(ReplayEvent::Game));
-                events.extend(tracker_events.into_iter().map(ReplayEvent::Tracker));
-                events.sort_by_key(ReplayEvent::_gameloop);
-                Ok(events)
-            }
-        }
-    }
-
     fn decode_replay_ordered_events_with_store_fallback_filtered(
         store: &crate::protocol::ProtocolStore,
         protocol: &crate::decoder::ProtocolDefinition,
@@ -644,6 +626,73 @@ impl ReplayParser {
         }
     }
 
+    fn decode_replay_ordered_events_with_store_fallback_filtered_retained(
+        store: &crate::protocol::ProtocolStore,
+        protocol: &crate::decoder::ProtocolDefinition,
+        build: u32,
+        game_raw: &[u8],
+        tracker_raw: Option<&[u8]>,
+        include_event: &dyn Fn(&str) -> bool,
+        retain_event: &mut dyn FnMut(&ReplayEvent) -> bool,
+    ) -> Result<OrderedEventDecodeResult, DecodeError> {
+        match protocol.decode_replay_ordered_events_filtered_retained(
+            game_raw,
+            tracker_raw,
+            include_event,
+            &mut *retain_event,
+        ) {
+            Ok((events, decoded_count)) => Ok(OrderedEventDecodeResult {
+                events,
+                decoded_count,
+            }),
+            Err(error) => {
+                let Some(tracker_raw) = tracker_raw else {
+                    return Err(error);
+                };
+
+                let game_events = match protocol.decode_replay_game_events(game_raw) {
+                    Ok(events) => events,
+                    Err(_) => return Err(error),
+                };
+                let tracker_events = Self::decode_replay_tracker_events_with_store_fallback(
+                    store,
+                    build,
+                    tracker_raw,
+                )
+                .unwrap_or_default();
+
+                let mut included_events =
+                    Vec::with_capacity(game_events.len() + tracker_events.len());
+                included_events.extend(
+                    game_events
+                        .into_iter()
+                        .filter(|event| include_event(&event.event))
+                        .map(ReplayEvent::Game),
+                );
+                included_events.extend(
+                    tracker_events
+                        .into_iter()
+                        .filter(|event| include_event(&event.event))
+                        .map(ReplayEvent::Tracker),
+                );
+                included_events.sort_by_key(ReplayEvent::_gameloop);
+
+                let decoded_count = included_events.len();
+                let mut events = Vec::with_capacity(decoded_count);
+                for event in included_events {
+                    if retain_event(&event) {
+                        events.push(event);
+                    }
+                }
+
+                Ok(OrderedEventDecodeResult {
+                    events,
+                    decoded_count,
+                })
+            }
+        }
+    }
+
     pub fn parse_file_with_store(
         path: &Path,
         store: &crate::protocol::ProtocolStore,
@@ -671,7 +720,7 @@ impl ReplayParser {
             ReplayParseMode::Simple => ReplayEventDecodeMode::None,
             ReplayParseMode::Detailed => ReplayEventDecodeMode::Split,
         };
-        Self::parse_file_with_store_internal(path, store, event_mode, None, options)
+        Self::parse_file_with_store_internal(path, store, event_mode, None, None, options)
     }
 
     pub fn parse_file_with_store_ordered_events(
@@ -682,6 +731,7 @@ impl ReplayParser {
             path,
             store,
             ReplayEventDecodeMode::Ordered,
+            None,
             None,
             ReplayParseOptions::default(),
         )
@@ -717,6 +767,28 @@ impl ReplayParser {
             store,
             ReplayEventDecodeMode::Ordered,
             Some(&include_event),
+            None,
+            options,
+        )
+    }
+
+    pub fn parse_file_with_store_ordered_events_filtered_retained_options<F, R>(
+        path: &Path,
+        store: &crate::protocol::ProtocolStore,
+        include_event: F,
+        mut retain_event: R,
+        options: ReplayParseOptions,
+    ) -> Result<ParsedReplayWithEvents, DecodeError>
+    where
+        F: Fn(&str) -> bool,
+        R: FnMut(&ReplayEvent) -> bool,
+    {
+        Self::parse_file_with_store_internal(
+            path,
+            store,
+            ReplayEventDecodeMode::Ordered,
+            Some(&include_event),
+            Some(&mut retain_event),
             options,
         )
     }
@@ -767,6 +839,7 @@ impl ReplayParser {
         store: &crate::protocol::ProtocolStore,
         event_mode: ReplayEventDecodeMode,
         include_ordered_event: Option<&dyn Fn(&str) -> bool>,
+        retain_ordered_event: Option<&mut dyn FnMut(&ReplayEvent) -> bool>,
         options: ReplayParseOptions,
     ) -> Result<ParsedReplayWithEvents, DecodeError> {
         let total_start = Instant::now();
@@ -885,6 +958,7 @@ impl ReplayParser {
                 })?
         };
 
+        let mut ordered_events_decoded_count = 0_usize;
         let (game_events, tracker_events, ordered_events) = match event_mode {
             ReplayEventDecodeMode::None => (Vec::new(), Vec::new(), Vec::new()),
             ReplayEventDecodeMode::Split => {
@@ -924,6 +998,7 @@ impl ReplayParser {
                     None => Vec::new(),
                 };
 
+                ordered_events_decoded_count = game_events.len() + tracker_events.len();
                 (game_events, tracker_events, Vec::new())
             }
             ReplayEventDecodeMode::Ordered => {
@@ -939,28 +1014,33 @@ impl ReplayParser {
                 timing.add_mpq_read(&read_timing);
                 timing.read_tracker_events = read_timing.open_file + read_timing.read_file;
                 let decode_ordered_events_start = Instant::now();
-                let events = match include_ordered_event {
-                    Some(include_event) => {
-                        Self::decode_replay_ordered_events_with_store_fallback_filtered(
-                            store,
-                            protocol,
-                            base_build,
-                            &data,
-                            tracker_data.as_deref(),
-                            include_event,
-                        )
-                    }
-                    None => Self::decode_replay_ordered_events_with_store_fallback(
+                let include_all = |_: &str| true;
+                let include_event: &dyn Fn(&str) -> bool = match include_ordered_event {
+                    Some(include_event) => include_event,
+                    None => &include_all,
+                };
+                let mut retain_all = |_: &ReplayEvent| true;
+                let retain_event: &mut dyn FnMut(&ReplayEvent) -> bool = match retain_ordered_event
+                {
+                    Some(retain_event) => retain_event,
+                    None => &mut retain_all,
+                };
+                let ordered =
+                    Self::decode_replay_ordered_events_with_store_fallback_filtered_retained(
                         store,
                         protocol,
                         base_build,
                         &data,
                         tracker_data.as_deref(),
-                    ),
-                }
-                .map_err(|err| DecodeError::Corrupted(format!("decode replay events: {err}")))?;
+                        include_event,
+                        retain_event,
+                    )
+                    .map_err(|err| {
+                        DecodeError::Corrupted(format!("decode replay events: {err}"))
+                    })?;
                 timing.decode_ordered_events = decode_ordered_events_start.elapsed();
-                (Vec::new(), Vec::new(), events)
+                ordered_events_decoded_count = ordered.decoded_count;
+                (Vec::new(), Vec::new(), ordered.events)
             }
         };
 
@@ -1027,6 +1107,13 @@ impl ReplayParser {
         });
         timing.build_result = build_result_start.elapsed();
         let timing = timing.finish(total_start.elapsed());
-        Ok(ParsedReplayWithEvents::new(replay, ordered_events, timing))
+        Ok(
+            ParsedReplayWithEvents::new_with_ordered_events_decoded_count(
+                replay,
+                ordered_events,
+                timing,
+                ordered_events_decoded_count,
+            ),
+        )
     }
 }

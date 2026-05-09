@@ -744,6 +744,22 @@ impl GenerateCacheTimingReport {
         self.replay_analysis_report_to_cache_entry
     }
 
+    pub fn replay_events_decoded_len(&self) -> usize {
+        self.replay_events_decoded_len
+    }
+
+    pub fn replay_events_decoded_capacity(&self) -> usize {
+        self.replay_events_decoded_capacity
+    }
+
+    pub fn replay_events_retained_len(&self) -> usize {
+        self.replay_events_retained_len
+    }
+
+    pub fn replay_events_retained_capacity(&self) -> usize {
+        self.replay_events_retained_capacity
+    }
+
     pub fn replay_analysis_temp_entry_write(&self) -> Duration {
         self.replay_analysis_temp_entry_write
     }

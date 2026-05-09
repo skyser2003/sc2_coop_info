@@ -97,7 +97,7 @@ const CUSTOM_KILL_ICON_KEYS: [&str; 10] = [
 type UnitStats = (i64, i64, i64, f64);
 
 struct ReplayMutatorIdentificationInput<'a> {
-    events: &'a [ReplayEvent],
+    event_collection: Option<&'a ReplayDetailedEventCollection>,
     mutators_all: &'a [String],
     mutators_ui: &'a [String],
     mutator_ids: &'a crate::dictionary_data::MutatorIdsJson,
@@ -433,6 +433,30 @@ struct ReplayDetailedParseContext {
 }
 
 #[derive(Debug, Clone)]
+struct ReplayDetailedEventCollection {
+    events: Vec<ReplayEvent>,
+    event_kinds: Vec<ReplayEventKind>,
+    decoded_event_count: usize,
+    start_time: ReplayNumericValue,
+    last_deselect_event: Option<ReplayNumericValue>,
+    mm_mutator_keys: Vec<String>,
+    extension_actions: Vec<i64>,
+}
+
+#[derive(Debug, Clone)]
+struct ReplayDetailedEventCollector {
+    event_kinds: Vec<ReplayEventKind>,
+    decoded_event_count: usize,
+    start_time: Option<ReplayNumericValue>,
+    last_deselect_event: Option<ReplayNumericValue>,
+    mm_mutator_keys: Vec<String>,
+    extension_actions: Vec<i64>,
+    extension_offset: i64,
+    extension_last_gameloop: Option<i64>,
+    extension_actions_finished: bool,
+}
+
+#[derive(Debug, Clone)]
 struct ReplayBaseParse {
     context: ReplayParsedContext,
     build: ReplayBuildInfo,
@@ -586,7 +610,7 @@ impl ReplayBaseParseError {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 enum ReplayNumericValue {
     Int(i64),
     Float(f64),
@@ -755,12 +779,14 @@ impl DetailedReplayAnalyzer {
             timing.early_filter = early_filter_start.elapsed();
 
             let decode_replay_start = Instant::now();
-            let (mut parsed, events) = if options.include_events {
+            let (mut parsed, detailed_event_collection) = if options.include_events {
+                let mut event_collector = ReplayDetailedEventCollector::new();
                 let mut parsed =
-                    ReplayParser::parse_file_with_store_ordered_events_filtered_options(
+                    ReplayParser::parse_file_with_store_ordered_events_filtered_retained_options(
                         replay_path,
                         protocol_store,
                         ReplayEventKind::needed_for_detailed_analysis_name,
+                        |event| event_collector.observe_and_retain_for_report(event),
                         ReplayParseOptions::new().with_decode_attributes(false),
                     )
                     .map_err(|error| ReplayBaseParseError::ReplayParse {
@@ -768,8 +794,16 @@ impl DetailedReplayAnalyzer {
                         message: error.to_string(),
                     })?;
                 timing.decode_replay_detail.add(parsed.timing());
+                let ordered_events_decoded_count = parsed.ordered_events_decoded_count();
                 let events = parsed.take_events();
-                (parsed.take_replay(), events)
+                let collection = event_collector.finish(events, ordered_events_decoded_count);
+                timing.events_decoded_len = collection.decoded_event_count;
+                timing.events_decoded_capacity = collection
+                    .decoded_event_count
+                    .max(collection.events.capacity());
+                timing.events_retained_len = collection.events.len();
+                timing.events_retained_capacity = collection.events.capacity();
+                (parsed.take_replay(), Some(collection))
             } else {
                 let parsed = ReplayParser::parse_file_with_store_timed(
                     replay_path,
@@ -781,10 +815,8 @@ impl DetailedReplayAnalyzer {
                     message: error.to_string(),
                 })?;
                 timing.decode_replay_detail.add(parsed.timing());
-                (parsed.take_replay(), Vec::new())
+                (parsed.take_replay(), None)
             };
-            timing.events_decoded_len = events.len();
-            timing.events_decoded_capacity = events.capacity();
             timing.decode_replay = decode_replay_start.elapsed();
 
             let extract_fields_start = Instant::now();
@@ -876,8 +908,13 @@ impl DetailedReplayAnalyzer {
 
             let length_events_start = Instant::now();
             let length_numeric = ReplayNumericValue::Float(metadata.Duration);
-            let start_time = DetailedReplayAnalyzer::get_start_time(&events);
-            let last_deselect_event = DetailedReplayAnalyzer::get_last_deselect_event(&events)
+            let start_time = detailed_event_collection
+                .as_ref()
+                .map(|collection| collection.start_time)
+                .unwrap_or(ReplayNumericValue::Int(0));
+            let last_deselect_event = detailed_event_collection
+                .as_ref()
+                .and_then(|collection| collection.last_deselect_event)
                 .unwrap_or(ReplayNumericValue::Float(metadata.Duration));
 
             let metadata_players = &metadata.Players;
@@ -925,7 +962,7 @@ impl DetailedReplayAnalyzer {
             let mutator_context = ReplayMutatorParseContext::from_init_data(&init_data);
             let (mutators, weekly) = DetailedReplayAnalyzer::identify_mutators_for_replay(
                 ReplayMutatorIdentificationInput {
-                    events: &events,
+                    event_collection: detailed_event_collection.as_ref(),
                     mutators_all: inputs.mutators_all,
                     mutators_ui: inputs.mutators_ui,
                     mutator_ids: inputs.mutator_ids,
@@ -958,24 +995,11 @@ impl DetailedReplayAnalyzer {
             timing.file_date = file_date_start.elapsed();
 
             let detailed_event_filter_start = Instant::now();
-            let detailed = if options.include_events {
-                let mut retained_events = events;
-                let mut retained_event_kinds = Vec::with_capacity(retained_events.len());
-                retained_events.retain(|event| {
-                    let event_kind = ReplayEventKind::from_event(event);
-                    if event_kind.needed_for_replay_report_analysis() {
-                        retained_event_kinds.push(event_kind);
-                        true
-                    } else {
-                        false
-                    }
-                });
-                timing.events_retained_len = retained_events.len();
-                timing.events_retained_capacity = retained_events.capacity();
-                debug_assert_eq!(retained_events.len(), retained_event_kinds.len());
+            let detailed = if let Some(collection) = detailed_event_collection {
+                debug_assert_eq!(collection.events.len(), collection.event_kinds.len());
                 Some(ReplayDetailedParseContext {
-                    events: retained_events,
-                    event_kinds: retained_event_kinds,
+                    events: collection.events,
+                    event_kinds: collection.event_kinds,
                     start_time: start_time.as_f64(),
                     end_time,
                 })
@@ -1169,6 +1193,156 @@ impl ReplayEventKind {
     }
 }
 
+impl ReplayDetailedEventCollector {
+    fn new() -> Self {
+        Self {
+            event_kinds: Vec::new(),
+            decoded_event_count: 0,
+            start_time: None,
+            last_deselect_event: None,
+            mm_mutator_keys: Vec::new(),
+            extension_actions: Vec::new(),
+            extension_offset: 0,
+            extension_last_gameloop: None,
+            extension_actions_finished: false,
+        }
+    }
+
+    fn observe_and_retain_for_report(&mut self, event: &ReplayEvent) -> bool {
+        let kind = ReplayEventKind::from_event(event);
+        self.decoded_event_count += 1;
+        self.observe_length_event(event, kind);
+        self.observe_mutator_event(event, kind);
+
+        let retain = kind.needed_for_replay_report_analysis();
+        if retain {
+            self.event_kinds.push(kind);
+        }
+        retain
+    }
+
+    fn observe_length_event(&mut self, event: &ReplayEvent, kind: ReplayEventKind) {
+        if kind == ReplayEventKind::GameSelectionDelta {
+            self.last_deselect_event = Some(ReplayNumericValue::Float(
+                DetailedReplayAnalyzer::event_gameloop(event) as f64 / 16.0 - 2.0,
+            ));
+            return;
+        }
+
+        if self.start_time.is_some() {
+            return;
+        }
+
+        let ReplayEvent::Tracker(event) = event else {
+            return;
+        };
+
+        match kind {
+            ReplayEventKind::TrackerPlayerStats if event.m_player_id == Some(1) => {
+                let minerals = event
+                    .m_stats
+                    .as_ref()
+                    .and_then(|stats| stats.m_score_value_minerals_collection_rate)
+                    .unwrap_or_default();
+                if minerals > 0.0 {
+                    self.start_time =
+                        Some(ReplayNumericValue::Float(event.game_loop as f64 / 16.0));
+                }
+            }
+            ReplayEventKind::TrackerUpgrade if matches!(event.m_player_id, Some(1 | 2)) => {
+                let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
+                if upgrade_name.contains("Spray") {
+                    self.start_time =
+                        Some(ReplayNumericValue::Float(event.game_loop as f64 / 16.0));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn observe_mutator_event(&mut self, event: &ReplayEvent, kind: ReplayEventKind) {
+        if let ReplayEvent::Tracker(event) = event
+            && kind == ReplayEventKind::TrackerUpgrade
+        {
+            if event.m_player_id == Some(0) {
+                let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
+                if upgrade_name.contains("mutatorinfo") {
+                    self.mm_mutator_keys
+                        .push(upgrade_name.get(12..).unwrap_or_default().to_string());
+                }
+            }
+
+            if matches!(event.m_player_id, Some(1 | 2)) {
+                let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
+                if upgrade_name.contains("Spray") {
+                    self.extension_actions_finished = true;
+                }
+            }
+        }
+
+        if self.extension_actions_finished || kind != ReplayEventKind::GameTriggerDialogControl {
+            return;
+        }
+
+        let gameloop = DetailedReplayAnalyzer::event_gameloop(event);
+        if gameloop == 0 && DetailedReplayAnalyzer::event_event_type(event) == Some(3) {
+            let contains_selection_changed = matches!(
+                event,
+                ReplayEvent::Game(event)
+                    if event
+                        .m_event_data
+                        .as_ref()
+                        .is_some_and(|data| data.contains_selection_changed)
+            );
+            if contains_selection_changed {
+                if let Some(control_id) = DetailedReplayAnalyzer::event_control_id(event) {
+                    self.extension_offset = 129 - control_id;
+                }
+                return;
+            }
+        }
+
+        if gameloop > 0
+            && Some(gameloop) != self.extension_last_gameloop
+            && DetailedReplayAnalyzer::event_user_id(event) == Some(0)
+        {
+            let contains_none = matches!(
+                event,
+                ReplayEvent::Game(event)
+                    if event
+                        .m_event_data
+                        .as_ref()
+                        .is_some_and(|data| data.contains_none)
+            );
+            if !contains_none
+                && let Some(control_id) = DetailedReplayAnalyzer::event_control_id(event)
+            {
+                self.extension_actions
+                    .push(control_id + self.extension_offset);
+                self.extension_last_gameloop = Some(gameloop);
+            }
+        }
+    }
+
+    fn finish(
+        self,
+        events: Vec<ReplayEvent>,
+        ordered_events_decoded_count: usize,
+    ) -> ReplayDetailedEventCollection {
+        let decoded_event_count = ordered_events_decoded_count.max(self.decoded_event_count);
+        debug_assert_eq!(events.len(), self.event_kinds.len());
+        ReplayDetailedEventCollection {
+            events,
+            event_kinds: self.event_kinds,
+            decoded_event_count,
+            start_time: self.start_time.unwrap_or(ReplayNumericValue::Int(0)),
+            last_deselect_event: self.last_deselect_event,
+            mm_mutator_keys: self.mm_mutator_keys,
+            extension_actions: self.extension_actions,
+        }
+    }
+}
+
 impl DetailedReplayAnalyzer {
     fn event_gameloop(event: &ReplayEvent) -> i64 {
         event._gameloop()
@@ -1251,47 +1425,6 @@ impl DetailedReplayAnalyzer {
         matches!(build, 76114 | 78285 | 83830)
     }
 
-    fn get_last_deselect_event(events: &[ReplayEvent]) -> Option<ReplayNumericValue> {
-        let mut last_event = None;
-        for event in events {
-            if ReplayEventKind::from_event(event) == ReplayEventKind::GameSelectionDelta {
-                last_event = Some(ReplayNumericValue::Float(
-                    DetailedReplayAnalyzer::event_gameloop(event) as f64 / 16.0 - 2.0,
-                ));
-            }
-        }
-        last_event
-    }
-
-    fn get_start_time(events: &[ReplayEvent]) -> ReplayNumericValue {
-        for event in events {
-            if let ReplayEvent::Tracker(event) = event {
-                let kind = ReplayEventKind::from_name(&event.event);
-                if kind == ReplayEventKind::TrackerPlayerStats && event.m_player_id == Some(1) {
-                    let minerals = event
-                        .m_stats
-                        .as_ref()
-                        .and_then(|stats| stats.m_score_value_minerals_collection_rate)
-                        .unwrap_or_default();
-                    if minerals > 0.0 {
-                        return ReplayNumericValue::Float(event.game_loop as f64 / 16.0);
-                    }
-                }
-
-                if kind == ReplayEventKind::TrackerUpgrade
-                    && matches!(event.m_player_id, Some(1 | 2))
-                {
-                    let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
-                    if upgrade_name.contains("Spray") {
-                        return ReplayNumericValue::Float(event.game_loop as f64 / 16.0);
-                    }
-                }
-            }
-        }
-
-        ReplayNumericValue::Int(0)
-    }
-
     fn cache_handle_id(handle: &str) -> String {
         let tail = handle.rsplit('/').next().unwrap_or("");
         tail.split('.').next().unwrap_or("").to_string()
@@ -1312,7 +1445,7 @@ impl DetailedReplayAnalyzer {
         input: ReplayMutatorIdentificationInput<'_>,
     ) -> (Vec<String>, bool) {
         let ReplayMutatorIdentificationInput {
-            events,
+            event_collection,
             mutators_all,
             mutators_ui,
             mutator_ids,
@@ -1324,23 +1457,10 @@ impl DetailedReplayAnalyzer {
         let mut mutators = Vec::new();
         let mut weekly = false;
 
-        if mm {
-            for event in events {
-                let ReplayEvent::Tracker(event) = event else {
-                    continue;
-                };
-                if ReplayEventKind::from_name(&event.event) != ReplayEventKind::TrackerUpgrade
-                    || event.m_player_id != Some(0)
-                {
-                    continue;
-                }
-                let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
-                if !upgrade_name.contains("mutatorinfo") {
-                    continue;
-                }
-                let mutator_key = upgrade_name.get(12..).unwrap_or_default();
+        if mm && let Some(collection) = event_collection {
+            for mutator_key in &collection.mm_mutator_keys {
                 if mutator_ids.contains_key(mutator_key) {
-                    mutators.push(mutator_key.to_string());
+                    mutators.push(mutator_key.clone());
                 }
             }
         }
@@ -1374,67 +1494,10 @@ impl DetailedReplayAnalyzer {
             }
         }
 
-        if extension {
-            let mut actions = Vec::new();
-            let mut offset = 0_i64;
-            let mut last_gameloop = None;
-
-            for event in events {
-                let gameloop = DetailedReplayAnalyzer::event_gameloop(event);
-                let kind = ReplayEventKind::from_event(event);
-
-                if gameloop == 0
-                    && kind == ReplayEventKind::GameTriggerDialogControl
-                    && DetailedReplayAnalyzer::event_event_type(event) == Some(3)
-                {
-                    let contains_selection_changed = matches!(
-                        event,
-                        ReplayEvent::Game(event)
-                            if event
-                                .m_event_data
-                                .as_ref()
-                                .is_some_and(|data| data.contains_selection_changed)
-                    );
-                    if contains_selection_changed {
-                        if let Some(control_id) = DetailedReplayAnalyzer::event_control_id(event) {
-                            offset = 129 - control_id;
-                        }
-                        continue;
-                    }
-                }
-
-                if gameloop > 0
-                    && Some(gameloop) != last_gameloop
-                    && kind == ReplayEventKind::GameTriggerDialogControl
-                    && DetailedReplayAnalyzer::event_user_id(event) == Some(0)
-                {
-                    let contains_none = matches!(
-                        event,
-                        ReplayEvent::Game(event)
-                            if event.m_event_data.as_ref().is_some_and(|data| data.contains_none)
-                    );
-                    if !contains_none {
-                        if let Some(control_id) = DetailedReplayAnalyzer::event_control_id(event) {
-                            actions.push(control_id + offset);
-                            last_gameloop = Some(gameloop);
-                        }
-                        continue;
-                    }
-                }
-
-                if let ReplayEvent::Tracker(event) = event
-                    && kind == ReplayEventKind::TrackerUpgrade
-                    && matches!(event.m_player_id, Some(1 | 2))
-                {
-                    let upgrade_name = event.m_upgrade_type_name.as_deref().unwrap_or_default();
-                    if upgrade_name.contains("Spray") {
-                        break;
-                    }
-                }
-            }
-
+        if extension && let Some(collection) = event_collection {
             let mut panel = 1_i64;
-            for action in actions {
+            for action in &collection.extension_actions {
+                let action = *action;
                 if (41..=83).contains(&action)
                     && let Some(new_mutator) =
                         DetailedReplayAnalyzer::mutator_from_button(action, panel, mutators_ui)

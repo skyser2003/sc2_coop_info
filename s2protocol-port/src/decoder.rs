@@ -815,10 +815,49 @@ impl ProtocolDefinition {
     where
         F: Fn(&str) -> bool,
     {
+        let mut retain_all = |_: &ReplayEvent| true;
+        self.decode_replay_ordered_events_filtered_retained_internal(
+            game_contents,
+            tracker_contents,
+            &include_event,
+            &mut retain_all,
+            false,
+        )
+        .map(|(events, _decoded_count)| events)
+    }
+
+    pub fn decode_replay_ordered_events_filtered_retained<F, R>(
+        &self,
+        game_contents: &[u8],
+        tracker_contents: Option<&[u8]>,
+        include_event: F,
+        mut retain_event: R,
+    ) -> Result<(Vec<ReplayEvent>, usize), DecodeError>
+    where
+        F: Fn(&str) -> bool,
+        R: FnMut(&ReplayEvent) -> bool,
+    {
+        self.decode_replay_ordered_events_filtered_retained_internal(
+            game_contents,
+            tracker_contents,
+            &include_event,
+            &mut retain_event,
+            true,
+        )
+    }
+
+    fn decode_replay_ordered_events_filtered_retained_internal(
+        &self,
+        game_contents: &[u8],
+        tracker_contents: Option<&[u8]>,
+        include_event: &dyn Fn(&str) -> bool,
+        retain_event: &mut dyn FnMut(&ReplayEvent) -> bool,
+        use_retained_capacity_hint: bool,
+    ) -> Result<(Vec<ReplayEvent>, usize), DecodeError> {
         let game_event_filter =
-            EventTypeInfoFilter::from_typeinfos(&self.game_event_typeinfos, &include_event);
+            EventTypeInfoFilter::from_typeinfos(&self.game_event_typeinfos, include_event);
         let tracker_event_filter =
-            EventTypeInfoFilter::from_typeinfos(&self.tracker_event_typeinfos, &include_event);
+            EventTypeInfoFilter::from_typeinfos(&self.tracker_event_typeinfos, include_event);
 
         let mut game_reader = EventStreamReader::<_, GameEvent>::new(
             BitPackedDecoder::new(game_contents, Arc::clone(&self.typeinfos)),
@@ -842,10 +881,13 @@ impl ProtocolDefinition {
             .map(|reader| reader.next_matching_event(&tracker_event_filter))
             .transpose()?
             .flatten();
-        let mut events = Vec::with_capacity(Self::ordered_event_capacity_hint(
-            game_contents,
-            tracker_contents,
-        ));
+        let capacity = if use_retained_capacity_hint {
+            Self::ordered_retained_event_capacity_hint(game_contents, tracker_contents)
+        } else {
+            Self::ordered_event_capacity_hint(game_contents, tracker_contents)
+        };
+        let mut events = Vec::with_capacity(capacity);
+        let mut decoded_count = 0_usize;
 
         while next_game.is_some() || next_tracker.is_some() {
             let take_game = match (&next_game, &next_tracker) {
@@ -859,12 +901,20 @@ impl ProtocolDefinition {
 
             if take_game {
                 if let Some(event) = next_game.take() {
-                    events.push(ReplayEvent::Game(event));
+                    let event = ReplayEvent::Game(event);
+                    decoded_count += 1;
+                    if retain_event(&event) {
+                        events.push(event);
+                    }
                 }
                 next_game = game_reader.next_matching_event(&game_event_filter)?;
             } else {
                 if let Some(event) = next_tracker.take() {
-                    events.push(ReplayEvent::Tracker(event));
+                    let event = ReplayEvent::Tracker(event);
+                    decoded_count += 1;
+                    if retain_event(&event) {
+                        events.push(event);
+                    }
                 }
                 next_tracker = tracker_reader
                     .as_mut()
@@ -874,7 +924,7 @@ impl ProtocolDefinition {
             }
         }
 
-        Ok(events)
+        Ok((events, decoded_count))
     }
 
     fn ordered_event_capacity_hint(game_contents: &[u8], tracker_contents: Option<&[u8]>) -> usize {
@@ -882,6 +932,16 @@ impl ProtocolDefinition {
             .len()
             .saturating_add(tracker_contents.map_or(0, <[u8]>::len));
         (bytes / 32).max(128)
+    }
+
+    fn ordered_retained_event_capacity_hint(
+        game_contents: &[u8],
+        tracker_contents: Option<&[u8]>,
+    ) -> usize {
+        let bytes = game_contents
+            .len()
+            .saturating_add(tracker_contents.map_or(0, <[u8]>::len));
+        (bytes / 48).max(128)
     }
 
     pub fn decode_replay_header(&self, contents: &[u8]) -> Result<Value, DecodeError> {
@@ -3580,7 +3640,7 @@ enum EventTypeInfoFilter {
 impl EventTypeInfoFilter {
     fn from_typeinfos<F, E>(event_typeinfos: &[Option<EventTypeInfo<E>>], include_event: &F) -> Self
     where
-        F: Fn(&str) -> bool,
+        F: Fn(&str) -> bool + ?Sized,
     {
         Self::Included(
             event_typeinfos

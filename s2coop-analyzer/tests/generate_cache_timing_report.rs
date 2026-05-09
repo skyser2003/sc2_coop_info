@@ -114,12 +114,25 @@ fn detailed_report_timings_are_aggregated_when_enabled() {
     let detailed_timing = summary
         .timing_report()
         .replay_analysis_detailed_report_breakdown();
+    let timing_report = summary.timing_report();
 
     assert_eq!(summary.scanned_replays(), 1);
     assert!(detailed_timing.has_timings());
     assert!(detailed_timing.total() > Duration::ZERO);
     assert!(detailed_timing.events_input_count() > 0);
     assert!(detailed_timing.events_total() > Duration::ZERO);
+    assert!(
+        timing_report.replay_events_decoded_len() >= timing_report.replay_events_retained_len()
+    );
+    assert!(timing_report.replay_events_retained_len() > 0);
+    assert!(
+        timing_report.replay_events_retained_capacity()
+            >= timing_report.replay_events_retained_len()
+    );
+    assert!(
+        timing_report.replay_events_retained_capacity()
+            <= timing_report.replay_events_decoded_capacity()
+    );
 
     let timing_summary = summary.timing_report().format_amdahl_summary();
     assert!(timing_summary.contains("hotspot hints"));
