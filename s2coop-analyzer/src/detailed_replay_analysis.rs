@@ -1207,6 +1207,228 @@ const REPLAY_EVENT_KIND_TIMING_COUNT_NAMES: [&str; 13] = [
     "count.other",
 ];
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ReplayReportTimingSpan {
+    Setup,
+    EventGameUserLeave,
+    EventDroneCommand,
+    EventPlayerStats,
+    EventUpgrade,
+    EventUnitBornOrInit,
+    EventUnitInitArchon,
+    EventUnitIdLookup,
+    EventUnitTypeChange,
+    EventUnitOwnerChange,
+    EventUnitDiedKillStats,
+    EventUnitDiedDetail,
+    EventsTotal,
+    PostPlayerOverridesMessages,
+    PostPlayerStats,
+    PostBonusComp,
+    PostCustomKillIcons,
+    PostMainUnitsIcons,
+    PostAllyUnitsIcons,
+    PostKillbotIcons,
+    PostAmonUnits,
+    PostReportBuild,
+}
+
+const REPLAY_REPORT_TIMING_SPAN_COUNT: usize = 22;
+const REPLAY_REPORT_TIMING_SPANS: [ReplayReportTimingSpan; REPLAY_REPORT_TIMING_SPAN_COUNT] = [
+    ReplayReportTimingSpan::Setup,
+    ReplayReportTimingSpan::EventGameUserLeave,
+    ReplayReportTimingSpan::EventDroneCommand,
+    ReplayReportTimingSpan::EventPlayerStats,
+    ReplayReportTimingSpan::EventUpgrade,
+    ReplayReportTimingSpan::EventUnitBornOrInit,
+    ReplayReportTimingSpan::EventUnitInitArchon,
+    ReplayReportTimingSpan::EventUnitIdLookup,
+    ReplayReportTimingSpan::EventUnitTypeChange,
+    ReplayReportTimingSpan::EventUnitOwnerChange,
+    ReplayReportTimingSpan::EventUnitDiedKillStats,
+    ReplayReportTimingSpan::EventUnitDiedDetail,
+    ReplayReportTimingSpan::EventsTotal,
+    ReplayReportTimingSpan::PostPlayerOverridesMessages,
+    ReplayReportTimingSpan::PostPlayerStats,
+    ReplayReportTimingSpan::PostBonusComp,
+    ReplayReportTimingSpan::PostCustomKillIcons,
+    ReplayReportTimingSpan::PostMainUnitsIcons,
+    ReplayReportTimingSpan::PostAllyUnitsIcons,
+    ReplayReportTimingSpan::PostKillbotIcons,
+    ReplayReportTimingSpan::PostAmonUnits,
+    ReplayReportTimingSpan::PostReportBuild,
+];
+
+impl ReplayReportTimingSpan {
+    fn index(self) -> usize {
+        match self {
+            Self::Setup => 0,
+            Self::EventGameUserLeave => 1,
+            Self::EventDroneCommand => 2,
+            Self::EventPlayerStats => 3,
+            Self::EventUpgrade => 4,
+            Self::EventUnitBornOrInit => 5,
+            Self::EventUnitInitArchon => 6,
+            Self::EventUnitIdLookup => 7,
+            Self::EventUnitTypeChange => 8,
+            Self::EventUnitOwnerChange => 9,
+            Self::EventUnitDiedKillStats => 10,
+            Self::EventUnitDiedDetail => 11,
+            Self::EventsTotal => 12,
+            Self::PostPlayerOverridesMessages => 13,
+            Self::PostPlayerStats => 14,
+            Self::PostBonusComp => 15,
+            Self::PostCustomKillIcons => 16,
+            Self::PostMainUnitsIcons => 17,
+            Self::PostAllyUnitsIcons => 18,
+            Self::PostKillbotIcons => 19,
+            Self::PostAmonUnits => 20,
+            Self::PostReportBuild => 21,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Setup => "setup",
+            Self::EventGameUserLeave => "event.game_user_leave",
+            Self::EventDroneCommand => "event.drone_command",
+            Self::EventPlayerStats => "event.player_stats",
+            Self::EventUpgrade => "event.upgrade",
+            Self::EventUnitBornOrInit => "event.unit_born_or_init",
+            Self::EventUnitInitArchon => "event.unit_init_archon",
+            Self::EventUnitIdLookup => "event.unit_id_lookup",
+            Self::EventUnitTypeChange => "event.unit_type_change",
+            Self::EventUnitOwnerChange => "event.unit_owner_change",
+            Self::EventUnitDiedKillStats => "event.unit_died_kill_stats",
+            Self::EventUnitDiedDetail => "event.unit_died_detail",
+            Self::EventsTotal => "events.total",
+            Self::PostPlayerOverridesMessages => "post.player_overrides_messages",
+            Self::PostPlayerStats => "post.player_stats",
+            Self::PostBonusComp => "post.bonus_comp",
+            Self::PostCustomKillIcons => "post.custom_kill_icons",
+            Self::PostMainUnitsIcons => "post.main_units_icons",
+            Self::PostAllyUnitsIcons => "post.ally_units_icons",
+            Self::PostKillbotIcons => "post.killbot_icons",
+            Self::PostAmonUnits => "post.amon_units",
+            Self::PostReportBuild => "post.report_build",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DetailedReplayReportTiming {
+    total: Duration,
+    spans: [Duration; REPLAY_REPORT_TIMING_SPAN_COUNT],
+    event_counts: [usize; 13],
+    events_input_count: usize,
+}
+
+impl Default for DetailedReplayReportTiming {
+    fn default() -> Self {
+        Self {
+            total: Duration::ZERO,
+            spans: [Duration::ZERO; REPLAY_REPORT_TIMING_SPAN_COUNT],
+            event_counts: [0; 13],
+            events_input_count: 0,
+        }
+    }
+}
+
+impl DetailedReplayReportTiming {
+    fn new(
+        total: Duration,
+        spans: [Duration; REPLAY_REPORT_TIMING_SPAN_COUNT],
+        event_counts: [usize; 13],
+        events_input_count: usize,
+    ) -> Self {
+        Self {
+            total,
+            spans,
+            event_counts,
+            events_input_count,
+        }
+    }
+
+    fn add(&mut self, other: &Self) {
+        self.total += other.total;
+        for (target, incoming) in self.spans.iter_mut().zip(other.spans.iter()) {
+            *target += *incoming;
+        }
+        for (target, incoming) in self.event_counts.iter_mut().zip(other.event_counts.iter()) {
+            *target += *incoming;
+        }
+        self.events_input_count += other.events_input_count;
+    }
+
+    fn span(&self, span: ReplayReportTimingSpan) -> Duration {
+        self.spans[span.index()]
+    }
+
+    fn event_count(&self, event_kind: ReplayEventKind) -> usize {
+        self.event_counts[event_kind.timing_count_index()]
+    }
+
+    fn post_processing_total(&self) -> Duration {
+        [
+            ReplayReportTimingSpan::PostPlayerOverridesMessages,
+            ReplayReportTimingSpan::PostPlayerStats,
+            ReplayReportTimingSpan::PostBonusComp,
+            ReplayReportTimingSpan::PostCustomKillIcons,
+            ReplayReportTimingSpan::PostMainUnitsIcons,
+            ReplayReportTimingSpan::PostAllyUnitsIcons,
+            ReplayReportTimingSpan::PostKillbotIcons,
+            ReplayReportTimingSpan::PostAmonUnits,
+            ReplayReportTimingSpan::PostReportBuild,
+        ]
+        .iter()
+        .fold(Duration::ZERO, |total, span| total + self.span(*span))
+    }
+
+    pub fn has_timings(&self) -> bool {
+        self.total > Duration::ZERO || self.events_input_count > 0
+    }
+
+    pub fn total(&self) -> Duration {
+        self.total
+    }
+
+    pub fn setup(&self) -> Duration {
+        self.span(ReplayReportTimingSpan::Setup)
+    }
+
+    pub fn events_total(&self) -> Duration {
+        self.span(ReplayReportTimingSpan::EventsTotal)
+    }
+
+    pub fn player_stats(&self) -> Duration {
+        self.span(ReplayReportTimingSpan::EventPlayerStats)
+    }
+
+    pub fn unit_born_or_init(&self) -> Duration {
+        self.span(ReplayReportTimingSpan::EventUnitBornOrInit)
+    }
+
+    pub fn unit_type_change(&self) -> Duration {
+        self.span(ReplayReportTimingSpan::EventUnitTypeChange)
+    }
+
+    pub fn unit_died_detail(&self) -> Duration {
+        self.span(ReplayReportTimingSpan::EventUnitDiedDetail)
+    }
+
+    pub fn unit_id_lookup(&self) -> Duration {
+        self.span(ReplayReportTimingSpan::EventUnitIdLookup)
+    }
+
+    pub fn report_build(&self) -> Duration {
+        self.span(ReplayReportTimingSpan::PostReportBuild)
+    }
+
+    pub fn events_input_count(&self) -> usize {
+        self.events_input_count
+    }
+}
+
 impl ReplayEventKind {
     fn from_name(event_name: &str) -> Self {
         match event_name {
@@ -1273,9 +1495,9 @@ impl ReplayEventKind {
 struct ReplayAnalysisTimingCollector {
     label: String,
     started: Instant,
-    spans: BTreeMap<&'static str, Duration>,
+    spans: [Duration; REPLAY_REPORT_TIMING_SPAN_COUNT],
     event_counts: [usize; 13],
-    extra_counts: BTreeMap<&'static str, usize>,
+    events_input_count: usize,
 }
 
 #[derive(Debug, Default)]
@@ -1286,9 +1508,10 @@ trait ReplayAnalysisTiming {
 
     fn new(label: &str) -> Self;
     fn start(&self) -> Self::SpanStart;
-    fn finish(&mut self, name: &'static str, started: Self::SpanStart);
+    fn finish(&mut self, span: ReplayReportTimingSpan, started: Self::SpanStart);
     fn increment_event_kind(&mut self, event_kind: ReplayEventKind);
-    fn add_count(&mut self, name: &'static str, value: usize);
+    fn add_events_input_count(&mut self, value: usize);
+    fn breakdown(&self) -> DetailedReplayReportTiming;
     fn print(&self);
 }
 
@@ -1302,6 +1525,20 @@ impl ReplayAnalysisTimingCollector {
             })
             .unwrap_or(false)
     }
+
+    fn verbose_print_enabled_from_env() -> bool {
+        std::env::var_os("S2COOP_ANALYZER_TIMINGS_VERBOSE")
+            .or_else(|| std::env::var_os("S2COOP_ANALYZER_TIMINGS"))
+            .and_then(|value| value.into_string().ok())
+            .map(|value| {
+                let trimmed = value.trim();
+                trimmed.eq_ignore_ascii_case("verbose")
+                    || trimmed.eq_ignore_ascii_case("trace")
+                    || trimmed.eq_ignore_ascii_case("per-replay")
+                    || trimmed.eq_ignore_ascii_case("per_replay")
+            })
+            .unwrap_or(false)
+    }
 }
 
 impl ReplayAnalysisTiming for ReplayAnalysisTimingCollector {
@@ -1311,9 +1548,9 @@ impl ReplayAnalysisTiming for ReplayAnalysisTimingCollector {
         Self {
             label: label.to_owned(),
             started: Instant::now(),
-            spans: BTreeMap::new(),
+            spans: [Duration::ZERO; REPLAY_REPORT_TIMING_SPAN_COUNT],
             event_counts: [0; 13],
-            extra_counts: BTreeMap::new(),
+            events_input_count: 0,
         }
     }
 
@@ -1323,10 +1560,9 @@ impl ReplayAnalysisTiming for ReplayAnalysisTimingCollector {
     }
 
     #[inline(always)]
-    fn finish(&mut self, name: &'static str, started: Self::SpanStart) {
+    fn finish(&mut self, span: ReplayReportTimingSpan, started: Self::SpanStart) {
         let elapsed = started.elapsed();
-        let value = self.spans.entry(name).or_default();
-        *value += elapsed;
+        self.spans[span.index()] += elapsed;
     }
 
     #[inline(always)]
@@ -1335,25 +1571,43 @@ impl ReplayAnalysisTiming for ReplayAnalysisTimingCollector {
     }
 
     #[inline(always)]
-    fn add_count(&mut self, name: &'static str, value: usize) {
-        *self.extra_counts.entry(name).or_default() += value;
+    fn add_events_input_count(&mut self, value: usize) {
+        self.events_input_count += value;
+    }
+
+    fn breakdown(&self) -> DetailedReplayReportTiming {
+        DetailedReplayReportTiming::new(
+            self.started.elapsed(),
+            self.spans,
+            self.event_counts,
+            self.events_input_count,
+        )
     }
 
     fn print(&self) {
+        if !Self::verbose_print_enabled_from_env() {
+            return;
+        }
+
         eprintln!(
             "[s2coop timing] analyze_replay_file_impl label=\"{}\" total={:.3}ms",
             self.label,
             self.started.elapsed().as_secs_f64() * 1000.0
         );
-        for (name, duration) in &self.spans {
-            eprintln!(
-                "[s2coop timing] span.{name}={:.3}ms",
-                duration.as_secs_f64() * 1000.0
-            );
+        for span in REPLAY_REPORT_TIMING_SPANS {
+            let duration = self.spans[span.index()];
+            if duration > Duration::ZERO {
+                eprintln!(
+                    "[s2coop timing] span.{}={:.3}ms",
+                    span.label(),
+                    duration.as_secs_f64() * 1000.0
+                );
+            }
         }
-        for (name, count) in &self.extra_counts {
-            eprintln!("[s2coop timing] {name}={count}");
-        }
+        eprintln!(
+            "[s2coop timing] count.events_input={}",
+            self.events_input_count
+        );
         for (index, count) in self.event_counts.iter().enumerate() {
             if *count > 0 {
                 let name = REPLAY_EVENT_KIND_TIMING_COUNT_NAMES[index];
@@ -1375,13 +1629,18 @@ impl ReplayAnalysisTiming for ReplayAnalysisNoopTimingCollector {
     fn start(&self) -> Self::SpanStart {}
 
     #[inline(always)]
-    fn finish(&mut self, _name: &'static str, _started: Self::SpanStart) {}
+    fn finish(&mut self, _span: ReplayReportTimingSpan, _started: Self::SpanStart) {}
 
     #[inline(always)]
     fn increment_event_kind(&mut self, _event_kind: ReplayEventKind) {}
 
     #[inline(always)]
-    fn add_count(&mut self, _name: &'static str, _value: usize) {}
+    fn add_events_input_count(&mut self, _value: usize) {}
+
+    #[inline(always)]
+    fn breakdown(&self) -> DetailedReplayReportTiming {
+        DetailedReplayReportTiming::default()
+    }
 
     #[inline(always)]
     fn print(&self) {}
@@ -1720,14 +1979,24 @@ pub struct DetailedReplayAnalysisResult {
     report: ReplayReport,
     cache_entry: CacheReplayEntry,
     cache_persistable: bool,
+    detailed_report_timing: DetailedReplayReportTiming,
+    report_to_cache_entry: Duration,
 }
 
 impl DetailedReplayAnalysisResult {
-    fn new(report: ReplayReport, cache_entry: CacheReplayEntry, cache_persistable: bool) -> Self {
+    fn new(
+        report: ReplayReport,
+        cache_entry: CacheReplayEntry,
+        cache_persistable: bool,
+        detailed_report_timing: DetailedReplayReportTiming,
+        report_to_cache_entry: Duration,
+    ) -> Self {
         Self {
             report,
             cache_entry,
             cache_persistable,
+            detailed_report_timing,
+            report_to_cache_entry,
         }
     }
 
@@ -1745,6 +2014,30 @@ impl DetailedReplayAnalysisResult {
 
     pub fn cache_persistable(&self) -> bool {
         self.cache_persistable
+    }
+
+    pub fn detailed_report_timing(&self) -> &DetailedReplayReportTiming {
+        &self.detailed_report_timing
+    }
+
+    pub fn report_to_cache_entry(&self) -> Duration {
+        self.report_to_cache_entry
+    }
+}
+
+#[derive(Debug, Clone)]
+struct TimedDetailedReplayReport {
+    report: ReplayReport,
+    timing: DetailedReplayReportTiming,
+}
+
+impl TimedDetailedReplayReport {
+    fn new(report: ReplayReport, timing: DetailedReplayReportTiming) -> Self {
+        Self { report, timing }
+    }
+
+    fn into_parts(self) -> (ReplayReport, DetailedReplayReportTiming) {
+        (self.report, self.timing)
     }
 }
 
@@ -1795,6 +2088,8 @@ pub struct GenerateCacheTimingReport {
     replay_events_retained_len: usize,
     replay_events_retained_capacity: usize,
     replay_analysis_detailed_report: Duration,
+    replay_analysis_detailed_report_breakdown: DetailedReplayReportTiming,
+    replay_analysis_report_to_cache_entry: Duration,
     replay_analysis_temp_entry_write: Duration,
     replay_analysis_temp_persisted_entries: usize,
     replay_analysis_temp_persisted_bytes: usize,
@@ -1844,6 +2139,7 @@ impl GenerateCacheStopController {
 pub struct GenerateCacheRuntimeOptions {
     worker_count: Option<usize>,
     stop_controller: Option<Arc<GenerateCacheStopController>>,
+    detailed_report_timings: Option<bool>,
 }
 
 impl GenerateCacheRuntimeOptions {
@@ -1858,6 +2154,16 @@ impl GenerateCacheRuntimeOptions {
     ) -> Self {
         self.stop_controller = Some(stop_controller);
         self
+    }
+
+    pub fn with_detailed_report_timings(mut self, enabled: bool) -> Self {
+        self.detailed_report_timings = Some(enabled);
+        self
+    }
+
+    fn detailed_report_timings_enabled(&self) -> bool {
+        self.detailed_report_timings
+            .unwrap_or_else(ReplayAnalysisTimingCollector::enabled_from_env)
     }
 
     fn resolved_worker_count(&self, total_files: usize) -> usize {
@@ -1953,6 +2259,7 @@ impl DetailedReplayAnalyzer {
             resources.hidden_created_lost(),
             None,
             resources,
+            ReplayAnalysisTimingCollector::enabled_from_env(),
         )
     }
 
@@ -2121,6 +2428,9 @@ impl GenerateCacheTimingReport {
         self.replay_analysis_parse_basic_fallback_breakdown
             .add(timing.parse_basic_fallback_breakdown());
         self.replay_analysis_detailed_report += timing.detailed_report();
+        self.replay_analysis_detailed_report_breakdown
+            .add(timing.detailed_report_breakdown());
+        self.replay_analysis_report_to_cache_entry += timing.report_to_cache_entry();
         self.replay_analysis_temp_entry_write += timing.temp_entry_write();
         self.replay_analysis_progress_record += timing.progress_record();
     }
@@ -2231,6 +2541,14 @@ impl GenerateCacheTimingReport {
 
     pub fn replay_analysis_detailed_report(&self) -> Duration {
         self.replay_analysis_detailed_report
+    }
+
+    pub fn replay_analysis_detailed_report_breakdown(&self) -> &DetailedReplayReportTiming {
+        &self.replay_analysis_detailed_report_breakdown
+    }
+
+    pub fn replay_analysis_report_to_cache_entry(&self) -> Duration {
+        self.replay_analysis_report_to_cache_entry
     }
 
     pub fn replay_analysis_temp_entry_write(&self) -> Duration {
@@ -2523,6 +2841,46 @@ impl GenerateCacheTimingReport {
             self.canonicalize_payload_bytes,
         ));
 
+        output.push_str(&format!(
+            concat!(
+                "\n  hotspot hints: ",
+                "mpq_read_file={:.3}s ordered_decode={:.3}s ",
+                "detailed_event_loop={:.3}s detailed_unit_born_or_init={:.3}s ",
+                "detailed_unit_died_detail={:.3}s report_to_cache_entry={:.3}s hash_file={:.3}s ",
+                "retained_event_capacity_eff={:.1}%"
+            ),
+            Self::duration_seconds(
+                self.replay_analysis_parse_detailed_breakdown
+                    .base
+                    .decode_replay_detail
+                    .mpq_read_file()
+            ),
+            Self::duration_seconds(
+                self.replay_analysis_parse_detailed_breakdown
+                    .base
+                    .decode_replay_detail
+                    .decode_ordered_events()
+            ),
+            Self::duration_seconds(
+                self.replay_analysis_detailed_report_breakdown
+                    .events_total()
+            ),
+            Self::duration_seconds(
+                self.replay_analysis_detailed_report_breakdown
+                    .unit_born_or_init()
+            ),
+            Self::duration_seconds(
+                self.replay_analysis_detailed_report_breakdown
+                    .unit_died_detail()
+            ),
+            Self::duration_seconds(self.replay_analysis_report_to_cache_entry),
+            Self::duration_seconds(self.replay_analysis_parse_detailed_breakdown.base.hash_file),
+            Self::usize_percent(
+                self.replay_events_retained_len,
+                self.replay_events_retained_capacity
+            ),
+        ));
+
         output.push('\n');
         output.push_str(&Self::format_parse_timing_breakdown(
             "parse_detailed parts",
@@ -2530,6 +2888,25 @@ impl GenerateCacheTimingReport {
             self.replay_analysis_parallel,
             self.worker_count,
         ));
+
+        if self.replay_analysis_detailed_report_breakdown.has_timings() {
+            output.push('\n');
+            output.push_str(&Self::format_detailed_report_timing_breakdown(
+                "detailed_report parts",
+                &self.replay_analysis_detailed_report_breakdown,
+                self.replay_analysis_parallel,
+                self.worker_count,
+            ));
+            output.push_str(&format!(
+                "\n  detailed_report conversion: report_to_cache_entry={:.3}s capacity_eff={:.1}%",
+                Self::duration_seconds(self.replay_analysis_report_to_cache_entry),
+                Self::core_efficiency_percent(
+                    self.replay_analysis_report_to_cache_entry,
+                    self.replay_analysis_parallel,
+                    self.worker_count
+                ),
+            ));
+        }
 
         output.push('\n');
         output.push_str(&Self::format_parse_timing_breakdown(
@@ -2581,6 +2958,62 @@ impl GenerateCacheTimingReport {
         ));
 
         output
+    }
+
+    fn format_detailed_report_timing_breakdown(
+        label: &str,
+        timing: &DetailedReplayReportTiming,
+        wall_time: Duration,
+        worker_count: usize,
+    ) -> String {
+        format!(
+            concat!(
+                "  {}: total={:.3}s capacity_eff={:.1}% ",
+                "setup={:.3}s capacity_eff={:.1}% ",
+                "events_total={:.3}s capacity_eff={:.1}% ",
+                "post_total={:.3}s capacity_eff={:.1}% ",
+                "report_build={:.3}s capacity_eff={:.1}%\n",
+                "  detailed_report events: ",
+                "input={} game_command={} game_command_update_target_unit={} ",
+                "player_stats={:.3}s count={} ",
+                "upgrade={:.3}s count={} ",
+                "unit_born_or_init={:.3}s count={} ",
+                "unit_type_change={:.3}s count={} ",
+                "unit_owner_change={:.3}s count={} ",
+                "unit_died_kill_stats={:.3}s ",
+                "unit_died_detail={:.3}s count={} ",
+                "unit_id_lookup={:.3}s"
+            ),
+            label,
+            Self::duration_seconds(timing.total()),
+            Self::core_efficiency_percent(timing.total(), wall_time, worker_count),
+            Self::duration_seconds(timing.setup()),
+            Self::core_efficiency_percent(timing.setup(), wall_time, worker_count),
+            Self::duration_seconds(timing.events_total()),
+            Self::core_efficiency_percent(timing.events_total(), wall_time, worker_count),
+            Self::duration_seconds(timing.post_processing_total()),
+            Self::core_efficiency_percent(timing.post_processing_total(), wall_time, worker_count),
+            Self::duration_seconds(timing.report_build()),
+            Self::core_efficiency_percent(timing.report_build(), wall_time, worker_count),
+            timing.events_input_count(),
+            timing.event_count(ReplayEventKind::GameCommand),
+            timing.event_count(ReplayEventKind::GameCommandUpdateTargetUnit),
+            Self::duration_seconds(timing.player_stats()),
+            timing.event_count(ReplayEventKind::TrackerPlayerStats),
+            Self::duration_seconds(timing.span(ReplayReportTimingSpan::EventUpgrade)),
+            timing.event_count(ReplayEventKind::TrackerUpgrade),
+            Self::duration_seconds(timing.unit_born_or_init()),
+            timing.event_count(ReplayEventKind::TrackerUnitBorn)
+                + timing.event_count(ReplayEventKind::TrackerUnitInit),
+            Self::duration_seconds(timing.unit_type_change()),
+            timing.event_count(ReplayEventKind::TrackerUnitTypeChange),
+            Self::duration_seconds(timing.span(ReplayReportTimingSpan::EventUnitOwnerChange)),
+            timing.event_count(ReplayEventKind::TrackerUnitOwnerChange),
+            Self::duration_seconds(timing.span(ReplayReportTimingSpan::EventUnitDiedKillStats)),
+            Self::duration_seconds(timing.unit_died_detail()),
+            timing.event_count(ReplayEventKind::TrackerUnitDied),
+            Self::duration_seconds(timing.unit_id_lookup()),
+        )
     }
 
     fn format_parse_timing_breakdown(
@@ -2754,6 +3187,14 @@ impl GenerateCacheTimingReport {
 
     fn duration_seconds(duration: Duration) -> f64 {
         duration.as_secs_f64()
+    }
+
+    fn usize_percent(part: usize, total: usize) -> f64 {
+        if total == 0 {
+            0.0
+        } else {
+            (part as f64 / total as f64) * 100.0
+        }
     }
 
     fn effective_cores(worker_time: Duration, wall_time: Duration) -> f64 {
@@ -3179,6 +3620,8 @@ struct CandidateReplayAnalysisTiming {
     parse_basic_fallback: Duration,
     parse_basic_fallback_breakdown: ReplayEntryParseTiming,
     detailed_report: Duration,
+    detailed_report_breakdown: DetailedReplayReportTiming,
+    report_to_cache_entry: Duration,
     temp_entry_write: Duration,
     progress_record: Duration,
 }
@@ -3195,6 +3638,10 @@ impl CandidateReplayAnalysisTiming {
 
     fn add_progress_record(&mut self, duration: Duration) {
         self.progress_record += duration;
+    }
+
+    fn add_report_to_cache_entry(&mut self, duration: Duration) {
+        self.report_to_cache_entry += duration;
     }
 
     fn total(&self) -> Duration {
@@ -3219,6 +3666,14 @@ impl CandidateReplayAnalysisTiming {
 
     fn detailed_report(&self) -> Duration {
         self.detailed_report
+    }
+
+    fn detailed_report_breakdown(&self) -> &DetailedReplayReportTiming {
+        &self.detailed_report_breakdown
+    }
+
+    fn report_to_cache_entry(&self) -> Duration {
+        self.report_to_cache_entry
     }
 
     fn temp_entry_write(&self) -> Duration {
@@ -3348,6 +3803,7 @@ impl CandidateReplay {
         &self,
         main_handles: &HashSet<String>,
         resources: &ReplayAnalysisResources,
+        collect_detailed_report_timings: bool,
     ) -> CandidateReplayAnalysisResult {
         let total_start = Instant::now();
         let mut timing = CandidateReplayAnalysisTiming::default();
@@ -3392,16 +3848,21 @@ impl CandidateReplay {
             resources.hidden_created_lost(),
             Some(&basic),
             resources,
+            collect_detailed_report_timings,
         );
         timing.detailed_report = detailed_report_start.elapsed();
 
-        if let Ok(result) = detailed
-            && result.report().has_non_empty_player_stats()
-        {
-            return CandidateReplayAnalysisResult::new(
-                Some(result.into_cache_entry()),
-                timing.finish(total_start.elapsed()),
-            );
+        if let Ok(result) = detailed {
+            timing
+                .detailed_report_breakdown
+                .add(result.detailed_report_timing());
+            timing.add_report_to_cache_entry(result.report_to_cache_entry());
+            if result.report().has_non_empty_player_stats() {
+                return CandidateReplayAnalysisResult::new(
+                    Some(result.into_cache_entry()),
+                    timing.finish(total_start.elapsed()),
+                );
+            }
         }
 
         CandidateReplayAnalysisResult::new(Some(basic), timing.finish(total_start.elapsed()))
@@ -3579,6 +4040,7 @@ impl DetailedReplayAnalyzer {
             DetailedReplayAnalyzer::cache_output_temp_file_path(config.output_file.as_path());
 
         let stop_controller = runtime.stop_controller.clone();
+        let collect_detailed_report_timings = runtime.detailed_report_timings_enabled();
         let stop_requested = Arc::new(AtomicBool::new(false));
         let entries = if replay_files.is_empty() {
             let progress = GenerateCacheProgressReporter::new(0, 0, logger, temp_file_path.clone());
@@ -3672,7 +4134,11 @@ impl DetailedReplayAnalyzer {
                                     stop_requested_for_workers.store(true, AtomicOrdering::Release);
                                     return None;
                                 }
-                                let mut result = candidate.analyze_timed(&main_handles, resources);
+                                let mut result = candidate.analyze_timed(
+                                    &main_handles,
+                                    resources,
+                                    collect_detailed_report_timings,
+                                );
                                 if let Some(entry) = result.entry()
                                     && entry.detailed_analysis
                                 {
@@ -4669,6 +5135,7 @@ impl DetailedReplayAnalyzer {
         hidden_created_lost: &HashSet<String>,
         basic_cache_entry: Option<&CacheReplayEntry>,
         resources: &ReplayAnalysisResources,
+        collect_detailed_report_timings: bool,
     ) -> Result<DetailedReplayAnalysisResult, DetailedReplayAnalysisError> {
         let dictionaries = resources.cache_generation_data();
         let fallback_basic = match basic_cache_entry {
@@ -4676,23 +5143,29 @@ impl DetailedReplayAnalyzer {
             None => Cow::Owned(parsed.cache_entry()),
         };
         let cache_persistable = parsed.is_saved_cache_candidate();
-        let report = DetailedReplayAnalyzer::analyze_replay_file_impl(
+        let timed_report = DetailedReplayAnalyzer::analyze_replay_file_impl(
             main_player_handles,
             parsed,
             &dictionaries,
             resources.analysis_sets(),
             resources.stats_counter_dictionaries(),
+            collect_detailed_report_timings,
         )?;
+        let (report, detailed_report_timing) = timed_report.into_parts();
+        let report_to_cache_entry_start = Instant::now();
         let cache_entry = CacheReplayEntry::from_report_with_basic(
             &report,
             Some(fallback_basic.as_ref()),
             hidden_created_lost,
         );
+        let report_to_cache_entry = report_to_cache_entry_start.elapsed();
 
         Ok(DetailedReplayAnalysisResult::new(
             report,
             cache_entry,
             cache_persistable,
+            detailed_report_timing,
+            report_to_cache_entry,
         ))
     }
 
@@ -4702,8 +5175,9 @@ impl DetailedReplayAnalyzer {
         dictionaries: &CacheGenerationData<'_>,
         analysis_sets: &ReplayAnalysisSets,
         counter_dicts: Arc<StatsCounterDictionaries>,
-    ) -> Result<ReplayReport, DetailedReplayAnalysisError> {
-        if ReplayAnalysisTimingCollector::enabled_from_env() {
+        collect_detailed_report_timings: bool,
+    ) -> Result<TimedDetailedReplayReport, DetailedReplayAnalysisError> {
+        if collect_detailed_report_timings {
             Self::analyze_replay_file_impl_with_timings::<ReplayAnalysisTimingCollector>(
                 main_player_handles,
                 parsed,
@@ -4728,7 +5202,7 @@ impl DetailedReplayAnalyzer {
         dictionaries: &CacheGenerationData<'_>,
         analysis_sets: &ReplayAnalysisSets,
         counter_dicts: Arc<StatsCounterDictionaries>,
-    ) -> Result<ReplayReport, DetailedReplayAnalysisError> {
+    ) -> Result<TimedDetailedReplayReport, DetailedReplayAnalysisError> {
         let ReplayParsedInputBundle {
             mut parser,
             realtime_length,
@@ -4746,7 +5220,7 @@ impl DetailedReplayAnalyzer {
             )
         })?;
         let mut timings = Timing::new(parser.file.as_str());
-        timings.add_count("count.events_input", events.len());
+        timings.add_events_input_count(events.len());
         let setup_started = timings.start();
 
         let main_player = i64::from(parser.selected_main_player_pid(main_player_handles));
@@ -4834,7 +5308,7 @@ impl DetailedReplayAnalyzer {
         let mut last_aoe_unit_killed: Vec<Option<(String, f64)>> = vec![None; 17];
         let mut main_icons_base = BTreeMap::<String, u64>::new();
         let mut ally_icons_base = BTreeMap::<String, u64>::new();
-        timings.finish("setup", setup_started);
+        timings.finish(ReplayReportTimingSpan::Setup, setup_started);
 
         let end_gameloop = end_time * 16.0;
         let ally_leave_transfer_threshold = end_time * 0.5;
@@ -4857,7 +5331,7 @@ impl DetailedReplayAnalyzer {
                 if leaving_player == ally_player && leave_time < ally_leave_transfer_threshold {
                     ally_kills_transfer_to_main = true;
                 }
-                timings.finish("event.game_user_leave", handler_started);
+                timings.finish(ReplayReportTimingSpan::EventGameUserLeave, handler_started);
                 continue;
             }
 
@@ -4879,7 +5353,7 @@ impl DetailedReplayAnalyzer {
                     };
                     let handler_started = timings.start();
                     vespene_drone_identifier.event(drone_event_kind, game_event);
-                    timings.finish("event.drone_command", handler_started);
+                    timings.finish(ReplayReportTimingSpan::EventDroneCommand, handler_started);
                 }
                 ReplayEventKind::TrackerPlayerStats => {
                     let ReplayEvent::Tracker(event) = event else {
@@ -4929,7 +5403,7 @@ impl DetailedReplayAnalyzer {
                             }
                         }
                     }
-                    timings.finish("event.player_stats", handler_started);
+                    timings.finish(ReplayReportTimingSpan::EventPlayerStats, handler_started);
                 }
                 ReplayEventKind::TrackerUpgrade => {
                     let ReplayEvent::Tracker(event) = event else {
@@ -5019,7 +5493,7 @@ impl DetailedReplayAnalyzer {
                             }
                         }
                     }
-                    timings.finish("event.upgrade", handler_started);
+                    timings.finish(ReplayReportTimingSpan::EventUpgrade, handler_started);
                 }
                 ReplayEventKind::TrackerUnitBorn | ReplayEventKind::TrackerUnitInit => {
                     let ReplayEvent::Tracker(event) = event else {
@@ -5083,7 +5557,7 @@ impl DetailedReplayAnalyzer {
                             }
                         }
                     }
-                    timings.finish("event.unit_born_or_init", handler_started);
+                    timings.finish(ReplayReportTimingSpan::EventUnitBornOrInit, handler_started);
 
                     if current_event_kind == ReplayEventKind::TrackerUnitInit {
                         let handler_started = timings.start();
@@ -5094,7 +5568,8 @@ impl DetailedReplayAnalyzer {
                                 &mut dt_ht_ignore,
                             );
                         }
-                        timings.finish("event.unit_init_archon", handler_started);
+                        timings
+                            .finish(ReplayReportTimingSpan::EventUnitInitArchon, handler_started);
                     }
                 }
                 ReplayEventKind::TrackerUnitTypeChange => {
@@ -5106,7 +5581,10 @@ impl DetailedReplayAnalyzer {
                     let event_unit_in_dict = event_unit_id
                         .map(|value| unit_dict.contains_key(&value))
                         .unwrap_or(false);
-                    timings.finish("event.unit_id_lookup", event_unit_id_started);
+                    timings.finish(
+                        ReplayReportTimingSpan::EventUnitIdLookup,
+                        event_unit_id_started,
+                    );
                     if !event_unit_in_dict {
                         continue;
                     }
@@ -5155,7 +5633,7 @@ impl DetailedReplayAnalyzer {
                             }
                         }
                     }
-                    timings.finish("event.unit_type_change", handler_started);
+                    timings.finish(ReplayReportTimingSpan::EventUnitTypeChange, handler_started);
                 }
                 ReplayEventKind::TrackerUnitOwnerChange => {
                     let ReplayEvent::Tracker(event) = event else {
@@ -5166,7 +5644,10 @@ impl DetailedReplayAnalyzer {
                     let event_unit_in_dict = event_unit_id
                         .map(|value| unit_dict.contains_key(&value))
                         .unwrap_or(false);
-                    timings.finish("event.unit_id_lookup", event_unit_id_started);
+                    timings.finish(
+                        ReplayReportTimingSpan::EventUnitIdLookup,
+                        event_unit_id_started,
+                    );
                     let Some(changed_unit_id) = event_unit_id.filter(|_| event_unit_in_dict) else {
                         continue;
                     };
@@ -5209,7 +5690,10 @@ impl DetailedReplayAnalyzer {
                             None => {}
                         }
                     }
-                    timings.finish("event.unit_owner_change", handler_started);
+                    timings.finish(
+                        ReplayReportTimingSpan::EventUnitOwnerChange,
+                        handler_started,
+                    );
                 }
                 ReplayEventKind::TrackerUnitDied => {
                     let ReplayEvent::Tracker(event) = event else {
@@ -5219,7 +5703,10 @@ impl DetailedReplayAnalyzer {
                     let event_unit_id = DetailedReplayAnalyzer::replay_event_unitid(event);
                     let killed_snapshot = event_unit_id.and_then(|value| unit_dict.get(&value));
                     let event_unit_in_dict = killed_snapshot.is_some();
-                    timings.finish("event.unit_id_lookup", event_unit_id_started);
+                    timings.finish(
+                        ReplayReportTimingSpan::EventUnitIdLookup,
+                        event_unit_id_started,
+                    );
 
                     let handler_started = timings.start();
                     if !event_unit_in_dict {
@@ -5251,7 +5738,10 @@ impl DetailedReplayAnalyzer {
                                 aoe_units: aoe_units_set,
                             },
                         );
-                    timings.finish("event.unit_died_kill_stats", handler_started);
+                    timings.finish(
+                        ReplayReportTimingSpan::EventUnitDiedKillStats,
+                        handler_started,
+                    );
 
                     let Some(detail_unit_id) = event_unit_id.filter(|_| event_unit_in_dict) else {
                         continue;
@@ -5333,12 +5823,12 @@ impl DetailedReplayAnalyzer {
                             }
                         }
                     }
-                    timings.finish("event.unit_died_detail", handler_started);
+                    timings.finish(ReplayReportTimingSpan::EventUnitDiedDetail, handler_started);
                 }
                 _ => {}
             }
         }
-        timings.finish("events.total", event_loop_started);
+        timings.finish(ReplayReportTimingSpan::EventsTotal, event_loop_started);
 
         let overrides_started = timings.start();
         parser.apply_player_overrides(
@@ -5348,7 +5838,10 @@ impl DetailedReplayAnalyzer {
         );
         parser.messages =
             ParsedReplayMessage::sorted_with_leave_events(&parser.messages, &user_leave_times);
-        timings.finish("post.player_overrides_messages", overrides_started);
+        timings.finish(
+            ReplayReportTimingSpan::PostPlayerOverridesMessages,
+            overrides_started,
+        );
 
         let player_stats_started = timings.start();
         let main_name = parser
@@ -5363,7 +5856,10 @@ impl DetailedReplayAnalyzer {
         let mut player_stats = BTreeMap::<u8, AnalysisPlayerStatsSeries>::new();
         player_stats.insert(1, main_stats_counter.get_stats(main_name.as_str()));
         player_stats.insert(2, ally_stats_counter.get_stats(ally_name.as_str()));
-        timings.finish("post.player_stats", player_stats_started);
+        timings.finish(
+            ReplayReportTimingSpan::PostPlayerStats,
+            player_stats_started,
+        );
 
         let bonus_comp_started = timings.start();
         let bonus = bonus_timings
@@ -5374,7 +5870,7 @@ impl DetailedReplayAnalyzer {
             &identified_waves,
             dictionaries.unit_comp_dict,
         );
-        timings.finish("post.bonus_comp", bonus_comp_started);
+        timings.finish(ReplayReportTimingSpan::PostBonusComp, bonus_comp_started);
 
         let custom_icons_started = timings.start();
         DetailedReplayAnalyzer::apply_custom_kill_icons(
@@ -5386,7 +5882,10 @@ impl DetailedReplayAnalyzer {
             main_player,
             ally_player,
         );
-        timings.finish("post.custom_kill_icons", custom_icons_started);
+        timings.finish(
+            ReplayReportTimingSpan::PostCustomKillIcons,
+            custom_icons_started,
+        );
 
         let main_units_started = timings.start();
         let (main_units, mut main_icons) =
@@ -5402,7 +5901,10 @@ impl DetailedReplayAnalyzer {
                 unit_add_losses_to: &dictionaries.replay_analysis_data.unit_add_losses_to,
                 analysis_sets,
             });
-        timings.finish("post.main_units_icons", main_units_started);
+        timings.finish(
+            ReplayReportTimingSpan::PostMainUnitsIcons,
+            main_units_started,
+        );
         let ally_units_started = timings.start();
         let (ally_units, mut ally_icons) =
             DetailedReplayAnalyzer::fill_unit_kills_and_icons(FillUnitKillsAndIconsInput {
@@ -5417,7 +5919,10 @@ impl DetailedReplayAnalyzer {
                 unit_add_losses_to: &dictionaries.replay_analysis_data.unit_add_losses_to,
                 analysis_sets,
             });
-        timings.finish("post.ally_units_icons", ally_units_started);
+        timings.finish(
+            ReplayReportTimingSpan::PostAllyUnitsIcons,
+            ally_units_started,
+        );
 
         let killbot_icons_started = timings.start();
         let main_killbot_feed = DetailedReplayAnalyzer::count_for_pid(&killbot_feed, main_player);
@@ -5428,7 +5933,10 @@ impl DetailedReplayAnalyzer {
         if ally_killbot_feed > 0 {
             DetailedReplayAnalyzer::set_icon_count(&mut ally_icons, "killbots", ally_killbot_feed);
         }
-        timings.finish("post.killbot_icons", killbot_icons_started);
+        timings.finish(
+            ReplayReportTimingSpan::PostKillbotIcons,
+            killbot_icons_started,
+        );
 
         let amon_units_started = timings.start();
         let amon_units = DetailedReplayAnalyzer::fill_amon_units(
@@ -5440,7 +5948,7 @@ impl DetailedReplayAnalyzer {
             &dictionaries.replay_analysis_data.unit_add_losses_to,
             analysis_sets,
         );
-        timings.finish("post.amon_units", amon_units_started);
+        timings.finish(ReplayReportTimingSpan::PostAmonUnits, amon_units_started);
 
         let report_started = timings.start();
         let mut detailed_input = ReplayReportDetailedInput::from_parser(parser);
@@ -5473,8 +5981,12 @@ impl DetailedReplayAnalyzer {
             &detailed_input,
             main_player_handles,
         );
-        timings.finish("post.report_build", report_started);
+        timings.finish(ReplayReportTimingSpan::PostReportBuild, report_started);
+        let detailed_report_timing = timings.breakdown();
         timings.print();
-        Ok(report)
+        Ok(TimedDetailedReplayReport::new(
+            report,
+            detailed_report_timing,
+        ))
     }
 }
