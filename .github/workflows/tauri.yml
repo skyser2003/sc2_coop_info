@@ -51,7 +51,7 @@ jobs:
               with:
                   tagName: v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
                   releaseName: "SC2_Coop_Info v__VERSION__"
-                  releaseBody: "Feature: Race icon added"
+                  releaseBody: "Feature: Always show replay overlay, even if invalid"
                   releaseDraft: false
                   prerelease: false
                   projectPath: "./tauri-overlay"
