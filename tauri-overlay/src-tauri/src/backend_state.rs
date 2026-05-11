@@ -1128,6 +1128,20 @@ impl BackendState {
         self.refresh_stats_snapshot_after_replay_upsert();
     }
 
+    pub fn upsert_replay_in_memory_cache_if_persistable(
+        &self,
+        replay_hash: &str,
+        replay: &ReplayInfo,
+        cache_persistable: bool,
+    ) -> bool {
+        if !cache_persistable {
+            return false;
+        }
+
+        self.upsert_replay_in_memory_cache(replay_hash, replay);
+        true
+    }
+
     pub fn build_launch_main_identity(&self) -> (HashSet<String>, HashSet<String>) {
         let mut main_names = self.configured_main_names();
         let mut main_handles = self.configured_main_handles();

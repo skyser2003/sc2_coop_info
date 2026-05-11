@@ -3469,11 +3469,6 @@ impl TauriOverlayOps {
         let main_names = state.configured_main_names();
         let main_handles = state.configured_main_handles();
         let replay = parsed.oriented_for_main_identity(&main_names, &main_handles);
-        let replay_hash = cache_entry
-            .as_ref()
-            .map(|entry| entry.hash.clone())
-            .filter(|hash| !hash.is_empty())
-            .unwrap_or_else(|| ReplayFileIdentity::calculate_hash(path));
         if replay.main_commander().trim().is_empty() && replay.ally_commander().trim().is_empty() {
             crate::sco_log!(
                 "[SCO/watch] parsed replay ignored file='{}' reason=missing_commanders main='{}' ally='{}'",
@@ -3496,8 +3491,24 @@ impl TauriOverlayOps {
             replay.main_commander(),
             replay.ally_commander()
         );
-        state.upsert_replay_in_memory_cache(&replay_hash, &replay);
-        state.record_session_result(&replay.result);
+        let replay_cached = if let Some(entry) = cache_entry.as_ref() {
+            let replay_hash = if entry.hash.is_empty() {
+                ReplayFileIdentity::calculate_hash(path)
+            } else {
+                entry.hash.clone()
+            };
+            state.upsert_replay_in_memory_cache_if_persistable(&replay_hash, &replay, true)
+        } else {
+            false
+        };
+        if replay_cached {
+            state.record_session_result(&replay.result);
+        } else {
+            crate::sco_log!(
+                "[SCO/watch] replay displayed without cache file='{}' reason=not_cache_persistable",
+                replay.file
+            );
+        }
         let settings = state.read_settings_memory();
         let show_replay_info_after_game = settings.show_replay_info_after_game();
 
@@ -3586,12 +3597,22 @@ impl TauriOverlayOps {
             replay.ally_commander()
         );
 
-        let replay_hash = cache_entry
-            .as_ref()
-            .map(|entry| entry.hash.clone())
-            .filter(|hash| !hash.is_empty())
-            .unwrap_or_else(|| ReplayFileIdentity::calculate_hash(path));
-        state.upsert_replay_in_memory_cache(&replay_hash, &replay);
+        let replay_cached = if let Some(entry) = cache_entry.as_ref() {
+            let replay_hash = if entry.hash.is_empty() {
+                ReplayFileIdentity::calculate_hash(path)
+            } else {
+                entry.hash.clone()
+            };
+            state.upsert_replay_in_memory_cache_if_persistable(&replay_hash, &replay, true)
+        } else {
+            false
+        };
+        if !replay_cached {
+            crate::sco_log!(
+                "[SCO/show] replay displayed without cache file='{}' reason=not_cache_persistable",
+                replay.file
+            );
+        }
         if let Some(cache_entry) = cache_entry {
             TauriOverlayOps::spawn_detailed_cache_persist(state, cache_entry, "show");
         }

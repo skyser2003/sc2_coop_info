@@ -82,3 +82,18 @@ fn replay_for_display_falls_back_to_most_recent_cached_replay() {
         Some(newest_path.as_str())
     );
 }
+
+#[test]
+fn replay_for_display_does_not_fall_back_when_requested_replay_is_missing() {
+    let replays = vec![
+        sample_replay(&TestHelperOps::test_replay_path("newest.SC2Replay")),
+        sample_replay(&TestHelperOps::test_replay_path("older.SC2Replay")),
+    ];
+    let selected = Some(TestHelperOps::test_replay_path("newest.SC2Replay"));
+
+    assert_eq!(
+        OverlayInfoOps::replay_for_display(&replays, Some("missing.SC2Replay"), &selected)
+            .map(|replay| replay.file()),
+        None
+    );
+}

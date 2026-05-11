@@ -1141,10 +1141,11 @@ impl OverlayInfoOps {
         requested: Option<&str>,
         selected: &Option<String>,
     ) -> Option<&'a crate::ReplayInfo> {
-        requested
-            .and_then(|requested_file| replays.iter().find(|replay| replay.file == requested_file))
-            .or_else(|| {
-                requested.and_then(|requested_file| {
+        if let Some(requested_file) = requested.map(str::trim).filter(|value| !value.is_empty()) {
+            return replays
+                .iter()
+                .find(|replay| replay.file == requested_file)
+                .or_else(|| {
                     Path::new(requested_file).file_name().and_then(|name| {
                         let file_name = name.to_string_lossy();
                         replays.iter().find(|replay| {
@@ -1153,12 +1154,23 @@ impl OverlayInfoOps {
                                 .is_some_and(|current| current == file_name.as_ref())
                         })
                     })
-                })
-            })
+                });
+        }
+
+        selected
+            .as_deref()
+            .and_then(|current| replays.iter().find(|replay| replay.file == current))
             .or_else(|| {
-                selected
-                    .as_deref()
-                    .and_then(|current| replays.iter().find(|replay| replay.file == current))
+                selected.as_deref().and_then(|current| {
+                    Path::new(current).file_name().and_then(|name| {
+                        let file_name = name.to_string_lossy();
+                        replays.iter().find(|replay| {
+                            Path::new(&replay.file)
+                                .file_name()
+                                .is_some_and(|candidate| candidate == file_name.as_ref())
+                        })
+                    })
+                })
             })
             .or_else(|| replays.first())
     }
@@ -1203,15 +1215,30 @@ impl OverlayInfoOps {
         state: &BackendState,
         requested: Option<&str>,
     ) -> crate::OverlayActionResponse {
+        let requested = requested.map(str::trim).filter(|value| !value.is_empty());
         let replays = state.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT);
         let selected = state.get_current_replay_file();
-        let Some(replay) = OverlayInfoOps::replay_for_display(&replays, requested, &selected)
-        else {
-            return crate::OverlayActionResponse::failure("No replay selected");
+
+        let replay = match OverlayInfoOps::replay_for_display(&replays, requested, &selected) {
+            Some(replay) => replay.clone(),
+            None => {
+                let Some(requested_file) = requested else {
+                    return crate::OverlayActionResponse::failure("No replay selected");
+                };
+                let requested_path = PathBuf::from(requested_file);
+                let (_outcome, parsed) =
+                    TauriOverlayOps::process_replay_detailed(state, requested_path.as_path());
+                let Some(parsed) = parsed else {
+                    return crate::OverlayActionResponse::failure(format!(
+                        "Failed to parse replay: {requested_file}"
+                    ));
+                };
+                parsed
+            }
         };
         let file = replay.file.clone();
 
-        OverlayInfoOps::emit_replay_to_overlay_from_replay(app, replay, false);
+        OverlayInfoOps::emit_replay_to_overlay_from_replay(app, &replay, false);
         state.set_overlay_replay_data_active(true);
         state.set_current_replay_file(Some(&file));
 
