@@ -6,6 +6,7 @@ description = "Port of https://github.com/Blizzard/s2protocol"
 
 [dependencies]
 byteorder = "1.5"
+bzip2-rs = { version = "0.1.2", features = ["rustc_1_37"] }
 # Enable the faster pure-Rust zlib backend used by mpq's transitive flate2 dependency.
 flate2 = { version = "1", features = ["zlib-rs"] }
 mpq = "0.8.1"
