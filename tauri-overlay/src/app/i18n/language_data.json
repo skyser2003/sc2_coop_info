@@ -324,7 +324,7 @@
     },
     "ui_overlay_weekly": {
         "en": "Weekly",
-        "ko": "주간 돌연변이"
+        "ko": "주간"
     },
     "ui_overlay_custom": {
         "en": "Custom",
