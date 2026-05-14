@@ -3,6 +3,7 @@
 - Before running any actual runtime commands which might require env variable (ex - unit tests, npm, cargo, tasks, etc), read in and apply .env or .envrc file if exists.
 - Always keep code compilable (e.g. - cargo, tsc).
 - After each run, if formatter exists (ex - prettier, cargo fmt), run it before you end your task.
+- If you need python, use uv to create a python venv in system temp path and use it.
 - Write tests in a separate test file/path.
 - For compiled languages, always check if the result compiles.
 - After each job done, make sure to run tests to ensure it is done correctly.
