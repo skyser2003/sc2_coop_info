@@ -225,6 +225,24 @@ function prestigeLabelForLanguage(
     );
 }
 
+function commanderLookupKeys(
+    languageManager: LanguageManager,
+    commander: string,
+): string[] {
+    const trimmed = commander.trim();
+    const keys: string[] = [];
+    if (trimmed !== "") {
+        keys.push(trimmed);
+    }
+
+    const commanderKey = languageManager.englishLabel(trimmed);
+    if (commanderKey !== "" && !keys.includes(commanderKey)) {
+        keys.push(commanderKey);
+    }
+
+    return keys;
+}
+
 function readFastestMapPlayer(
     value: JsonValue | undefined,
 ): FastestMapPlayer | null {
@@ -1112,12 +1130,17 @@ function fastestMapPrestigeLabel(
 ): string {
     const prestige = Math.max(0, Math.round(player.prestige));
     const prestigeIndex = `P${prestige}`;
-    const localizedLabel = prestigeLabelForLanguage(
-        prestigeNames,
-        player.commander,
-        prestige,
-        languageManager.currentLanguage(),
-    );
+    const localizedLabel =
+        commanderLookupKeys(languageManager, player.commander)
+            .map((commander) =>
+                prestigeLabelForLanguage(
+                    prestigeNames,
+                    commander,
+                    prestige,
+                    languageManager.currentLanguage(),
+                ),
+            )
+            .find((label) => label !== prestigeIndex) || prestigeIndex;
     if (localizedLabel !== prestigeIndex) {
         return `${localizedLabel} (${prestigeIndex})`;
     }

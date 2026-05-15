@@ -1,8 +1,8 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 test.setTimeout(60000);
 
-async function installMasteryLanguageMock(page) {
+async function installMasteryLanguageMock(page: Page) {
     await page.addInitScript(() => {
         const cloneJson = (value) => JSON.parse(JSON.stringify(value));
         let settings = {
@@ -51,6 +51,24 @@ async function installMasteryLanguageMock(page) {
                     "추가 시작 보급품",
                 ],
             },
+            Horner: {
+                en: [
+                    "Strike Fighter Area of Effect",
+                    "Stronger Death Chance",
+                    "Significant Other Bonuses",
+                    "Double Salvage Chance",
+                    "Air Fleet Travel Distance",
+                    "Mag Mine Charges, Cooldown, and Arming Time",
+                ],
+                ko: [
+                    "타격 전투기 범위 효과",
+                    "죽음 확률 강화",
+                    "소중한 사람 보너스",
+                    "두 배의 회수 확률",
+                    "공중 함대 이동 거리",
+                    "자기 지뢰 충전 수 증가 및 재사용 대기시간 및 설치 시간",
+                ],
+            },
         };
         const prestigeNames = {
             Abathur: {
@@ -60,6 +78,13 @@ async function installMasteryLanguageMock(page) {
             Fenix: {
                 en: ["Purifier Executor"],
                 ko: ["정화자 집행관"],
+            },
+            Horner: {
+                en: [
+                    "Mercenary Leader and Dominion Admiral",
+                    "Chaotic Power Couple",
+                ],
+                ko: ["용병 지도자와 자치령 제독", "혼돈의 최강 커플"],
             },
         };
         const randomizerCatalog = {
@@ -85,12 +110,7 @@ async function installMasteryLanguageMock(page) {
             message: "",
             query: "",
             commander_mastery: commanderMastery,
-            prestige_names: {
-                Abathur: {
-                    en: ["Evolution Master"],
-                    ko: ["진화 군주"],
-                },
-            },
+            prestige_names: prestigeNames,
             main_handles: ["3-S2-1-900001"],
             analysis: {
                 MapData: {
@@ -121,12 +141,12 @@ async function installMasteryLanguageMock(page) {
                                 {
                                     name: "Partner",
                                     handle: "3-S2-1-900002",
-                                    commander: "Fenix",
+                                    commander: "Han & Horner",
                                     apm: 88,
                                     mastery_level: 90,
-                                    masteries: [0, 30, 0, 30, 0, 30],
-                                    prestige: 0,
-                                    prestige_name: "Purifier Executor",
+                                    masteries: [30, 0, 0, 30, 0, 30],
+                                    prestige: 1,
+                                    prestige_name: "P1",
                                 },
                             ],
                         },
@@ -292,6 +312,10 @@ test("localized commander mastery data drives statistics and randomizer labels",
     await page.getByRole("tab", { name: "Statistics" }).click();
     await page.locator("tbody tr").first().click();
     await expect(page.getByText("30 Toxic Nest Damage")).toBeVisible();
+    await expect(
+        page.getByText("30 Strike Fighter Area of Effect"),
+    ).toBeVisible();
+    await expect(page.getByText("Chaotic Power Couple (P1)")).toBeVisible();
 
     await page.getByRole("tab", { name: "Settings" }).click();
     const languageSelect = page.locator("select").first();
@@ -300,6 +324,8 @@ test("localized commander mastery data drives statistics and randomizer labels",
     await page.getByRole("tab", { name: "통계" }).click();
     await page.locator("tbody tr").first().click();
     await expect(page.getByText("30 독성 둥지 공격력")).toBeVisible();
+    await expect(page.getByText("30 타격 전투기 범위 효과")).toBeVisible();
+    await expect(page.getByText("혼돈의 최강 커플 (P1)")).toBeVisible();
 
     await page.getByRole("tab", { name: "랜덤 선택" }).click();
     await page.getByRole("button", { name: "생성" }).first().click();

@@ -279,17 +279,29 @@ export class LanguageManager {
 
     commanderMasteryLabels(commander: string): string[] {
         const labels = commanderMasteryEntries[commander];
-        if (labels === undefined) {
-            return [];
+        if (labels !== undefined) {
+            return this.localizedCommanderMasteryLabels(labels);
         }
 
-        return labels[this.language].length > 0
-            ? labels[this.language]
-            : labels.en;
+        const commanderKey = this.englishLabel(commander);
+        const canonicalLabels = commanderMasteryEntries[commanderKey];
+        if (canonicalLabels !== undefined) {
+            return this.localizedCommanderMasteryLabels(canonicalLabels);
+        }
+
+        return [];
     }
 
     commanderMasteryData(): CommanderMasteryData {
         return commanderMasteryEntries;
+    }
+
+    private localizedCommanderMasteryLabels(
+        labels: LocalizedCommanderMasteryLabels,
+    ): string[] {
+        return labels[this.language].length > 0
+            ? labels[this.language]
+            : labels.en;
     }
 }
 
