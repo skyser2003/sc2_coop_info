@@ -1875,9 +1875,6 @@ function SettingsEditor({
         if (path.length === 1 && path[0] === "language") {
             emitOverlayLanguagePreview(nextDraft);
         }
-        if (isColorField) {
-            return;
-        }
         cancelPendingLiveApply();
         void applyRuntimeSettings(nextDraft);
     }

@@ -5,10 +5,11 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use crate::{
-    AppSettings, CommanderUnitRollup, ReplayInfo, StatsSnapshot, TauriOverlayOps,
-    replay_analysis::WeeklyRowPayload,
+    AppSettings, BackendState, CommanderUnitRollup, ReplayInfo, ReplayWatcherMessage,
+    StatsSnapshot, TauriOverlayOps, replay_analysis::WeeklyRowPayload,
 };
 
 pub struct TestHelperOps;
@@ -34,6 +35,28 @@ impl TestHelperOps {
 impl TestHelperOps {
     pub fn test_config_path(file_name: &str) -> PathBuf {
         TestHelperOps::test_path_root_from_env("SCO_TEST_CONFIG_ROOT").join(file_name)
+    }
+}
+
+impl TestHelperOps {
+    pub fn replay_watch_root(settings: &AppSettings) -> Option<PathBuf> {
+        settings.replay_watch_root()
+    }
+
+    pub fn replay_watch_roots_match(current_root: Option<&Path>, next_root: Option<&Path>) -> bool {
+        TauriOverlayOps::replay_watch_roots_match(current_root, next_root)
+    }
+
+    pub fn replay_watcher_refresh_signal_is_sent(state: &BackendState) -> bool {
+        let (sender, receiver) = std::sync::mpsc::channel::<ReplayWatcherMessage>();
+        state.set_replay_watcher_sender(Some(sender));
+        state.request_replay_watcher_root_refresh();
+        let received = matches!(
+            receiver.recv_timeout(Duration::from_secs(1)),
+            Ok(ReplayWatcherMessage::RefreshRoot)
+        );
+        state.set_replay_watcher_sender(None);
+        received
     }
 }
 

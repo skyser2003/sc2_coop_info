@@ -4,6 +4,7 @@ use std::{
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
+        mpsc,
     },
     thread,
     time::{SystemTime, UNIX_EPOCH},
@@ -20,7 +21,8 @@ use crate::shared_types::{
     OverlayPlayerStatsPayload, OverlayPlayerStatsRow, ReplayScanProgressPayload,
 };
 use crate::{
-    AnalysisMode, AppSettings, ReplayInfo, StatsState, TauriOverlayOps, UNLIMITED_REPLAY_LIMIT,
+    AnalysisMode, AppSettings, ReplayInfo, ReplayWatcherMessage, StatsState, TauriOverlayOps,
+    UNLIMITED_REPLAY_LIMIT,
     overlay_info::{ResolvedHotkeyBinding, RuntimeFlags},
     replay_analysis::ReplayAnalysis,
 };
@@ -82,6 +84,7 @@ pub struct BackendState {
     detailed_analysis_stop_controller: Arc<Mutex<Option<Arc<GenerateCacheStopController>>>>,
     performance_edit_mode: Arc<AtomicBool>,
     file_logging_enabled: Arc<AtomicBool>,
+    replay_watcher_sender: Arc<Mutex<Option<mpsc::Sender<ReplayWatcherMessage>>>>,
     replay_state: Arc<Mutex<ReplayState>>,
     analyzer_data_dir: PathBuf,
     dictionary_data: Arc<Mutex<CachedLoad<Sc2DictionaryData>>>,
@@ -449,6 +452,7 @@ impl BackendState {
             detailed_analysis_stop_controller: Arc::new(Mutex::new(None)),
             performance_edit_mode: Arc::new(AtomicBool::new(false)),
             file_logging_enabled: Arc::new(AtomicBool::new(file_logging_enabled)),
+            replay_watcher_sender: Arc::new(Mutex::new(None)),
             replay_state: Arc::new(Mutex::new(ReplayState {
                 replays: Arc::new(Mutex::new(HashMap::new())),
                 selected_replay_file: Arc::new(Mutex::new(None)),
@@ -520,6 +524,28 @@ impl BackendState {
 
     pub fn runtime_flags(&self) -> RuntimeFlags {
         self.read_settings_memory().runtime_flags()
+    }
+
+    pub(crate) fn set_replay_watcher_sender(
+        &self,
+        sender: Option<mpsc::Sender<ReplayWatcherMessage>>,
+    ) {
+        if let Ok(mut cached_sender) = self.replay_watcher_sender.lock() {
+            *cached_sender = sender;
+        }
+    }
+
+    pub(crate) fn request_replay_watcher_root_refresh(&self) {
+        let sender = self
+            .replay_watcher_sender
+            .lock()
+            .ok()
+            .and_then(|cached_sender| cached_sender.clone());
+        if let Some(sender) = sender
+            && sender.send(ReplayWatcherMessage::RefreshRoot).is_err()
+        {
+            crate::sco_log!("[SCO/watch] failed to request replay watcher root refresh");
+        }
     }
 
     pub(crate) fn append_log_line_if_enabled(&self, message: &str) {

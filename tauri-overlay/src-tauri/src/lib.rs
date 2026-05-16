@@ -84,6 +84,11 @@ pub const UNLIMITED_REPLAY_LIMIT: usize = 0;
 const SCO_REPLAY_SCAN_PROGRESS_EVENT: &str = "sco://replay-scan-progress";
 const SCO_ANALYSIS_COMPLETED_EVENT: &str = "sco://analysis-completed";
 
+pub(crate) enum ReplayWatcherMessage {
+    Event(notify::Result<notify::Event>),
+    RefreshRoot,
+}
+
 #[derive(Default)]
 struct TrayState {
     tray_icon: Mutex<Option<tauri::tray::TrayIcon<Wry>>>,
@@ -254,6 +259,8 @@ impl TauriOverlayOps {
             &next_settings,
             &OVERLAY_PLACEMENT_SETTING_KEYS,
         );
+        let replay_watch_root_changed =
+            AppSettings::setting_value_changed(previous_settings, &next_settings, "account_folder");
         let performance_runtime_changed = AppSettings::any_setting_changed(
             previous_settings,
             &next_settings,
@@ -288,6 +295,9 @@ impl TauriOverlayOps {
         }
         if performance_runtime_changed {
             performance_overlay::PerformanceOverlayOps::apply_settings(app);
+        }
+        if replay_watch_root_changed {
+            state.request_replay_watcher_root_refresh();
         }
 
         if let Ok(mut stats) = app.state::<BackendState>().stats_handle().lock() {
@@ -3373,6 +3383,29 @@ impl TauriOverlayOps {
     }
 }
 
+impl TauriOverlayOps {
+    fn replay_watch_roots_match(current_root: Option<&Path>, next_root: Option<&Path>) -> bool {
+        match (current_root, next_root) {
+            (Some(current_root), Some(next_root)) => current_root == next_root,
+            (None, None) => true,
+            _ => false,
+        }
+    }
+
+    fn seed_handled_replay_files_for_watch_root(
+        replay_root: &Path,
+        handled_files: &mut HashSet<String>,
+    ) {
+        handled_files.clear();
+        for path in TauriOverlayOps::collect_sc2_replay_files(replay_root) {
+            let key = path.to_string_lossy().to_string();
+            if !key.is_empty() {
+                handled_files.insert(key);
+            }
+        }
+    }
+}
+
 impl StatsState {
     pub fn sync_detailed_analysis_status_from_replays(&mut self, replays: &[ReplayInfo]) {
         let total_valid_files = replays
@@ -3543,6 +3576,64 @@ impl TauriOverlayOps {
 }
 
 impl TauriOverlayOps {
+    fn active_replay_watch_root(app: &tauri::AppHandle<Wry>) -> Option<PathBuf> {
+        app.state::<BackendState>()
+            .read_settings_memory()
+            .replay_watch_root()
+    }
+
+    fn path_belongs_to_watch_root(path: &Path, watch_root: Option<&Path>) -> bool {
+        watch_root
+            .map(|root| path.starts_with(root))
+            .unwrap_or(false)
+    }
+
+    fn apply_replay_watch_root(
+        watcher: &mut RecommendedWatcher,
+        watched_root: &mut Option<PathBuf>,
+        handled_files: &mut HashSet<String>,
+        pending_fallback_files: &mut HashSet<String>,
+        next_root: Option<PathBuf>,
+    ) {
+        if TauriOverlayOps::replay_watch_roots_match(watched_root.as_deref(), next_root.as_deref())
+        {
+            return;
+        }
+
+        if let Some(previous_root) = watched_root.take()
+            && let Err(error) = watcher.unwatch(&previous_root)
+        {
+            crate::sco_log!(
+                "[SCO/watch] failed to stop watching replay root '{}': {error}",
+                previous_root.display()
+            );
+        }
+
+        handled_files.clear();
+        pending_fallback_files.clear();
+
+        let Some(replay_root) = next_root else {
+            return;
+        };
+
+        if let Err(error) = watcher.watch(&replay_root, RecursiveMode::Recursive) {
+            crate::sco_log!(
+                "[SCO/watch] failed to watch replay root '{}': {error}",
+                replay_root.display()
+            );
+            return;
+        }
+
+        TauriOverlayOps::seed_handled_replay_files_for_watch_root(&replay_root, handled_files);
+        crate::sco_log!(
+            "[SCO/watch] replay watcher active on {}",
+            replay_root.display()
+        );
+        *watched_root = Some(replay_root);
+    }
+}
+
+impl TauriOverlayOps {
     fn process_replay_detailed(
         state: &BackendState,
         path: &Path,
@@ -3665,21 +3756,11 @@ impl TauriOverlayOps {
 impl TauriOverlayOps {
     fn spawn_replay_creation_watcher(app: tauri::AppHandle<Wry>) {
         thread::spawn(move || {
-            let replay_root = loop {
-                let settings = app.state::<BackendState>().read_settings_memory();
-                if let Some(root) = settings.replay_watch_root() {
-                    break root;
-                }
-                crate::sco_log!(
-                    "[SCO/watch] account_folder replay root unavailable, retrying in 5s"
-                );
-                thread::sleep(Duration::from_secs(5));
-            };
-
-            let (tx, rx) = std::sync::mpsc::channel::<notify::Result<notify::Event>>();
+            let (tx, rx) = std::sync::mpsc::channel::<ReplayWatcherMessage>();
+            let watcher_tx = tx.clone();
             let mut watcher = match RecommendedWatcher::new(
                 move |event_result| {
-                    let _ = tx.send(event_result);
+                    let _ = watcher_tx.send(ReplayWatcherMessage::Event(event_result));
                 },
                 NotifyConfig::default(),
             ) {
@@ -3689,31 +3770,45 @@ impl TauriOverlayOps {
                     return;
                 }
             };
-
-            if let Err(error) = watcher.watch(&replay_root, RecursiveMode::Recursive) {
-                crate::sco_log!(
-                    "[SCO/watch] failed to watch replay root '{}': {error}",
-                    replay_root.display()
-                );
-                return;
-            }
-            crate::sco_log!(
-                "[SCO/watch] replay watcher active on {}",
-                replay_root.display()
-            );
+            app.state::<BackendState>()
+                .set_replay_watcher_sender(Some(tx));
 
             let mut handled_files = HashSet::<String>::new();
-            for path in TauriOverlayOps::collect_sc2_replay_files(&replay_root) {
-                let key = path.to_string_lossy().to_string();
-                if !key.is_empty() {
-                    handled_files.insert(key);
-                }
-            }
             let mut pending_fallback_files = HashSet::<String>::new();
+            let mut watched_root = None::<PathBuf>;
+            let mut missing_root_logged_at = None::<Instant>;
 
             loop {
+                let next_root = TauriOverlayOps::active_replay_watch_root(&app);
+                let next_root_available = next_root.is_some();
+                TauriOverlayOps::apply_replay_watch_root(
+                    &mut watcher,
+                    &mut watched_root,
+                    &mut handled_files,
+                    &mut pending_fallback_files,
+                    next_root,
+                );
+                if watched_root.is_some() {
+                    missing_root_logged_at = None;
+                } else if !next_root_available {
+                    let now = Instant::now();
+                    let should_log = missing_root_logged_at
+                        .map(|last| now.duration_since(last) >= Duration::from_secs(5))
+                        .unwrap_or(true);
+                    if should_log {
+                        crate::sco_log!(
+                            "[SCO/watch] account_folder replay root unavailable, retrying in 5s"
+                        );
+                        missing_root_logged_at = Some(now);
+                    }
+                }
+
                 match rx.recv_timeout(Duration::from_secs(2)) {
-                    Ok(Ok(event)) => {
+                    Ok(ReplayWatcherMessage::RefreshRoot) => {
+                        continue;
+                    }
+                    Ok(ReplayWatcherMessage::Event(Ok(event))) => {
+                        let current_root = watched_root.clone();
                         if !TauriOverlayOps::is_replay_creation_event(&event.kind) {
                             continue;
                         }
@@ -3724,6 +3819,12 @@ impl TauriOverlayOps {
                         );
 
                         for path in event.paths {
+                            if !TauriOverlayOps::path_belongs_to_watch_root(
+                                &path,
+                                current_root.as_deref(),
+                            ) {
+                                continue;
+                            }
                             if !TauriOverlayOps::path_is_sc2_replay(&path) {
                                 continue;
                             }
@@ -3743,11 +3844,11 @@ impl TauriOverlayOps {
                             );
                         }
                     }
-                    Ok(Err(error)) => {
+                    Ok(ReplayWatcherMessage::Event(Err(error))) => {
                         crate::sco_log!("[SCO/watch] watcher event error: {error}");
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                        if pending_fallback_files.is_empty() {
+                        if pending_fallback_files.is_empty() || watched_root.is_none() {
                             continue;
                         }
 
@@ -3768,6 +3869,7 @@ impl TauriOverlayOps {
                         }
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        app.state::<BackendState>().set_replay_watcher_sender(None);
                         crate::sco_log!(
                             "[SCO/watch] replay watcher channel disconnected; stopping"
                         );

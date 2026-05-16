@@ -1495,6 +1495,18 @@ test.describe("Config route", () => {
 
         await expect(player1Color).toHaveValue("#445566");
 
+        await expect
+            .poll(() =>
+                page.evaluate(() => {
+                    const requests =
+                        window["__SCO_CONFIG_APPLY_REQUESTS__"] || [];
+                    return requests[requests.length - 1] || null;
+                }),
+            )
+            .toMatchObject({
+                color_player1: "#445566",
+            });
+
         await page.getByRole("button", { name: /^Save$/ }).click();
 
         await expect
