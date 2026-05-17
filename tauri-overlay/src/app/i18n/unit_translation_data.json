@@ -241,7 +241,7 @@
     },
     "Destroyer": {
         "en": "Destroyer",
-        "ko": "파괴자"
+        "ko": "파멸자"
     },
     "Devil Dog": {
         "en": "Devil Dog",
@@ -1129,7 +1129,7 @@
     },
     "Swarm Queen": {
         "en": "Swarm Queen",
-        "ko": "무리 여왕"
+        "ko": "군단 여왕"
     },
     "Taldarin": {
         "en": "Taldarin",
@@ -1557,6 +1557,6 @@
     },
     "Rob 'Cannonball' Boswell": {
         "en": "Rob 'Cannonball' Boswell",
-        "ko": "케브 \"방울뱀\" 웨스트"
+        "ko": "롭 \"대포알\" 보스웰"
     }
 }
