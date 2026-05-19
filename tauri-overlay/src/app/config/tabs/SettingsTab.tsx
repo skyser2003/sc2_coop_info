@@ -3,7 +3,10 @@ import type { LanguageManager } from "../../i18n/languageManager";
 import { Grid } from "@mui/material";
 import { check, Update } from "@tauri-apps/plugin-updater";
 import { app } from "@tauri-apps/api";
-import type { AppSettings } from "../../../bindings/overlay";
+import type {
+    AppSettings,
+    FirstWinBonusDisplayMode,
+} from "../../../bindings/overlay";
 import type { DisplayValue, JsonValue } from "../types";
 import styles from "../page.module.css";
 
@@ -43,6 +46,12 @@ type SettingsActions = {
 };
 
 const HEX_COLOR_PATTERN = /^#[0-9A-F]{6}$/i;
+const FIRST_WIN_BONUS_DISPLAY_MODES: readonly FirstWinBonusDisplayMode[] = [
+    "hidden",
+    "available_only",
+    "always",
+];
+
 type SettingsTabProps = {
     draft: AppSettings | null;
     onChange: (path: string[], value: JsonValue) => void;
@@ -63,6 +72,15 @@ function asTableValueCompat(value: DisplayValue) {
         return "";
     }
     return String(value);
+}
+
+function isFirstWinBonusDisplayMode(
+    value: JsonValue | undefined,
+): value is FirstWinBonusDisplayMode {
+    return (
+        typeof value === "string" &&
+        FIRST_WIN_BONUS_DISPLAY_MODES.some((mode) => mode === value)
+    );
 }
 
 function getAtPathCompat(source: AppSettings | null, path: string[]) {
@@ -794,6 +812,15 @@ export default function SettingsTab({
             ),
         );
     };
+    const firstWinBonusDisplayModeValue = read(
+        ["first_win_bonus_display_mode"],
+        "always",
+    );
+    const firstWinBonusDisplayMode = isFirstWinBonusDisplayMode(
+        firstWinBonusDisplayModeValue,
+    )
+        ? firstWinBonusDisplayModeValue
+        : "always";
 
     const hotkeyEntry = (
         id: string,
@@ -1069,6 +1096,65 @@ export default function SettingsTab({
                                         ),
                                         ["hide_nicknames_in_overlay"],
                                     )}
+                                    <Grid
+                                        container
+                                        spacing={1}
+                                        className={styles.mainNumberRow}
+                                    >
+                                        <Grid>
+                                            <span
+                                                className={styles.mainRowLabel}
+                                            >
+                                                {t(
+                                                    "ui_settings_first_win_bonus_timer",
+                                                )}
+                                            </span>
+                                        </Grid>
+                                        <Grid>
+                                            <select
+                                                className={[
+                                                    styles.input,
+                                                    styles.mainFixedSelect,
+                                                ]
+                                                    .filter(Boolean)
+                                                    .join(" ")}
+                                                value={firstWinBonusDisplayMode}
+                                                onChange={(event) => {
+                                                    const selectedMode =
+                                                        event.target.value;
+                                                    if (
+                                                        !isFirstWinBonusDisplayMode(
+                                                            selectedMode,
+                                                        )
+                                                    ) {
+                                                        return;
+                                                    }
+                                                    onChange(
+                                                        [
+                                                            "first_win_bonus_display_mode",
+                                                        ],
+                                                        selectedMode,
+                                                    );
+                                                }}
+                                            >
+                                                <option value="hidden">
+                                                    {t(
+                                                        "ui_settings_first_win_bonus_timer_hidden",
+                                                    )}
+                                                </option>
+                                                <option value="available_only">
+                                                    {t(
+                                                        "ui_settings_first_win_bonus_timer_available_only",
+                                                    )}
+                                                </option>
+                                                <option value="always">
+                                                    {t(
+                                                        "ui_settings_first_win_bonus_timer_always",
+                                                    )}
+                                                </option>
+                                            </select>
+                                        </Grid>
+                                    </Grid>
                                 </div>
                             </section>
                             <section className={styles.mainSettingsGroup}>

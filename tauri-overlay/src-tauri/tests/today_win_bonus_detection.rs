@@ -1,7 +1,8 @@
+use chrono::{TimeZone, Utc};
 use image::{Rgba, RgbaImage};
 use sco_tauri_overlay::{
-    ImageprocTodayWinBonusDigitReader, TodayWinBonusDetection, TodayWinBonusDetector,
-    TodayWinBonusDigitReader,
+    FirstWinBonusTimerStatus, ImageprocTodayWinBonusDigitReader, ScreenRect,
+    TodayWinBonusDetection, TodayWinBonusDetector, TodayWinBonusDigitReader,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
@@ -204,6 +205,82 @@ fn normalizes_common_ocr_digit_shapes() {
         Some(10_000)
     );
     assert_eq!(TodayWinBonusDetector::normalize_xp_value("XP"), None);
+}
+
+#[test]
+fn identifies_sc2_window_names_for_focused_capture() {
+    assert!(TodayWinBonusDetector::is_sc2_window_identity(
+        "SC2_x64.exe",
+        ""
+    ));
+    assert!(TodayWinBonusDetector::is_sc2_window_identity(
+        "StarCraft II",
+        ""
+    ));
+    assert!(TodayWinBonusDetector::is_sc2_window_identity(
+        "",
+        "StarCraft II"
+    ));
+    assert!(!TodayWinBonusDetector::is_sc2_window_identity(
+        "notepad.exe",
+        "StarCraft notes"
+    ));
+}
+
+#[test]
+fn monitor_capture_region_uses_visible_window_intersection() {
+    let region = TodayWinBonusDetector::monitor_capture_region_for_window(
+        ScreenRect::new(1900, 100, 400, 300).expect("valid window rect"),
+        ScreenRect::new(1920, 0, 1920, 1080).expect("valid monitor rect"),
+    )
+    .expect("window intersects monitor");
+
+    assert_eq!(region.x(), 0);
+    assert_eq!(region.y(), 100);
+    assert_eq!(region.width(), 380);
+    assert_eq!(region.height(), 300);
+}
+
+#[test]
+fn monitor_capture_region_rejects_window_outside_monitor() {
+    assert_eq!(
+        TodayWinBonusDetector::monitor_capture_region_for_window(
+            ScreenRect::new(0, 0, 100, 100).expect("valid window rect"),
+            ScreenRect::new(1920, 0, 1920, 1080).expect("valid monitor rect")
+        ),
+        None
+    );
+}
+
+#[test]
+fn first_win_bonus_timer_uses_twenty_two_hour_cooldown() {
+    let now = Utc
+        .with_ymd_and_hms(2026, 5, 19, 12, 0, 0)
+        .single()
+        .expect("valid test time");
+    let latest = Utc
+        .with_ymd_and_hms(2026, 5, 19, 0, 0, 0)
+        .single()
+        .expect("valid latest time")
+        .to_rfc3339();
+
+    let status = FirstWinBonusTimerStatus::from_latest_acquired_time(Some(&latest), now);
+
+    assert!(!status.available());
+    assert_eq!(status.seconds_until_available(), 10 * 60 * 60);
+}
+
+#[test]
+fn first_win_bonus_timer_is_available_without_saved_time() {
+    let now = Utc
+        .with_ymd_and_hms(2026, 5, 19, 12, 0, 0)
+        .single()
+        .expect("valid test time");
+
+    let status = FirstWinBonusTimerStatus::from_latest_acquired_time(None, now);
+
+    assert!(status.available());
+    assert_eq!(status.seconds_until_available(), 0);
 }
 
 #[test]

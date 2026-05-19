@@ -1,4 +1,4 @@
-use sco_tauri_overlay::AppSettings;
+use sco_tauri_overlay::{AppSettings, FirstWinBonusDisplayMode};
 use serde_json::Value;
 use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -35,6 +35,10 @@ fn merge_settings_with_defaults_uses_requested_overlay_defaults() {
     assert_eq!(merged.performance_hotkey(), None);
     assert_eq!(merged.latest_today_win_bonus_time(), None);
     assert_eq!(
+        merged.first_win_bonus_display_mode(),
+        FirstWinBonusDisplayMode::Always
+    );
+    assert_eq!(
         merged.analysis_worker_threads(),
         AppSettings::default_analysis_worker_threads()
     );
@@ -64,6 +68,18 @@ fn merge_settings_with_defaults_preserves_latest_today_win_bonus_time() {
     assert_eq!(
         merged.latest_today_win_bonus_time(),
         Some("2026-05-18T12:34:56Z")
+    );
+}
+
+#[test]
+fn merge_settings_with_defaults_preserves_first_win_bonus_display_mode() {
+    let merged = AppSettings::merge_settings_with_defaults(json!({
+        "first_win_bonus_display_mode": "always",
+    }));
+
+    assert_eq!(
+        merged.first_win_bonus_display_mode(),
+        FirstWinBonusDisplayMode::Always
     );
 }
 

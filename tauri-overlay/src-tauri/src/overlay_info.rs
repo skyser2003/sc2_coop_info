@@ -17,8 +17,8 @@ use crate::app_settings::AppSettings;
 use crate::monitor_settings;
 use crate::randomizer;
 use crate::shared_types::{
-    EmptyPayload, OverlayReplayPayload, OverlayScreenshotRequestPayload, ReplayDataRecord,
-    ReplayPlayerSeries, SharedTypesOps,
+    EmptyPayload, FirstWinBonusTimerPayload, OverlayReplayPayload, OverlayScreenshotRequestPayload,
+    ReplayDataRecord, ReplayPlayerSeries, SharedTypesOps,
 };
 use crate::{BackendState, TauriOverlayOps, UNLIMITED_REPLAY_LIMIT};
 
@@ -37,6 +37,7 @@ pub(crate) const OVERLAY_SHOWHIDE_EVENT: &str = "sco://overlay-showhide";
 pub(crate) const OVERLAY_SET_SHOW_CHARTS_FROM_CONFIG_EVENT: &str =
     "sco://overlay-set-show-charts-from-config";
 pub(crate) const OVERLAY_SCREENSHOT_REQUEST_EVENT: &str = "sco://overlay-screenshot-request";
+pub(crate) const OVERLAY_FIRST_WIN_BONUS_TIMER_EVENT: &str = "sco://overlay-first-win-bonus-timer";
 
 pub(crate) const OVERLAY_HOTKEY_DEFAULTS: [(&str, &str); 6] = [
     ("hotkey_show/hide", "Ctrl+Shift+*"),
@@ -1662,6 +1663,18 @@ impl OverlayInfoOps {
         let (session_victories, session_defeats) = state.session_counts();
         let payload = settings.overlay_runtime_settings_payload(session_victories, session_defeats);
         let _ = app.emit(OVERLAY_INIT_COLORS_DURATION_EVENT, payload);
+    }
+}
+
+impl OverlayInfoOps {
+    pub(crate) fn emit_first_win_bonus_timer<R: Runtime>(
+        app: &tauri::AppHandle<R>,
+        payload: FirstWinBonusTimerPayload,
+    ) {
+        if payload.visible {
+            OverlayInfoOps::show_overlay_window(app);
+        }
+        let _ = app.emit(OVERLAY_FIRST_WIN_BONUS_TIMER_EVENT, payload);
     }
 }
 

@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import { ReplayChartVisible } from "./component/GameStatChart";
+import FirstWinBonusTimerMode from "./component/FirstWinBonusTimerMode";
 import GameStatMode from "./component/GameStatMode";
 import PlayerStatMode from "./component/PlayerStatMode";
 import { createLanguageManager } from "../i18n/languageManager";
@@ -24,6 +25,7 @@ import {
 import type { DisplayValue } from "../config/types";
 import type {
     ConfigPayload,
+    FirstWinBonusTimerPayload,
     OverlayColorPreviewPayload,
     OverlayInitColorsDurationPayload,
     OverlayLanguagePreviewPayload,
@@ -41,6 +43,7 @@ enum DisplayMode {
     None,
     PlayerStats,
     GameStats,
+    FirstWinBonusTimer,
 }
 
 type OverlayEventName =
@@ -54,7 +57,8 @@ type OverlayEventName =
     | typeof OVERLAY_HIDESTATS_EVENT
     | typeof OVERLAY_SHOWHIDE_EVENT
     | typeof OVERLAY_SET_SHOW_CHARTS_FROM_CONFIG_EVENT
-    | typeof OVERLAY_SCREENSHOT_REQUEST_EVENT;
+    | typeof OVERLAY_SCREENSHOT_REQUEST_EVENT
+    | typeof OVERLAY_FIRST_WIN_BONUS_TIMER_EVENT;
 
 type OverlayPrestigeNameCatalog = Record<
     string,
@@ -212,6 +216,8 @@ const OVERLAY_SET_SHOW_CHARTS_FROM_CONFIG_EVENT =
     "sco://overlay-set-show-charts-from-config";
 const OVERLAY_SCREENSHOT_REQUEST_EVENT = "sco://overlay-screenshot-request";
 const OVERLAY_SCREENSHOT_RESULT_EVENT = "sco://overlay-screenshot-result";
+const OVERLAY_FIRST_WIN_BONUS_TIMER_EVENT =
+    "sco://overlay-first-win-bonus-timer";
 
 const tauriUnlistens: Record<OverlayEventName, (() => void) | null> = {
     [OVERLAY_COLOR_PREVIEW_EVENT]: null,
@@ -225,6 +231,7 @@ const tauriUnlistens: Record<OverlayEventName, (() => void) | null> = {
     [OVERLAY_SHOWHIDE_EVENT]: null,
     [OVERLAY_SET_SHOW_CHARTS_FROM_CONFIG_EVENT]: null,
     [OVERLAY_SCREENSHOT_REQUEST_EVENT]: null,
+    [OVERLAY_FIRST_WIN_BONUS_TIMER_EVENT]: null,
 };
 
 interface DisplayStatus {
@@ -283,6 +290,8 @@ export default function OverlayPage() {
     const [sessionDefeatCount, setSessionDefeatCount] = useState<number>(0);
     const [playerStatPayload, setPlayerStatPayload] =
         useState<OverlayPlayerStatsPayload | null>(null);
+    const [firstWinBonusTimerPayload, setFirstWinBonusTimerPayload] =
+        useState<FirstWinBonusTimerPayload | null>(null);
 
     async function loadOverlayPrestigeNameCatalog(): Promise<void> {
         try {
@@ -347,6 +356,9 @@ export default function OverlayPage() {
         setPlayerStatPayload(
             mode === DisplayMode.PlayerStats ? nextPlayerPayload : null,
         );
+        if (mode !== DisplayMode.FirstWinBonusTimer) {
+            setFirstWinBonusTimerPayload(null);
+        }
         setDisplayMode({
             mode,
             immediate,
@@ -483,6 +495,19 @@ export default function OverlayPage() {
         setAuxiliaryOverlayVisible(false);
     }
 
+    function showFirstWinBonusTimer(immediate = false): void {
+        hideStatsPanel(immediate);
+        setBackgroundPanelStyle({
+            ...hiddenBackgroundStyle,
+            transition: "opacity 0s",
+        });
+        setChartVisibility({
+            visible: false,
+            immediate: true,
+        });
+        setAuxiliaryOverlayVisible(false);
+    }
+
     function colorPreviewEventHandler({
         payload,
     }: {
@@ -580,6 +605,38 @@ export default function OverlayPage() {
         setChartVisibility({
             visible: payload,
             immediate: true,
+        });
+    }
+
+    function firstWinBonusTimerEventHandler({
+        payload,
+    }: {
+        payload: FirstWinBonusTimerPayload;
+    }): void {
+        setFirstWinBonusTimerPayload(payload.visible ? payload : null);
+        setDisplayMode((previousDisplayMode) => {
+            if (
+                previousDisplayMode.mode === DisplayMode.GameStats ||
+                previousDisplayMode.mode === DisplayMode.PlayerStats
+            ) {
+                return previousDisplayMode;
+            }
+
+            if (payload.visible) {
+                return {
+                    mode: DisplayMode.FirstWinBonusTimer,
+                    immediate: true,
+                };
+            }
+
+            if (previousDisplayMode.mode === DisplayMode.FirstWinBonusTimer) {
+                return {
+                    mode: DisplayMode.None,
+                    immediate: true,
+                };
+            }
+
+            return previousDisplayMode;
         });
     }
 
@@ -766,6 +823,14 @@ export default function OverlayPage() {
                     tauriUnlistens[OVERLAY_SCREENSHOT_REQUEST_EVENT]?.();
                     tauriUnlistens[OVERLAY_SCREENSHOT_REQUEST_EVENT] = unlisten;
                 }),
+                listen<FirstWinBonusTimerPayload>(
+                    OVERLAY_FIRST_WIN_BONUS_TIMER_EVENT,
+                    firstWinBonusTimerEventHandler,
+                ).then((unlisten) => {
+                    tauriUnlistens[OVERLAY_FIRST_WIN_BONUS_TIMER_EVENT]?.();
+                    tauriUnlistens[OVERLAY_FIRST_WIN_BONUS_TIMER_EVENT] =
+                        unlisten;
+                }),
             ]);
         } catch {
             console.warn(
@@ -855,6 +920,9 @@ export default function OverlayPage() {
                 break;
             case DisplayMode.GameStats:
                 showOverlay(displayMode.immediate);
+                break;
+            case DisplayMode.FirstWinBonusTimer:
+                showFirstWinBonusTimer(displayMode.immediate);
                 break;
         }
     }, [displayMode]);
@@ -955,6 +1023,12 @@ export default function OverlayPage() {
                 visible={displayMode.mode === DisplayMode.PlayerStats}
                 immediate={displayMode.immediate}
                 language={language}
+                overlayLanguageManager={overlayLanguageManager}
+            />
+            <FirstWinBonusTimerMode
+                payload={firstWinBonusTimerPayload}
+                visible={displayMode.mode === DisplayMode.FirstWinBonusTimer}
+                immediate={displayMode.immediate}
                 overlayLanguageManager={overlayLanguageManager}
             />
         </div>

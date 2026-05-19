@@ -82,6 +82,7 @@ function buildSettings(): AppSettings {
         detailed_analysis_atstart: false,
         analysis_worker_threads: 1,
         latest_today_win_bonus_time: null,
+        first_win_bonus_display_mode: "always",
     };
 }
 

@@ -596,6 +596,32 @@
     opacity: 0;
 }
 
+.overlayPageRoot :global(#firstWinBonusTimer) {
+    position: absolute;
+    top: 12vh;
+    right: -38vh;
+    min-width: min(34vh, calc(100vw - 4vh));
+    color: white;
+    text-align: right;
+    text-shadow: 0.1vh 0.1vh 0.1vh black;
+    opacity: 0;
+    transition: all 1s;
+}
+
+.overlayPageRoot :global(.first-win-bonus-title) {
+    color: #80dfff;
+    font-size: 1.8vh;
+    font-weight: bold;
+    line-height: 1.1;
+}
+
+.overlayPageRoot :global(.first-win-bonus-value) {
+    color: #a8ff94;
+    font-size: 2.6vh;
+    font-weight: bold;
+    line-height: 1.15;
+}
+
 .overlayPageRoot :global(.player_stat) {
     color: #f4f489;
 }

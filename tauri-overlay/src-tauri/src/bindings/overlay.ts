@@ -2,7 +2,7 @@
 
 export type AnalysisCompletedPayload = { mode: string, message: string, };
 
-export type AppSettings = { start_with_windows: boolean, minimize_to_tray: boolean, start_minimized: boolean, auto_update: boolean, duration: number, show_player_winrates: boolean, show_replay_info_after_game: boolean, show_session: boolean, show_charts: boolean, hide_nicknames_in_overlay: boolean, account_folder: string, screenshot_folder: string, color_player1: string, color_player2: string, color_amon: string, color_mastery: string, "hotkey_show/hide": string | null, hotkey_show: string | null, hotkey_hide: string | null, hotkey_newer: string | null, hotkey_older: string | null, hotkey_winrates: string | null, enable_logging: boolean, dark_theme: boolean, language: string, monitor: number, performance_show: boolean, performance_hotkey: string | null, performance_processes: Array<string>, performance_geometry?: [number, number, number, number], rng_choices: { [key in string]: boolean }, player_notes: { [key in string]: string }, main_names: Array<string>, detailed_analysis_atstart: boolean, analysis_worker_threads: number, latest_today_win_bonus_time: string | null, };
+export type AppSettings = { start_with_windows: boolean, minimize_to_tray: boolean, start_minimized: boolean, auto_update: boolean, duration: number, show_player_winrates: boolean, show_replay_info_after_game: boolean, show_session: boolean, show_charts: boolean, hide_nicknames_in_overlay: boolean, account_folder: string, screenshot_folder: string, color_player1: string, color_player2: string, color_amon: string, color_mastery: string, "hotkey_show/hide": string | null, hotkey_show: string | null, hotkey_hide: string | null, hotkey_newer: string | null, hotkey_older: string | null, hotkey_winrates: string | null, enable_logging: boolean, dark_theme: boolean, language: string, monitor: number, performance_show: boolean, performance_hotkey: string | null, performance_processes: Array<string>, performance_geometry?: [number, number, number, number], rng_choices: { [key in string]: boolean }, player_notes: { [key in string]: string }, main_names: Array<string>, detailed_analysis_atstart: boolean, analysis_worker_threads: number, latest_today_win_bonus_time: string | null, first_win_bonus_display_mode: FirstWinBonusDisplayMode, };
 
 export type ConfigChatPayload = { status: string, chat: ReplayChatPayload, };
 
@@ -17,6 +17,10 @@ export type ConfigReplaysPayload = { status: string, replays: Array<GamesRowPayl
 export type ConfigWeekliesPayload = { status: string, weeklies: Array<WeeklyRowPayload>, };
 
 export type EmptyPayload = Record<symbol, never>;
+
+export type FirstWinBonusDisplayMode = "hidden" | "available_only" | "always";
+
+export type FirstWinBonusTimerPayload = { visible: boolean, available: boolean, seconds_until_available: number, next_available_time?: string, };
 
 export type GamesRowPayload = { file: string, date: number, map: string, result: string, difficulty: string, p1: string, p2: string, slot1_commander: string, slot2_commander: string, enemy: string, main_commander: string, ally_commander: string, length: number, main_apm: number, ally_apm: number, main_kills: number, ally_kills: number, extension: boolean, brutal_plus: number, weekly: boolean, weekly_name?: string, mutators: Array<UiMutatorRow>, is_mutation: boolean, };
 

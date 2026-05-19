@@ -1,11 +1,14 @@
+use chrono::{DateTime, Duration as ChronoDuration, SecondsFormat, Utc};
 use image::{GrayImage, Luma, Rgba, RgbaImage};
 use imageproc::region_labelling::{Connectivity, connected_components};
 use std::collections::{BTreeMap, VecDeque};
-use xcap::Monitor;
+use xcap::{Monitor, Window};
 
-use crate::{AppSettings, MonitorSettingsOps};
+use crate::{AppSettings, FirstWinBonusTimerPayload, MonitorSettingsOps};
 
 pub const TODAY_WIN_BONUS_SETTINGS_KEY: &str = "latest_today_win_bonus_time";
+pub const FIRST_WIN_BONUS_COOLDOWN_HOURS: i64 = 22;
+pub const FIRST_WIN_BONUS_COOLDOWN_SECONDS: u64 = FIRST_WIN_BONUS_COOLDOWN_HOURS as u64 * 60 * 60;
 
 const TARGET_TODAY_WIN_BONUS_XP: u32 = 10_000;
 
@@ -37,6 +40,75 @@ impl TodayWinBonusDetection {
 
     pub fn xp(&self) -> Option<u32> {
         self.xp
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FirstWinBonusTimerStatus {
+    available: bool,
+    seconds_until_available: u64,
+    next_available_time: Option<DateTime<Utc>>,
+}
+
+impl FirstWinBonusTimerStatus {
+    pub fn new(
+        available: bool,
+        seconds_until_available: u64,
+        next_available_time: Option<DateTime<Utc>>,
+    ) -> Self {
+        Self {
+            available,
+            seconds_until_available,
+            next_available_time,
+        }
+    }
+
+    pub fn from_latest_acquired_time(
+        latest_acquired_time: Option<&str>,
+        now: DateTime<Utc>,
+    ) -> Self {
+        let Some(latest_acquired_time) = latest_acquired_time else {
+            return Self::new(true, 0, None);
+        };
+        let Ok(latest_acquired_time) = DateTime::parse_from_rfc3339(latest_acquired_time) else {
+            return Self::new(true, 0, None);
+        };
+
+        let next_available_time = latest_acquired_time.with_timezone(&Utc)
+            + ChronoDuration::seconds(FIRST_WIN_BONUS_COOLDOWN_SECONDS as i64);
+        let seconds_until_available = next_available_time
+            .signed_duration_since(now)
+            .num_seconds()
+            .max(0) as u64;
+
+        Self::new(
+            seconds_until_available == 0,
+            seconds_until_available,
+            Some(next_available_time),
+        )
+    }
+
+    pub fn available(&self) -> bool {
+        self.available
+    }
+
+    pub fn seconds_until_available(&self) -> u64 {
+        self.seconds_until_available
+    }
+
+    pub fn next_available_time(&self) -> Option<DateTime<Utc>> {
+        self.next_available_time
+    }
+
+    pub fn into_payload(self, visible: bool) -> FirstWinBonusTimerPayload {
+        FirstWinBonusTimerPayload {
+            visible,
+            available: self.available,
+            seconds_until_available: self.seconds_until_available,
+            next_available_time: self
+                .next_available_time
+                .map(|time| time.to_rfc3339_opts(SecondsFormat::Secs, true)),
+        }
     }
 }
 
@@ -205,6 +277,84 @@ impl CaptureMonitor {
     }
 
     fn height(&self) -> u32 {
+        self.height
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ScreenRect {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+impl ScreenRect {
+    pub fn new(x: i32, y: i32, width: u32, height: u32) -> Option<Self> {
+        if width == 0 || height == 0 {
+            return None;
+        }
+
+        Some(Self {
+            x,
+            y,
+            width,
+            height,
+        })
+    }
+
+    pub fn x(&self) -> i32 {
+        self.x
+    }
+
+    pub fn y(&self) -> i32 {
+        self.y
+    }
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MonitorCaptureRegion {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+}
+
+impl MonitorCaptureRegion {
+    fn new(x: u32, y: u32, width: u32, height: u32) -> Option<Self> {
+        if width == 0 || height == 0 {
+            return None;
+        }
+
+        Some(Self {
+            x,
+            y,
+            width,
+            height,
+        })
+    }
+
+    pub fn x(&self) -> u32 {
+        self.x
+    }
+
+    pub fn y(&self) -> u32 {
+        self.y
+    }
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
         self.height
     }
 }
@@ -674,6 +824,119 @@ impl TodayWinBonusDetector {
         let image = Self::capture_selected_monitor_left_half(settings.monitor())?;
         let reader = ImageprocTodayWinBonusDigitReader;
         Self::detect_in_reward_region_with_reader(&image, &reader)
+    }
+
+    pub fn capture_focused_sc2_window_detection() -> Result<Option<TodayWinBonusDetection>, String>
+    {
+        let Some(window) = Self::focused_sc2_window()? else {
+            return Ok(None);
+        };
+        let image = Self::capture_focused_window_visible_region(&window)?;
+        let reader = ImageprocTodayWinBonusDigitReader;
+        Self::detect_in_left_half_with_reader(&image, &reader).map(Some)
+    }
+
+    pub fn focused_sc2_window_active() -> Result<bool, String> {
+        Self::focused_sc2_window().map(|window| window.is_some())
+    }
+
+    pub fn is_sc2_window_identity(app_name: &str, title: &str) -> bool {
+        let normalized_app_name = app_name.trim().to_ascii_lowercase();
+        let normalized_title = title.trim().to_ascii_lowercase();
+
+        normalized_app_name == "sc2.exe"
+            || normalized_app_name == "sc2_x64.exe"
+            || normalized_app_name == "starcraft ii.exe"
+            || normalized_app_name == "starcraft ii"
+            || normalized_title == "starcraft ii"
+    }
+
+    fn focused_sc2_window() -> Result<Option<Window>, String> {
+        let windows = Window::all()
+            .map_err(|error| format!("Failed to enumerate windows for SC2 capture: {error}"))?;
+
+        Ok(windows.into_iter().find(|window| {
+            if !window.is_focused().unwrap_or(false) || window.is_minimized().unwrap_or(true) {
+                return false;
+            }
+
+            let app_name = window.app_name().unwrap_or_default();
+            let title = window.title().unwrap_or_default();
+            Self::is_sc2_window_identity(&app_name, &title)
+        }))
+    }
+
+    fn capture_focused_window_visible_region(window: &Window) -> Result<RgbaImage, String> {
+        let monitor = window
+            .current_monitor()
+            .map_err(|error| format!("Failed to resolve focused SC2 monitor: {error}"))?;
+        let window_rect = ScreenRect::new(
+            window
+                .x()
+                .map_err(|error| format!("Failed to read focused SC2 window x: {error}"))?,
+            window
+                .y()
+                .map_err(|error| format!("Failed to read focused SC2 window y: {error}"))?,
+            window
+                .width()
+                .map_err(|error| format!("Failed to read focused SC2 window width: {error}"))?,
+            window
+                .height()
+                .map_err(|error| format!("Failed to read focused SC2 window height: {error}"))?,
+        )
+        .ok_or_else(|| "Focused SC2 window has invalid dimensions".to_string())?;
+        let monitor_rect = ScreenRect::new(
+            monitor
+                .x()
+                .map_err(|error| format!("Failed to read focused SC2 monitor x: {error}"))?,
+            monitor
+                .y()
+                .map_err(|error| format!("Failed to read focused SC2 monitor y: {error}"))?,
+            monitor
+                .width()
+                .map_err(|error| format!("Failed to read focused SC2 monitor width: {error}"))?,
+            monitor
+                .height()
+                .map_err(|error| format!("Failed to read focused SC2 monitor height: {error}"))?,
+        )
+        .ok_or_else(|| "Focused SC2 monitor has invalid dimensions".to_string())?;
+        let region = Self::monitor_capture_region_for_window(window_rect, monitor_rect)
+            .ok_or_else(|| "Focused SC2 window is outside its current monitor".to_string())?;
+
+        monitor
+            .capture_region(region.x(), region.y(), region.width(), region.height())
+            .map_err(|error| format!("Failed to capture focused SC2 monitor region: {error}"))
+    }
+
+    pub fn monitor_capture_region_for_window(
+        window_rect: ScreenRect,
+        monitor_rect: ScreenRect,
+    ) -> Option<MonitorCaptureRegion> {
+        let window_left = i64::from(window_rect.x());
+        let window_top = i64::from(window_rect.y());
+        let window_right = window_left.checked_add(i64::from(window_rect.width()))?;
+        let window_bottom = window_top.checked_add(i64::from(window_rect.height()))?;
+
+        let monitor_left = i64::from(monitor_rect.x());
+        let monitor_top = i64::from(monitor_rect.y());
+        let monitor_right = monitor_left.checked_add(i64::from(monitor_rect.width()))?;
+        let monitor_bottom = monitor_top.checked_add(i64::from(monitor_rect.height()))?;
+
+        let capture_left = window_left.max(monitor_left);
+        let capture_top = window_top.max(monitor_top);
+        let capture_right = window_right.min(monitor_right);
+        let capture_bottom = window_bottom.min(monitor_bottom);
+
+        if capture_right <= capture_left || capture_bottom <= capture_top {
+            return None;
+        }
+
+        MonitorCaptureRegion::new(
+            u32::try_from(capture_left - monitor_left).ok()?,
+            u32::try_from(capture_top - monitor_top).ok()?,
+            u32::try_from(capture_right - capture_left).ok()?,
+            u32::try_from(capture_bottom - capture_top).ok()?,
+        )
     }
 
     fn capture_selected_monitor_left_half(requested_monitor: usize) -> Result<RgbaImage, String> {

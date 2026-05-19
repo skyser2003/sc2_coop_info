@@ -21,7 +21,7 @@ use crate::{
     path_manager,
     performance_overlay::PerformanceGeometry,
     replay_analysis::ReplayAnalysis,
-    shared_types::OverlayInitColorsDurationPayload,
+    shared_types::{FirstWinBonusDisplayMode, OverlayInitColorsDurationPayload},
 };
 
 pub type RandomizerChoices = BTreeMap<String, bool>;
@@ -68,6 +68,7 @@ pub struct AppSettings {
     detailed_analysis_atstart: bool,
     analysis_worker_threads: usize,
     latest_today_win_bonus_time: Option<String>,
+    first_win_bonus_display_mode: FirstWinBonusDisplayMode,
     #[serde(skip)]
     #[ts(skip)]
     present_keys: BTreeSet<String>,
@@ -361,6 +362,10 @@ impl AppSettings {
         self.latest_today_win_bonus_time.as_deref()
     }
 
+    pub fn first_win_bonus_display_mode(&self) -> FirstWinBonusDisplayMode {
+        self.first_win_bonus_display_mode
+    }
+
     pub fn present_keys(&self) -> &BTreeSet<String> {
         &self.present_keys
     }
@@ -393,6 +398,10 @@ impl AppSettings {
 
     pub fn set_latest_today_win_bonus_time(&mut self, value: Option<String>) {
         self.latest_today_win_bonus_time = value;
+    }
+
+    pub fn set_first_win_bonus_display_mode(&mut self, value: FirstWinBonusDisplayMode) {
+        self.first_win_bonus_display_mode = value;
     }
 }
 
@@ -1003,6 +1012,7 @@ impl Default for AppSettings {
             detailed_analysis_atstart: false,
             analysis_worker_threads: Self::default_analysis_worker_threads(),
             latest_today_win_bonus_time: None,
+            first_win_bonus_display_mode: FirstWinBonusDisplayMode::Always,
             present_keys: Default::default(),
         };
 

@@ -61,6 +61,28 @@ pub struct OverlayRandomizerBrutalPlus {
     pub mutator_count: OverlayRandomizerRange,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+#[ts(rename_all = "snake_case")]
+pub enum FirstWinBonusDisplayMode {
+    #[default]
+    Hidden,
+    AvailableOnly,
+    Always,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct FirstWinBonusTimerPayload {
+    pub visible: bool,
+    pub available: bool,
+    #[ts(type = "number")]
+    pub seconds_until_available: u64,
+    #[ts(optional)]
+    pub next_available_time: Option<String>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct EmptyPayload {}
