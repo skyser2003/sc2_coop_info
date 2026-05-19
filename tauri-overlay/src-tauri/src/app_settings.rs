@@ -67,6 +67,7 @@ pub struct AppSettings {
     main_names: Vec<String>,
     detailed_analysis_atstart: bool,
     analysis_worker_threads: usize,
+    latest_today_win_bonus_time: Option<String>,
     #[serde(skip)]
     #[ts(skip)]
     present_keys: BTreeSet<String>,
@@ -356,6 +357,10 @@ impl AppSettings {
         self.analysis_worker_threads
     }
 
+    pub fn latest_today_win_bonus_time(&self) -> Option<&str> {
+        self.latest_today_win_bonus_time.as_deref()
+    }
+
     pub fn present_keys(&self) -> &BTreeSet<String> {
         &self.present_keys
     }
@@ -384,6 +389,10 @@ impl AppSettings {
 
     pub fn set_performance_geometry(&mut self, value: Option<[i32; 4]>) {
         self.performance_geometry = value;
+    }
+
+    pub fn set_latest_today_win_bonus_time(&mut self, value: Option<String>) {
+        self.latest_today_win_bonus_time = value;
     }
 }
 
@@ -993,6 +1002,7 @@ impl Default for AppSettings {
             main_names: Vec::new(),
             detailed_analysis_atstart: false,
             analysis_worker_threads: Self::default_analysis_worker_threads(),
+            latest_today_win_bonus_time: None,
             present_keys: Default::default(),
         };
 

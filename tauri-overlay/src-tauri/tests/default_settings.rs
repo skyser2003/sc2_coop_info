@@ -33,6 +33,7 @@ fn merge_settings_with_defaults_uses_requested_overlay_defaults() {
     assert_eq!(merged.hotkey_older(), Some("Ctrl+Alt+8"));
     assert_eq!(merged.hotkey_winrates(), Some("Ctrl+Alt+-"));
     assert_eq!(merged.performance_hotkey(), None);
+    assert_eq!(merged.latest_today_win_bonus_time(), None);
     assert_eq!(
         merged.analysis_worker_threads(),
         AppSettings::default_analysis_worker_threads()
@@ -52,6 +53,18 @@ fn merge_settings_with_defaults_preserves_existing_values() {
     assert!(!merged.show_session());
     assert!(!merged.show_charts());
     assert!(merged.show_replay_info_after_game());
+}
+
+#[test]
+fn merge_settings_with_defaults_preserves_latest_today_win_bonus_time() {
+    let merged = AppSettings::merge_settings_with_defaults(json!({
+        "latest_today_win_bonus_time": "2026-05-18T12:34:56Z",
+    }));
+
+    assert_eq!(
+        merged.latest_today_win_bonus_time(),
+        Some("2026-05-18T12:34:56Z")
+    );
 }
 
 #[test]

@@ -34,6 +34,7 @@ mod replay_visual;
 mod shared_types;
 mod stats_state;
 mod test_helper;
+mod today_win_bonus;
 pub use app_settings::{AppSettings, PlayerNotes, RandomizerChoices};
 pub use backend_state::BackendState;
 pub use command_payloads::{
@@ -68,6 +69,10 @@ pub use stats_state::{
     AnalysisMode, StartupAnalysisRequestOutcome, StartupAnalysisTrigger, StatsSnapshot, StatsState,
 };
 pub use test_helper::TestHelperOps;
+pub use today_win_bonus::{
+    ImageprocTodayWinBonusDigitReader, TODAY_WIN_BONUS_SETTINGS_KEY, TodayWinBonusDetection,
+    TodayWinBonusDetector, TodayWinBonusDigitReader,
+};
 
 #[macro_export]
 macro_rules! sco_log {
@@ -3564,6 +3569,8 @@ impl TauriOverlayOps {
             TauriOverlayOps::spawn_detailed_cache_persist(&state, cache_entry, "watch");
         }
 
+        TauriOverlayOps::spawn_today_win_bonus_scan(app.clone(), replay.file.clone());
+
         let invalidation_generation = state.invalidate_delayed_player_stats_popup_generation();
         crate::sco_log!(
             "[SCO/watch] invalidated delayed player stats popups generation={} replay='{}'",
@@ -3572,6 +3579,52 @@ impl TauriOverlayOps {
         );
 
         ReplayProcessOutcome::Processed
+    }
+}
+
+impl TauriOverlayOps {
+    fn spawn_today_win_bonus_scan(app: tauri::AppHandle<Wry>, replay_file: String) {
+        thread::spawn(move || {
+            thread::sleep(Duration::from_secs(30));
+
+            let state = app.state::<BackendState>();
+            let settings = state.read_settings_memory();
+            match today_win_bonus::TodayWinBonusDetector::capture_selected_monitor_detection(
+                &settings,
+            ) {
+                Ok(detection) if detection.found_today_win_bonus() => {
+                    let detected_at =
+                        chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+                    match state.persist_single_setting_value(
+                        today_win_bonus::TODAY_WIN_BONUS_SETTINGS_KEY,
+                        Value::String(detected_at.clone()),
+                    ) {
+                        Ok(()) => crate::sco_log!(
+                            "[SCO/today-win-bonus] detected and saved latest time='{}' replay='{}'",
+                            detected_at,
+                            replay_file
+                        ),
+                        Err(error) => crate::sco_log!(
+                            "[SCO/today-win-bonus] detected but failed to save replay='{}': {error}",
+                            replay_file
+                        ),
+                    }
+                }
+                Ok(detection) => {
+                    crate::sco_log!(
+                        "[SCO/today-win-bonus] not detected replay='{}' xp={:?}",
+                        replay_file,
+                        detection.xp()
+                    );
+                }
+                Err(error) => {
+                    crate::sco_log!(
+                        "[SCO/today-win-bonus] OCR scan failed replay='{}': {error}",
+                        replay_file
+                    );
+                }
+            }
+        });
     }
 }
 
