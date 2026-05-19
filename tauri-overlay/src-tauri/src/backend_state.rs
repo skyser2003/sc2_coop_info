@@ -7,7 +7,7 @@ use std::{
         mpsc,
     },
     thread,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use s2coop_analyzer::detailed_replay_analysis::{
@@ -21,8 +21,8 @@ use crate::shared_types::{
     OverlayPlayerStatsPayload, OverlayPlayerStatsRow, ReplayScanProgressPayload,
 };
 use crate::{
-    AnalysisMode, AppSettings, ReplayInfo, ReplayWatcherMessage, StatsState, TauriOverlayOps,
-    UNLIMITED_REPLAY_LIMIT,
+    AnalysisMode, AppSettings, ReplayInfo, ReplayWatcherMessage, Sc2GameState, Sc2GameStateTracker,
+    Sc2GameStateTransition, StatsState, TauriOverlayOps, UNLIMITED_REPLAY_LIMIT,
     overlay_info::{ResolvedHotkeyBinding, RuntimeFlags},
     replay_analysis::ReplayAnalysis,
 };
@@ -86,6 +86,7 @@ pub struct BackendState {
     file_logging_enabled: Arc<AtomicBool>,
     replay_watcher_sender: Arc<Mutex<Option<mpsc::Sender<ReplayWatcherMessage>>>>,
     replay_state: Arc<Mutex<ReplayState>>,
+    sc2_game_state: Arc<Mutex<Sc2GameStateTracker>>,
     analyzer_data_dir: PathBuf,
     dictionary_data: Arc<Mutex<CachedLoad<Sc2DictionaryData>>>,
     replay_analysis_resources: Arc<Mutex<CachedLoad<ReplayAnalysisResources>>>,
@@ -457,6 +458,7 @@ impl BackendState {
                 replays: Arc::new(Mutex::new(HashMap::new())),
                 selected_replay_file: Arc::new(Mutex::new(None)),
             })),
+            sc2_game_state: Arc::new(Mutex::new(Sc2GameStateTracker::new(Instant::now()))),
             analyzer_data_dir: crate::path_manager::PathManagerOps::get_json_data_dir(),
             dictionary_data: Arc::new(Mutex::new(CachedLoad::Uninitialized)),
             replay_analysis_resources: Arc::new(Mutex::new(CachedLoad::Uninitialized)),
@@ -482,6 +484,42 @@ impl BackendState {
     pub fn set_overlay_replay_data_active(&self, active: bool) {
         self.overlay_replay_data_active
             .store(active, Ordering::Release);
+    }
+
+    pub fn sc2_game_state(&self) -> Sc2GameState {
+        self.sc2_game_state
+            .lock()
+            .map(|tracker| tracker.state())
+            .unwrap_or(Sc2GameState::Lobby)
+    }
+
+    pub fn sc2_game_state_should_poll_live_game(&self) -> bool {
+        self.sc2_game_state
+            .lock()
+            .map(|tracker| tracker.should_poll_live_game())
+            .unwrap_or(true)
+    }
+
+    pub fn transition_sc2_game_state(
+        &self,
+        next_state: Sc2GameState,
+        now: Instant,
+    ) -> Option<Sc2GameStateTransition> {
+        self.sc2_game_state
+            .lock()
+            .ok()
+            .and_then(|mut tracker| tracker.transition_to(next_state, now))
+    }
+
+    pub fn advance_sc2_game_state_timers(
+        &self,
+        now: Instant,
+        game_starting_duration: Duration,
+        game_ended_duration: Duration,
+    ) -> Option<Sc2GameStateTransition> {
+        self.sc2_game_state.lock().ok().and_then(|mut tracker| {
+            tracker.advance_timed_transitions(now, game_starting_duration, game_ended_duration)
+        })
     }
 
     pub fn clear_stats_current_replay_files(&self) {

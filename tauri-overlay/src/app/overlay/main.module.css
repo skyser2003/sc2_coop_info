@@ -617,7 +617,14 @@
 
 .overlayPageRoot :global(.first-win-bonus-value) {
     color: #a8ff94;
-    font-size: 2.6vh;
+    font-size: 1.75vh;
+    font-weight: bold;
+    line-height: 1.2;
+}
+
+.overlayPageRoot :global(.first-win-bonus-next-time) {
+    color: #d7fff0;
+    font-size: 2.65vh;
     font-weight: bold;
     line-height: 1.15;
 }

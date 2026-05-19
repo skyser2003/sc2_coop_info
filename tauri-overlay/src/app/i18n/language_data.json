@@ -386,9 +386,13 @@
         "en": "Available now",
         "ko": "지금 가능"
     },
+    "ui_overlay_first_win_bonus_unmeasured": {
+        "en": "Never measured",
+        "ko": "측정된 적 없음"
+    },
     "ui_overlay_first_win_bonus_remaining": {
-        "en": "Next in {{time}}",
-        "ko": "{{time}} 후 가능"
+        "en": "Available in {{time}}",
+        "ko": "{{time}} 후 획득 가능"
     },
     "ui_overlay_my_commander_placeholder": {
         "en": "[Me]",
