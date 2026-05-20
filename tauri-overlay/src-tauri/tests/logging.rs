@@ -1,8 +1,40 @@
 use sco_tauri_overlay::TestHelperOps;
-use sco_tauri_overlay::{AppSettings, TauriOverlayOps};
+use sco_tauri_overlay::{AppSettings, LoggingOps, TauriOverlayOps};
 use serde_json::Value;
 use serde_json::json;
+use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
+use std::process;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+struct LoggingTestDir {
+    path: PathBuf,
+}
+
+impl LoggingTestDir {
+    fn new(name: &str) -> Self {
+        let now_nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        let path = std::env::temp_dir().join(format!(
+            "sco-tauri-overlay-{name}-{}-{now_nanos}",
+            process::id()
+        ));
+        fs::create_dir_all(&path).expect("test log directory should be created");
+        Self { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for LoggingTestDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.path);
+    }
+}
 
 #[test]
 fn sanitize_settings_value_removes_deleted_overlay_settings() {
@@ -52,6 +84,79 @@ fn logs_file_path_stays_next_to_settings_file() {
     let path = logs_file_path_from_settings_path(Path::new(&settings_path));
 
     assert_eq!(path, TestHelperOps::test_config_path("logs.txt"));
+}
+
+#[test]
+fn rolling_log_path_preserves_file_extension() {
+    let log_path = PathBuf::from("logs.txt");
+
+    assert_eq!(
+        LoggingOps::rolling_log_file_path(&log_path, 1),
+        PathBuf::from("logs.1.txt")
+    );
+    assert_eq!(
+        LoggingOps::rolling_log_file_path(&log_path, 2),
+        PathBuf::from("logs.2.txt")
+    );
+}
+
+#[test]
+fn append_line_rotates_current_log_when_write_would_exceed_limit() {
+    let test_dir = LoggingTestDir::new("rotate-current");
+    let log_path = test_dir.path().join("logs.txt");
+    let archive_path = LoggingOps::rolling_log_file_path(&log_path, 1);
+
+    fs::write(&log_path, "current\n").expect("current log should be seeded");
+    OpenOptions::new()
+        .write(true)
+        .open(&log_path)
+        .expect("current log should open for sizing")
+        .set_len(LoggingOps::max_log_file_bytes())
+        .expect("current log should resize");
+
+    LoggingOps::append_line_to_path(&log_path, "next").expect("log append should rotate");
+
+    assert_eq!(
+        fs::read_to_string(&log_path).expect("current log should be readable"),
+        "next\n"
+    );
+    assert_eq!(
+        fs::metadata(&archive_path)
+            .expect("first archive should exist")
+            .len(),
+        LoggingOps::max_log_file_bytes()
+    );
+}
+
+#[test]
+fn append_line_keeps_only_current_log_and_two_archives() {
+    let test_dir = LoggingTestDir::new("retain-three");
+    let log_path = test_dir.path().join("logs.txt");
+    let first_archive_path = LoggingOps::rolling_log_file_path(&log_path, 1);
+    let second_archive_path = LoggingOps::rolling_log_file_path(&log_path, 2);
+
+    fs::write(&log_path, "current\n").expect("current log should be seeded");
+    OpenOptions::new()
+        .write(true)
+        .open(&log_path)
+        .expect("current log should open for sizing")
+        .set_len(LoggingOps::max_log_file_bytes())
+        .expect("current log should resize");
+    fs::write(&first_archive_path, "previous\n").expect("first archive should be seeded");
+    fs::write(&second_archive_path, "oldest\n").expect("second archive should be seeded");
+
+    LoggingOps::append_line_to_path(&log_path, "next").expect("log append should rotate");
+
+    assert_eq!(
+        fs::read_to_string(&log_path).expect("current log should be readable"),
+        "next\n"
+    );
+    assert_eq!(
+        fs::read_to_string(&second_archive_path).expect("second archive should be readable"),
+        "previous\n"
+    );
+    assert_eq!(LoggingOps::max_rolling_log_files(), 3);
+    assert!(!LoggingOps::rolling_log_file_path(&log_path, 3).exists());
 }
 
 #[test]
