@@ -73,8 +73,9 @@ pub use stats_state::{
 pub use test_helper::TestHelperOps;
 pub use today_win_bonus::{
     FirstWinBonusTimerStatus, ImageprocTodayWinBonusDigitReader, MonitorCaptureRegion, ScreenRect,
-    TODAY_WIN_BONUS_SETTINGS_KEY, TodayWinBonusDetection, TodayWinBonusDetector,
-    TodayWinBonusDigitReader,
+    TODAY_WIN_BONUS_SETTINGS_KEY, TodayWinBonusCaptureFallbackState, TodayWinBonusDetection,
+    TodayWinBonusDetector, TodayWinBonusDigitReader, TodayWinBonusWindowCapture,
+    WINDOW_CAPTURE_FAILURES_BEFORE_REGION_FALLBACK,
 };
 
 #[macro_export]
@@ -316,7 +317,7 @@ impl TauriOverlayOps {
             crate::sco_log!("[SCO/hotkey] Failed to reload hotkeys: {error}");
         }
         if overlay_placement_changed
-            && let Some(window) = app.get_webview_window("overlay")
+            && let Some(window) = app.get_webview_window(overlay_info::OVERLAY_WINDOW_LABEL)
             && let Err(error) = overlay_info::OverlayInfoOps::apply_overlay_placement_from_settings(
                 &window,
                 &next_settings,
@@ -3631,10 +3632,13 @@ impl TauriOverlayOps {
 
             let scan_started_at = Instant::now();
             let scan_deadline = scan_started_at + SCAN_DURATION;
+            let mut today_win_bonus_capture = today_win_bonus::TodayWinBonusWindowCapture::new();
             crate::sco_log!(
-                "[SCO/today-win-bonus] scan started replay='{}' duration_secs={} interval_secs=1",
+                "[SCO/today-win-bonus] scan started replay='{}' duration_secs={} interval_secs=1 initial_capture_method='{}' fallback_after_failures={}",
                 replay_file,
-                SCAN_DURATION.as_secs()
+                SCAN_DURATION.as_secs(),
+                today_win_bonus::TodayWinBonusWindowCapture::initial_capture_method(),
+                today_win_bonus::WINDOW_CAPTURE_FAILURES_BEFORE_REGION_FALLBACK
             );
             let mut attempts = 0u32;
             let mut captured = 0u32;
@@ -3649,8 +3653,7 @@ impl TauriOverlayOps {
             while Instant::now() < scan_deadline {
                 let state = app.state::<BackendState>();
                 attempts = attempts.saturating_add(1);
-                match today_win_bonus::TodayWinBonusDetector::capture_focused_sc2_window_detection()
-                {
+                match today_win_bonus_capture.capture_focused_sc2_window_detection() {
                     Ok(Some(detection)) if detection.found_today_win_bonus() => {
                         captured = captured.saturating_add(1);
                         let detected_time =
@@ -3684,8 +3687,9 @@ impl TauriOverlayOps {
                 thread::sleep(Duration::from_secs(1));
             }
 
+            let capture_fallback_state = today_win_bonus_capture.fallback_state();
             crate::sco_log!(
-                "[SCO/today-win-bonus] scan summary replay='{}' reason={} attempts={} captured={} not_detected={} skipped_not_focused={} errors={} elapsed_ms={} detected_at='{}' save_error='{}' last_error='{}'",
+                "[SCO/today-win-bonus] scan summary replay='{}' reason={} attempts={} captured={} not_detected={} skipped_not_focused={} errors={} window_capture_failures={} fallback_happened={} selected_fallback_method='{}' active_capture_method='{}' elapsed_ms={} detected_at='{}' save_error='{}' last_error='{}'",
                 replay_file,
                 ended_reason,
                 attempts,
@@ -3693,6 +3697,10 @@ impl TauriOverlayOps {
                 not_detected,
                 skipped_not_focused,
                 errors,
+                capture_fallback_state.consecutive_window_capture_failures(),
+                capture_fallback_state.region_capture_fallback(),
+                today_win_bonus_capture.selected_fallback_method(),
+                today_win_bonus_capture.active_capture_method(),
                 scan_started_at.elapsed().as_millis(),
                 detected_at.as_deref().unwrap_or(""),
                 save_error.as_deref().unwrap_or(""),
@@ -4463,9 +4471,12 @@ impl TauriOverlayOps {
             return WindowCloseAction::AllowClose;
         }
 
-        if label == "performance" {
+        if label == overlay_info::PERFORMANCE_WINDOW_LABEL {
             WindowCloseAction::HidePerformance
-        } else if label == "overlay" || minimize_to_tray {
+        } else if label == overlay_info::OVERLAY_WINDOW_LABEL
+            || label == overlay_info::SC2_OVERLAY_WINDOW_LABEL
+            || minimize_to_tray
+        {
             WindowCloseAction::HideWindow
         } else {
             WindowCloseAction::ExitApp
@@ -4484,7 +4495,12 @@ impl TauriOverlayOps {
             tray_icon.take();
         }
 
-        for label in ["performance", "overlay", "config"] {
+        for label in [
+            overlay_info::PERFORMANCE_WINDOW_LABEL,
+            overlay_info::OVERLAY_WINDOW_LABEL,
+            overlay_info::SC2_OVERLAY_WINDOW_LABEL,
+            "config",
+        ] {
             if let Some(window) = app.get_webview_window(label) {
                 let _ = window.hide();
                 let _ = window.destroy();
@@ -5363,32 +5379,40 @@ pub fn run() {
                 }
             }
             tauri::WindowEvent::Moved(_) => {
-                if window.label() == "performance"
+                if window.label() == overlay_info::PERFORMANCE_WINDOW_LABEL
                     && let Some(performance_window) =
-                        window.app_handle().get_webview_window("performance")
+                        window
+                            .app_handle()
+                            .get_webview_window(overlay_info::PERFORMANCE_WINDOW_LABEL)
                     {
                         performance_overlay::PerformanceOverlayOps::persist_geometry(&performance_window);
                     }
             }
             tauri::WindowEvent::Resized(_) => {
-                if window.label() == "overlay"
-                    && let Some(overlay_window) = window.app_handle().get_webview_window("overlay")
+                if window.label() == overlay_info::OVERLAY_WINDOW_LABEL
+                    && let Some(overlay_window) = window
+                        .app_handle()
+                        .get_webview_window(overlay_info::OVERLAY_WINDOW_LABEL)
                         && let Err(error) = overlay_info::OverlayInfoOps::stabilize_overlay_bounds(&overlay_window)
                         {
                             crate::sco_log!(
                                 "[SCO/overlay] Failed to stabilize overlay bounds after resize: {error}"
                             );
                         }
-                if window.label() == "performance"
+                if window.label() == overlay_info::PERFORMANCE_WINDOW_LABEL
                     && let Some(performance_window) =
-                        window.app_handle().get_webview_window("performance")
+                        window
+                            .app_handle()
+                            .get_webview_window(overlay_info::PERFORMANCE_WINDOW_LABEL)
                     {
                         performance_overlay::PerformanceOverlayOps::persist_geometry(&performance_window);
                     }
             }
             tauri::WindowEvent::ScaleFactorChanged { .. } => {
-                if window.label() == "overlay"
-                    && let Some(overlay_window) = window.app_handle().get_webview_window("overlay")
+                if window.label() == overlay_info::OVERLAY_WINDOW_LABEL
+                    && let Some(overlay_window) = window
+                        .app_handle()
+                        .get_webview_window(overlay_info::OVERLAY_WINDOW_LABEL)
                         && let Err(error) = overlay_info::OverlayInfoOps::stabilize_overlay_bounds(&overlay_window)
                         {
                             crate::sco_log!(
@@ -5417,6 +5441,7 @@ pub fn run() {
 
             // Always start with overlay hidden; user can show it via hotkey/tray/actions.
             overlay_info::OverlayInfoOps::hide_overlay_window(app.app_handle());
+            overlay_info::OverlayInfoOps::hide_sc2_overlay_window(app.app_handle());
 
             if flags.start_minimized() {
                 if let Some(config_window) = app.get_webview_window("config") {
@@ -5427,34 +5452,46 @@ pub fn run() {
             }
 
             let _ = app
-                .get_webview_window("overlay")
+                .get_webview_window(overlay_info::OVERLAY_WINDOW_LABEL)
                 .and_then(|w| w.set_always_on_top(true).ok());
             let _ = app
-                .get_webview_window("overlay")
+                .get_webview_window(overlay_info::OVERLAY_WINDOW_LABEL)
                 .and_then(|w| w.set_skip_taskbar(true).ok());
             let _ = app
-                .get_webview_window("overlay")
+                .get_webview_window(overlay_info::OVERLAY_WINDOW_LABEL)
                 .and_then(|w| w.set_focusable(false).ok());
             let _ = app
-                .get_webview_window("overlay")
+                .get_webview_window(overlay_info::OVERLAY_WINDOW_LABEL)
                 .and_then(|w| w.set_ignore_cursor_events(true).ok());
-            if let Some(window) = app.get_webview_window("overlay")
+            if let Some(window) = app.get_webview_window(overlay_info::OVERLAY_WINDOW_LABEL)
                 && let Err(error) = overlay_info::OverlayInfoOps::apply_overlay_placement(&window) {
                     crate::sco_log!("Could not apply saved overlay placement: {error}");
                 }
             let _ = app
-                .get_webview_window("performance")
+                .get_webview_window(overlay_info::SC2_OVERLAY_WINDOW_LABEL)
                 .and_then(|w| w.set_always_on_top(true).ok());
             let _ = app
-                .get_webview_window("performance")
+                .get_webview_window(overlay_info::SC2_OVERLAY_WINDOW_LABEL)
                 .and_then(|w| w.set_skip_taskbar(true).ok());
             let _ = app
-                .get_webview_window("performance")
+                .get_webview_window(overlay_info::SC2_OVERLAY_WINDOW_LABEL)
                 .and_then(|w| w.set_focusable(false).ok());
             let _ = app
-                .get_webview_window("performance")
+                .get_webview_window(overlay_info::SC2_OVERLAY_WINDOW_LABEL)
                 .and_then(|w| w.set_ignore_cursor_events(true).ok());
-            if let Some(window) = app.get_webview_window("performance")
+            let _ = app
+                .get_webview_window(overlay_info::PERFORMANCE_WINDOW_LABEL)
+                .and_then(|w| w.set_always_on_top(true).ok());
+            let _ = app
+                .get_webview_window(overlay_info::PERFORMANCE_WINDOW_LABEL)
+                .and_then(|w| w.set_skip_taskbar(true).ok());
+            let _ = app
+                .get_webview_window(overlay_info::PERFORMANCE_WINDOW_LABEL)
+                .and_then(|w| w.set_focusable(false).ok());
+            let _ = app
+                .get_webview_window(overlay_info::PERFORMANCE_WINDOW_LABEL)
+                .and_then(|w| w.set_ignore_cursor_events(true).ok());
+            if let Some(window) = app.get_webview_window(overlay_info::PERFORMANCE_WINDOW_LABEL)
                 && let Err(error) = performance_overlay::PerformanceOverlayOps::apply_saved_geometry(&window) {
                     crate::sco_log!("Could not apply saved performance placement: {error}");
                 }
@@ -5496,6 +5533,7 @@ pub fn run() {
             TauriOverlayOps::spawn_replay_creation_watcher(app.app_handle().clone());
             TauriOverlayOps::spawn_game_launch_player_stats_task(app.app_handle().clone());
             TauriOverlayOps::spawn_first_win_bonus_timer_task(app.app_handle().clone());
+            overlay_info::OverlayInfoOps::spawn_sc2_overlay_window_tracker(app.app_handle().clone());
             performance_overlay::PerformanceOverlayOps::spawn_monitor(app.app_handle().clone());
             let (stats, replays, stats_current_replay_files, detailed_stop_controller_slot) = {
                 let state = app.state::<BackendState>();

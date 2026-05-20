@@ -39,6 +39,21 @@
                 "skipTaskbar": true
             },
             {
+                "label": "sc2-overlay",
+                "title": "SC2 Info live overlay",
+                "width": 1400,
+                "height": 900,
+                "visible": false,
+                "url": "/#/sc2-overlay",
+                "transparent": true,
+                "decorations": false,
+                "shadow": false,
+                "resizable": true,
+                "fullscreen": false,
+                "alwaysOnTop": true,
+                "skipTaskbar": true
+            },
+            {
                 "label": "performance",
                 "title": "SC2 Performance",
                 "width": 400,

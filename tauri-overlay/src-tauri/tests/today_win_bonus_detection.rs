@@ -2,7 +2,8 @@ use chrono::{TimeZone, Utc};
 use image::{Rgba, RgbaImage};
 use sco_tauri_overlay::{
     FirstWinBonusTimerStatus, ImageprocTodayWinBonusDigitReader, ScreenRect,
-    TodayWinBonusDetection, TodayWinBonusDetector, TodayWinBonusDigitReader,
+    TodayWinBonusCaptureFallbackState, TodayWinBonusDetection, TodayWinBonusDetector,
+    TodayWinBonusDigitReader, WINDOW_CAPTURE_FAILURES_BEFORE_REGION_FALLBACK,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
@@ -250,6 +251,93 @@ fn monitor_capture_region_rejects_window_outside_monitor() {
         ),
         None
     );
+}
+
+#[test]
+fn rejects_blank_window_capture_as_unusable() {
+    let image = RgbaImage::from_pixel(320, 180, Rgba([0, 0, 0, 255]));
+
+    assert!(!TodayWinBonusDetector::capture_image_looks_usable(&image));
+}
+
+#[test]
+fn accepts_varied_window_capture_as_usable() {
+    let mut image = RgbaImage::from_pixel(320, 180, Rgba([0, 0, 0, 255]));
+    draw_rect(&mut image, 30, 30, 90, 40, Rgba([40, 90, 180, 255]));
+    draw_rect(&mut image, 180, 80, 70, 50, Rgba([220, 210, 180, 255]));
+
+    assert!(TodayWinBonusDetector::capture_image_looks_usable(&image));
+}
+
+#[test]
+fn window_capture_fallback_starts_after_five_failures() {
+    let mut fallback_state = TodayWinBonusCaptureFallbackState::new();
+
+    for expected_failures in 1..WINDOW_CAPTURE_FAILURES_BEFORE_REGION_FALLBACK {
+        fallback_state.record_window_capture_failure();
+
+        assert_eq!(
+            fallback_state.consecutive_window_capture_failures(),
+            expected_failures
+        );
+        assert!(!fallback_state.region_capture_fallback());
+        assert!(fallback_state.should_try_window_capture());
+    }
+
+    fallback_state.record_window_capture_failure();
+
+    assert_eq!(
+        fallback_state.consecutive_window_capture_failures(),
+        WINDOW_CAPTURE_FAILURES_BEFORE_REGION_FALLBACK
+    );
+    assert!(fallback_state.region_capture_fallback());
+    assert!(!fallback_state.should_try_window_capture());
+}
+
+#[test]
+fn window_capture_success_resets_failure_count() {
+    let mut fallback_state = TodayWinBonusCaptureFallbackState::new();
+    fallback_state.record_window_capture_failure();
+    fallback_state.record_window_capture_failure();
+
+    fallback_state.record_window_capture_success();
+
+    assert_eq!(fallback_state.consecutive_window_capture_failures(), 0);
+    assert!(!fallback_state.region_capture_fallback());
+    assert!(fallback_state.should_try_window_capture());
+}
+
+#[test]
+fn window_capture_reports_initial_capture_method() {
+    #[cfg(windows)]
+    assert_eq!(
+        sco_tauri_overlay::TodayWinBonusWindowCapture::initial_capture_method(),
+        "gdi_window_dc"
+    );
+
+    #[cfg(not(windows))]
+    assert_eq!(
+        sco_tauri_overlay::TodayWinBonusWindowCapture::initial_capture_method(),
+        "monitor_region"
+    );
+}
+
+#[test]
+fn window_capture_reports_selected_fallback_method() {
+    let mut fallback_state = TodayWinBonusCaptureFallbackState::new();
+
+    assert_eq!(fallback_state.selected_fallback_method(), "none");
+    assert_eq!(
+        fallback_state.active_capture_method(),
+        sco_tauri_overlay::TodayWinBonusWindowCapture::initial_capture_method()
+    );
+
+    for _ in 0..WINDOW_CAPTURE_FAILURES_BEFORE_REGION_FALLBACK {
+        fallback_state.record_window_capture_failure();
+    }
+
+    assert_eq!(fallback_state.selected_fallback_method(), "monitor_region");
+    assert_eq!(fallback_state.active_capture_method(), "monitor_region");
 }
 
 #[test]

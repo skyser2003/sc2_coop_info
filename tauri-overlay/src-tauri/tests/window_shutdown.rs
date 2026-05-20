@@ -18,6 +18,14 @@ fn overlay_close_hides_the_window() {
 }
 
 #[test]
+fn sc2_overlay_close_hides_the_window() {
+    assert_eq!(
+        TauriOverlayOps::window_close_action("sc2-overlay", false, false),
+        WindowCloseAction::HideWindow
+    );
+}
+
+#[test]
 fn config_close_hides_when_minimize_to_tray_is_enabled() {
     assert_eq!(
         TauriOverlayOps::window_close_action("config", true, false),
@@ -35,7 +43,7 @@ fn config_close_exits_when_minimize_to_tray_is_disabled() {
 
 #[test]
 fn shutdown_path_allows_windows_to_close() {
-    for label in ["config", "overlay", "performance"] {
+    for label in ["config", "overlay", "sc2-overlay", "performance"] {
         assert_eq!(
             TauriOverlayOps::window_close_action(label, true, true),
             WindowCloseAction::AllowClose

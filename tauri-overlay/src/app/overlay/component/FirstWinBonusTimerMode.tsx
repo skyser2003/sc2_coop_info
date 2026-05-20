@@ -51,23 +51,29 @@ export default function FirstWinBonusTimerMode({
     const nextAvailableTime = available
         ? null
         : formatNextAvailableTime(payload?.next_available_time);
-    const statusText = unmeasured
-        ? overlayLanguageManager.translate(
-              "ui_overlay_first_win_bonus_unmeasured",
-          )
-        : available
-          ? overlayLanguageManager.translate(
-                "ui_overlay_first_win_bonus_available",
-            )
-          : overlayLanguageManager
-                .translate("ui_overlay_first_win_bonus_remaining")
-                .replace("{{time}}", formatDuration(secondsUntilAvailable));
+    const statusText =
+        payload == null
+            ? ""
+            : unmeasured
+              ? overlayLanguageManager.translate(
+                    "ui_overlay_first_win_bonus_unmeasured",
+                )
+              : available
+                ? overlayLanguageManager.translate(
+                      "ui_overlay_first_win_bonus_available",
+                  )
+                : overlayLanguageManager
+                      .translate("ui_overlay_first_win_bonus_remaining")
+                      .replace(
+                          "{{time}}",
+                          formatDuration(secondsUntilAvailable),
+                      );
 
     return (
         <div
             id="firstWinBonusTimer"
             style={{
-                display: visible ? "block" : "none",
+                display: "block",
                 opacity: visible ? 1 : 0,
                 right: visible ? "2vh" : "-38vh",
                 transition: immediate ? "all 0s" : undefined,

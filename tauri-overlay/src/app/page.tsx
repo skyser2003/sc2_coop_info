@@ -4,6 +4,7 @@ import { CssBaseline, ThemeProvider } from "@mui/material";
 import ConfigPage from "./config/page";
 import OverlayPage from "./overlay/page";
 import PerformancePage from "./performance/page";
+import Sc2OverlayPage from "./sc2-overlay/page";
 import {
     createConfigTheme,
     getConfigThemeMode,
@@ -37,6 +38,7 @@ export default function Page() {
                     }
                 />
                 <Route path="/overlay" element={<OverlayPage />} />
+                <Route path="/sc2-overlay" element={<Sc2OverlayPage />} />
                 <Route path="/performance" element={<PerformancePage />} />
                 <Route
                     path="/"

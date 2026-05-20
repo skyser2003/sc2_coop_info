@@ -4508,6 +4508,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-updater",
  "ts-rs",
+ "windows 0.62.2",
  "winreg 0.56.0",
  "xcap",
 ]

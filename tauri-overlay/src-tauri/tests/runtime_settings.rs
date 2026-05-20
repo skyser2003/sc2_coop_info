@@ -1,7 +1,7 @@
 use sco_tauri_overlay::{
     AppSettings, OVERLAY_HOTKEY_SETTING_KEYS, OVERLAY_PLACEMENT_SETTING_KEYS,
     OVERLAY_RUNTIME_SETTING_KEYS, OverlayInfoOps, OverlayMonitorGeometry, OverlayWindowBoundsInput,
-    OverlayWindowOffsets, OverlayWindowScale,
+    OverlayWindowOffsets, OverlayWindowScale, ScreenRect,
 };
 use serde_json::json;
 
@@ -151,4 +151,21 @@ fn overlay_window_bounds_use_full_width_for_portrait_monitors() {
     assert_eq!(size.height, 1919);
     assert_eq!(position.x, 288);
     assert_eq!(position.y, 105);
+}
+
+#[test]
+fn sc2_overlay_window_bounds_match_sc2_window_rect() {
+    let rect = ScreenRect::new(-120, 45, 1600, 900).expect("valid screen rect");
+    let (size, position) = OverlayInfoOps::sc2_overlay_window_bounds_for_rect(rect);
+
+    assert_eq!(size.width, 1600);
+    assert_eq!(size.height, 900);
+    assert_eq!(position.x, -120);
+    assert_eq!(position.y, 45);
+}
+
+#[test]
+fn sc2_overlay_sync_is_disabled_while_replay_overlay_is_visible() {
+    assert!(!OverlayInfoOps::sc2_overlay_should_sync(true));
+    assert!(OverlayInfoOps::sc2_overlay_should_sync(false));
 }

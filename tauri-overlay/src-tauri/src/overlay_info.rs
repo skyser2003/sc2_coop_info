@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::FromStr;
 use std::thread;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use serde_json::Value;
@@ -25,6 +25,9 @@ use crate::{BackendState, TauriOverlayOps, UNLIMITED_REPLAY_LIMIT};
 pub(crate) const MENU_ITEM_SHOW_CONFIG: &str = "show_config";
 pub(crate) const MENU_ITEM_SHOW_OVERLAY: &str = "show_overlay";
 pub(crate) const MENU_ITEM_QUIT: &str = "quit";
+pub(crate) const OVERLAY_WINDOW_LABEL: &str = "overlay";
+pub(crate) const SC2_OVERLAY_WINDOW_LABEL: &str = "sc2-overlay";
+pub(crate) const PERFORMANCE_WINDOW_LABEL: &str = "performance";
 
 pub(crate) const OVERLAY_REPLAY_PAYLOAD_EVENT: &str = "sco://overlay-replay-payload";
 pub(crate) const OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT: &str =
@@ -556,6 +559,23 @@ impl OverlayWindowBoundsInput {
             scale,
             offsets,
         }
+    }
+}
+
+impl OverlayInfoOps {
+    pub fn sc2_overlay_window_bounds_for_rect(
+        rect: crate::ScreenRect,
+    ) -> (tauri::PhysicalSize<u32>, tauri::PhysicalPosition<i32>) {
+        (
+            tauri::PhysicalSize {
+                width: rect.width(),
+                height: rect.height(),
+            },
+            tauri::PhysicalPosition {
+                x: rect.x(),
+                y: rect.y(),
+            },
+        )
     }
 }
 
@@ -1299,7 +1319,7 @@ impl OverlayInfoOps {
         match action {
             "overlay_show_hide" => {
                 let overlay_visible = app
-                    .get_webview_window("overlay")
+                    .get_webview_window(OVERLAY_WINDOW_LABEL)
                     .and_then(|window| window.is_visible().ok())
                     .unwrap_or(false);
                 if overlay_visible {
@@ -1342,7 +1362,7 @@ impl OverlayInfoOps {
             "overlay_player_stats" => {
                 let payload = state.overlay_player_stats_payload();
                 let _ = app.emit(OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT, payload);
-                OverlayInfoOps::show_overlay_window(app);
+                OverlayInfoOps::show_sc2_overlay_window(app);
 
                 Some(crate::OverlayActionResponse::success(
                     "Overlay player stats toggled",
@@ -1350,7 +1370,7 @@ impl OverlayInfoOps {
             }
             "performance_show_hide" => {
                 let performance_visible = app
-                    .get_webview_window("performance")
+                    .get_webview_window(PERFORMANCE_WINDOW_LABEL)
                     .and_then(|window| window.is_visible().ok())
                     .unwrap_or(false);
                 let next_visible = !performance_visible;
@@ -1473,14 +1493,14 @@ impl OverlayInfoOps {
         let payload = state.overlay_player_stats_payload_for_player(player_handle, player_name);
         let _ = app.emit(OVERLAY_HIDESTATS_EVENT, EmptyPayload::default());
         let _ = app.emit(OVERLAY_PLAYER_STATS_EVENT, payload);
-        OverlayInfoOps::show_overlay_window(app);
+        OverlayInfoOps::show_sc2_overlay_window(app);
         true
     }
 }
 
 impl OverlayInfoOps {
     fn request_overlay_screenshot(app: &tauri::AppHandle<Wry>) -> Result<String, String> {
-        if app.get_webview_window("overlay").is_none() {
+        if app.get_webview_window(OVERLAY_WINDOW_LABEL).is_none() {
             return Err("Overlay window is not available".to_string());
         }
 
@@ -1667,21 +1687,131 @@ impl OverlayInfoOps {
 }
 
 impl OverlayInfoOps {
+    pub fn sc2_overlay_should_sync(replay_overlay_active: bool) -> bool {
+        !replay_overlay_active
+    }
+}
+
+impl OverlayInfoOps {
+    fn replay_overlay_active<R: Runtime>(app: &tauri::AppHandle<R>) -> bool {
+        app.state::<BackendState>().overlay_replay_data_active()
+    }
+}
+
+impl OverlayInfoOps {
+    pub(crate) fn apply_sc2_overlay_window_bounds<R: Runtime>(
+        window: &tauri::WebviewWindow<R>,
+        rect: crate::ScreenRect,
+    ) -> Result<(), String> {
+        let (target_size, target_position) =
+            OverlayInfoOps::sc2_overlay_window_bounds_for_rect(rect);
+        let current_size = window
+            .outer_size()
+            .map_err(|error| format!("Failed to read SC2 overlay size: {error}"))?;
+        let current_position = window
+            .outer_position()
+            .map_err(|error| format!("Failed to read SC2 overlay position: {error}"))?;
+
+        if !OverlayInfoOps::overlay_window_size_matches_target(current_size, target_size) {
+            window
+                .set_size(target_size)
+                .map_err(|error| format!("Failed to resize SC2 overlay: {error}"))?;
+        }
+        if current_position != target_position {
+            window
+                .set_position(target_position)
+                .map_err(|error| format!("Failed to move SC2 overlay: {error}"))?;
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn sync_sc2_overlay_window_to_sc2<R: Runtime>(
+        app: &tauri::AppHandle<R>,
+    ) -> Result<bool, String> {
+        let Some(window) = app.get_webview_window(SC2_OVERLAY_WINDOW_LABEL) else {
+            return Ok(false);
+        };
+        if !OverlayInfoOps::sc2_overlay_should_sync(OverlayInfoOps::replay_overlay_active(app)) {
+            let _ = window.hide();
+            return Ok(false);
+        }
+        let Some(rect) = crate::today_win_bonus::TodayWinBonusDetector::sc2_window_rect()? else {
+            let _ = window.hide();
+            return Ok(false);
+        };
+
+        OverlayInfoOps::apply_sc2_overlay_window_bounds(&window, rect)?;
+        let _ = window.set_always_on_top(true);
+        let _ = window.set_skip_taskbar(true);
+        let _ = window.set_focusable(false);
+        let _ = window.set_ignore_cursor_events(true);
+        if !window.is_visible().unwrap_or(false) {
+            window
+                .show()
+                .map_err(|error| format!("Failed to show SC2 overlay: {error}"))?;
+        }
+
+        Ok(true)
+    }
+
     pub(crate) fn emit_first_win_bonus_timer<R: Runtime>(
         app: &tauri::AppHandle<R>,
         payload: FirstWinBonusTimerPayload,
     ) {
         if payload.visible {
-            OverlayInfoOps::show_overlay_window(app);
+            OverlayInfoOps::show_sc2_overlay_window(app);
         }
         let _ = app.emit(OVERLAY_FIRST_WIN_BONUS_TIMER_EVENT, payload);
     }
 }
 
 impl OverlayInfoOps {
+    pub(crate) fn show_sc2_overlay_window<R: Runtime>(app: &tauri::AppHandle<R>) {
+        OverlayInfoOps::sync_overlay_runtime_settings(app);
+        if let Err(error) = OverlayInfoOps::sync_sc2_overlay_window_to_sc2(app) {
+            crate::sco_log!("[SCO/sc2-overlay] Failed to show SC2 overlay: {error}");
+        }
+    }
+}
+
+impl OverlayInfoOps {
+    pub(crate) fn hide_sc2_overlay_window<R: Runtime>(app: &tauri::AppHandle<R>) {
+        if let Some(window) = app.get_webview_window(SC2_OVERLAY_WINDOW_LABEL) {
+            let _ = window.hide();
+        }
+    }
+}
+
+impl OverlayInfoOps {
+    pub(crate) fn spawn_sc2_overlay_window_tracker(app: tauri::AppHandle<Wry>) {
+        thread::spawn(move || {
+            let mut last_error: Option<String> = None;
+            loop {
+                thread::sleep(Duration::from_millis(500));
+                match OverlayInfoOps::sync_sc2_overlay_window_to_sc2(&app) {
+                    Ok(_) => {
+                        last_error = None;
+                    }
+                    Err(error) => {
+                        if last_error.as_deref() != Some(error.as_str()) {
+                            crate::sco_log!(
+                                "[SCO/sc2-overlay] Failed to sync SC2 overlay bounds: {error}"
+                            );
+                        }
+                        last_error = Some(error);
+                    }
+                }
+            }
+        });
+    }
+}
+
+impl OverlayInfoOps {
     pub(crate) fn show_overlay_window<R: Runtime>(app: &tauri::AppHandle<R>) {
         OverlayInfoOps::sync_overlay_runtime_settings(app);
-        if let Some(overlay_window) = app.get_webview_window("overlay") {
+        OverlayInfoOps::hide_sc2_overlay_window(app);
+        if let Some(overlay_window) = app.get_webview_window(OVERLAY_WINDOW_LABEL) {
             let _ = overlay_window.set_focusable(false);
             let _ = overlay_window.show();
         }
@@ -1690,7 +1820,7 @@ impl OverlayInfoOps {
 
 impl OverlayInfoOps {
     pub(crate) fn hide_overlay_window<R: Runtime>(app: &tauri::AppHandle<R>) {
-        if let Some(overlay_window) = app.get_webview_window("overlay") {
+        if let Some(overlay_window) = app.get_webview_window(OVERLAY_WINDOW_LABEL) {
             let _ = overlay_window.hide();
         }
     }

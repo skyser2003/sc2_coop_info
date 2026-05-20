@@ -528,8 +528,10 @@ export default function GameStatText({
     const statsPayload = payload;
 
     useEffect(() => {
-        if (statsPayload != null) {
-            cancelReplayDisplayClearTimer();
+        if (replayModeVisible) {
+            if (statsPayload != null) {
+                cancelReplayDisplayClearTimer();
+            }
             reportOverlayReplayDataState(true);
             return;
         }
@@ -538,6 +540,7 @@ export default function GameStatText({
     }, [
         cancelReplayDisplayClearTimer,
         reportOverlayReplayDataState,
+        replayModeVisible,
         statsPayload,
     ]);
 

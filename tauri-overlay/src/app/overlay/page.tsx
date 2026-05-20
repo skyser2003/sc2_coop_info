@@ -8,9 +8,7 @@ import {
 } from "react";
 
 import { ReplayChartVisible } from "./component/GameStatChart";
-import FirstWinBonusTimerMode from "./component/FirstWinBonusTimerMode";
 import GameStatMode from "./component/GameStatMode";
-import PlayerStatMode from "./component/PlayerStatMode";
 import { createLanguageManager } from "../i18n/languageManager";
 import { emit, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
@@ -25,40 +23,32 @@ import {
 import type { DisplayValue } from "../config/types";
 import type {
     ConfigPayload,
-    FirstWinBonusTimerPayload,
     OverlayColorPreviewPayload,
     OverlayInitColorsDurationPayload,
     OverlayLanguagePreviewPayload,
-    OverlayPlayerStatsPayload,
     OverlayReplayPayload,
     OverlayScreenshotRequestPayload,
     OverlayScreenshotResultPayload,
 } from "../../bindings/overlay";
 
 const overlayHideFadeMs = 1000;
-const playerStatsHideMs = 12000;
 const defaultGameStatsVisibleMs = 60000;
 
 enum DisplayMode {
     None,
-    PlayerStats,
     GameStats,
-    FirstWinBonusTimer,
 }
 
 type OverlayEventName =
     | typeof OVERLAY_COLOR_PREVIEW_EVENT
     | typeof OVERLAY_LANGUAGE_PREVIEW_EVENT
     | typeof OVERLAY_REPLAY_PAYLOAD_EVENT
-    | typeof OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT
-    | typeof OVERLAY_PLAYER_STATS_EVENT
     | typeof OVERLAY_INIT_COLORS_DURATION_EVENT
     | typeof OVERLAY_SHOWSTATS_EVENT
     | typeof OVERLAY_HIDESTATS_EVENT
     | typeof OVERLAY_SHOWHIDE_EVENT
     | typeof OVERLAY_SET_SHOW_CHARTS_FROM_CONFIG_EVENT
-    | typeof OVERLAY_SCREENSHOT_REQUEST_EVENT
-    | typeof OVERLAY_FIRST_WIN_BONUS_TIMER_EVENT;
+    | typeof OVERLAY_SCREENSHOT_REQUEST_EVENT;
 
 type OverlayPrestigeNameCatalog = Record<
     string,
@@ -205,9 +195,6 @@ async function loadOverlayConfig(): Promise<ConfigPayload> {
 const OVERLAY_COLOR_PREVIEW_EVENT = "sco://overlay-color-preview";
 const OVERLAY_LANGUAGE_PREVIEW_EVENT = "sco://overlay-language-preview";
 const OVERLAY_REPLAY_PAYLOAD_EVENT = "sco://overlay-replay-payload";
-const OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT =
-    "sco://overlay-show-hide-player-stats";
-const OVERLAY_PLAYER_STATS_EVENT = "sco://overlay-player-stats";
 const OVERLAY_INIT_COLORS_DURATION_EVENT = "sco://overlay-init-colors-duration";
 const OVERLAY_SHOWSTATS_EVENT = "sco://overlay-showstats";
 const OVERLAY_HIDESTATS_EVENT = "sco://overlay-hidestats";
@@ -216,22 +203,17 @@ const OVERLAY_SET_SHOW_CHARTS_FROM_CONFIG_EVENT =
     "sco://overlay-set-show-charts-from-config";
 const OVERLAY_SCREENSHOT_REQUEST_EVENT = "sco://overlay-screenshot-request";
 const OVERLAY_SCREENSHOT_RESULT_EVENT = "sco://overlay-screenshot-result";
-const OVERLAY_FIRST_WIN_BONUS_TIMER_EVENT =
-    "sco://overlay-first-win-bonus-timer";
 
 const tauriUnlistens: Record<OverlayEventName, (() => void) | null> = {
     [OVERLAY_COLOR_PREVIEW_EVENT]: null,
     [OVERLAY_LANGUAGE_PREVIEW_EVENT]: null,
     [OVERLAY_REPLAY_PAYLOAD_EVENT]: null,
-    [OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT]: null,
-    [OVERLAY_PLAYER_STATS_EVENT]: null,
     [OVERLAY_INIT_COLORS_DURATION_EVENT]: null,
     [OVERLAY_SHOWSTATS_EVENT]: null,
     [OVERLAY_HIDESTATS_EVENT]: null,
     [OVERLAY_SHOWHIDE_EVENT]: null,
     [OVERLAY_SET_SHOW_CHARTS_FROM_CONFIG_EVENT]: null,
     [OVERLAY_SCREENSHOT_REQUEST_EVENT]: null,
-    [OVERLAY_FIRST_WIN_BONUS_TIMER_EVENT]: null,
 };
 
 interface DisplayStatus {
@@ -241,7 +223,6 @@ interface DisplayStatus {
 
 interface DisplayTransitionOptions {
     immediate?: boolean;
-    playerPayload?: OverlayPlayerStatsPayload | null;
 }
 
 export default function OverlayPage() {
@@ -288,10 +269,6 @@ export default function OverlayPage() {
         useState<boolean>(false);
     const [sessionVictoryCount, setSessionVictoryCount] = useState<number>(0);
     const [sessionDefeatCount, setSessionDefeatCount] = useState<number>(0);
-    const [playerStatPayload, setPlayerStatPayload] =
-        useState<OverlayPlayerStatsPayload | null>(null);
-    const [firstWinBonusTimerPayload, setFirstWinBonusTimerPayload] =
-        useState<FirstWinBonusTimerPayload | null>(null);
 
     async function loadOverlayPrestigeNameCatalog(): Promise<void> {
         try {
@@ -351,14 +328,7 @@ export default function OverlayPage() {
         options?: DisplayTransitionOptions,
     ): void {
         const immediate = options?.immediate ?? false;
-        const nextPlayerPayload = options?.playerPayload ?? null;
 
-        setPlayerStatPayload(
-            mode === DisplayMode.PlayerStats ? nextPlayerPayload : null,
-        );
-        if (mode !== DisplayMode.FirstWinBonusTimer) {
-            setFirstWinBonusTimerPayload(null);
-        }
         setDisplayMode({
             mode,
             immediate,
@@ -366,7 +336,6 @@ export default function OverlayPage() {
     }
 
     function toggleGameStatsDisplay(): void {
-        setPlayerStatPayload(null);
         setDisplayMode((previousDisplayMode) => ({
             mode:
                 previousDisplayMode.mode === DisplayMode.None
@@ -374,25 +343,6 @@ export default function OverlayPage() {
                     : DisplayMode.None,
             immediate: false,
         }));
-    }
-
-    function togglePlayerStatsDisplay(
-        payload: OverlayPlayerStatsPayload,
-        immediate = true,
-    ): void {
-        setDisplayMode((previousDisplayMode) => {
-            const showingPlayerStats =
-                previousDisplayMode.mode === DisplayMode.PlayerStats;
-
-            setPlayerStatPayload(showingPlayerStats ? null : payload);
-
-            return {
-                mode: showingPlayerStats
-                    ? DisplayMode.None
-                    : DisplayMode.PlayerStats,
-                immediate,
-            };
-        });
     }
 
     function hideStatsPanel(immediate = false): void {
@@ -482,32 +432,6 @@ export default function OverlayPage() {
         }, 1000);
     }
 
-    function showPlayerStats(immediate = false): void {
-        hideStatsPanel(immediate);
-        setBackgroundPanelStyle({
-            ...hiddenBackgroundStyle,
-            transition: "opacity 0s",
-        });
-        setChartVisibility({
-            visible: false,
-            immediate: true,
-        });
-        setAuxiliaryOverlayVisible(false);
-    }
-
-    function showFirstWinBonusTimer(immediate = false): void {
-        hideStatsPanel(immediate);
-        setBackgroundPanelStyle({
-            ...hiddenBackgroundStyle,
-            transition: "opacity 0s",
-        });
-        setChartVisibility({
-            visible: false,
-            immediate: true,
-        });
-        setAuxiliaryOverlayVisible(false);
-    }
-
     function colorPreviewEventHandler({
         payload,
     }: {
@@ -534,30 +458,9 @@ export default function OverlayPage() {
     }: {
         payload: OverlayReplayPayload;
     }): void {
-        setPlayerStatPayload(null);
         setGameStatPayload(payload);
         setSessionVictoryCount(Number(payload.Victory ?? 0));
         setSessionDefeatCount(Number(payload.Defeat ?? 0));
-    }
-
-    function togglePlayerStatsEventHandler({
-        payload,
-    }: {
-        payload: OverlayPlayerStatsPayload;
-    }): void {
-        togglePlayerStatsDisplay(payload, true);
-    }
-
-    function playerStatsOnGameStartEventHandler({
-        payload,
-    }: {
-        payload: OverlayPlayerStatsPayload;
-    }): void {
-        setGameStatPayload(null);
-        requestDisplayTransition(DisplayMode.PlayerStats, {
-            immediate: true,
-            playerPayload: payload,
-        });
     }
 
     function initColorsDurationEventHandler({
@@ -605,38 +508,6 @@ export default function OverlayPage() {
         setChartVisibility({
             visible: payload,
             immediate: true,
-        });
-    }
-
-    function firstWinBonusTimerEventHandler({
-        payload,
-    }: {
-        payload: FirstWinBonusTimerPayload;
-    }): void {
-        setFirstWinBonusTimerPayload(payload.visible ? payload : null);
-        setDisplayMode((previousDisplayMode) => {
-            if (
-                previousDisplayMode.mode === DisplayMode.GameStats ||
-                previousDisplayMode.mode === DisplayMode.PlayerStats
-            ) {
-                return previousDisplayMode;
-            }
-
-            if (payload.visible) {
-                return {
-                    mode: DisplayMode.FirstWinBonusTimer,
-                    immediate: true,
-                };
-            }
-
-            if (previousDisplayMode.mode === DisplayMode.FirstWinBonusTimer) {
-                return {
-                    mode: DisplayMode.None,
-                    immediate: true,
-                };
-            }
-
-            return previousDisplayMode;
         });
     }
 
@@ -765,21 +636,6 @@ export default function OverlayPage() {
                     tauriUnlistens[OVERLAY_REPLAY_PAYLOAD_EVENT]?.();
                     tauriUnlistens[OVERLAY_REPLAY_PAYLOAD_EVENT] = unlisten;
                 }),
-                listen<OverlayPlayerStatsPayload>(
-                    OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT,
-                    togglePlayerStatsEventHandler,
-                ).then((unlisten) => {
-                    tauriUnlistens[OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT]?.();
-                    tauriUnlistens[OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT] =
-                        unlisten;
-                }),
-                listen<OverlayPlayerStatsPayload>(
-                    OVERLAY_PLAYER_STATS_EVENT,
-                    playerStatsOnGameStartEventHandler,
-                ).then((unlisten) => {
-                    tauriUnlistens[OVERLAY_PLAYER_STATS_EVENT]?.();
-                    tauriUnlistens[OVERLAY_PLAYER_STATS_EVENT] = unlisten;
-                }),
                 listen<OverlayInitColorsDurationPayload>(
                     OVERLAY_INIT_COLORS_DURATION_EVENT,
                     initColorsDurationEventHandler,
@@ -822,14 +678,6 @@ export default function OverlayPage() {
                 ).then((unlisten) => {
                     tauriUnlistens[OVERLAY_SCREENSHOT_REQUEST_EVENT]?.();
                     tauriUnlistens[OVERLAY_SCREENSHOT_REQUEST_EVENT] = unlisten;
-                }),
-                listen<FirstWinBonusTimerPayload>(
-                    OVERLAY_FIRST_WIN_BONUS_TIMER_EVENT,
-                    firstWinBonusTimerEventHandler,
-                ).then((unlisten) => {
-                    tauriUnlistens[OVERLAY_FIRST_WIN_BONUS_TIMER_EVENT]?.();
-                    tauriUnlistens[OVERLAY_FIRST_WIN_BONUS_TIMER_EVENT] =
-                        unlisten;
                 }),
             ]);
         } catch {
@@ -915,14 +763,8 @@ export default function OverlayPage() {
             case DisplayMode.None:
                 hideOverlay(displayMode.immediate);
                 break;
-            case DisplayMode.PlayerStats:
-                showPlayerStats(displayMode.immediate);
-                break;
             case DisplayMode.GameStats:
                 showOverlay(displayMode.immediate);
-                break;
-            case DisplayMode.FirstWinBonusTimer:
-                showFirstWinBonusTimer(displayMode.immediate);
                 break;
         }
     }, [displayMode]);
@@ -963,27 +805,6 @@ export default function OverlayPage() {
         };
     }, [gameStatPayload, gameStatsVisibleMs]);
 
-    useEffect(() => {
-        if (
-            displayMode.mode !== DisplayMode.PlayerStats ||
-            playerStatPayload == null
-        ) {
-            return;
-        }
-
-        const hideTimer = window.setTimeout(() => {
-            requestDisplayTransition(DisplayMode.None, {
-                immediate: true,
-            });
-
-            setPlayerStatPayload(null);
-        }, playerStatsHideMs);
-
-        return () => {
-            window.clearTimeout(hideTimer);
-        };
-    }, [displayMode.mode, playerStatPayload]);
-
     return (
         <div id="overlay-screenshot-root" className={styles.overlayPageRoot}>
             <div
@@ -1017,19 +838,6 @@ export default function OverlayPage() {
                 hideNicknamesInOverlay={hideNicknamesInOverlay}
                 overlayLanguageManager={overlayLanguageManager}
                 reportOverlayReplayDataState={reportOverlayReplayDataState}
-            />
-            <PlayerStatMode
-                payload={playerStatPayload}
-                visible={displayMode.mode === DisplayMode.PlayerStats}
-                immediate={displayMode.immediate}
-                language={language}
-                overlayLanguageManager={overlayLanguageManager}
-            />
-            <FirstWinBonusTimerMode
-                payload={firstWinBonusTimerPayload}
-                visible={displayMode.mode === DisplayMode.FirstWinBonusTimer}
-                immediate={displayMode.immediate}
-                overlayLanguageManager={overlayLanguageManager}
             />
         </div>
     );
