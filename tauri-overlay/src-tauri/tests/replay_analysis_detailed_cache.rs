@@ -2,7 +2,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     CacheCountValue, CacheNumericValue, CachePlayer, CacheReplayEntry, CacheUnitStats,
     ProtocolBuildValue, ReplayBuildInfo,
 };
-use sco_tauri_overlay::TestHelperOps;
+use sco_tauri_overlay::{ReplayCacheDatabase, ReplayCacheEntryQuery, TestHelperOps};
 use serde_json::json;
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -168,7 +168,7 @@ fn load_detailed_analysis_replays_snapshot_from_path_uses_cache_entries() {
     let _ = std::fs::remove_file(&cache_path);
     let _ = std::fs::remove_file(&replay_path);
     let _ = std::fs::remove_file(&ignored_replay_path);
-    let _ = std::fs::remove_dir(&root);
+    let _ = std::fs::remove_dir_all(&root);
 }
 
 #[test]
@@ -196,7 +196,7 @@ fn detailed_analysis_replays_snapshot_from_entries_uses_memory_entries() {
 
     let _ = std::fs::remove_file(&replay_path);
     let _ = std::fs::remove_file(&ignored_replay_path);
-    let _ = std::fs::remove_dir(&root);
+    let _ = std::fs::remove_dir_all(&root);
 }
 
 #[test]
@@ -221,7 +221,7 @@ fn detailed_analysis_cache_merge_replaces_same_file_different_hash() {
     assert_eq!(merged[0].file, replay_path.display().to_string());
     assert_eq!(merged[0].hash, "new-hash");
 
-    let _ = std::fs::remove_dir(&root);
+    let _ = std::fs::remove_dir_all(&root);
 }
 
 #[test]
@@ -269,9 +269,11 @@ fn load_detailed_analysis_replays_snapshot_from_path_recovers_temp_cache_entries
         "temp cache should be removed after recovery"
     );
 
-    let persisted_payload = std::fs::read(&cache_path).expect("cache file should exist");
-    let persisted_entries = serde_json::from_slice::<Vec<CacheReplayEntry>>(&persisted_payload)
-        .expect("persisted cache should parse");
+    let database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    let persisted_entries = database
+        .load_entries(ReplayCacheEntryQuery::all(0))
+        .expect("persisted cache should load");
     assert_eq!(persisted_entries.len(), 2);
     assert!(
         persisted_entries
@@ -287,7 +289,7 @@ fn load_detailed_analysis_replays_snapshot_from_path_recovers_temp_cache_entries
     let _ = std::fs::remove_file(&cache_path);
     let _ = std::fs::remove_file(&existing_replay_path);
     let _ = std::fs::remove_file(&recovered_replay_path);
-    let _ = std::fs::remove_dir(&root);
+    let _ = std::fs::remove_dir_all(&root);
 }
 
 #[test]
@@ -329,9 +331,11 @@ fn load_detailed_analysis_replays_snapshot_from_path_persists_simple_temp_entry_
         "temp cache should be removed after recovery"
     );
 
-    let persisted_payload = std::fs::read(&cache_path).expect("cache file should exist");
-    let persisted_entries = serde_json::from_slice::<Vec<CacheReplayEntry>>(&persisted_payload)
-        .expect("persisted cache should parse");
+    let database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    let persisted_entries = database
+        .load_entries(ReplayCacheEntryQuery::all(0))
+        .expect("persisted cache should load");
     assert_eq!(persisted_entries.len(), 2);
     assert!(
         persisted_entries
@@ -347,5 +351,5 @@ fn load_detailed_analysis_replays_snapshot_from_path_persists_simple_temp_entry_
     let _ = std::fs::remove_file(&cache_path);
     let _ = std::fs::remove_file(&existing_replay_path);
     let _ = std::fs::remove_file(&recovered_replay_path);
-    let _ = std::fs::remove_dir(&root);
+    let _ = std::fs::remove_dir_all(&root);
 }

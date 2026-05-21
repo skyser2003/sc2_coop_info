@@ -19,6 +19,7 @@ serde = { version = "1", features = ["derive"] }
 ts-rs = "12.0.1"
 tauri-plugin-global-shortcut = "2"
 rayon = "1.10.0"
+rusqlite = { version = "0.32.1", features = ["bundled"] }
 notify = "8.2.0"
 fastrand = "2.3.0"
 sysinfo = "0.38.4"

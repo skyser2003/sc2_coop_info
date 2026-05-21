@@ -5,7 +5,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
 };
 use sco_tauri_overlay::TestHelperOps;
 use sco_tauri_overlay::{
-    BackendState, ReplayInfo, ReplayPlayerInfo, StatsState, persist_detailed_cache_entry_to_path,
+    BackendState, ReplayCacheDatabase, ReplayInfo, ReplayPlayerInfo, StatsState, TauriOverlayOps,
 };
 use serde_json::Value;
 use serde_json::json;
@@ -219,12 +219,14 @@ fn persist_detailed_cache_entry_to_path_writes_and_replaces_entry() {
     let payload = serde_json::to_vec(&vec![original]).expect("cache payload should serialize");
     std::fs::write(&cache_path, payload).expect("cache file should be written");
 
-    persist_detailed_cache_entry_to_path(&cache_path, &updated)
+    TauriOverlayOps::persist_detailed_cache_entry_to_path(&cache_path, &updated)
         .expect("cache entry should persist");
 
-    let persisted_payload = std::fs::read(&cache_path).expect("cache file should exist");
-    let persisted_entries = serde_json::from_slice::<Vec<CacheReplayEntry>>(&persisted_payload)
-        .expect("persisted cache should parse");
+    let database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    let persisted_entries = database
+        .load_entries(sco_tauri_overlay::ReplayCacheEntryQuery::all(0))
+        .expect("persisted cache should load");
 
     assert_eq!(persisted_entries.len(), 1);
     assert_eq!(persisted_entries[0].file, replay_file);

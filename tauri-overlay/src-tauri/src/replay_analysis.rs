@@ -27,8 +27,9 @@ use crate::shared_types::{
     LocalizedLabels, LocalizedText, ReplayScanProgressPayload, UiMutatorRow,
 };
 use crate::{
-    AppSettings, CommanderUnitRollup, ReplayChatMessage, ReplayInfo, ReplayPlayerInfo,
-    StatsSnapshot, StatsState, TauriOverlayOps, UNLIMITED_REPLAY_LIMIT, UnitStatsRollup,
+    AppSettings, CommanderUnitRollup, ReplayCacheDatabase, ReplayCacheEntryQuery,
+    ReplayChatMessage, ReplayInfo, ReplayPlayerInfo, StatsSnapshot, StatsState, TauriOverlayOps,
+    UNLIMITED_REPLAY_LIMIT, UnitStatsRollup,
 };
 
 const PRESTIGE_TRACKING_START_YMD: u32 = 20200726;
@@ -1060,68 +1061,27 @@ impl ReplayAnalysisOps {
 }
 
 impl ReplayAnalysisOps {
-    fn temp_cache_path(cache_path: &Path) -> PathBuf {
-        cache_path.with_extension("temp.jsonl")
-    }
-}
-
-impl ReplayAnalysisOps {
-    fn load_temp_cache_entries(temp_path: &Path) -> Vec<CacheReplayEntry> {
-        let content = match std::fs::read_to_string(temp_path) {
-            Ok(content) => content,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+    fn read_cache_entries(
+        cache_path: &Path,
+        log_label: &str,
+        query: ReplayCacheEntryQuery,
+    ) -> Vec<CacheReplayEntry> {
+        let database = match ReplayCacheDatabase::open_for_cache_path(cache_path) {
+            Ok(database) => database,
             Err(error) => {
                 crate::sco_log!(
-                    "[SCO/cache] failed to read temp cache '{}': {error}",
-                    temp_path.display()
-                );
-                return Vec::new();
-            }
-        };
-
-        content
-            .lines()
-            .filter_map(|line| {
-                let trimmed = line.trim();
-                if trimmed.is_empty() {
-                    return None;
-                }
-
-                match serde_json::from_str::<CacheReplayEntry>(trimmed) {
-                    Ok(entry) if !entry.hash.is_empty() => Some(entry),
-                    Ok(_) => None,
-                    Err(error) => {
-                        crate::sco_log!(
-                            "[SCO/cache] failed to parse temp cache entry in '{}': {error}",
-                            temp_path.display()
-                        );
-                        None
-                    }
-                }
-            })
-            .collect()
-    }
-}
-
-impl ReplayAnalysisOps {
-    fn read_cache_entries(cache_path: &Path, log_label: &str) -> Vec<CacheReplayEntry> {
-        let payload = match std::fs::read(cache_path) {
-            Ok(payload) => payload,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
-            Err(error) => {
-                crate::sco_log!(
-                    "[SCO/cache] failed to read {log_label} '{}': {error}",
+                    "[SCO/cache] failed to open {log_label} database for '{}': {error}",
                     cache_path.display()
                 );
                 return Vec::new();
             }
         };
 
-        match serde_json::from_slice::<Vec<CacheReplayEntry>>(&payload) {
+        match database.load_entries(query) {
             Ok(entries) => entries,
             Err(error) => {
                 crate::sco_log!(
-                    "[SCO/cache] failed to parse {log_label} '{}': {error}",
+                    "[SCO/cache] failed to read {log_label} database for '{}': {error}",
                     cache_path.display()
                 );
                 Vec::new()
@@ -1134,53 +1094,9 @@ impl ReplayAnalysisOps {
     fn recover_cache_entries_from_temp(
         cache_path: &Path,
         log_label: &str,
+        query: ReplayCacheEntryQuery,
     ) -> Vec<CacheReplayEntry> {
-        let mut merged = ReplayAnalysisOps::read_cache_entries(cache_path, log_label)
-            .into_iter()
-            .filter(|entry| !entry.hash.is_empty())
-            .map(|entry| (entry.hash.clone(), entry))
-            .collect::<HashMap<_, _>>();
-        let temp_path = ReplayAnalysisOps::temp_cache_path(cache_path);
-        let temp_entries = ReplayAnalysisOps::load_temp_cache_entries(&temp_path);
-        if temp_entries.is_empty() {
-            return merged.into_values().collect();
-        }
-
-        for entry in temp_entries {
-            merged.retain(|hash, existing| hash == &entry.hash || existing.file != entry.file);
-            match merged.get(&entry.hash) {
-                Some(existing)
-                    if ReplayInfo::should_keep_existing_detailed_variant(
-                        existing.detailed_analysis,
-                        entry.detailed_analysis,
-                    ) => {}
-                _ => {
-                    merged.insert(entry.hash.clone(), entry);
-                }
-            }
-        }
-
-        let mut entries = merged.into_values().collect::<Vec<_>>();
-        entries.sort_by(|left, right| {
-            right
-                .date
-                .cmp(&left.date)
-                .then_with(|| right.file.cmp(&left.file))
-        });
-
-        if let Err(error) = CacheReplayEntry::write_entries(&entries, cache_path) {
-            crate::sco_log!(
-                "[SCO/cache] failed to persist recovered cache '{}': {error}",
-                cache_path.display()
-            );
-        } else if let Err(error) = std::fs::remove_file(&temp_path) {
-            crate::sco_log!(
-                "[SCO/cache] failed to remove recovered temp cache '{}': {error}",
-                temp_path.display()
-            );
-        }
-
-        entries
+        ReplayAnalysisOps::read_cache_entries(cache_path, log_label, query)
     }
 }
 
@@ -3686,6 +3602,7 @@ impl ReplayAnalysis {
         let entries = ReplayAnalysisOps::recover_cache_entries_from_temp(
             cache_path,
             "detailed-analysis cache",
+            ReplayCacheEntryQuery::detailed_only(0),
         );
         let replays = Self::detailed_analysis_replays_snapshot_from_entries_with_dictionary(
             &entries,
@@ -3775,17 +3692,18 @@ impl ReplayAnalysis {
         main_handles: &HashSet<String>,
         dictionary: &Sc2DictionaryData,
     ) -> Vec<ReplayInfo> {
-        let mut replays =
-            ReplayAnalysisOps::recover_cache_entries_from_temp(cache_path, "unified cache")
-                .into_iter()
-                .filter(|entry| Path::new(&entry.file).exists())
-                .map(|entry| {
-                    ReplayAnalysisOps::replay_info_from_cache_entry_with_dictionary(
-                        &entry, dictionary,
-                    )
-                    .oriented_for_main_identity(main_names, main_handles)
-                })
-                .collect::<Vec<_>>();
+        let mut replays = ReplayAnalysisOps::recover_cache_entries_from_temp(
+            cache_path,
+            "unified cache",
+            ReplayCacheEntryQuery::all(0),
+        )
+        .into_iter()
+        .filter(|entry| Path::new(&entry.file).exists())
+        .map(|entry| {
+            ReplayAnalysisOps::replay_info_from_cache_entry_with_dictionary(&entry, dictionary)
+                .oriented_for_main_identity(main_names, main_handles)
+        })
+        .collect::<Vec<_>>();
 
         replays.sort_by(|a, b| b.date.cmp(&a.date).then_with(|| b.file.cmp(&a.file)));
         if limit > 0 && replays.len() > limit {
@@ -4193,10 +4111,12 @@ impl ReplayAnalysis {
             "[SCO/cache] persisting {} simple-analysis cache entr(y/ies) in one batch",
             simple_cache_entries.len()
         );
-        if let Err(error) = CacheReplayEntry::persist_simple_cache_entries(
-            &simple_cache_entries,
-            &PathManagerOps::get_cache_path(),
-        ) {
+        let cache_path = PathManagerOps::get_cache_path();
+        let persist_result =
+            ReplayCacheDatabase::open_for_cache_path(&cache_path).and_then(|mut database| {
+                database.upsert_entries_preserving_detailed(&simple_cache_entries)
+            });
+        if let Err(error) = persist_result {
             crate::sco_log!("[SCO/cache] failed to persist simple analysis cache batch: {error}");
         }
 
@@ -4540,12 +4460,25 @@ impl ReplayAnalysis {
             .and_then(Value::as_bool)
             .unwrap_or(false);
         if is_ready && !analysis_running {
+            let database_replays =
+                Self::load_all_analysis_replays_snapshot_from_path_with_dictionary(
+                    &PathManagerOps::get_cache_path(),
+                    UNLIMITED_REPLAY_LIMIT,
+                    main_names,
+                    main_handles,
+                    dictionary,
+                );
             match replays.try_lock() {
                 Ok(cached_replays) => match stats_current_replay_files.try_lock() {
                     Ok(current_replay_files) => {
-                        let mut cached_replays =
-                            cached_replays.values().cloned().collect::<Vec<_>>();
-                        ReplayInfo::sort_replays(&mut cached_replays);
+                        let cached_replays = if database_replays.is_empty() {
+                            let mut memory_replays =
+                                cached_replays.values().cloned().collect::<Vec<_>>();
+                            ReplayInfo::sort_replays(&mut memory_replays);
+                            memory_replays
+                        } else {
+                            database_replays
+                        };
                         let include_detailed = Self::should_include_detailed_stats_response(
                             &response,
                             &cached_replays,

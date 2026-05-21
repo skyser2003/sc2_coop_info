@@ -29,6 +29,7 @@ mod path_manager;
 mod performance_overlay;
 mod randomizer;
 mod replay_analysis;
+mod replay_cache_db;
 mod replay_info;
 mod replay_visual;
 mod sc2_game_state;
@@ -54,6 +55,9 @@ pub use path_manager::PathManagerOps;
 pub use randomizer::{RandomizerMutatorResult, RandomizerOps, RandomizerRequest, RandomizerResult};
 pub use replay_analysis::{
     PlayerRowPayload, ReplayAnalysis, ReplayAnalysisOps, StatsResponseBuildInput, WeeklyRowPayload,
+};
+pub use replay_cache_db::{
+    ReplayCacheDatabase, ReplayCacheDbError, ReplayCacheEntryQuery, ReplayCacheReadScope,
 };
 pub use replay_info::{
     CommanderUnitRollup, GamesRowPayload, ReplayChatMessage, ReplayChatPayload, ReplayInfo,
@@ -85,7 +89,6 @@ macro_rules! sco_log {
     }};
 }
 
-use crate::backend_state::ReplayState;
 use crate::live_game::LiveGameOps;
 use crate::stats_state::AnalysisOutcome;
 
@@ -1836,8 +1839,10 @@ impl TauriOverlayOps {
     fn clear_analysis_cache_files() {
         let cache_path = PathManagerOps::get_cache_path();
         let temp_path = PathBuf::from(format!("{}_temp", cache_path.display()));
+        let temp_jsonl_path = cache_path.with_extension("temp.jsonl");
+        let cache_db_path = PathManagerOps::get_cache_db_path();
 
-        for path in [cache_path, temp_path] {
+        for path in [cache_path, temp_path, temp_jsonl_path, cache_db_path] {
             if let Err(error) = std::fs::remove_file(&path)
                 && error.kind() != std::io::ErrorKind::NotFound
             {
@@ -1892,6 +1897,20 @@ impl TauriOverlayOps {
             .map_err(|error| format!("Failed to access replay analysis resources: {error}"))?;
 
         let config = GenerateCacheConfig::new(account_dir, output_file.clone());
+        match ReplayCacheDatabase::open_for_cache_path(&output_file)
+            .and_then(|database| database.export_to_legacy_json())
+        {
+            Ok(()) => {
+                crate::sco_log!(
+                    "[SCO/cache-db] exported sqlite cache to legacy json for detailed analyzer"
+                );
+            }
+            Err(error) => {
+                crate::sco_log!(
+                    "[SCO/cache-db] legacy json export before detailed analysis skipped: {error}"
+                );
+            }
+        }
         let runtime = GenerateCacheRuntimeOptions::default()
             .with_worker_count(worker_count)
             .with_stop_controller(stop_controller);
@@ -2248,23 +2267,23 @@ impl TauriOverlayOps {
 impl TauriOverlayOps {
     fn load_existing_cache_by_hash() -> HashMap<String, CacheReplayEntry> {
         let cache_path = PathManagerOps::get_cache_path();
-        let payload = match std::fs::read(&cache_path) {
-            Ok(payload) => payload,
-            Err(_) => return HashMap::new(),
-        };
-        let entries = match serde_json::from_slice::<Vec<CacheReplayEntry>>(&payload) {
-            Ok(entries) => entries,
+        let database = match ReplayCacheDatabase::open_for_cache_path(&cache_path) {
+            Ok(database) => database,
             Err(error) => {
-                crate::sco_log!("[SCO/cache] failed to load existing cache for merging: {error}");
+                crate::sco_log!("[SCO/cache-db] failed to open existing cache database: {error}");
                 return HashMap::new();
             }
         };
 
-        entries
-            .into_iter()
-            .filter(|entry| !entry.hash.is_empty())
-            .map(|entry| (entry.hash.clone(), entry))
-            .collect()
+        match database.load_entries_by_hash() {
+            Ok(entries) => entries,
+            Err(error) => {
+                crate::sco_log!(
+                    "[SCO/cache-db] failed to load existing cache for merging: {error}"
+                );
+                HashMap::new()
+            }
+        }
     }
 }
 
@@ -2634,10 +2653,12 @@ impl TauriOverlayOps {
 
             if include_detailed {
                 let cache_path = PathManagerOps::get_cache_path();
-                if let Err(error) =
-                    CacheReplayEntry::write_entries(&final_cache_entries, &cache_path)
-                {
-                    crate::sco_log!("[SCO/stats] failed to persist final merged cache: {error}");
+                let persist_result = ReplayCacheDatabase::open_for_cache_path(&cache_path)
+                    .and_then(|mut database| database.replace_entries(&final_cache_entries));
+                if let Err(error) = persist_result {
+                    crate::sco_log!(
+                        "[SCO/stats] failed to persist final merged cache database: {error}"
+                    );
                 }
             }
 
@@ -2949,9 +2970,36 @@ impl TauriOverlayOps {
         )
     }
 
+    pub(crate) fn replay_info_from_cache_entry_for_identity(
+        entry: &CacheReplayEntry,
+        main_names: &HashSet<String>,
+        main_handles: &HashSet<String>,
+        dictionary: Option<&Sc2DictionaryData>,
+    ) -> ReplayInfo {
+        dictionary
+            .map(|dictionary| {
+                ReplayAnalysisOps::replay_info_from_cache_entry_with_dictionary(entry, dictionary)
+            })
+            .unwrap_or_else(|| ReplayAnalysisOps::replay_info_from_cache_entry(entry))
+            .oriented_for_main_identity(main_names, main_handles)
+    }
+
+    pub(crate) fn replay_info_from_cache_entry_for_state(
+        state: &BackendState,
+        entry: &CacheReplayEntry,
+    ) -> ReplayInfo {
+        let main_names = state.configured_main_names();
+        let main_handles = state.configured_main_handles();
+        let dictionary = state.dictionary_data().ok();
+        Self::replay_info_from_cache_entry_for_identity(
+            entry,
+            &main_names,
+            &main_handles,
+            dictionary.as_deref(),
+        )
+    }
+
     fn replay_chat_payload_from_slots(
-        replay_state: Arc<Mutex<ReplayState>>,
-        settings: AppSettings,
         main_names: HashSet<String>,
         main_handles: HashSet<String>,
         file: &str,
@@ -2963,20 +3011,33 @@ impl TauriOverlayOps {
             return Err("No replay file specified.".to_string());
         }
 
-        let replays = replay_state
-            .lock()
-            .map(|state| {
-                state.sync_replay_cache_slots_with_resources(
-                    UNLIMITED_REPLAY_LIMIT,
-                    &settings,
-                    &main_names,
-                    &main_handles,
-                    resources.as_deref(),
-                )
-            })
-            .unwrap_or_default();
+        let dictionary_ref = dictionary.as_deref().or_else(|| {
+            resources
+                .as_deref()
+                .map(ReplayAnalysisResources::dictionary_data)
+        });
+        let cached_replay =
+            ReplayCacheDatabase::open_for_cache_path(&PathManagerOps::get_cache_path())
+                .and_then(|database| database.load_entry_by_file(requested_file))
+                .map_err(|error| {
+                    crate::sco_log!(
+                        "[SCO/cache-db] replay chat cache lookup failed for '{}': {error}",
+                        requested_file
+                    );
+                    error
+                })
+                .ok()
+                .flatten()
+                .map(|entry| {
+                    Self::replay_info_from_cache_entry_for_identity(
+                        &entry,
+                        &main_names,
+                        &main_handles,
+                        dictionary_ref,
+                    )
+                });
 
-        if let Some(replay) = replays.iter().find(|replay| replay.file == requested_file) {
+        if let Some(replay) = cached_replay {
             return Ok(dictionary
                 .as_deref()
                 .map(|dictionary| replay.chat_payload_with_dictionary(dictionary))
@@ -2996,6 +3057,7 @@ impl TauriOverlayOps {
             resources,
         )
         .ok_or_else(|| format!("Failed to parse replay file: {requested_file}"))?;
+        let replay = replay.oriented_for_main_identity(&main_names, &main_handles);
         Ok(dictionary
             .as_deref()
             .map(|dictionary| replay.chat_payload_with_dictionary(dictionary))
@@ -3003,8 +3065,6 @@ impl TauriOverlayOps {
     }
 
     fn replay_visual_payload_from_slots(
-        replay_state: Arc<Mutex<ReplayState>>,
-        settings: AppSettings,
         main_names: HashSet<String>,
         main_handles: HashSet<String>,
         file: &str,
@@ -3016,28 +3076,33 @@ impl TauriOverlayOps {
             return Err("No replay file specified.".to_string());
         }
 
-        let replays = replay_state
-            .lock()
-            .map(|state| {
-                state.sync_replay_cache_slots_with_resources(
-                    UNLIMITED_REPLAY_LIMIT,
-                    &settings,
-                    &main_names,
-                    &main_handles,
-                    Some(resources.as_ref()),
-                )
-            })
-            .unwrap_or_default();
-
         let replay_path = Path::new(requested_file);
         if !replay_path.exists() {
             return Err(format!("Replay file not found: {requested_file}"));
         }
 
-        if let Some(replay) = replays
-            .iter()
-            .find(|replay| replay.file() == requested_file)
-        {
+        let cached_replay =
+            ReplayCacheDatabase::open_for_cache_path(&PathManagerOps::get_cache_path())
+                .and_then(|database| database.load_entry_by_file(requested_file))
+                .map_err(|error| {
+                    crate::sco_log!(
+                        "[SCO/cache-db] replay visual cache lookup failed for '{}': {error}",
+                        requested_file
+                    );
+                    error
+                })
+                .ok()
+                .flatten()
+                .map(|entry| {
+                    Self::replay_info_from_cache_entry_for_identity(
+                        &entry,
+                        &main_names,
+                        &main_handles,
+                        Some(dictionary.as_ref()),
+                    )
+                });
+
+        if let Some(replay) = cached_replay.as_ref() {
             let context = Self::replay_visual_context_from_replay(replay);
             return ReplayVisualOps::payload_from_file(
                 replay_path,
@@ -3052,6 +3117,7 @@ impl TauriOverlayOps {
             resources.as_ref(),
         )
         .ok_or_else(|| format!("Failed to parse replay file: {requested_file}"))?;
+        let replay = replay.oriented_for_main_identity(&main_names, &main_handles);
         let context = Self::replay_visual_context_from_replay(&replay);
         ReplayVisualOps::payload_from_file(
             replay_path,
@@ -3306,53 +3372,12 @@ impl TauriOverlayOps {
             })?;
         }
 
-        let entries = match std::fs::read(cache_path) {
-            Ok(payload) => {
-                serde_json::from_slice::<Vec<CacheReplayEntry>>(&payload).map_err(|error| {
-                    format!(
-                        "Failed to parse detailed-analysis cache '{}': {error}",
-                        cache_path.display()
-                    )
-                })?
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-            Err(error) => {
-                return Err(format!(
-                    "Failed to read detailed-analysis cache '{}': {error}",
-                    cache_path.display()
-                ));
-            }
-        };
-
-        let mut merged = entries
-            .into_iter()
-            .filter(|existing| !existing.hash.is_empty())
-            .map(|existing| (existing.hash.clone(), existing))
-            .collect::<HashMap<_, _>>();
-
-        if !entry.hash.is_empty() {
-            merged.retain(|hash, existing| hash == &entry.hash || existing.file != entry.file);
-            match merged.get(&entry.hash) {
-                Some(existing)
-                    if ReplayInfo::should_keep_existing_detailed_variant(
-                        existing.detailed_analysis,
-                        entry.detailed_analysis,
-                    ) => {}
-                _ => {
-                    merged.insert(entry.hash.clone(), entry.clone());
-                }
-            }
-        }
-
-        let mut entries = merged.into_values().collect::<Vec<_>>();
-        entries.sort_by(|left, right| {
-            right
-                .date
-                .cmp(&left.date)
-                .then_with(|| right.file.cmp(&left.file))
-        });
-
-        CacheReplayEntry::write_entries(&entries, cache_path).map_err(|err| err.to_string())
+        ReplayCacheDatabase::open_for_cache_path(cache_path)
+            .and_then(|mut database| {
+                database.upsert_entries_preserving_detailed(std::slice::from_ref(entry))
+            })
+            .map(|_| ())
+            .map_err(|error| error.to_string())
     }
 }
 
@@ -3798,6 +3823,23 @@ impl TauriOverlayOps {
             && existing.is_detailed
         {
             return (ReplayProcessOutcome::Processed, Some(existing));
+        }
+
+        match ReplayCacheDatabase::open_for_cache_path(&PathManagerOps::get_cache_path())
+            .and_then(|database| database.load_entry_by_hash(&replay_hash))
+        {
+            Ok(Some(entry)) if entry.detailed_analysis => {
+                let replay = TauriOverlayOps::replay_info_from_cache_entry_for_state(state, &entry);
+                state.upsert_replay_in_memory_cache_if_persistable(&replay_hash, &replay, true);
+                return (ReplayProcessOutcome::Processed, Some(replay));
+            }
+            Ok(_) => {}
+            Err(error) => {
+                crate::sco_log!(
+                    "[SCO/cache-db] replay show cache lookup failed for '{}': {error}",
+                    file
+                );
+            }
         }
 
         let resources = state.replay_analysis_resources().ok();
@@ -4634,6 +4676,43 @@ async fn config_replays_get(
 
     let (replays, total_replays, selected_replay_file) =
         tauri::async_runtime::spawn_blocking(move || {
+            let cache_path = PathManagerOps::get_cache_path();
+            let from_database =
+                ReplayCacheDatabase::open_for_cache_path(&cache_path).and_then(|database| {
+                    let total_replays = database.count_entries()?;
+                    let entries = database.load_entries(ReplayCacheEntryQuery::all(limit))?;
+                    Ok((entries, total_replays))
+                });
+
+            if let Ok((entries, total_replays)) = from_database
+                && total_replays > 0
+            {
+                let dictionary = resources
+                    .as_deref()
+                    .map(ReplayAnalysisResources::dictionary_data);
+                let replays = entries
+                    .iter()
+                    .filter(|entry| Path::new(&entry.file).exists())
+                    .map(|entry| {
+                        dictionary
+                            .map(|dictionary| {
+                                ReplayAnalysisOps::replay_info_from_cache_entry_with_dictionary(
+                                    entry, dictionary,
+                                )
+                            })
+                            .unwrap_or_else(|| {
+                                ReplayAnalysisOps::replay_info_from_cache_entry(entry)
+                            })
+                            .oriented_for_main_identity(&main_names, &main_handles)
+                    })
+                    .collect::<Vec<_>>();
+                let selected_replay_file = replay_state
+                    .lock()
+                    .ok()
+                    .and_then(|state| state.get_current_replay_file());
+                return (replays, total_replays, selected_replay_file);
+            }
+
             let replay_state = replay_state.lock().ok();
             let all_replays = replay_state
                 .as_ref()
@@ -4695,18 +4774,44 @@ async fn config_players_get(
     let resources = state.replay_analysis_resources().ok();
 
     let (players, total_players) = tauri::async_runtime::spawn_blocking(move || {
-        let replays = replay_state
-            .lock()
-            .map(|state| {
-                state.sync_replay_cache_slots_with_resources(
-                    UNLIMITED_REPLAY_LIMIT,
-                    &settings,
-                    &main_names,
-                    &main_handles,
-                    resources.as_deref(),
-                )
+        let cache_path = PathManagerOps::get_cache_path();
+        let dictionary = resources
+            .as_deref()
+            .map(ReplayAnalysisResources::dictionary_data);
+        let replays = ReplayCacheDatabase::open_for_cache_path(&cache_path)
+            .and_then(|database| database.load_entries(ReplayCacheEntryQuery::all(0)))
+            .map(|entries| {
+                entries
+                    .iter()
+                    .filter(|entry| Path::new(&entry.file).exists())
+                    .map(|entry| {
+                        dictionary
+                            .map(|dictionary| {
+                                ReplayAnalysisOps::replay_info_from_cache_entry_with_dictionary(
+                                    entry, dictionary,
+                                )
+                            })
+                            .unwrap_or_else(|| {
+                                ReplayAnalysisOps::replay_info_from_cache_entry(entry)
+                            })
+                            .oriented_for_main_identity(&main_names, &main_handles)
+                    })
+                    .collect::<Vec<_>>()
             })
-            .unwrap_or_default();
+            .unwrap_or_else(|_| {
+                replay_state
+                    .lock()
+                    .map(|state| {
+                        state.sync_replay_cache_slots_with_resources(
+                            UNLIMITED_REPLAY_LIMIT,
+                            &settings,
+                            &main_names,
+                            &main_handles,
+                            resources.as_deref(),
+                        )
+                    })
+                    .unwrap_or_default()
+            });
         let mut players = ReplayAnalysis::rebuild_player_rows_fast(&replays);
         players.sort_by(|left, right| {
             right
@@ -4870,16 +4975,12 @@ async fn config_replay_chat(
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
-    let replay_state = state.get_replay_state();
-    let settings = state.read_settings_memory();
     let main_names = state.configured_main_names();
     let main_handles = state.configured_main_handles();
     let dictionary = state.dictionary_data().ok();
     let resources = state.replay_analysis_resources().ok();
     let chat = tauri::async_runtime::spawn_blocking(move || {
         TauriOverlayOps::replay_chat_payload_from_slots(
-            replay_state,
-            settings,
             main_names,
             main_handles,
             &requested_file,
@@ -4908,16 +5009,12 @@ async fn config_replay_visual(
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
-    let replay_state = state.get_replay_state();
-    let settings = state.read_settings_memory();
     let main_names = state.configured_main_names();
     let main_handles = state.configured_main_handles();
     let dictionary = state.dictionary_data()?;
     let resources = state.replay_analysis_resources()?;
     let visual = tauri::async_runtime::spawn_blocking(move || {
         TauriOverlayOps::replay_visual_payload_from_slots(
-            replay_state,
-            settings,
             main_names,
             main_handles,
             &requested_file,

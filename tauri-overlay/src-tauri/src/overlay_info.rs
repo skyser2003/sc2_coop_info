@@ -20,7 +20,10 @@ use crate::shared_types::{
     EmptyPayload, FirstWinBonusTimerPayload, OverlayReplayPayload, OverlayScreenshotRequestPayload,
     ReplayDataRecord, ReplayPlayerSeries, SharedTypesOps,
 };
-use crate::{BackendState, TauriOverlayOps, UNLIMITED_REPLAY_LIMIT};
+use crate::{
+    BackendState, PathManagerOps, ReplayCacheDatabase, ReplayCacheEntryQuery, ReplayInfo,
+    TauriOverlayOps, UNLIMITED_REPLAY_LIMIT,
+};
 
 pub(crate) const MENU_ITEM_SHOW_CONFIG: &str = "show_config";
 pub(crate) const MENU_ITEM_SHOW_OVERLAY: &str = "show_overlay";
@@ -1231,17 +1234,84 @@ impl OverlayInfoOps {
 }
 
 impl OverlayInfoOps {
+    fn cached_replay_for_display_from_database(
+        state: &BackendState,
+        requested: Option<&str>,
+        selected: &Option<String>,
+    ) -> Option<ReplayInfo> {
+        let cache_path = PathManagerOps::get_cache_path();
+        let database = ReplayCacheDatabase::open_for_cache_path(&cache_path).map_err(|error| {
+            crate::sco_log!("[SCO/cache-db] replay display cache lookup failed: {error}");
+            error
+        });
+        let Ok(database) = database else {
+            return None;
+        };
+
+        let entry = match requested {
+            Some(file) => database.load_entry_by_file(file),
+            None => match selected.as_deref() {
+                Some(file) => database
+                    .load_entry_by_file(file)
+                    .and_then(|entry| match entry {
+                        Some(entry) => Ok(Some(entry)),
+                        None => database.load_latest_entry(),
+                    }),
+                None => database.load_latest_entry(),
+            },
+        }
+        .map_err(|error| {
+            crate::sco_log!("[SCO/cache-db] replay display row lookup failed: {error}");
+            error
+        })
+        .ok()
+        .flatten()?;
+
+        Some(TauriOverlayOps::replay_info_from_cache_entry_for_state(
+            state, &entry,
+        ))
+    }
+
+    fn replay_list_from_database(state: &BackendState, limit: usize) -> Option<Vec<ReplayInfo>> {
+        let cache_path = PathManagerOps::get_cache_path();
+        let database = ReplayCacheDatabase::open_for_cache_path(&cache_path).map_err(|error| {
+            crate::sco_log!("[SCO/cache-db] replay move cache lookup failed: {error}");
+            error
+        });
+        let Ok(database) = database else {
+            return None;
+        };
+        let entries = database
+            .load_entries(ReplayCacheEntryQuery::all(limit))
+            .map_err(|error| {
+                crate::sco_log!("[SCO/cache-db] replay move row lookup failed: {error}");
+                error
+            })
+            .ok()?;
+        let mut replays = entries
+            .iter()
+            .filter(|entry| Path::new(&entry.file).exists())
+            .map(|entry| TauriOverlayOps::replay_info_from_cache_entry_for_state(state, entry))
+            .collect::<Vec<_>>();
+        ReplayInfo::sort_replays(&mut replays);
+        Some(replays)
+    }
+
     pub(crate) fn replay_show_for_window(
         app: &tauri::AppHandle<Wry>,
         state: &BackendState,
         requested: Option<&str>,
     ) -> crate::OverlayActionResponse {
         let requested = requested.map(str::trim).filter(|value| !value.is_empty());
-        let replays = state.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT);
+        let replays = state.replay_cache_snapshot();
         let selected = state.get_current_replay_file();
 
-        let replay = match OverlayInfoOps::replay_for_display(&replays, requested, &selected) {
-            Some(replay) => replay.clone(),
+        let replay = match OverlayInfoOps::replay_for_display(&replays, requested, &selected)
+            .cloned()
+            .or_else(|| {
+                OverlayInfoOps::cached_replay_for_display_from_database(state, requested, &selected)
+            }) {
+            Some(replay) => replay,
             None => {
                 let Some(requested_file) = requested else {
                     return crate::OverlayActionResponse::failure("No replay selected");
@@ -1276,7 +1346,8 @@ impl OverlayInfoOps {
         let cached = state.replay_cache_snapshot();
 
         let replays = if cached.is_empty() {
-            state.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT)
+            OverlayInfoOps::replay_list_from_database(state, UNLIMITED_REPLAY_LIMIT)
+                .unwrap_or_else(|| state.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT))
         } else {
             cached
         };

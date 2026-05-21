@@ -85,6 +85,10 @@ impl PathManagerOps {
             .join("generated")
             .join(filename)
     }
+
+    pub fn get_cache_db_path() -> PathBuf {
+        PathManagerOps::get_cache_path().with_extension("sqlite3")
+    }
 }
 
 impl PathManagerOps {
