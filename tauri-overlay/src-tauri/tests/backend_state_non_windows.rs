@@ -7,29 +7,16 @@ use serde_json::json;
 use std::sync::Arc;
 
 #[test]
-fn sync_replay_cache_slots_uses_cached_entries_and_sets_selected_file() {
+fn replay_cache_slot_update_sets_selected_file_without_shared_cache() {
     let replay_path = TestHelperOps::test_replay_path("example.SC2Replay");
     let state = BackendState::new();
-    {
-        let replay_state = state.get_replay_state();
-        let replay_slots = replay_state
-            .lock()
-            .expect("replay state mutex should not be poisoned");
-        let mut replays = replay_slots
-            .replays_handle()
-            .lock()
-            .expect("replays mutex should not be poisoned");
-        let mut replay = ReplayInfo::default();
-        replay.set_file(replay_path.clone());
-        replay.set_date(123);
-        replay.set_result("Victory");
-        replays.insert("example-hash".to_string(), replay);
-    }
+    let mut replay = ReplayInfo::default();
+    replay.set_file(replay_path.clone());
+    replay.set_date(123);
+    replay.set_result("Victory");
 
-    let replays = state.sync_replay_cache_slots(1);
+    state.upsert_replay_cache_slot(&replay);
 
-    assert_eq!(replays.len(), 1);
-    assert_eq!(replays[0].file(), replay_path.as_str());
     assert_eq!(
         state.get_current_replay_file().as_deref(),
         Some(replay_path.as_str())

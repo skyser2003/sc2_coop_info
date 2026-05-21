@@ -2191,7 +2191,6 @@ impl TauriOverlayOps {
     fn request_startup_analysis(
         app: AppHandle<Wry>,
         stats: Arc<Mutex<StatsState>>,
-        replays_slot: Arc<Mutex<HashMap<String, ReplayInfo>>>,
         stats_current_replay_files_slot: Arc<Mutex<HashSet<String>>>,
         detailed_stop_controller_slot: Arc<Mutex<Option<Arc<GenerateCacheStopController>>>>,
         trigger: StartupAnalysisTrigger,
@@ -2212,7 +2211,6 @@ impl TauriOverlayOps {
             TauriOverlayOps::spawn_startup_analysis_task(
                 app,
                 stats,
-                replays_slot,
                 stats_current_replay_files_slot,
                 detailed_stop_controller_slot,
                 outcome.include_detailed,
@@ -2226,41 +2224,6 @@ impl TauriOverlayOps {
         }
 
         Ok(outcome)
-    }
-}
-
-impl TauriOverlayOps {
-    pub fn update_analysis_replay_cache_slots(
-        replays: &[ReplayInfo],
-        replays_slot: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
-    ) {
-        match replays_slot.lock() {
-            Ok(mut cache) => {
-                for replay in replays {
-                    let replay_hash =
-                        ReplayFileIdentity::calculate_hash(&PathBuf::from(&replay.file));
-                    if replay_hash.is_empty() {
-                        continue;
-                    }
-                    match cache.get(&replay_hash) {
-                        Some(existing)
-                            if ReplayInfo::should_keep_existing_detailed_variant(
-                                existing.is_detailed,
-                                replay.is_detailed,
-                            ) => {}
-                        _ => {
-                            cache.retain(|hash, entry| {
-                                hash == &replay_hash || entry.file != replay.file
-                            });
-                            cache.insert(replay_hash.clone(), replay.clone());
-                        }
-                    }
-                }
-            }
-            Err(_) => {
-                crate::sco_log!("[SCO/stats] failed to update shared replay cache after scan");
-            }
-        };
     }
 }
 
@@ -2438,7 +2401,6 @@ impl TauriOverlayOps {
     fn spawn_analysis_task(
         app: AppHandle<Wry>,
         stats: Arc<Mutex<StatsState>>,
-        replays_slot: Arc<Mutex<HashMap<String, ReplayInfo>>>,
         stats_current_replay_files_slot: Arc<Mutex<HashSet<String>>>,
         detailed_stop_controller_slot: Arc<Mutex<Option<Arc<GenerateCacheStopController>>>>,
         include_detailed: bool,
@@ -2501,7 +2463,6 @@ impl TauriOverlayOps {
         replay_scan_progress.reset("queued");
 
         let analysis_state = stats;
-        let shared_replay_cache_slot = replays_slot;
         let current_replay_files_slot = stats_current_replay_files_slot;
         let detailed_stop_controller_slot_for_thread = detailed_stop_controller_slot;
         let app_for_analysis = app.clone();
@@ -2636,10 +2597,6 @@ impl TauriOverlayOps {
             if include_detailed && !detailed_completed {
                 replay_scan_progress_for_thread.set_total(current_replay_files.len() as u64);
             }
-            TauriOverlayOps::update_analysis_replay_cache_slots(
-                &all_replays,
-                &shared_replay_cache_slot,
-            );
             match current_replay_files_slot.lock() {
                 Ok(mut current_files) => {
                     *current_files = current_replay_files;
@@ -2776,7 +2733,6 @@ impl TauriOverlayOps {
     fn spawn_startup_analysis_task(
         app: AppHandle<Wry>,
         stats: Arc<Mutex<StatsState>>,
-        replays_slot: Arc<Mutex<HashMap<String, ReplayInfo>>>,
         stats_current_replay_files_slot: Arc<Mutex<HashSet<String>>>,
         detailed_stop_controller_slot: Arc<Mutex<Option<Arc<GenerateCacheStopController>>>>,
         include_detailed: bool,
@@ -2788,7 +2744,6 @@ impl TauriOverlayOps {
         TauriOverlayOps::spawn_analysis_task(
             app,
             stats,
-            replays_slot,
             stats_current_replay_files_slot,
             detailed_stop_controller_slot,
             include_detailed,
@@ -3582,13 +3537,8 @@ impl TauriOverlayOps {
             replay.ally_commander()
         );
         let replay_cache_persistable = cache_entry.is_some();
-        let replay_cached = if let Some(entry) = cache_entry.as_ref() {
-            let replay_hash = if entry.hash.is_empty() {
-                ReplayFileIdentity::calculate_hash(path)
-            } else {
-                entry.hash.clone()
-            };
-            state.upsert_replay_in_memory_cache_if_persistable(&replay_hash, &replay, true)
+        let replay_cached = if cache_entry.is_some() {
+            state.record_replay_cache_update_if_persistable(&replay, true)
         } else {
             false
         };
@@ -3830,7 +3780,7 @@ impl TauriOverlayOps {
         {
             Ok(Some(entry)) if entry.detailed_analysis => {
                 let replay = TauriOverlayOps::replay_info_from_cache_entry_for_state(state, &entry);
-                state.upsert_replay_in_memory_cache_if_persistable(&replay_hash, &replay, true);
+                state.record_replay_cache_update_if_persistable(&replay, true);
                 return (ReplayProcessOutcome::Processed, Some(replay));
             }
             Ok(_) => {}
@@ -3865,13 +3815,8 @@ impl TauriOverlayOps {
             replay.ally_commander()
         );
 
-        let replay_cached = if let Some(entry) = cache_entry.as_ref() {
-            let replay_hash = if entry.hash.is_empty() {
-                ReplayFileIdentity::calculate_hash(path)
-            } else {
-                entry.hash.clone()
-            };
-            state.upsert_replay_in_memory_cache_if_persistable(&replay_hash, &replay, true)
+        let replay_cached = if cache_entry.is_some() {
+            state.record_replay_cache_update_if_persistable(&replay, true)
         } else {
             false
         };
@@ -4893,11 +4838,6 @@ async fn config_stats_get(
     };
     state.log_request("get", &path, &None);
     let stats = state.stats_handle();
-    let replays = state
-        .get_replay_state()
-        .lock()
-        .map(|replay_state| replay_state.replays_handle())
-        .unwrap_or_else(|_| Arc::new(Mutex::new(HashMap::new())));
     let stats_current_replay_files = state.stats_current_replay_files_handle();
     let state_snapshot = (
         state.configured_main_names(),
@@ -4913,7 +4853,6 @@ async fn config_stats_get(
                 StatsResponseBuildInput::new(
                     &path_for_worker,
                     &stats,
-                    &replays,
                     &stats_current_replay_files,
                     scan_progress.clone(),
                     &main_names,
@@ -5158,11 +5097,6 @@ async fn config_stats_action(
             TauriOverlayOps::request_startup_analysis(
                 app.clone(),
                 state.stats_handle(),
-                state
-                    .get_replay_state()
-                    .lock()
-                    .map(|replay_state| replay_state.replays_handle())
-                    .unwrap_or_else(|_| Arc::new(Mutex::new(HashMap::new()))),
                 state.stats_current_replay_files_handle(),
                 state.detailed_analysis_stop_controller_slot(),
                 StartupAnalysisTrigger::FrontendReady,
@@ -5194,11 +5128,6 @@ async fn config_stats_action(
             TauriOverlayOps::spawn_analysis_task(
                 app.clone(),
                 state.stats_handle(),
-                state
-                    .get_replay_state()
-                    .lock()
-                    .map(|replay_state| replay_state.replays_handle())
-                    .unwrap_or_else(|_| Arc::new(Mutex::new(HashMap::new()))),
                 state.stats_current_replay_files_handle(),
                 state.detailed_analysis_stop_controller_slot(),
                 include_detailed,
@@ -5632,16 +5561,10 @@ pub fn run() {
             TauriOverlayOps::spawn_first_win_bonus_timer_task(app.app_handle().clone());
             overlay_info::OverlayInfoOps::spawn_sc2_overlay_window_tracker(app.app_handle().clone());
             performance_overlay::PerformanceOverlayOps::spawn_monitor(app.app_handle().clone());
-            let (stats, replays, stats_current_replay_files, detailed_stop_controller_slot) = {
+            let (stats, stats_current_replay_files, detailed_stop_controller_slot) = {
                 let state = app.state::<BackendState>();
-                let replays = state
-                    .get_replay_state()
-                    .lock()
-                    .map(|replay_state| replay_state.replays_handle())
-                    .unwrap_or_else(|_| Arc::new(Mutex::new(HashMap::new())));
                 (
                     state.stats_handle(),
-                    replays,
                     state.stats_current_replay_files_handle(),
                     state.detailed_analysis_stop_controller_slot(),
                 )
@@ -5649,7 +5572,6 @@ pub fn run() {
             if let Err(error) = TauriOverlayOps::request_startup_analysis(
                 app.app_handle().clone(),
                 stats,
-                replays,
                 stats_current_replay_files,
                 detailed_stop_controller_slot,
                 StartupAnalysisTrigger::Setup,

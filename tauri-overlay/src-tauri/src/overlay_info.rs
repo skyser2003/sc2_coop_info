@@ -1303,14 +1303,11 @@ impl OverlayInfoOps {
         requested: Option<&str>,
     ) -> crate::OverlayActionResponse {
         let requested = requested.map(str::trim).filter(|value| !value.is_empty());
-        let replays = state.replay_cache_snapshot();
         let selected = state.get_current_replay_file();
 
-        let replay = match OverlayInfoOps::replay_for_display(&replays, requested, &selected)
-            .cloned()
-            .or_else(|| {
-                OverlayInfoOps::cached_replay_for_display_from_database(state, requested, &selected)
-            }) {
+        let replay = match OverlayInfoOps::cached_replay_for_display_from_database(
+            state, requested, &selected,
+        ) {
             Some(replay) => replay,
             None => {
                 let Some(requested_file) = requested else {
@@ -1343,14 +1340,8 @@ impl OverlayInfoOps {
         state: &BackendState,
         delta: i64,
     ) -> crate::OverlayActionResponse {
-        let cached = state.replay_cache_snapshot();
-
-        let replays = if cached.is_empty() {
-            OverlayInfoOps::replay_list_from_database(state, UNLIMITED_REPLAY_LIMIT)
-                .unwrap_or_else(|| state.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT))
-        } else {
-            cached
-        };
+        let replays = OverlayInfoOps::replay_list_from_database(state, UNLIMITED_REPLAY_LIMIT)
+            .unwrap_or_else(|| state.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT));
 
         if replays.is_empty() {
             return crate::OverlayActionResponse::failure("No replays available");

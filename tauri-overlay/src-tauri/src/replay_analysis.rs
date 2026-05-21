@@ -70,7 +70,6 @@ struct PlayerUnitRollupInput<'a> {
 pub struct StatsResponseBuildInput<'a> {
     path: &'a str,
     stats: &'a Arc<Mutex<StatsState>>,
-    replays: &'a Arc<Mutex<HashMap<String, ReplayInfo>>>,
     stats_current_replay_files: &'a Arc<Mutex<HashSet<String>>>,
     scan_progress: ReplayScanProgressPayload,
     main_names: &'a HashSet<String>,
@@ -81,7 +80,6 @@ impl<'a> StatsResponseBuildInput<'a> {
     pub fn new(
         path: &'a str,
         stats: &'a Arc<Mutex<StatsState>>,
-        replays: &'a Arc<Mutex<HashMap<String, ReplayInfo>>>,
         stats_current_replay_files: &'a Arc<Mutex<HashSet<String>>>,
         scan_progress: ReplayScanProgressPayload,
         main_names: &'a HashSet<String>,
@@ -90,7 +88,6 @@ impl<'a> StatsResponseBuildInput<'a> {
         Self {
             path,
             stats,
-            replays,
             stats_current_replay_files,
             scan_progress,
             main_names,
@@ -4384,14 +4381,14 @@ impl ReplayAnalysis {
     pub fn build_stats_response(
         path: &str,
         stats: &Arc<Mutex<StatsState>>,
-        replays: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
+        _replays: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
         stats_current_replay_files: &Arc<Mutex<HashSet<String>>>,
     ) -> Result<Value, String> {
         let (main_names, main_handles) = ReplayAnalysisOps::default_main_identity();
         Self::build_stats_response_with_identity(
             path,
             stats,
-            replays,
+            _replays,
             stats_current_replay_files,
             ReplayScanProgress::default().as_payload(),
             &main_names,
@@ -4402,7 +4399,7 @@ impl ReplayAnalysis {
     pub fn build_stats_response_with_identity(
         path: &str,
         stats: &Arc<Mutex<StatsState>>,
-        replays: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
+        _replays: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
         stats_current_replay_files: &Arc<Mutex<HashSet<String>>>,
         scan_progress: ReplayScanProgressPayload,
         main_names: &HashSet<String>,
@@ -4413,7 +4410,6 @@ impl ReplayAnalysis {
             StatsResponseBuildInput::new(
                 path,
                 stats,
-                replays,
                 stats_current_replay_files,
                 scan_progress,
                 main_names,
@@ -4430,7 +4426,6 @@ impl ReplayAnalysis {
         let StatsResponseBuildInput {
             path,
             stats,
-            replays,
             stats_current_replay_files,
             scan_progress,
             main_names,
@@ -4468,79 +4463,62 @@ impl ReplayAnalysis {
                     main_handles,
                     dictionary,
                 );
-            match replays.try_lock() {
-                Ok(cached_replays) => match stats_current_replay_files.try_lock() {
-                    Ok(current_replay_files) => {
-                        let cached_replays = if database_replays.is_empty() {
-                            let mut memory_replays =
-                                cached_replays.values().cloned().collect::<Vec<_>>();
-                            ReplayInfo::sort_replays(&mut memory_replays);
-                            memory_replays
-                        } else {
-                            database_replays
-                        };
-                        let include_detailed = Self::should_include_detailed_stats_response(
-                            &response,
-                            &cached_replays,
-                        );
-                        let stats_replays = Self::stats_replays_for_response_with_dictionary(
-                            include_detailed,
-                            &cached_replays,
-                            main_names,
-                            main_handles,
-                            dictionary,
-                        );
-                        let selected_replays = Self::stats_source_replays_for_response(
-                            path,
-                            stats_replays.as_ref(),
-                            &current_replay_files,
-                        );
-                        let filtered_replays = Self::filter_replays_for_stats_refs_with_dictionary(
-                            path,
-                            &selected_replays,
-                            main_handles,
-                            dictionary,
-                        );
-                        let filtered_payload = Self::rebuild_analysis_payload_with_dictionary(
-                            &filtered_replays,
-                            include_detailed,
-                            main_names,
-                            main_handles,
-                            dictionary,
-                        );
-                        if let Some(analysis) = filtered_payload.get("analysis") {
-                            response["analysis"] = analysis.clone();
-                        }
-                        if let Some(prestige_names) = filtered_payload.get("prestige_names") {
-                            response["prestige_names"] = prestige_names.clone();
-                        }
-                        response["games"] = Value::from(filtered_replays.len() as u64);
-                        let (detailed_parsed_count, total_valid_files) =
-                            Self::detailed_stats_counts(&filtered_replays);
-                        response["detailed_parsed_count"] = Value::from(detailed_parsed_count);
-                        response["total_valid_files"] = Value::from(total_valid_files);
+            match stats_current_replay_files.try_lock() {
+                Ok(current_replay_files) => {
+                    let include_detailed =
+                        Self::should_include_detailed_stats_response(&response, &database_replays);
+                    let stats_replays = Self::stats_replays_for_response_with_dictionary(
+                        include_detailed,
+                        &database_replays,
+                        main_names,
+                        main_handles,
+                        dictionary,
+                    );
+                    let selected_replays = Self::stats_source_replays_for_response(
+                        path,
+                        stats_replays.as_ref(),
+                        &current_replay_files,
+                    );
+                    let filtered_replays = Self::filter_replays_for_stats_refs_with_dictionary(
+                        path,
+                        &selected_replays,
+                        main_handles,
+                        dictionary,
+                    );
+                    let filtered_payload = Self::rebuild_analysis_payload_with_dictionary(
+                        &filtered_replays,
+                        include_detailed,
+                        main_names,
+                        main_handles,
+                        dictionary,
+                    );
+                    if let Some(analysis) = filtered_payload.get("analysis") {
+                        response["analysis"] = analysis.clone();
+                    }
+                    if let Some(prestige_names) = filtered_payload.get("prestige_names") {
+                        response["prestige_names"] = prestige_names.clone();
+                    }
+                    response["games"] = Value::from(filtered_replays.len() as u64);
+                    let (detailed_parsed_count, total_valid_files) =
+                        Self::detailed_stats_counts(&filtered_replays);
+                    response["detailed_parsed_count"] = Value::from(detailed_parsed_count);
+                    response["total_valid_files"] = Value::from(total_valid_files);
 
-                        let (main_players, main_handles) =
-                            ReplayAnalysisOps::collect_main_identity_lists_with_dictionary(
-                                &filtered_replays,
-                                main_names,
-                                main_handles,
-                                dictionary,
-                            );
-                        response["main_players"] = ReplayAnalysisOps::report_value(&main_players);
-                        response["main_handles"] = ReplayAnalysisOps::report_value(&main_handles);
-                    }
-                    Err(TryLockError::WouldBlock) => {}
-                    Err(TryLockError::Poisoned(_)) => {
-                        return Err(
-                            "Failed to access current replay file set: mutex is poisoned"
-                                .to_string(),
+                    let (main_players, main_handles) =
+                        ReplayAnalysisOps::collect_main_identity_lists_with_dictionary(
+                            &filtered_replays,
+                            main_names,
+                            main_handles,
+                            dictionary,
                         );
-                    }
-                },
+                    response["main_players"] = ReplayAnalysisOps::report_value(&main_players);
+                    response["main_handles"] = ReplayAnalysisOps::report_value(&main_handles);
+                }
                 Err(TryLockError::WouldBlock) => {}
                 Err(TryLockError::Poisoned(_)) => {
-                    return Err("Failed to access replay cache: mutex is poisoned".to_string());
+                    return Err(
+                        "Failed to access current replay file set: mutex is poisoned".to_string(),
+                    );
                 }
             }
         }

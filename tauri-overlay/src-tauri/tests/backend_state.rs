@@ -99,34 +99,30 @@ fn replace_active_settings_updates_file_logging_flag() {
 }
 
 #[test]
-fn upsert_replay_in_memory_cache_if_persistable_skips_nonpersistable_replays() {
+fn record_replay_cache_update_if_persistable_skips_nonpersistable_replays() {
     let state = BackendState::new();
     let mut replay = ReplayInfo::default();
     replay.set_file("invalid.SC2Replay");
     replay.set_date(100);
     replay.set_result("Victory");
 
-    let stored = state.upsert_replay_in_memory_cache_if_persistable("invalid-hash", &replay, false);
+    let stored = state.record_replay_cache_update_if_persistable(&replay, false);
 
     assert!(!stored);
-    assert!(state.replay_cache_snapshot().is_empty());
     assert_eq!(state.get_current_replay_file(), None);
 }
 
 #[test]
-fn upsert_replay_in_memory_cache_if_persistable_stores_persistable_replays() {
+fn record_replay_cache_update_if_persistable_selects_persistable_replay() {
     let state = BackendState::new();
     let mut replay = ReplayInfo::default();
     replay.set_file("valid.SC2Replay");
     replay.set_date(100);
     replay.set_result("Victory");
 
-    let stored = state.upsert_replay_in_memory_cache_if_persistable("valid-hash", &replay, true);
+    let stored = state.record_replay_cache_update_if_persistable(&replay, true);
 
-    let replays = state.replay_cache_snapshot();
     assert!(stored);
-    assert_eq!(replays.len(), 1);
-    assert_eq!(replays[0].file(), "valid.SC2Replay");
     assert_eq!(
         state.get_current_replay_file().as_deref(),
         Some("valid.SC2Replay")

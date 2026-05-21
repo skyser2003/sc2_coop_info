@@ -10,8 +10,9 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+use s2coop_analyzer::cache_overall_stats_generator::CacheReplayEntry;
 use s2coop_analyzer::detailed_replay_analysis::{
-    GenerateCacheStopController, ReplayAnalysisResources, ReplayFileIdentity,
+    GenerateCacheStopController, ReplayAnalysisResources,
 };
 use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use serde::Serialize;
@@ -21,8 +22,9 @@ use crate::shared_types::{
     OverlayPlayerStatsPayload, OverlayPlayerStatsRow, ReplayScanProgressPayload,
 };
 use crate::{
-    AnalysisMode, AppSettings, ReplayInfo, ReplayWatcherMessage, Sc2GameState, Sc2GameStateTracker,
-    Sc2GameStateTransition, StatsState, TauriOverlayOps, UNLIMITED_REPLAY_LIMIT,
+    AnalysisMode, AppSettings, PathManagerOps, ReplayCacheDatabase, ReplayCacheEntryQuery,
+    ReplayInfo, ReplayWatcherMessage, Sc2GameState, Sc2GameStateTracker, Sc2GameStateTransition,
+    StatsState, TauriOverlayOps, UNLIMITED_REPLAY_LIMIT,
     overlay_info::{ResolvedHotkeyBinding, RuntimeFlags},
     replay_analysis::ReplayAnalysis,
 };
@@ -93,7 +95,6 @@ pub struct BackendState {
 }
 
 pub struct ReplayState {
-    replays: Arc<Mutex<HashMap<String, ReplayInfo>>>,
     selected_replay_file: Arc<Mutex<Option<String>>>,
 }
 
@@ -275,42 +276,6 @@ impl ReplayScanProgress {
 }
 
 impl BackendStateOps {
-    fn replay_cache_snapshot(cache: &HashMap<String, ReplayInfo>) -> Vec<ReplayInfo> {
-        let mut replays = cache.values().cloned().collect::<Vec<_>>();
-        ReplayInfo::sort_replays(&mut replays);
-        replays
-    }
-}
-
-impl BackendStateOps {
-    fn upsert_replay_map(
-        cache: &mut HashMap<String, ReplayInfo>,
-        replay_hash: &str,
-        replay: &ReplayInfo,
-    ) {
-        if replay_hash.is_empty() {
-            return;
-        }
-
-        cache.retain(|hash, entry| hash == replay_hash || entry.file != replay.file);
-
-        match cache.get(replay_hash) {
-            Some(existing)
-                if ReplayInfo::should_keep_existing_detailed_variant(
-                    existing.is_detailed,
-                    replay.is_detailed,
-                ) => {}
-            Some(_) => {
-                cache.insert(replay_hash.to_string(), replay.clone());
-            }
-            None => {
-                cache.insert(replay_hash.to_string(), replay.clone());
-            }
-        }
-    }
-}
-
-impl BackendStateOps {
     fn as_u32(value: u64) -> u32 {
         u32::try_from(value).unwrap_or(u32::MAX)
     }
@@ -455,7 +420,6 @@ impl BackendState {
             file_logging_enabled: Arc::new(AtomicBool::new(file_logging_enabled)),
             replay_watcher_sender: Arc::new(Mutex::new(None)),
             replay_state: Arc::new(Mutex::new(ReplayState {
-                replays: Arc::new(Mutex::new(HashMap::new())),
                 selected_replay_file: Arc::new(Mutex::new(None)),
             })),
             sc2_game_state: Arc::new(Mutex::new(Sc2GameStateTracker::new(Instant::now()))),
@@ -818,12 +782,8 @@ impl BackendState {
     }
 
     pub(crate) fn overlay_player_stats_payload(&self) -> OverlayPlayerStatsPayload {
-        let replays = self.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT);
         let selected_file = self.get_current_replay_file();
-
-        let selected = selected_file
-            .and_then(|file| replays.iter().find(|replay| replay.file == file).cloned())
-            .or_else(|| replays.first().cloned());
+        let selected = self.cached_replay_by_file_or_latest(selected_file.as_deref());
 
         let Some(selected) = selected else {
             return OverlayPlayerStatsPayload::default();
@@ -932,18 +892,71 @@ impl BackendState {
         self.replay_state.clone()
     }
 
+    fn replay_info_from_cache_entry(&self, entry: &CacheReplayEntry) -> ReplayInfo {
+        let main_names = self.configured_main_names();
+        let main_handles = self.configured_main_handles();
+        let dictionary = self.dictionary_data().ok();
+        TauriOverlayOps::replay_info_from_cache_entry_for_identity(
+            entry,
+            &main_names,
+            &main_handles,
+            dictionary.as_deref(),
+        )
+    }
+
+    fn cached_replays_from_database(&self, limit: usize) -> Vec<ReplayInfo> {
+        let cache_path = PathManagerOps::get_cache_path();
+        let entries = match ReplayCacheDatabase::open_for_cache_path(&cache_path)
+            .and_then(|database| database.load_entries(ReplayCacheEntryQuery::all(limit)))
+        {
+            Ok(entries) => entries,
+            Err(error) => {
+                crate::sco_log!("[SCO/cache-db] failed to load replay snapshot: {error}");
+                return Vec::new();
+            }
+        };
+
+        let mut replays = entries
+            .iter()
+            .filter(|entry| PathBuf::from(&entry.file).exists())
+            .map(|entry| self.replay_info_from_cache_entry(entry))
+            .collect::<Vec<_>>();
+        ReplayInfo::sort_replays(&mut replays);
+        if limit > 0 && replays.len() > limit {
+            replays.truncate(limit);
+        }
+        replays
+    }
+
+    fn cached_replay_by_file_or_latest(&self, file: Option<&str>) -> Option<ReplayInfo> {
+        let cache_path = PathManagerOps::get_cache_path();
+        let database = ReplayCacheDatabase::open_for_cache_path(&cache_path).map_err(|error| {
+            crate::sco_log!("[SCO/cache-db] failed to open replay cache: {error}");
+            error
+        });
+        let Ok(database) = database else {
+            return None;
+        };
+        let entry = match file {
+            Some(file) => database
+                .load_entry_by_file(file)
+                .and_then(|entry| match entry {
+                    Some(entry) => Ok(Some(entry)),
+                    None => database.load_latest_entry(),
+                }),
+            None => database.load_latest_entry(),
+        }
+        .map_err(|error| {
+            crate::sco_log!("[SCO/cache-db] failed to load selected replay: {error}");
+            error
+        })
+        .ok()
+        .flatten()?;
+        Some(self.replay_info_from_cache_entry(&entry))
+    }
+
     pub fn replay_cache_snapshot(&self) -> Vec<ReplayInfo> {
-        self.replay_state
-            .lock()
-            .ok()
-            .and_then(|state| {
-                state
-                    .replays
-                    .lock()
-                    .ok()
-                    .map(|replays| BackendStateOps::replay_cache_snapshot(&replays))
-            })
-            .unwrap_or_default()
+        self.cached_replays_from_database(UNLIMITED_REPLAY_LIMIT)
     }
 
     pub fn sync_replay_cache_slots(&self, limit: usize) -> Vec<ReplayInfo> {
@@ -979,18 +992,20 @@ impl BackendState {
     }
 
     pub fn upsert_replay_cache_slot(&self, replay: &ReplayInfo) {
-        if let Ok(replay_state) = self.replay_state.lock() {
-            let replay_hash =
-                ReplayFileIdentity::calculate_hash(&std::path::PathBuf::from(&replay.file));
-            replay_state.upsert_replay_cache_slot(&replay_hash, replay);
-        }
+        self.set_current_replay_file(Some(&replay.file));
     }
 
     pub fn cached_replay_by_hash(&self, replay_hash: &str) -> Option<ReplayInfo> {
-        self.replay_state
-            .lock()
+        let cache_path = PathManagerOps::get_cache_path();
+        ReplayCacheDatabase::open_for_cache_path(&cache_path)
+            .and_then(|database| database.load_entry_by_hash(replay_hash))
+            .map_err(|error| {
+                crate::sco_log!("[SCO/cache-db] failed to load replay by hash: {error}");
+                error
+            })
             .ok()
-            .and_then(|state| state.cached_replay_by_hash(replay_hash))
+            .flatten()
+            .map(|entry| self.replay_info_from_cache_entry(&entry))
     }
 
     pub fn clear_replay_cache_slots(&self) {
@@ -1082,34 +1097,10 @@ impl BackendState {
 
             match replay_state.lock() {
                 Ok(state) => {
-                    match state.replays.lock() {
-                        Ok(mut cache) => {
-                            for replay in replays {
-                                let replay_hash = ReplayFileIdentity::calculate_hash(
-                                    &std::path::PathBuf::from(&replay.file),
-                                );
-                                BackendStateOps::upsert_replay_map(
-                                    &mut cache,
-                                    &replay_hash,
-                                    &replay,
-                                );
-                            }
-                        }
-                        Err(_) => {
-                            crate::sco_log!("[SCO/players] failed to update player replay cache");
-                        }
-                    }
-
-                    if let Ok(mut selected_file) = state.selected_replay_file.lock() {
-                        match selected_file.as_ref() {
-                            Some(current)
-                                if state.replays.lock().ok().is_some_and(|cache| {
-                                    cache.values().any(|replay| &replay.file == current)
-                                }) => {}
-                            _ => {
-                                *selected_file = selected;
-                            }
-                        }
+                    if let Ok(mut selected_file) = state.selected_replay_file.lock()
+                        && selected_file.is_none()
+                    {
+                        *selected_file = selected;
                     }
                 }
                 Err(error) => {
@@ -1122,8 +1113,11 @@ impl BackendState {
         });
     }
 
-    pub fn refresh_stats_snapshot_after_replay_upsert(&self) {
-        let stats_replays = self.replay_cache_snapshot();
+    pub fn refresh_stats_snapshot_after_replay_upsert(&self, upserted_replay: &ReplayInfo) {
+        let mut stats_replays = self.replay_cache_snapshot();
+        stats_replays.retain(|replay| replay.file != upserted_replay.file);
+        stats_replays.push(upserted_replay.clone());
+        ReplayInfo::sort_replays(&mut stats_replays);
 
         let mut stats = match self.stats.lock() {
             Ok(stats) => stats,
@@ -1174,27 +1168,18 @@ impl BackendState {
         }
     }
 
-    pub fn upsert_replay_in_memory_cache(&self, replay_hash: &str, replay: &ReplayInfo) {
-        let replay_state = self.get_replay_state();
-
-        let _ = replay_state
-            .lock()
-            .map(|replay_state| replay_state.upsert_replay_cache_slot(replay_hash, replay));
-
+    pub fn record_replay_cache_update(&self, replay: &ReplayInfo) {
         if let Ok(mut current_replay_files) = self.stats_current_replay_files.lock() {
             current_replay_files.insert(replay.file.clone());
         }
 
-        let _ = replay_state
-            .lock()
-            .map(|replay_state| replay_state.set_current_replay_file(Some(&replay.file)));
+        self.set_current_replay_file(Some(&replay.file));
 
-        self.refresh_stats_snapshot_after_replay_upsert();
+        self.refresh_stats_snapshot_after_replay_upsert(replay);
     }
 
-    pub fn upsert_replay_in_memory_cache_if_persistable(
+    pub fn record_replay_cache_update_if_persistable(
         &self,
-        replay_hash: &str,
         replay: &ReplayInfo,
         cache_persistable: bool,
     ) -> bool {
@@ -1202,7 +1187,7 @@ impl BackendState {
             return false;
         }
 
-        self.upsert_replay_in_memory_cache(replay_hash, replay);
+        self.record_replay_cache_update(replay);
         true
     }
 
@@ -1220,11 +1205,7 @@ impl BackendState {
         }
 
         let selected = self.get_current_replay_file();
-        let replays = self.replay_cache_snapshot();
-        let seed = selected
-            .as_ref()
-            .and_then(|file| replays.iter().find(|replay| &replay.file == file))
-            .or_else(|| replays.first());
+        let seed = self.cached_replay_by_file_or_latest(selected.as_deref());
         if let Some(seed) = seed {
             let normalized_name = ReplayAnalysis::normalized_player_key(&seed.main().name);
             if !normalized_name.is_empty() {
@@ -1254,19 +1235,13 @@ impl BackendState {
     }
 
     pub fn replay_count_for_launch_detector(&self) -> usize {
-        self.replay_state
-            .lock()
-            .ok()
-            .and_then(|state| state.replays.lock().ok().map(|replays| replays.len()))
+        ReplayCacheDatabase::open_for_cache_path(&PathManagerOps::get_cache_path())
+            .and_then(|database| database.count_entries())
             .unwrap_or_default()
     }
 }
 
 impl ReplayState {
-    pub fn replays_handle(&self) -> Arc<Mutex<HashMap<String, ReplayInfo>>> {
-        self.replays.clone()
-    }
-
     pub fn selected_replay_file_handle(&self) -> Arc<Mutex<Option<String>>> {
         self.selected_replay_file.clone()
     }
@@ -1287,56 +1262,36 @@ impl ReplayState {
         main_handles: &HashSet<String>,
         resources: Option<&ReplayAnalysisResources>,
     ) -> Vec<ReplayInfo> {
-        let cached = self
-            .replays
-            .lock()
-            .map(|replays| BackendStateOps::replay_cache_snapshot(&replays))
+        let from_detailed_analysis = resources
+            .map(|resources| {
+                ReplayAnalysis::load_detailed_analysis_replays_snapshot_from_path_with_dictionary(
+                    &crate::path_manager::PathManagerOps::get_cache_path(),
+                    UNLIMITED_REPLAY_LIMIT,
+                    main_names,
+                    main_handles,
+                    resources.dictionary_data(),
+                )
+            })
             .unwrap_or_default();
 
-        let replays = if cached.is_empty() {
-            let from_detailed_analysis = resources
+        let replays = if from_detailed_analysis.is_empty() {
+            resources
                 .map(|resources| {
-                    ReplayAnalysis::load_detailed_analysis_replays_snapshot_from_path_with_dictionary(
-                        &crate::path_manager::PathManagerOps::get_cache_path(),
+                    let scan_progress = ReplayScanProgress::default();
+                    let replay_scan_in_flight = AtomicBool::new(false);
+                    ReplayAnalysis::analyze_replays_with_resources(
                         UNLIMITED_REPLAY_LIMIT,
+                        settings,
                         main_names,
                         main_handles,
-                        resources.dictionary_data(),
+                        &scan_progress,
+                        &replay_scan_in_flight,
+                        resources,
                     )
                 })
-                .unwrap_or_default();
-
-            let loaded = if from_detailed_analysis.is_empty() {
-                resources
-                    .map(|resources| {
-                        let scan_progress = ReplayScanProgress::default();
-                        let replay_scan_in_flight = AtomicBool::new(false);
-                        ReplayAnalysis::analyze_replays_with_resources(
-                            UNLIMITED_REPLAY_LIMIT,
-                            settings,
-                            main_names,
-                            main_handles,
-                            &scan_progress,
-                            &replay_scan_in_flight,
-                            resources,
-                        )
-                    })
-                    .unwrap_or_default()
-            } else {
-                from_detailed_analysis
-            };
-
-            if let Ok(mut cache) = self.replays.lock() {
-                cache.clear();
-                for replay in &loaded {
-                    let replay_hash =
-                        ReplayFileIdentity::calculate_hash(&std::path::PathBuf::from(&replay.file));
-                    BackendStateOps::upsert_replay_map(&mut cache, &replay_hash, replay);
-                }
-            }
-            loaded
+                .unwrap_or_default()
         } else {
-            cached
+            from_detailed_analysis
         };
 
         let selected = replays.first().map(|replay| replay.file.clone());
@@ -1405,24 +1360,7 @@ impl ReplayState {
         }
     }
 
-    pub fn upsert_replay_cache_slot(&self, replay_hash: &str, replay: &ReplayInfo) {
-        let _ = self
-            .replays
-            .lock()
-            .map(|mut cache| BackendStateOps::upsert_replay_map(&mut cache, replay_hash, replay));
-    }
-
-    pub fn cached_replay_by_hash(&self, replay_hash: &str) -> Option<ReplayInfo> {
-        self.replays
-            .lock()
-            .ok()
-            .and_then(|cache| cache.get(replay_hash).cloned())
-    }
-
     pub fn clear_replay_cache_slots(&self) {
-        if let Ok(mut replays) = self.replays.lock() {
-            replays.clear();
-        }
         if let Ok(mut selected_replay_file) = self.selected_replay_file.lock() {
             *selected_replay_file = None;
         }
