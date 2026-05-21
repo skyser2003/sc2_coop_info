@@ -58,6 +58,7 @@ pub use replay_analysis::{
 };
 pub use replay_cache_db::{
     ReplayCacheDatabase, ReplayCacheDbError, ReplayCacheEntryQuery, ReplayCacheReadScope,
+    SqliteReplayCacheEntrySink,
 };
 pub use replay_info::{
     CommanderUnitRollup, GamesRowPayload, ReplayChatMessage, ReplayChatPayload, ReplayInfo,
@@ -1840,9 +1841,13 @@ impl TauriOverlayOps {
         let cache_path = PathManagerOps::get_cache_path();
         let temp_path = PathBuf::from(format!("{}_temp", cache_path.display()));
         let temp_jsonl_path = cache_path.with_extension("temp.jsonl");
-        let cache_db_path = PathManagerOps::get_cache_db_path();
+        let cache_db_paths = ReplayCacheDatabase::db_related_paths_for_cache_path(&cache_path);
 
-        for path in [cache_path, temp_path, temp_jsonl_path, cache_db_path] {
+        let paths = [cache_path, temp_path, temp_jsonl_path]
+            .into_iter()
+            .chain(cache_db_paths);
+
+        for path in paths {
             if let Err(error) = std::fs::remove_file(&path)
                 && error.kind() != std::io::ErrorKind::NotFound
             {
@@ -1861,6 +1866,7 @@ impl TauriOverlayOps {
         stats: &Arc<Mutex<StatsState>>,
         worker_count: usize,
         stop_controller: Arc<GenerateCacheStopController>,
+        existing_detailed_cache_entries: HashMap<String, CacheReplayEntry>,
     ) -> Result<GenerateCacheSummary, String> {
         let state = app.state::<BackendState>();
         let settings = state.read_settings_memory();
@@ -1897,23 +1903,14 @@ impl TauriOverlayOps {
             .map_err(|error| format!("Failed to access replay analysis resources: {error}"))?;
 
         let config = GenerateCacheConfig::new(account_dir, output_file.clone());
-        match ReplayCacheDatabase::open_for_cache_path(&output_file)
-            .and_then(|database| database.export_to_legacy_json())
-        {
-            Ok(()) => {
-                crate::sco_log!(
-                    "[SCO/cache-db] exported sqlite cache to legacy json for detailed analyzer"
-                );
-            }
-            Err(error) => {
-                crate::sco_log!(
-                    "[SCO/cache-db] legacy json export before detailed analysis skipped: {error}"
-                );
-            }
-        }
         let runtime = GenerateCacheRuntimeOptions::default()
             .with_worker_count(worker_count)
-            .with_stop_controller(stop_controller);
+            .with_stop_controller(stop_controller)
+            .with_cache_entry_sink(Arc::new(SqliteReplayCacheEntrySink::new(
+                output_file.clone(),
+            )))
+            .with_cache_entry_sink_batch_size(10)
+            .with_existing_detailed_cache_entries(existing_detailed_cache_entries);
         DetailedReplayAnalyzer::analyze_full_detailed(
             &config,
             resources.as_ref(),
@@ -2319,6 +2316,11 @@ impl TauriOverlayOps {
         let state = app.state::<BackendState>();
         if include_detailed {
             let existing_cache_by_hash = TauriOverlayOps::load_existing_cache_by_hash();
+            let existing_detailed_cache_entries = existing_cache_by_hash
+                .iter()
+                .filter(|(_, entry)| entry.detailed_analysis && !entry.hash.is_empty())
+                .map(|(hash, entry)| (hash.clone(), entry.clone()))
+                .collect::<HashMap<_, _>>();
             let worker_count = state
                 .read_settings_memory()
                 .normalized_analysis_worker_threads();
@@ -2332,6 +2334,7 @@ impl TauriOverlayOps {
                 analysis_state,
                 worker_count,
                 stop_controller,
+                existing_detailed_cache_entries,
             );
 
             if let Ok(mut slot) = detailed_stop_controller_slot.lock() {

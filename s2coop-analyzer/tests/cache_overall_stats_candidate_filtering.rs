@@ -23,9 +23,9 @@ fn generate_cache_skips_invalid_replay_candidates() {
             .expect("cache generation should succeed for invalid replay placeholders");
 
     assert_eq!(summary.scanned_replays(), 0);
-    assert!(output_file.is_file(), "cache output should be written");
-    assert_eq!(
-        fs::read_to_string(&output_file).expect("cache output should be readable"),
-        "[]"
+    assert!(summary.cache_entries().is_empty());
+    assert!(
+        !output_file.exists(),
+        "legacy cache json should not be written"
     );
 }

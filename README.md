@@ -143,7 +143,7 @@ cargo tauri build
 ### CLI
 
 ```powershell
-cargo run --release --bin s2coop-cli -- generate-cache --account-dir <DIR> --output cache_overall_stats.json
+cargo run --release --bin s2coop-cli -- generate-cache --account-dir <DIR>
 cargo run --release --bin s2coop-cli -- compare-cache-generation --comparison-ref HEAD --runs 1
 ```
 

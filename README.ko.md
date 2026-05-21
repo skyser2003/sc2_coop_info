@@ -129,7 +129,7 @@
 ```powershell
 cd tauri-overlay
 npm install
-npm run tauri dev # or cargo tauri dev
+npm run tauri dev
 ```
 
 ## 빌드
@@ -138,6 +138,13 @@ npm run tauri dev # or cargo tauri dev
 cd tauri-overlay
 npm install
 cargo tauri build
+```
+
+### CLI
+
+```powershell
+cargo run --release --bin s2coop-cli -- generate-cache --account-dir <DIR>
+cargo run --release --bin s2coop-cli -- compare-cache-generation --comparison-ref HEAD --runs 1
 ```
 
 ## 설정 및 사용 시 참고 사항
@@ -156,6 +163,7 @@ cargo tauri build
 
 - 프론트엔드: React, Vite, Material UI, Tauri API
 - 백엔드: Rust, Tauri
+- CLI: `s2coop-cli`
 
 ## 저장소 상태
 

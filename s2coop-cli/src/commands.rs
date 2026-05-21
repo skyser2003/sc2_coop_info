@@ -16,7 +16,6 @@ pub enum CliCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GenerateCacheArgs {
     account_dir: PathBuf,
-    output_file: PathBuf,
     recent_replay_count: Option<usize>,
     worker_count: usize,
 }
@@ -24,13 +23,11 @@ pub struct GenerateCacheArgs {
 impl GenerateCacheArgs {
     pub fn new(
         account_dir: PathBuf,
-        output_file: PathBuf,
         recent_replay_count: Option<usize>,
         worker_count: usize,
     ) -> Self {
         Self {
             account_dir,
-            output_file,
             recent_replay_count,
             worker_count,
         }
@@ -38,10 +35,6 @@ impl GenerateCacheArgs {
 
     pub fn account_dir(&self) -> &Path {
         &self.account_dir
-    }
-
-    pub fn output_file(&self) -> &Path {
-        &self.output_file
     }
 
     pub fn recent_replay_count(&self) -> Option<usize> {
@@ -261,7 +254,6 @@ impl CliArguments {
         match name {
             "generate-cache" => Ok(CliCommand::GenerateCache(GenerateCacheArgs::new(
                 required_path(sub_matches, "account-dir")?,
-                required_path(sub_matches, "output")?,
                 copied_optional_usize(sub_matches, "recent-files"),
                 copied_optional_usize(sub_matches, "workers")
                     .unwrap_or_else(CliArguments::default_generate_cache_worker_count),
@@ -325,7 +317,6 @@ fn generate_cache_command() -> ClapCommand {
     ClapCommand::new("generate-cache")
         .about("Generate deterministic cache_overall_stats entries")
         .arg(path_arg("account-dir", "DIR").required(true))
-        .arg(path_arg("output", "FILE").required(true))
         .arg(positive_usize_arg("recent-files", "COUNT").required(false))
         .arg(positive_usize_arg("workers", "COUNT").required(false))
 }

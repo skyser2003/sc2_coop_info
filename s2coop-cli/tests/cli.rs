@@ -38,8 +38,6 @@ fn parse_generate_cache_command() {
         "generate-cache".to_string(),
         "--account-dir".to_string(),
         "fixtures/replays".to_string(),
-        "--output".to_string(),
-        "cache_overall_stats".to_string(),
     ];
 
     let command = CliArguments::parse_args(&args).expect("cli should parse");
@@ -47,7 +45,6 @@ fn parse_generate_cache_command() {
         command,
         CliCommand::GenerateCache(GenerateCacheArgs::new(
             PathBuf::from("fixtures/replays"),
-            PathBuf::from("cache_overall_stats"),
             None,
             CliArguments::default_generate_cache_worker_count(),
         ))
@@ -61,8 +58,6 @@ fn parse_generate_cache_command_with_recent_files() {
         "generate-cache".to_string(),
         "--account-dir".to_string(),
         "fixtures/replays".to_string(),
-        "--output".to_string(),
-        "cache_overall_stats".to_string(),
         "--recent-files".to_string(),
         "100".to_string(),
     ];
@@ -72,7 +67,6 @@ fn parse_generate_cache_command_with_recent_files() {
         command,
         CliCommand::GenerateCache(GenerateCacheArgs::new(
             PathBuf::from("fixtures/replays"),
-            PathBuf::from("cache_overall_stats"),
             Some(100),
             CliArguments::default_generate_cache_worker_count(),
         ))
@@ -86,8 +80,6 @@ fn parse_generate_cache_command_with_workers() {
         "generate-cache".to_string(),
         "--account-dir".to_string(),
         "fixtures/replays".to_string(),
-        "--output".to_string(),
-        "cache_overall_stats".to_string(),
         "--workers".to_string(),
         "8".to_string(),
     ];
@@ -97,11 +89,25 @@ fn parse_generate_cache_command_with_workers() {
         command,
         CliCommand::GenerateCache(GenerateCacheArgs::new(
             PathBuf::from("fixtures/replays"),
-            PathBuf::from("cache_overall_stats"),
             None,
             8,
         ))
     );
+}
+
+#[test]
+fn parse_generate_cache_command_rejects_output_option() {
+    let args = vec![
+        "s2coop-cli".to_string(),
+        "generate-cache".to_string(),
+        "--account-dir".to_string(),
+        "fixtures/replays".to_string(),
+        "--output".to_string(),
+        "cache_overall_stats.json".to_string(),
+    ];
+
+    let error = CliArguments::parse_args(&args).expect_err("output option should be removed");
+    assert!(error.to_string().contains("unexpected argument"));
 }
 
 #[test]

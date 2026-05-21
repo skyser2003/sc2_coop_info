@@ -131,7 +131,7 @@ fn sample_cache_entry(file: &Path, detailed_analysis: bool) -> CacheReplayEntry 
 }
 
 #[test]
-fn load_detailed_analysis_replays_snapshot_from_path_uses_cache_entries() {
+fn load_detailed_analysis_replays_snapshot_from_path_imports_legacy_cache_file_into_sqlite() {
     let root = unique_temp_path("full_cache");
     std::fs::create_dir_all(&root).expect("temp root should be created");
     let replay_path = root.join("example.SC2Replay");
@@ -163,6 +163,27 @@ fn load_detailed_analysis_replays_snapshot_from_path_uses_cache_entries() {
     assert_eq!(
         replays[0].bonus_total(),
         TestHelperOps::bonus_objective_total_for_map_id(&test_map_id("Void Launch"))
+    );
+
+    let database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    let persisted_entries = database
+        .load_entries(ReplayCacheEntryQuery::all(0))
+        .expect("persisted cache should load");
+    assert_eq!(persisted_entries.len(), 2);
+    assert!(
+        persisted_entries
+            .iter()
+            .any(|entry| entry.file == replay_path.display().to_string())
+    );
+    assert!(
+        persisted_entries
+            .iter()
+            .any(|entry| entry.file == ignored_replay_path.display().to_string())
+    );
+    assert!(
+        !cache_path.exists(),
+        "legacy cache JSON should be deleted after successful SQLite import"
     );
 
     let _ = std::fs::remove_file(&cache_path);
@@ -268,6 +289,10 @@ fn load_detailed_analysis_replays_snapshot_from_path_recovers_temp_cache_entries
         !temp_path.exists(),
         "temp cache should be removed after recovery"
     );
+    assert!(
+        !cache_path.exists(),
+        "legacy cache JSON should be deleted after successful SQLite import"
+    );
 
     let database =
         ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
@@ -293,7 +318,7 @@ fn load_detailed_analysis_replays_snapshot_from_path_recovers_temp_cache_entries
 }
 
 #[test]
-fn load_detailed_analysis_replays_snapshot_from_path_persists_simple_temp_entry_to_cache_file() {
+fn load_detailed_analysis_replays_snapshot_from_path_persists_simple_temp_entry_to_sqlite() {
     let root = unique_temp_path("recover_simple_temp_cache");
     std::fs::create_dir_all(&root).expect("temp root should be created");
     let existing_replay_path = root.join("existing.SC2Replay");
@@ -329,6 +354,10 @@ fn load_detailed_analysis_replays_snapshot_from_path_persists_simple_temp_entry_
     assert!(
         !temp_path.exists(),
         "temp cache should be removed after recovery"
+    );
+    assert!(
+        !cache_path.exists(),
+        "legacy cache JSON should be deleted after successful SQLite import"
     );
 
     let database =

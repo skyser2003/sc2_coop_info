@@ -1,7 +1,7 @@
 #![cfg(not(windows))]
 
 use s2coop_analyzer::cache_overall_stats_generator::{
-    CacheNumericValue, CacheOverallStatsFile, CacheReplayEntry, ProtocolBuildValue, ReplayBuildInfo,
+    CacheNumericValue, CacheReplayEntry, ProtocolBuildValue, ReplayBuildInfo,
 };
 use sco_tauri_overlay::TestHelperOps;
 use sco_tauri_overlay::{
@@ -156,7 +156,6 @@ fn persist_detailed_cache_entry_to_path_writes_and_replaces_entry() {
     let root = unique_temp_path("persist_detailed_cache");
     std::fs::create_dir_all(&root).expect("temp root should be created");
     let cache_path = root.join("cache_overall_stats.json");
-    let pretty_path = CacheOverallStatsFile::pretty_output_path(&cache_path);
     let replay_file = TestHelperOps::test_replay_path("persisted.SC2Replay");
 
     let original = sample_cache_entry(&replay_file, "same-hash", "2025-01-01 00:00:00", "Defeat");
@@ -178,7 +177,6 @@ fn persist_detailed_cache_entry_to_path_writes_and_replaces_entry() {
     assert_eq!(persisted_entries[0].hash, "same-hash");
     assert_eq!(persisted_entries[0].date, "2026-01-01 00:00:00");
     assert_eq!(persisted_entries[0].result, "Victory");
-    assert!(!pretty_path.exists());
 
     let _ = std::fs::remove_file(&cache_path);
     let _ = std::fs::remove_dir_all(&root);

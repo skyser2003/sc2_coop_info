@@ -1,4 +1,3 @@
-use crate::detailed_replay_analysis::GenerateCacheError;
 use crate::tauri_replay_analysis_impl::{
     ParsedReplayInput, ParsedReplayMessage, ParsedReplayPlayer, ReplayReport,
 };
@@ -6,12 +5,9 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value as JsonValue};
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::fs;
-use std::io;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
-use thiserror::Error;
 
 pub use crate::detailed_replay_analysis::{ProtocolBuildValue, ReplayBuildInfo};
 
@@ -255,60 +251,9 @@ impl TimedCanonicalEntry {
     }
 }
 
-#[derive(Debug, Error)]
-pub enum PrettyCacheError {
-    #[error("failed to read cache file '{0}': {1}")]
-    ReadFailed(PathBuf, #[source] io::Error),
-    #[error("failed to parse cache json '{0}': {1}")]
-    ParseFailed(PathBuf, #[source] serde_json::Error),
-    #[error("failed to serialize pretty cache json '{0}': {1}")]
-    SerializeFailed(PathBuf, #[source] serde_json::Error),
-    #[error("failed to write pretty cache file '{0}': {1}")]
-    WriteFailed(PathBuf, #[source] io::Error),
-}
-
 pub struct CacheOverallStatsFile;
 
 impl CacheOverallStatsFile {
-    pub fn pretty_output_path(path: &Path) -> PathBuf {
-        let extension = path.extension();
-        let file_name = path
-            .file_stem()
-            .and_then(|name| name.to_str())
-            .unwrap_or("cache_overall_stats");
-
-        path.with_file_name(format!(
-            "{file_name}_pretty.{}",
-            extension.and_then(|s| s.to_str()).unwrap_or("json")
-        ))
-    }
-
-    pub fn write_pretty_cache_file(
-        minified_path: &Path,
-        pretty_path: Option<&Path>,
-    ) -> Result<PathBuf, PrettyCacheError> {
-        let payload = fs::read(minified_path)
-            .map_err(|error| PrettyCacheError::ReadFailed(minified_path.to_path_buf(), error))?;
-        let parsed: JsonValue = serde_json::from_slice(&payload)
-            .map_err(|error| PrettyCacheError::ParseFailed(minified_path.to_path_buf(), error))?;
-        Self::write_pretty_json_value(minified_path, pretty_path, &parsed)
-    }
-
-    fn write_pretty_json_value(
-        source_path: &Path,
-        pretty_path: Option<&Path>,
-        parsed: &JsonValue,
-    ) -> Result<PathBuf, PrettyCacheError> {
-        let target_path = pretty_path
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| Self::pretty_output_path(source_path));
-        let pretty_text = serde_json::to_string_pretty(parsed)
-            .map_err(|error| PrettyCacheError::SerializeFailed(source_path.to_path_buf(), error))?;
-        fs::write(&target_path, format!("{pretty_text}\n"))
-            .map_err(|error| PrettyCacheError::WriteFailed(target_path.clone(), error))?;
-        Ok(target_path)
-    }
-
     pub(crate) fn normalized_path_string(path: &Path) -> String {
         let mut normalized = PathBuf::new();
         for component in path.components() {
@@ -785,123 +730,6 @@ impl CacheReplayEntry {
         let entries = serde_json::from_slice::<Vec<Self>>(&payload)?;
         let timing = timing.with_deserialize_payload(deserialize_payload_start.elapsed());
         Ok(CanonicalCachePayload::new(entries, payload, timing))
-    }
-
-    pub(crate) fn write_payload(payload: &[u8], path: &Path) -> Result<(), GenerateCacheError> {
-        let path = path.to_path_buf();
-        let temp_file = PathBuf::from(format!("{}.temp", path.display()));
-
-        fs::write(&temp_file, payload)
-            .map_err(|error| GenerateCacheError::TempWriteFailed(temp_file.clone(), error))?;
-
-        if path.exists() {
-            fs::remove_file(&path).map_err(|error| {
-                GenerateCacheError::TempMoveFailed(temp_file.clone(), path.clone(), error)
-            })?;
-        }
-
-        fs::rename(&temp_file, &path)
-            .map_err(|error| GenerateCacheError::TempMoveFailed(temp_file, path.clone(), error))?;
-
-        Ok(())
-    }
-
-    pub fn write_entries(entries: &[Self], path: &Path) -> Result<(), GenerateCacheError> {
-        let payload =
-            Self::serialize_entries(entries).map_err(GenerateCacheError::SerializeFailed)?;
-        Self::write_payload(&payload, path)
-    }
-
-    pub fn load_existing_detailed_cache_entries(
-        cache_path: &Path,
-        logger: Option<&(dyn Fn(String) + Send + Sync + '_)>,
-    ) -> HashMap<String, Self> {
-        let payload = match fs::read(cache_path) {
-            Ok(payload) => payload,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return HashMap::new(),
-            Err(error) => {
-                if let Some(logger) = logger {
-                    logger(format!(
-                        "Ignoring existing cache '{}': failed to read: {error}",
-                        cache_path.display()
-                    ));
-                }
-                return HashMap::new();
-            }
-        };
-        let entries = match serde_json::from_slice::<Vec<Self>>(&payload) {
-            Ok(entries) => entries,
-            Err(error) => {
-                if let Some(logger) = logger {
-                    logger(format!(
-                        "Ignoring existing cache '{}': failed to parse: {error}",
-                        cache_path.display()
-                    ));
-                }
-                return HashMap::new();
-            }
-        };
-
-        entries
-            .into_iter()
-            .filter(|entry| entry.detailed_analysis && !entry.hash.is_empty())
-            .map(|entry| (entry.hash.clone(), entry))
-            .collect()
-    }
-
-    pub fn persist_simple_cache_entries(
-        entries: &[Self],
-        cache_path: &Path,
-    ) -> Result<(), GenerateCacheError> {
-        if let Some(parent) = cache_path.parent() {
-            std::fs::create_dir_all(parent).map_err(|error| {
-                GenerateCacheError::OutputDirectoryCreateFailed(parent.to_path_buf(), error)
-            })?;
-        }
-
-        let all_entries = match std::fs::read(cache_path) {
-            Ok(payload) => serde_json::from_slice::<Vec<Self>>(&payload).map_err(|error| {
-                GenerateCacheError::ParseExistingCache(cache_path.to_path_buf(), error)
-            })?,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-            Err(error) => {
-                return Err(GenerateCacheError::ReadExistingCache(
-                    cache_path.to_path_buf(),
-                    error,
-                ));
-            }
-        };
-
-        let mut merged_entries = all_entries
-            .into_iter()
-            .filter(|entry| !entry.hash.is_empty())
-            .map(|entry| (entry.hash.clone(), entry))
-            .collect::<HashMap<_, _>>();
-
-        for entry in entries {
-            if entry.hash.is_empty() {
-                continue;
-            }
-
-            merged_entries
-                .retain(|hash, existing| hash == &entry.hash || existing.file != entry.file);
-            match merged_entries.get(&entry.hash) {
-                Some(existing) if existing.detailed_analysis && !entry.detailed_analysis => {}
-                _ => {
-                    merged_entries.insert(entry.hash.clone(), entry.clone());
-                }
-            }
-        }
-
-        let mut all_entries = merged_entries.into_values().collect::<Vec<_>>();
-        all_entries.sort_by(|left, right| {
-            right
-                .date
-                .cmp(&left.date)
-                .then_with(|| right.file.cmp(&left.file))
-        });
-
-        Self::write_entries(&all_entries, cache_path)
     }
 
     fn canonicalize_json_value(value: JsonValue) -> JsonValue {

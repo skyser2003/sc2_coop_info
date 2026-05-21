@@ -23,8 +23,9 @@ fn full_simple_analysis_writes_cache_for_empty_valid_set() {
 
     assert_eq!(summary.scanned_replays(), 0);
     assert!(summary.completed());
-    assert_eq!(
-        fs::read_to_string(output_file).expect("cache output should be readable"),
-        "[]"
+    assert!(summary.cache_entries().is_empty());
+    assert!(
+        !output_file.exists(),
+        "legacy cache json should not be written"
     );
 }

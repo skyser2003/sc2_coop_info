@@ -1,6 +1,5 @@
 mod common;
 
-use s2coop_analyzer::cache_overall_stats_generator::CacheReplayEntry;
 use s2coop_analyzer::detailed_replay_analysis::{
     DetailedReplayAnalyzer, GenerateCacheConfig, GenerateCacheRuntimeOptions,
 };
@@ -73,17 +72,19 @@ fn generate_cache_parallel_runs_are_deterministic() {
     assert!(timing_summary.contains("retained_event_capacity_eff"));
     assert!(timing_summary.contains("report_to_cache_entry"));
 
-    let first_entries: Vec<CacheReplayEntry> = serde_json::from_str(
-        &fs::read_to_string(first_output).expect("first cache file should exist"),
-    )
-    .expect("first cache should deserialize");
-    let second_entries: Vec<CacheReplayEntry> = serde_json::from_str(
-        &fs::read_to_string(second_output).expect("second cache file should exist"),
-    )
-    .expect("second cache should deserialize");
-
-    assert_eq!(first_entries, second_entries);
-    assert!(first_entries.is_empty());
+    assert_eq!(
+        first_summary.cache_entries(),
+        second_summary.cache_entries()
+    );
+    assert!(first_summary.cache_entries().is_empty());
+    assert!(
+        !first_output.exists(),
+        "first legacy cache json should not be written"
+    );
+    assert!(
+        !second_output.exists(),
+        "second legacy cache json should not be written"
+    );
 }
 
 #[test]

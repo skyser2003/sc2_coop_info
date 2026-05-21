@@ -69,7 +69,7 @@ impl CliApplication {
             CliCommand::GenerateCache(args) => {
                 let config = GenerateCacheConfig::new(
                     args.account_dir().to_path_buf(),
-                    args.output_file().to_path_buf(),
+                    generate_cache_output_placeholder(),
                 )
                 .with_recent_replay_count(args.recent_replay_count());
                 let dictionary_data = Arc::new(Sc2DictionaryData::load(None).map_err(|error| {
@@ -86,14 +86,13 @@ impl CliApplication {
                 )?;
 
                 let mut output = format!(
-                    "Generated cache_overall_stats with {} replay entr{} at {}",
+                    "Analyzed cache entries from {} replay entr{}",
                     summary.scanned_replays(),
                     if summary.scanned_replays() == 1 {
                         "y"
                     } else {
                         "ies"
-                    },
-                    summary.output_file().display()
+                    }
                 );
                 if summary.timing_report().enabled() {
                     output.push('\n');
@@ -126,6 +125,10 @@ impl CliApplication {
             }
         }
     }
+}
+
+fn generate_cache_output_placeholder() -> PathBuf {
+    std::env::temp_dir().join("s2coop-cli-cache-output-unused.json")
 }
 
 struct RepositoryRootResolver;

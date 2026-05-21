@@ -92,15 +92,6 @@ impl PathManagerOps {
 }
 
 impl PathManagerOps {
-    pub fn get_pretty_cache_path() -> PathBuf {
-        let filename = "cache_overall_stats_pretty.json";
-        PathManagerOps::write_data_dir()
-            .join("generated")
-            .join(filename)
-    }
-}
-
-impl PathManagerOps {
     pub(crate) fn get_log_path() -> PathBuf {
         let filename = "logs.txt";
         PathManagerOps::write_data_dir().join(filename)

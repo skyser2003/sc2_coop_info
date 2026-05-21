@@ -14,7 +14,7 @@ fn write_replay_file(path: &Path) {
 }
 
 #[test]
-fn cli_generate_cache_emits_legacy_style_logs() {
+fn cli_generate_cache_emits_analysis_logs_without_legacy_file() {
     let temp_dir = TempDir::new().expect("failed to create tempdir");
     let account_dir = temp_dir.path().join("Accounts");
     for index in 0..12 {
@@ -26,14 +26,11 @@ fn cli_generate_cache_emits_legacy_style_logs() {
         let replay_name = format!("Replay_{index:02}.SC2Replay");
         write_replay_file(&account_dir.join(account_id).join(replay_name));
     }
-    let output_file = temp_dir.path().join("cache_overall_stats");
     let args = vec![
         "s2coop-cli".to_string(),
         "generate-cache".to_string(),
         "--account-dir".to_string(),
         account_dir.display().to_string(),
-        "--output".to_string(),
-        output_file.display().to_string(),
     ];
 
     let messages = Arc::new(Mutex::new(Vec::<String>::new()));
@@ -46,8 +43,11 @@ fn cli_generate_cache_emits_legacy_style_logs() {
     };
 
     let output = CliApplication::run_with_logger(&args, &logger).expect("cli should run");
-    assert!(output.contains("Generated cache_overall_stats"));
-    assert!(output_file.is_file());
+    assert!(output.contains("Analyzed cache entries"));
+    assert!(
+        !temp_dir.path().join("cache_overall_stats.json").is_file(),
+        "standalone cache generation should not write legacy cache JSON files"
+    );
 
     let messages = messages
         .lock()

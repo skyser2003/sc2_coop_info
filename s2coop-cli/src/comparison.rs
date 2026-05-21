@@ -1,7 +1,6 @@
 use crate::commands::{CliArguments, CompareCacheGenerationArgs};
 use crate::env_file::EnvAssignment;
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fmt;
 use std::fs;
@@ -333,26 +332,6 @@ impl GenerateCacheRunResult {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CacheFileDigest {
-    hash: String,
-    size: u64,
-}
-
-impl CacheFileDigest {
-    pub fn new(hash: String, size: u64) -> Self {
-        Self { hash, size }
-    }
-
-    pub fn hash(&self) -> &str {
-        &self.hash
-    }
-
-    pub fn size(&self) -> u64 {
-        self.size
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "PascalCase")]
 struct ComparisonRunRow {
@@ -363,10 +342,6 @@ struct ComparisonRunRow {
     decode_ordered_seconds: Option<f64>,
     detailed_report_seconds: Option<f64>,
     entry_count: usize,
-    hash: String,
-    size: u64,
-    pretty_hash: Option<String>,
-    pretty_size: Option<u64>,
     output_file: String,
 }
 
@@ -375,8 +350,6 @@ impl ComparisonRunRow {
         run: usize,
         variant: ComparisonVariant,
         cache_run: GenerateCacheRunResult,
-        digest: CacheFileDigest,
-        pretty_digest: Option<CacheFileDigest>,
         output_file: &Path,
     ) -> Self {
         Self {
@@ -387,12 +360,6 @@ impl ComparisonRunRow {
             decode_ordered_seconds: cache_run.decode_ordered_seconds(),
             detailed_report_seconds: cache_run.detailed_report_seconds(),
             entry_count: cache_run.entry_count(),
-            hash: digest.hash().to_string(),
-            size: digest.size(),
-            pretty_hash: pretty_digest
-                .as_ref()
-                .map(|digest| digest.hash().to_string()),
-            pretty_size: pretty_digest.map(|digest| digest.size()),
             output_file: output_file.display().to_string(),
         }
     }
@@ -420,21 +387,6 @@ impl ComparisonRunRow {
     fn entry_count(&self) -> usize {
         self.entry_count
     }
-
-    fn digest_key(&self) -> String {
-        format!("{}:{}", self.hash, self.size)
-    }
-
-    fn pretty_digest_key(&self) -> Option<String> {
-        self.pretty_hash
-            .as_ref()
-            .zip(self.pretty_size)
-            .map(|(hash, size)| format!("{hash}:{size}"))
-    }
-
-    fn short_hash(&self) -> &str {
-        &self.hash[..std::cmp::min(16, self.hash.len())]
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -456,8 +408,6 @@ struct ComparisonSummary {
     comparison_decode_ordered_mean_seconds: Option<f64>,
     current_detailed_report_mean_seconds: Option<f64>,
     comparison_detailed_report_mean_seconds: Option<f64>,
-    main_cache_byte_identical: bool,
-    pretty_cache_byte_identical: Option<bool>,
     entry_counts: Vec<usize>,
 }
 
@@ -473,9 +423,6 @@ struct ComparisonStats {
     comparison_decode_mean: Option<f64>,
     current_detailed_mean: Option<f64>,
     comparison_detailed_mean: Option<f64>,
-    main_equal: bool,
-    pretty_equal: Option<bool>,
-    pretty_generated_runs: usize,
     entry_counts: Vec<usize>,
     delta_seconds: Option<f64>,
     runtime_ratio: Option<f64>,
@@ -502,18 +449,6 @@ impl ComparisonStats {
             .zip(comparison_mean)
             .and_then(|(current, base)| (base > 0.0).then_some(current / base));
 
-        let main_digest_keys = run_rows
-            .iter()
-            .map(ComparisonRunRow::digest_key)
-            .collect::<BTreeSet<String>>();
-        let pretty_digest_keys = run_rows
-            .iter()
-            .filter_map(ComparisonRunRow::pretty_digest_key)
-            .collect::<BTreeSet<String>>();
-        let pretty_generated_runs = run_rows
-            .iter()
-            .filter(|row| row.pretty_hash.is_some())
-            .count();
         let entry_counts = run_rows
             .iter()
             .map(ComparisonRunRow::entry_count)
@@ -544,9 +479,6 @@ impl ComparisonStats {
             comparison_rows,
             current_mean,
             comparison_mean,
-            main_equal: main_digest_keys.len() == 1,
-            pretty_equal: (pretty_generated_runs > 0).then_some(pretty_digest_keys.len() == 1),
-            pretty_generated_runs,
             entry_counts,
             delta_seconds,
             runtime_ratio,
@@ -575,8 +507,6 @@ impl ComparisonStats {
             comparison_decode_ordered_mean_seconds: self.comparison_decode_mean,
             current_detailed_report_mean_seconds: self.current_detailed_mean,
             comparison_detailed_report_mean_seconds: self.comparison_detailed_mean,
-            main_cache_byte_identical: self.main_equal,
-            pretty_cache_byte_identical: self.pretty_equal,
             entry_counts: self.entry_counts.clone(),
         }
     }
@@ -635,12 +565,8 @@ pub enum ComparisonError {
     },
     #[error("failed to resolve git ref '{0}'")]
     EmptyComparisonRef(String),
-    #[error("expected file was not created: {0}")]
-    MissingExpectedFile(PathBuf),
-    #[error("failed to read file '{0}': {1}")]
-    ReadFileFailed(PathBuf, #[source] io::Error),
-    #[error("failed to parse json '{0}': {1}")]
-    JsonParseFailed(PathBuf, #[source] serde_json::Error),
+    #[error("generate-cache output did not include an entry count")]
+    MissingEntryCount,
     #[error("failed to create CSV writer '{0}': {1}")]
     CsvCreateFailed(PathBuf, #[source] csv::Error),
     #[error("failed to write CSV row '{0}': {1}")]
@@ -788,7 +714,7 @@ impl<'a> CacheGenerationComparisonRunner<'a> {
         }
 
         if config.runs() == 1 {
-            let current_output = temp_root.join("current-cache_overall_stats.json");
+            let current_output = temp_root.join("current-cache-output");
             let row = self.invoke_recorded_generate_cache_at_output(
                 2,
                 ComparisonVariant::Current,
@@ -816,13 +742,7 @@ impl<'a> CacheGenerationComparisonRunner<'a> {
             &stats,
         ));
 
-        if !stats.main_equal || stats.pretty_equal.is_some_and(|pretty_equal| !pretty_equal) {
-            *should_keep_artifacts = true;
-            lines.push(format!(
-                "Artifacts kept for inspection: {}",
-                temp_root.display()
-            ));
-        } else if config.keep_artifacts() {
+        if config.keep_artifacts() {
             *should_keep_artifacts = true;
             lines.push(format!(
                 "Artifacts kept by request: {}",
@@ -953,7 +873,7 @@ impl<'a> CacheGenerationComparisonRunner<'a> {
         temp_root: &Path,
         lines: &mut Vec<String>,
     ) -> Result<(), ComparisonError> {
-        let output_file = temp_root.join(format!("warmup-{variant}-cache_overall_stats.json"));
+        let output_file = temp_root.join(format!("warmup-{variant}-cache-output"));
         lines.push(format!("Warm-up {variant}: starting"));
         let run = self.invoke_generate_cache(exe_path, account_dir, &output_file, config)?;
         lines.push(format!(
@@ -975,7 +895,7 @@ impl<'a> CacheGenerationComparisonRunner<'a> {
         temp_root: &Path,
     ) -> Result<ComparisonRunRow, ComparisonError> {
         let output_prefix = format!("{run_number:02}-{variant}");
-        let output_file = temp_root.join(format!("{output_prefix}-cache_overall_stats.json"));
+        let output_file = temp_root.join(format!("{output_prefix}-cache-output"));
         self.invoke_recorded_generate_cache_at_output(
             run_number,
             variant,
@@ -996,16 +916,8 @@ impl<'a> CacheGenerationComparisonRunner<'a> {
         output_file: &Path,
     ) -> Result<ComparisonRunRow, ComparisonError> {
         let run = self.invoke_generate_cache(exe_path, account_dir, output_file, config)?;
-        let digest = file_digest(output_file)?;
-        let pretty_digest = optional_file_digest(&pretty_output_file(output_file))?;
-        Ok(ComparisonRunRow::new(
-            run_number,
-            variant,
-            run,
-            digest,
-            pretty_digest,
-            output_file,
-        ))
+        remove_generated_cache_outputs(output_file)?;
+        Ok(ComparisonRunRow::new(run_number, variant, run, output_file))
     }
 
     fn invoke_generate_cache(
@@ -1015,17 +927,6 @@ impl<'a> CacheGenerationComparisonRunner<'a> {
         output_file: &Path,
         config: &CacheGenerationComparisonConfig,
     ) -> Result<GenerateCacheRunResult, ComparisonError> {
-        let mut arguments = vec![
-            "generate-cache".to_string(),
-            "--account-dir".to_string(),
-            account_dir.display().to_string(),
-            "--output".to_string(),
-            output_file.display().to_string(),
-        ];
-        if let Some(workers) = config.workers() {
-            arguments.extend(["--workers".to_string(), workers.to_string()]);
-        }
-
         let env_vars = if config.analyzer_timings() {
             vec![EnvAssignment::new(
                 "S2COOP_ANALYZER_TIMINGS".to_string(),
@@ -1036,12 +937,30 @@ impl<'a> CacheGenerationComparisonRunner<'a> {
         };
 
         let started = Instant::now();
-        let output = self.run_checked(
-            CommandRequest::new(exe_path, arguments, config.repo_root()).with_env_vars(env_vars),
-        )?;
+        let output = match self.run_checked(
+            CommandRequest::new(
+                exe_path,
+                generate_cache_arguments(account_dir, None, config.workers()),
+                config.repo_root(),
+            )
+            .with_env_vars(env_vars.clone()),
+        ) {
+            Ok(output) => output,
+            Err(error) if should_retry_generate_cache_with_legacy_output(&error) => self
+                .run_checked(
+                    CommandRequest::new(
+                        exe_path,
+                        generate_cache_arguments(account_dir, Some(output_file), config.workers()),
+                        config.repo_root(),
+                    )
+                    .with_env_vars(env_vars),
+                )?,
+            Err(error) => return Err(error),
+        };
         let elapsed_seconds = started.elapsed().as_secs_f64();
         let output_text = output.combined_text();
-        let entry_count = read_json_array_len(output_file)?;
+        let entry_count = parse_generate_cache_entry_count(&output_text)
+            .ok_or(ComparisonError::MissingEntryCount)?;
         Ok(GenerateCacheRunResult::new(
             elapsed_seconds,
             entry_count,
@@ -1069,6 +988,32 @@ impl<'a> CacheGenerationComparisonRunner<'a> {
                 error,
             })
     }
+}
+
+fn generate_cache_arguments(
+    account_dir: &Path,
+    legacy_output_file: Option<&Path>,
+    workers: Option<usize>,
+) -> Vec<String> {
+    let mut arguments = vec![
+        "generate-cache".to_string(),
+        "--account-dir".to_string(),
+        account_dir.display().to_string(),
+    ];
+    if let Some(output_file) = legacy_output_file {
+        arguments.extend(["--output".to_string(), output_file.display().to_string()]);
+    }
+    if let Some(workers) = workers {
+        arguments.extend(["--workers".to_string(), workers.to_string()]);
+    }
+    arguments
+}
+
+fn should_retry_generate_cache_with_legacy_output(error: &ComparisonError) -> bool {
+    let ComparisonError::CommandFailed { output, .. } = error else {
+        return false;
+    };
+    output.contains("--output") || output.contains("output")
 }
 
 pub struct AccountDirectoryResolver;
@@ -1203,6 +1148,26 @@ pub fn parse_timing_metric_seconds(output: &str, metric_name: &str) -> Option<f6
     rest[..number_len].parse::<f64>().ok()
 }
 
+fn parse_generate_cache_entry_count(output: &str) -> Option<usize> {
+    output.lines().find_map(|line| {
+        parse_count_after_prefix(line, "Analyzed cache entries from ")
+            .or_else(|| parse_count_after_prefix(line, "Generated cache_overall_stats with "))
+    })
+}
+
+fn parse_count_after_prefix(line: &str, prefix: &str) -> Option<usize> {
+    let rest = line.strip_prefix(prefix)?;
+    let number_len = rest
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .map(char::len_utf8)
+        .sum::<usize>();
+    if number_len == 0 {
+        return None;
+    }
+    rest[..number_len].parse::<usize>().ok()
+}
+
 fn create_temp_root() -> Result<PathBuf, ComparisonError> {
     let base = std::env::temp_dir();
     let process_id = std::process::id();
@@ -1239,38 +1204,6 @@ fn release_executable(target_dir: &Path, bin_name: &str) -> PathBuf {
     target_dir
         .join("release")
         .join(format!("{bin_name}{}", std::env::consts::EXE_SUFFIX))
-}
-
-fn read_json_array_len(path: &Path) -> Result<usize, ComparisonError> {
-    let content = fs::read_to_string(path)
-        .map_err(|error| ComparisonError::ReadFileFailed(path.to_path_buf(), error))?;
-    let payload = serde_json::from_str::<Vec<serde_json::Value>>(&content)
-        .map_err(|error| ComparisonError::JsonParseFailed(path.to_path_buf(), error))?;
-    Ok(payload.len())
-}
-
-fn file_digest(path: &Path) -> Result<CacheFileDigest, ComparisonError> {
-    if !path.is_file() {
-        return Err(ComparisonError::MissingExpectedFile(path.to_path_buf()));
-    }
-
-    let content = fs::read(path)
-        .map_err(|error| ComparisonError::ReadFileFailed(path.to_path_buf(), error))?;
-    let mut hasher = Sha256::new();
-    hasher.update(&content);
-    let hash = hasher
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    Ok(CacheFileDigest::new(hash, content.len() as u64))
-}
-
-fn optional_file_digest(path: &Path) -> Result<Option<CacheFileDigest>, ComparisonError> {
-    if path.is_file() {
-        return file_digest(path).map(Some);
-    }
-    Ok(None)
 }
 
 fn pretty_output_file(output_file: &Path) -> PathBuf {
@@ -1350,15 +1283,14 @@ fn format_bool(value: bool) -> &'static str {
 
 fn format_run_line(row: &ComparisonRunRow) -> String {
     format!(
-        "Run {:02} {}: elapsed={}s analyzer_total={} decode_ordered={} detailed_report={} entries={} sha={}",
+        "Run {:02} {}: elapsed={}s analyzer_total={} decode_ordered={} detailed_report={} entries={}",
         row.run,
         row.variant(),
         format_seconds_number(row.elapsed_seconds()),
         format_optional_seconds(row.analyzer_total_seconds()),
         format_optional_seconds(row.decode_ordered_seconds()),
         format_optional_seconds(row.detailed_report_seconds()),
-        row.entry_count(),
-        row.short_hash()
+        row.entry_count()
     )
 }
 
@@ -1406,23 +1338,7 @@ fn format_summary_lines(
             .collect::<Vec<String>>()
             .join(", ")
     ));
-    lines.push(format!(
-        "Main cache byte-identical: {}",
-        format_bool(stats.main_equal)
-    ));
-    match stats.pretty_equal {
-        Some(pretty_equal) => lines.push(format!(
-            "Pretty cache byte-identical: {}",
-            format_bool(pretty_equal)
-        )),
-        None => {
-            lines.push("Pretty cache byte-identical: not compared".to_string());
-            lines.push(format!(
-                "Pretty cache generated runs: {}",
-                stats.pretty_generated_runs
-            ));
-        }
-    }
+    lines.push("Cache output byte comparison: not compared".to_string());
     lines.push(format!(
         "Current elapsed mean seconds: {}",
         format_optional_seconds(stats.current_mean)

@@ -1,5 +1,5 @@
 use chrono::{Local, NaiveDate};
-use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use s2coop_analyzer::cache_overall_stats_generator::{
     CacheIconValue, CacheNumericValue, CachePlayer, CacheReplayEntry, CacheUnitStats, ReplayMessage,
 };
@@ -34,6 +34,7 @@ use crate::{
 
 const PRESTIGE_TRACKING_START_YMD: u32 = 20200726;
 const MASTERY_DISTRIBUTION_RATIO_SCALE: u64 = 100_000;
+const SIMPLE_CACHE_FLUSH_BATCH_SIZE: usize = 10;
 
 type MasteryDistributionCounts = [BTreeMap<u64, u64>; 3];
 type MasteryDistributionByPrestigeCounts = [MasteryDistributionCounts; 4];
@@ -103,6 +104,72 @@ struct ScanInFlightGuard<'a> {
 impl Drop for ScanInFlightGuard<'_> {
     fn drop(&mut self) {
         self.flag.store(false, Ordering::Release);
+    }
+}
+
+struct ParsedReplayBatch {
+    replays: Vec<ReplayInfo>,
+    failed_paths: Vec<String>,
+    pending_cache_entries: Vec<CacheReplayEntry>,
+    persisted_cache_entries: usize,
+}
+
+impl ParsedReplayBatch {
+    fn new() -> Self {
+        Self {
+            replays: Vec::new(),
+            failed_paths: Vec::new(),
+            pending_cache_entries: Vec::new(),
+            persisted_cache_entries: 0,
+        }
+    }
+
+    fn push_failure(&mut self, path: String) {
+        self.failed_paths.push(path);
+    }
+
+    fn push_success(
+        &mut self,
+        replay: ReplayInfo,
+        cache_entry: Option<CacheReplayEntry>,
+        cache_path: &Path,
+    ) {
+        self.replays.push(replay);
+        if let Some(cache_entry) = cache_entry {
+            self.pending_cache_entries.push(cache_entry);
+            if self.pending_cache_entries.len() >= SIMPLE_CACHE_FLUSH_BATCH_SIZE {
+                self.flush_pending_cache_entries(cache_path);
+            }
+        }
+    }
+
+    fn flush_pending_cache_entries(&mut self, cache_path: &Path) {
+        if self.pending_cache_entries.is_empty() {
+            return;
+        }
+
+        let entries = std::mem::take(&mut self.pending_cache_entries);
+        match ReplayCacheDatabase::open_for_cache_path(cache_path)
+            .and_then(|mut database| database.upsert_entries_preserving_detailed(&entries))
+        {
+            Ok(changed) => {
+                self.persisted_cache_entries = self.persisted_cache_entries.saturating_add(changed);
+            }
+            Err(error) => {
+                crate::sco_log!(
+                    "[SCO/cache] failed to persist simple analysis cache worker batch: {error}"
+                );
+            }
+        }
+    }
+
+    fn merge(mut self, other: Self) -> Self {
+        self.replays.extend(other.replays);
+        self.failed_paths.extend(other.failed_paths);
+        self.persisted_cache_entries = self
+            .persisted_cache_entries
+            .saturating_add(other.persisted_cache_entries);
+        self
     }
 }
 
@@ -3907,16 +3974,14 @@ impl ReplayAnalysis {
         };
         crate::sco_log!("[SCO/replay] scan root: {}", root.display());
 
-        // Load existing cache (unified for both simple and detailed)
-        let existing_replays = Self::load_all_analysis_replays_snapshot(
-            UNLIMITED_REPLAY_LIMIT,
-            main_names,
-            main_handles,
-        );
-
-        // Create set of files that already have any analysis
-        let analyzed_files: HashSet<String> =
-            existing_replays.iter().map(|r| r.file.clone()).collect();
+        let cache_path = PathManagerOps::get_cache_path();
+        let analyzed_files = ReplayCacheDatabase::open_for_cache_path(&cache_path)
+            .and_then(|database| database.load_cached_files())
+            .map_err(|error| {
+                crate::sco_log!("[SCO/cache] failed to load cached replay file list: {error}");
+                error
+            })
+            .unwrap_or_default();
 
         let collect_started_at = Instant::now();
         scan_progress.set_stage("collecting_paths");
@@ -3948,8 +4013,8 @@ impl ReplayAnalysis {
         if paths_to_parse.is_empty() {
             scan_progress.set_status("Completed");
             scan_progress.set_stage("cache_only");
-            // Return cached results (already sorted and limited by load_all_analysis_replays_snapshot)
-            let mut replays = existing_replays;
+            let mut replays =
+                Self::load_all_analysis_replays_snapshot(limit, main_names, main_handles);
             if limit > 0 && replays.len() > limit {
                 replays.truncate(limit);
             }
@@ -3961,11 +4026,6 @@ impl ReplayAnalysis {
             return replays;
         }
 
-        struct ParseResult {
-            replay: ReplayInfo,
-            cache_entry: Option<CacheReplayEntry>,
-        }
-
         scan_progress.set_cache_hits(0);
         scan_progress.set_to_parse(paths_to_parse_len as u64);
 
@@ -3973,20 +4033,27 @@ impl ReplayAnalysis {
         scan_progress.set_stage("parsing_replays");
         let worker_threads = crate::AppSettings::simple_analysis_worker_threads();
         let progress = scan_progress;
-        let parsed_results: Vec<Result<ParseResult, String>> = rayon::ThreadPoolBuilder::new()
+        let parsed_batch = rayon::ThreadPoolBuilder::new()
             .num_threads(worker_threads)
             .build()
             .unwrap()
             .install(|| {
                 paths_to_parse
                     .into_par_iter()
-                    .enumerate()
-                    .map(|(_index, path)| {
+                    .fold(ParsedReplayBatch::new, |mut batch, path| {
                         let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            let replay =
-                                Self::summarize_replay_lightweight_with_resources(&path, resources);
                             let cache_entry =
                                 CacheReplayEntry::parse_basic_with_resources(&path, resources);
+                            let replay = cache_entry
+                                .as_ref()
+                                .map(|entry| {
+                                    ReplayAnalysisOps::replay_info_from_cache_entry_with_dictionary(
+                                        entry,
+                                        resources.dictionary_data(),
+                                    )
+                                    .sanitized()
+                                })
+                                .unwrap_or_else(|| ReplayAnalysisOps::unparsed_replay(&path));
                             (replay, cache_entry)
                         }));
                         let (replay, cache_entry) = match parsed {
@@ -3994,28 +4061,26 @@ impl ReplayAnalysis {
                             Err(_) => {
                                 progress.increment_completed();
                                 progress.increment_failed();
-                                return Err(path.to_string_lossy().to_string());
+                                batch.push_failure(path.to_string_lossy().to_string());
+                                return batch;
                             }
                         };
                         let oriented = replay.oriented_for_main_identity(main_names, main_handles);
                         progress.increment_completed();
                         progress.increment_newly_parsed();
-                        Ok(ParseResult {
-                            replay: oriented,
-                            cache_entry,
-                        })
+                        batch.push_success(oriented, cache_entry, &cache_path);
+                        batch
                     })
-                    .collect()
+                    .map(|mut batch| {
+                        batch.flush_pending_cache_entries(&cache_path);
+                        batch
+                    })
+                    .reduce(ParsedReplayBatch::new, ParsedReplayBatch::merge)
             });
 
-        let mut failed_to_parse = Vec::<String>::new();
-        let mut successful_results = Vec::<ParseResult>::with_capacity(parsed_results.len());
-        for parse_result in parsed_results {
-            match parse_result {
-                Ok(value) => successful_results.push(value),
-                Err(path) => failed_to_parse.push(path),
-            }
-        }
+        let failed_to_parse = parsed_batch.failed_paths;
+        let parsed_replays = parsed_batch.replays;
+        let persisted_cache_entries = parsed_batch.persisted_cache_entries;
 
         if !failed_to_parse.is_empty() {
             crate::sco_log!(
@@ -4031,21 +4096,24 @@ impl ReplayAnalysis {
 
         crate::sco_log!(
             "[SCO/replay] parsed {} replay(s) with rayon in {}ms (threads={worker_threads})",
-            successful_results.len(),
+            parsed_replays.len(),
             parse_started_at.elapsed().as_millis()
         );
 
         scan_progress.set_stage("finalizing_results");
         scan_progress.set_status("Finalizing results");
         crate::sco_log!(
-            "[SCO/replay] finalizing {} parsed replay result(s) against {} existing replay(s)",
-            successful_results.len(),
-            existing_replays.len()
+            "[SCO/replay] finalizing {} parsed replay result(s) against {} cached replay file(s)",
+            parsed_replays.len(),
+            analyzed_files.len()
         );
 
         let mut replay_map = HashMap::<String, ReplayInfo>::new();
-        let mut simple_cache_entries = Vec::<CacheReplayEntry>::new();
-        for replay in existing_replays {
+        for replay in Self::load_all_analysis_replays_snapshot(
+            UNLIMITED_REPLAY_LIMIT,
+            main_names,
+            main_handles,
+        ) {
             let replay_hash = ReplayFileIdentity::calculate_hash(&PathBuf::from(&replay.file));
             if replay_hash.is_empty() {
                 continue;
@@ -4063,59 +4131,29 @@ impl ReplayAnalysis {
             }
         }
 
-        for result in successful_results {
-            if let Some(entry) = result.cache_entry.as_ref() {
-                simple_cache_entries.push(entry.clone());
-
-                if !entry.hash.is_empty() {
-                    replay_map.retain(|hash, cached| {
-                        hash == &entry.hash || cached.file != result.replay.file
-                    });
-                    match replay_map.get(&entry.hash) {
-                        Some(existing)
-                            if ReplayInfo::should_keep_existing_detailed_variant(
-                                existing.is_detailed,
-                                result.replay.is_detailed,
-                            ) => {}
-                        _ => {
-                            replay_map.insert(entry.hash.clone(), result.replay.clone());
-                        }
-                    }
-                    continue;
-                }
-            }
-
-            let replay_hash =
-                ReplayFileIdentity::calculate_hash(&PathBuf::from(&result.replay.file));
+        for replay in parsed_replays {
+            let replay_hash = ReplayFileIdentity::calculate_hash(&PathBuf::from(&replay.file));
             if replay_hash.is_empty() {
                 continue;
             }
-            replay_map
-                .retain(|hash, cached| hash == &replay_hash || cached.file != result.replay.file);
+            replay_map.retain(|hash, cached| hash == &replay_hash || cached.file != replay.file);
             match replay_map.get(&replay_hash) {
                 Some(existing)
                     if ReplayInfo::should_keep_existing_detailed_variant(
                         existing.is_detailed,
-                        result.replay.is_detailed,
+                        replay.is_detailed,
                     ) => {}
                 _ => {
-                    replay_map.insert(replay_hash, result.replay);
+                    replay_map.insert(replay_hash, replay);
                 }
             }
         }
 
         crate::sco_log!(
-            "[SCO/cache] persisting {} simple-analysis cache entr(y/ies) in one batch",
-            simple_cache_entries.len()
+            "[SCO/cache] persisted {} simple-analysis cache entr(y/ies) in worker batches of {}",
+            persisted_cache_entries,
+            SIMPLE_CACHE_FLUSH_BATCH_SIZE
         );
-        let cache_path = PathManagerOps::get_cache_path();
-        let persist_result =
-            ReplayCacheDatabase::open_for_cache_path(&cache_path).and_then(|mut database| {
-                database.upsert_entries_preserving_detailed(&simple_cache_entries)
-            });
-        if let Err(error) = persist_result {
-            crate::sco_log!("[SCO/cache] failed to persist simple analysis cache batch: {error}");
-        }
 
         let mut all_replays = replay_map.into_values().collect::<Vec<_>>();
         ReplayInfo::sort_replays(&mut all_replays);

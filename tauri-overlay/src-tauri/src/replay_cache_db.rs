@@ -1,8 +1,8 @@
 use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 use s2coop_analyzer::cache_overall_stats_generator::CacheReplayEntry;
-use s2coop_analyzer::detailed_replay_analysis::GenerateCacheError;
-use std::collections::HashMap;
+use s2coop_analyzer::detailed_replay_analysis::{CacheEntrySink, CacheEntrySinkError};
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
@@ -25,10 +25,6 @@ pub enum ReplayCacheDbError {
     Sqlite {
         path: PathBuf,
         source: rusqlite::Error,
-    },
-    GenerateCache {
-        path: PathBuf,
-        source: GenerateCacheError,
     },
     UnsupportedSchema {
         path: PathBuf,
@@ -61,13 +57,6 @@ impl Display for ReplayCacheDbError {
                     path.display()
                 )
             }
-            Self::GenerateCache { path, source } => {
-                write!(
-                    formatter,
-                    "cache database legacy export error '{}': {source}",
-                    path.display()
-                )
-            }
             Self::UnsupportedSchema {
                 path,
                 version,
@@ -89,7 +78,6 @@ impl Error for ReplayCacheDbError {
             Self::Io { source, .. } => Some(source),
             Self::Json { source, .. } => Some(source),
             Self::Sqlite { source, .. } => Some(source),
-            Self::GenerateCache { source, .. } => Some(source),
             Self::UnsupportedSchema { .. } => None,
         }
     }
@@ -212,9 +200,50 @@ pub struct ReplayCacheDatabase {
     connection: Connection,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SqliteReplayCacheEntrySink {
+    cache_path: PathBuf,
+}
+
+impl SqliteReplayCacheEntrySink {
+    pub fn new(cache_path: impl Into<PathBuf>) -> Self {
+        Self {
+            cache_path: cache_path.into(),
+        }
+    }
+
+    pub fn cache_path(&self) -> &Path {
+        &self.cache_path
+    }
+}
+
+impl CacheEntrySink for SqliteReplayCacheEntrySink {
+    fn write_entries(&self, entries: &[CacheReplayEntry]) -> Result<usize, CacheEntrySinkError> {
+        ReplayCacheDatabase::open_for_cache_path(&self.cache_path)
+            .and_then(|mut database| database.upsert_entries_preserving_detailed(entries))
+            .map_err(|error| CacheEntrySinkError::new(error.to_string()))
+    }
+}
+
 impl ReplayCacheDatabase {
     pub fn db_path_for_cache_path(cache_path: &Path) -> PathBuf {
         cache_path.with_extension("sqlite3")
+    }
+
+    pub fn db_related_paths_for_cache_path(cache_path: &Path) -> Vec<PathBuf> {
+        let db_path = Self::db_path_for_cache_path(cache_path);
+        vec![
+            db_path.clone(),
+            Self::path_with_suffix(&db_path, "-wal"),
+            Self::path_with_suffix(&db_path, "-shm"),
+            Self::path_with_suffix(&db_path, "-journal"),
+        ]
+    }
+
+    fn path_with_suffix(path: &Path, suffix: &str) -> PathBuf {
+        let mut value = path.as_os_str().to_os_string();
+        value.push(suffix);
+        PathBuf::from(value)
     }
 
     pub fn open_for_cache_path(cache_path: &Path) -> Result<Self, ReplayCacheDbError> {
@@ -335,15 +364,7 @@ impl ReplayCacheDatabase {
 
         let temp_path = Self::temp_cache_path(&self.cache_path);
         if temp_path.exists() {
-            let imported = self.import_temp_cache_file(&temp_path)?;
-            if imported > 0
-                && let Err(error) = std::fs::remove_file(&temp_path)
-            {
-                crate::sco_log!(
-                    "[SCO/cache-db] failed to remove imported temp cache '{}': {error}",
-                    temp_path.display()
-                );
-            }
+            self.import_temp_cache_file(&temp_path)?;
         }
 
         Ok(())
@@ -372,12 +393,27 @@ impl ReplayCacheDatabase {
 
     pub fn import_legacy_cache_file(&mut self) -> Result<usize, ReplayCacheDbError> {
         let entries = self.read_legacy_cache_entries()?;
-        self.upsert_entries_preserving_detailed(&entries)
+        let changed = self.upsert_entries_preserving_detailed(&entries)?;
+        Self::remove_imported_legacy_file(&self.cache_path)?;
+        Ok(changed)
     }
 
     fn import_temp_cache_file(&mut self, temp_path: &Path) -> Result<usize, ReplayCacheDbError> {
         let entries = Self::read_temp_cache_entries(temp_path)?;
-        self.upsert_entries_preserving_detailed(&entries)
+        let changed = self.upsert_entries_preserving_detailed(&entries)?;
+        Self::remove_imported_legacy_file(temp_path)?;
+        Ok(changed)
+    }
+
+    fn remove_imported_legacy_file(path: &Path) -> Result<(), ReplayCacheDbError> {
+        match std::fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(source) => Err(ReplayCacheDbError::Io {
+                path: path.to_path_buf(),
+                source,
+            }),
+        }
     }
 
     fn read_legacy_cache_entries(&self) -> Result<Vec<CacheReplayEntry>, ReplayCacheDbError> {
@@ -742,6 +778,24 @@ impl ReplayCacheDatabase {
             .collect())
     }
 
+    pub fn load_cached_files(&self) -> Result<HashSet<String>, ReplayCacheDbError> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT file FROM replay_cache_entries")
+            .map_err(|source| self.sqlite_error(source))?;
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|source| self.sqlite_error(source))?;
+        let mut files = HashSet::new();
+        for row in rows {
+            let file = row.map_err(|source| self.sqlite_error(source))?;
+            if !file.trim().is_empty() {
+                files.insert(file);
+            }
+        }
+        Ok(files)
+    }
+
     pub fn count_entries(&self) -> Result<usize, ReplayCacheDbError> {
         let count = self
             .connection
@@ -750,16 +804,6 @@ impl ReplayCacheDatabase {
             })
             .map_err(|source| self.sqlite_error(source))?;
         Ok(usize::try_from(count).unwrap_or(usize::MAX))
-    }
-
-    pub fn export_to_legacy_json(&self) -> Result<(), ReplayCacheDbError> {
-        let entries = self.load_entries(ReplayCacheEntryQuery::all(0))?;
-        CacheReplayEntry::write_entries(&entries, &self.cache_path).map_err(|source| {
-            ReplayCacheDbError::GenerateCache {
-                path: self.cache_path.clone(),
-                source,
-            }
-        })
     }
 
     fn sqlite_error(&self, source: rusqlite::Error) -> ReplayCacheDbError {

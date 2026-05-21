@@ -2,7 +2,10 @@ use rusqlite::Connection;
 use s2coop_analyzer::cache_overall_stats_generator::{
     CacheNumericValue, CacheReplayEntry, ProtocolBuildValue, ReplayBuildInfo,
 };
-use sco_tauri_overlay::{ReplayCacheDatabase, ReplayCacheDbError, ReplayCacheEntryQuery};
+use s2coop_analyzer::detailed_replay_analysis::CacheEntrySink;
+use sco_tauri_overlay::{
+    ReplayCacheDatabase, ReplayCacheDbError, ReplayCacheEntryQuery, SqliteReplayCacheEntrySink,
+};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -55,6 +58,58 @@ fn write_legacy_cache(cache_path: &Path, entries: &[CacheReplayEntry]) {
 }
 
 #[test]
+fn database_related_paths_include_sqlite_sidecars() {
+    let cache_path = PathBuf::from("generated").join("cache_overall_stats.json");
+    let paths = ReplayCacheDatabase::db_related_paths_for_cache_path(&cache_path);
+
+    assert_eq!(paths.len(), 4);
+    assert_eq!(paths[0], cache_path.with_extension("sqlite3"));
+    assert_eq!(
+        paths[1].file_name().and_then(|value| value.to_str()),
+        Some("cache_overall_stats.sqlite3-wal")
+    );
+    assert_eq!(
+        paths[2].file_name().and_then(|value| value.to_str()),
+        Some("cache_overall_stats.sqlite3-shm")
+    );
+    assert_eq!(
+        paths[3].file_name().and_then(|value| value.to_str()),
+        Some("cache_overall_stats.sqlite3-journal")
+    );
+}
+
+#[test]
+fn sqlite_cache_entry_sink_writes_entries_to_database() {
+    let root = unique_temp_path("replay_cache_db_sink");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let cache_path = root.join("cache_overall_stats.json");
+    let entry = sample_cache_entry(
+        "sink.SC2Replay",
+        "sink-hash",
+        "2026-01-01 00:00:00",
+        true,
+        "Victory",
+    );
+    let sink = SqliteReplayCacheEntrySink::new(cache_path.clone());
+
+    let changed = sink
+        .write_entries(std::slice::from_ref(&entry))
+        .expect("sink should write entry");
+
+    assert_eq!(changed, 1);
+    let database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    let persisted = database
+        .load_entry_by_hash("sink-hash")
+        .expect("entry query should succeed")
+        .expect("sink entry should persist");
+    assert_eq!(persisted.file, entry.file);
+    assert!(persisted.detailed_analysis);
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
 fn imports_legacy_cache_file_into_sqlite_database() {
     let root = unique_temp_path("replay_cache_db_import");
     std::fs::create_dir_all(&root).expect("temp root should be created");
@@ -84,7 +139,16 @@ fn imports_legacy_cache_file_into_sqlite_database() {
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[0].hash, "newer-hash");
     assert_eq!(entries[1].hash, "older-hash");
+    let cached_files = database
+        .load_cached_files()
+        .expect("cached file set should load");
+    assert!(cached_files.contains("older.SC2Replay"));
+    assert!(cached_files.contains("newer.SC2Replay"));
     assert!(ReplayCacheDatabase::db_path_for_cache_path(&cache_path).exists());
+    assert!(
+        !cache_path.exists(),
+        "legacy cache JSON should be deleted after successful SQLite import"
+    );
 
     let _ = std::fs::remove_dir_all(&root);
 }

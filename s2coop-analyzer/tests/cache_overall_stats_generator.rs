@@ -2,9 +2,6 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     CacheNumericValue, CachePlayer, CacheReplayEntry, ProtocolBuildValue, ReplayBuildInfo,
     ReplayMessage,
 };
-use std::fs;
-use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 fn sample_build_info() -> ReplayBuildInfo {
     ReplayBuildInfo::new(12345, ProtocolBuildValue::Int(12345))
@@ -66,89 +63,6 @@ fn sample_cached_entry(hash: &str, file: &str, detailed_analysis: bool) -> Cache
         result: "Victory".to_string(),
         weekly: false,
     }
-}
-
-fn unique_temp_path(file_name: &str) -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time should be after unix epoch")
-        .as_nanos();
-    std::env::temp_dir()
-        .join(format!(
-            "s2coop-analyzer-cache-reuse-{}-{nanos}",
-            std::process::id()
-        ))
-        .join(file_name)
-}
-
-#[test]
-fn load_existing_detailed_cache_entries_only_keep_detailed_entries() {
-    let cache_path = unique_temp_path("cache_overall_stats.json");
-    let cache_dir = cache_path
-        .parent()
-        .expect("temp cache path should have a parent")
-        .to_path_buf();
-    fs::create_dir_all(&cache_dir).expect("failed to create temp cache dir");
-
-    let cache_entries = vec![
-        sample_cached_entry("reuse-hash", "old-path.SC2Replay", true),
-        sample_cached_entry("pending-hash", "basic-path.SC2Replay", false),
-    ];
-    let payload =
-        serde_json::to_vec(&cache_entries).expect("failed to serialize temp cache entries");
-    fs::write(&cache_path, payload).expect("failed to write temp cache file");
-
-    let loaded_cache = CacheReplayEntry::load_existing_detailed_cache_entries(&cache_path, None);
-    assert_eq!(loaded_cache.len(), 1);
-    assert!(loaded_cache.contains_key("reuse-hash"));
-    assert!(!loaded_cache.contains_key("pending-hash"));
-
-    let _ = fs::remove_file(&cache_path);
-    let _ = fs::remove_dir_all(&cache_dir);
-}
-
-#[test]
-fn persist_simple_cache_entries_preserve_existing_simple_entries() {
-    let cache_path = unique_temp_path("cache_overall_stats.json");
-    let cache_dir = cache_path
-        .parent()
-        .expect("temp cache path should have a parent")
-        .to_path_buf();
-    fs::create_dir_all(&cache_dir).expect("failed to create temp cache dir");
-
-    let existing_detailed = sample_cached_entry("detailed-hash", "detailed.SC2Replay", true);
-    let existing_simple = sample_cached_entry("simple-existing", "existing.SC2Replay", false);
-    let payload = serde_json::to_vec(&vec![existing_detailed.clone(), existing_simple.clone()])
-        .expect("failed to serialize existing cache entries");
-    fs::write(&cache_path, payload).expect("failed to write cache file");
-
-    let new_simple = sample_cached_entry("simple-new", "new.SC2Replay", false);
-    CacheReplayEntry::persist_simple_cache_entries(std::slice::from_ref(&new_simple), &cache_path)
-        .expect("simple cache persistence should succeed");
-
-    let persisted_payload = fs::read(&cache_path).expect("cache file should exist");
-    let persisted_entries = serde_json::from_slice::<Vec<CacheReplayEntry>>(&persisted_payload)
-        .expect("persisted cache should deserialize");
-
-    assert_eq!(persisted_entries.len(), 3);
-    assert!(
-        persisted_entries
-            .iter()
-            .any(|entry| entry.hash == existing_detailed.hash && entry.detailed_analysis)
-    );
-    assert!(
-        persisted_entries
-            .iter()
-            .any(|entry| entry.hash == existing_simple.hash && !entry.detailed_analysis)
-    );
-    assert!(
-        persisted_entries
-            .iter()
-            .any(|entry| entry.hash == new_simple.hash && !entry.detailed_analysis)
-    );
-
-    let _ = fs::remove_file(&cache_path);
-    let _ = fs::remove_dir_all(&cache_dir);
 }
 
 #[test]

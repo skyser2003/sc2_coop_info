@@ -1,5 +1,5 @@
 use crate::cache_overall_stats_generator::{
-    AnalysisPlayerStatsSeries, CacheOverallStatsFile, CacheReplayEntry, PrettyCacheError,
+    AnalysisPlayerStatsSeries, CacheOverallStatsFile, CacheReplayEntry,
 };
 use crate::dictionary_data::{
     CacheGenerationData, Sc2DictionaryData, UnitAddKillsToJson, UnitNamesJson,
@@ -19,8 +19,6 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
-use std::io;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{
     Arc,
@@ -1662,11 +1660,66 @@ impl GenerateCacheStopController {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CacheEntrySinkError {
+    message: String,
+}
+
+impl CacheEntrySinkError {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+impl std::fmt::Display for CacheEntrySinkError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for CacheEntrySinkError {}
+
+pub trait CacheEntrySink: Send + Sync {
+    fn write_entries(&self, entries: &[CacheReplayEntry]) -> Result<usize, CacheEntrySinkError>;
+}
+
+#[derive(Clone, Default)]
 pub struct GenerateCacheRuntimeOptions {
     worker_count: Option<usize>,
     stop_controller: Option<Arc<GenerateCacheStopController>>,
     timings_enabled: Option<bool>,
+    cache_entry_sink: Option<Arc<dyn CacheEntrySink>>,
+    cache_entry_sink_batch_size: Option<usize>,
+    existing_detailed_cache_entries: Option<HashMap<String, CacheReplayEntry>>,
+}
+
+impl std::fmt::Debug for GenerateCacheRuntimeOptions {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("GenerateCacheRuntimeOptions")
+            .field("worker_count", &self.worker_count)
+            .field("stop_controller", &self.stop_controller.is_some())
+            .field("timings_enabled", &self.timings_enabled)
+            .field("cache_entry_sink", &self.cache_entry_sink.is_some())
+            .field(
+                "cache_entry_sink_batch_size",
+                &self.cache_entry_sink_batch_size,
+            )
+            .field(
+                "existing_detailed_cache_entries",
+                &self
+                    .existing_detailed_cache_entries
+                    .as_ref()
+                    .map(HashMap::len),
+            )
+            .finish()
+    }
 }
 
 impl GenerateCacheRuntimeOptions {
@@ -1690,6 +1743,24 @@ impl GenerateCacheRuntimeOptions {
 
     pub fn with_timings_enabled(mut self, enabled: bool) -> Self {
         self.timings_enabled = Some(enabled);
+        self
+    }
+
+    pub fn with_cache_entry_sink(mut self, sink: Arc<dyn CacheEntrySink>) -> Self {
+        self.cache_entry_sink = Some(sink);
+        self
+    }
+
+    pub fn with_cache_entry_sink_batch_size(mut self, batch_size: usize) -> Self {
+        self.cache_entry_sink_batch_size = Some(batch_size.max(1));
+        self
+    }
+
+    pub fn with_existing_detailed_cache_entries(
+        mut self,
+        entries: HashMap<String, CacheReplayEntry>,
+    ) -> Self {
+        self.existing_detailed_cache_entries = Some(entries);
         self
     }
 
@@ -1718,32 +1789,30 @@ impl GenerateCacheRuntimeOptions {
             .unwrap_or(1);
         std::cmp::max(1, cpu_count / 2)
     }
+
+    fn cache_entry_sink(&self) -> Option<Arc<dyn CacheEntrySink>> {
+        self.cache_entry_sink.clone()
+    }
+
+    fn cache_entry_sink_batch_size(&self) -> usize {
+        self.cache_entry_sink_batch_size.unwrap_or(10).max(1)
+    }
+
+    fn existing_detailed_cache_entries(&self) -> Option<HashMap<String, CacheReplayEntry>> {
+        self.existing_detailed_cache_entries.clone()
+    }
 }
 
 #[derive(Debug, Error)]
 pub enum GenerateCacheError {
     #[error("account directory does not exist or is not a directory: {0}")]
     InvalidAccountDirectory(PathBuf),
-    #[error("failed to create output directory '{0}': {1}")]
-    OutputDirectoryCreateFailed(PathBuf, #[source] io::Error),
     #[error("failed to load detailed-analysis cache formatting rules: {0}")]
     DetailedAnalysisConfig(String),
     #[error("failed to build rayon thread pool: {0}")]
     ThreadPoolBuildFailed(String),
-    #[error("failed to serialize cache payload: {0}")]
-    SerializeFailed(#[source] serde_json::Error),
     #[error("failed to canonicalize cache payload: {0}")]
     CanonicalizeFailed(#[source] serde_json::Error),
-    #[error("failed to write cache temp file '{0}': {1}")]
-    TempWriteFailed(PathBuf, #[source] io::Error),
-    #[error("failed to replace cache file '{1}' from temp '{0}': {2}")]
-    TempMoveFailed(PathBuf, PathBuf, #[source] io::Error),
-    #[error(transparent)]
-    PrettyCache(#[from] PrettyCacheError),
-    #[error("failed to read existing cache file '{0}': {1}")]
-    ReadExistingCache(PathBuf, #[source] io::Error),
-    #[error("failed to parse existing cache file '{0}': {1}")]
-    ParseExistingCache(PathBuf, #[source] serde_json::Error),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1828,13 +1897,9 @@ impl DetailedReplayAnalyzer {
             ));
         }
 
-        let output_directory_setup_start = Instant::now();
-        config.ensure_output_directory()?;
-        let output_directory_setup = output_directory_setup_start.elapsed();
         let mut cache_output = DetailedReplayAnalyzer::analyze_replays_for_cache_output(
             config, logger, runtime, resources, mode,
         )?;
-        cache_output.timing_report.output_directory_setup = output_directory_setup;
         let scanned_replays = cache_output.entries.len();
 
         let canonical_worker_count = if cache_output.timing_report.worker_count == 0 {
@@ -1860,11 +1925,7 @@ impl DetailedReplayAnalyzer {
         cache_output
             .timing_report
             .apply_canonical_payload_timing(canonical_payload.timing());
-        let (cache_entries, cache_payload) = canonical_payload.into_parts();
-
-        let write_entries_start = Instant::now();
-        CacheReplayEntry::write_payload(&cache_payload, &config.output_file)?;
-        cache_output.timing_report.write_entries = write_entries_start.elapsed();
+        let (cache_entries, _cache_payload) = canonical_payload.into_parts();
         let timing_report = cache_output.timing_report.finish(total_start.elapsed());
 
         Ok(GenerateCacheSummary::new(
@@ -1901,15 +1962,6 @@ impl GenerateCacheConfig {
 
     pub fn recent_replay_count(&self) -> Option<usize> {
         self.recent_replay_count
-    }
-
-    fn ensure_output_directory(&self) -> Result<(), GenerateCacheError> {
-        if let Some(parent) = self.output_file.parent() {
-            fs::create_dir_all(parent).map_err(|error| {
-                GenerateCacheError::OutputDirectoryCreateFailed(parent.to_path_buf(), error)
-            })?;
-        }
-        Ok(())
     }
 
     pub fn collect_replay_files(&self) -> Vec<PathBuf> {
@@ -2001,21 +2053,13 @@ struct GenerateCacheProgressReporter<'a> {
     logger: Option<&'a (dyn Fn(String) + Send + Sync + 'a)>,
     total_files: usize,
     report_interval: usize,
-    temp_save_interval: usize,
     start_time: Instant,
     processed_files: AtomicUsize,
     next_report_target: AtomicUsize,
-    next_temp_save_target: AtomicUsize,
-    temp_file_path: PathBuf,
-    temp_entries: std::sync::Mutex<TempEntryBuffer>,
-    temp_persisted_entries: AtomicUsize,
-    temp_persisted_bytes: AtomicUsize,
-}
-
-#[derive(Debug, Default)]
-struct TempEntryBuffer {
-    bytes: Vec<u8>,
-    entries: usize,
+    cache_entry_sink: Option<Arc<dyn CacheEntrySink>>,
+    cache_entry_sink_batch_size: usize,
+    pending_cache_entries: std::sync::Mutex<Vec<CacheReplayEntry>>,
+    cache_persisted_entries: AtomicUsize,
 }
 
 impl<'a> GenerateCacheProgressReporter<'a> {
@@ -2023,16 +2067,15 @@ impl<'a> GenerateCacheProgressReporter<'a> {
         total_files: usize,
         initial_processed_files: usize,
         logger: Option<&'a (dyn Fn(String) + Send + Sync + 'a)>,
-        temp_file_path: PathBuf,
+        cache_entry_sink: Option<Arc<dyn CacheEntrySink>>,
+        cache_entry_sink_batch_size: usize,
     ) -> Self {
         let report_interval = if total_files <= 10 { 1 } else { 10 };
-        let temp_save_interval = 100;
         let initial_processed_files = initial_processed_files.min(total_files);
         Self {
             logger,
             total_files,
             report_interval,
-            temp_save_interval,
             start_time: Instant::now(),
             processed_files: AtomicUsize::new(initial_processed_files),
             next_report_target: AtomicUsize::new(Self::next_progress_target(
@@ -2040,15 +2083,10 @@ impl<'a> GenerateCacheProgressReporter<'a> {
                 report_interval,
                 initial_processed_files,
             )),
-            next_temp_save_target: AtomicUsize::new(Self::next_progress_target(
-                total_files,
-                temp_save_interval,
-                initial_processed_files,
-            )),
-            temp_file_path,
-            temp_entries: std::sync::Mutex::new(TempEntryBuffer::default()),
-            temp_persisted_entries: AtomicUsize::new(0),
-            temp_persisted_bytes: AtomicUsize::new(0),
+            cache_entry_sink,
+            cache_entry_sink_batch_size,
+            pending_cache_entries: std::sync::Mutex::new(Vec::new()),
+            cache_persisted_entries: AtomicUsize::new(0),
         }
     }
 
@@ -2063,15 +2101,23 @@ impl<'a> GenerateCacheProgressReporter<'a> {
     }
 
     fn record_processed_file(&self) {
-        if self.logger.is_none() || self.total_files == 0 {
+        if self.total_files == 0 {
             return;
         }
 
         let processed = self.processed_files.fetch_add(1, AtomicOrdering::Relaxed) + 1;
 
         if processed == self.total_files {
-            self.emit(self.progress_message(processed));
-            let _ = self.save_temp_entries();
+            if self.logger.is_some() {
+                self.emit(self.progress_message(processed));
+            }
+            if let Err(error) = self.flush_cache_entries() {
+                self.emit(format!("Warning: failed to write cache entries: {error}"));
+            }
+            return;
+        }
+
+        if self.logger.is_none() {
             return;
         }
 
@@ -2093,27 +2139,6 @@ impl<'a> GenerateCacheProgressReporter<'a> {
                 }
             }
         }
-
-        let mut temp_target = self.next_temp_save_target.load(AtomicOrdering::Relaxed);
-        while processed >= temp_target {
-            let next_temp_target = temp_target.saturating_add(self.temp_save_interval);
-            match self.next_temp_save_target.compare_exchange(
-                temp_target,
-                next_temp_target,
-                AtomicOrdering::SeqCst,
-                AtomicOrdering::SeqCst,
-            ) {
-                Ok(_) => {
-                    if let Err(error) = self.save_temp_entries() {
-                        self.emit(format!("Warning: failed to save temp entries: {error}"));
-                    }
-                    break;
-                }
-                Err(current) => {
-                    temp_target = current;
-                }
-            }
-        }
     }
 
     fn log_completion(&self) {
@@ -2127,52 +2152,63 @@ impl<'a> GenerateCacheProgressReporter<'a> {
         ));
     }
 
-    fn add_temp_entry(&self, entry: &CacheReplayEntry) {
-        if self.logger.is_none() {
-            return;
-        }
-
-        let mut line = Vec::new();
-        if serde_json::to_writer(&mut line, entry).is_err() {
-            return;
-        }
-        line.push(b'\n');
-
-        if let Ok(mut temp_entries) = self.temp_entries.lock() {
-            temp_entries.entries += 1;
-            temp_entries.bytes.extend_from_slice(&line);
-        }
-    }
-
-    fn save_temp_entries(&self) -> Result<(), std::io::Error> {
-        let pending = match self.temp_entries.lock() {
-            Ok(mut temp_entries) => std::mem::take(&mut *temp_entries),
-            Err(_) => return Ok(()),
-        };
-
-        if pending.entries == 0 || pending.bytes.is_empty() {
+    fn add_cache_entry(&self, entry: &CacheReplayEntry) -> Result<(), CacheEntrySinkError> {
+        if self.cache_entry_sink.is_none() {
             return Ok(());
         }
 
-        std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.temp_file_path)?
-            .write_all(&pending.bytes)?;
-        self.temp_persisted_entries
-            .fetch_add(pending.entries, AtomicOrdering::Relaxed);
-        self.temp_persisted_bytes
-            .fetch_add(pending.bytes.len(), AtomicOrdering::Relaxed);
+        let pending = {
+            let mut pending_entries = self
+                .pending_cache_entries
+                .lock()
+                .map_err(|_| CacheEntrySinkError::new("cache entry buffer lock poisoned"))?;
+            pending_entries.push(entry.clone());
+            if pending_entries.len() < self.cache_entry_sink_batch_size {
+                return Ok(());
+            }
+            std::mem::take(&mut *pending_entries)
+        };
 
+        self.write_cache_entries(pending)
+    }
+
+    fn flush_cache_entries(&self) -> Result<(), CacheEntrySinkError> {
+        if self.cache_entry_sink.is_none() {
+            return Ok(());
+        }
+
+        let pending = {
+            let mut pending_entries = self
+                .pending_cache_entries
+                .lock()
+                .map_err(|_| CacheEntrySinkError::new("cache entry buffer lock poisoned"))?;
+            if pending_entries.is_empty() {
+                return Ok(());
+            }
+            std::mem::take(&mut *pending_entries)
+        };
+
+        self.write_cache_entries(pending)
+    }
+
+    fn write_cache_entries(
+        &self,
+        entries: Vec<CacheReplayEntry>,
+    ) -> Result<(), CacheEntrySinkError> {
+        if entries.is_empty() {
+            return Ok(());
+        }
+        let Some(sink) = self.cache_entry_sink.as_ref() else {
+            return Ok(());
+        };
+        let changed = sink.write_entries(&entries)?;
+        self.cache_persisted_entries
+            .fetch_add(changed, AtomicOrdering::Relaxed);
         Ok(())
     }
 
-    fn temp_persisted_entries(&self) -> usize {
-        self.temp_persisted_entries.load(AtomicOrdering::Relaxed)
-    }
-
-    fn temp_persisted_bytes(&self) -> usize {
-        self.temp_persisted_bytes.load(AtomicOrdering::Relaxed)
+    fn cache_persisted_entries(&self) -> usize {
+        self.cache_persisted_entries.load(AtomicOrdering::Relaxed)
     }
 
     fn emit(&self, message: String) {
@@ -2560,10 +2596,6 @@ impl DetailedReplayAnalyzer {
         })
     }
 
-    fn cache_output_temp_file_path(output_file: &Path) -> PathBuf {
-        output_file.with_extension("temp.jsonl")
-    }
-
     fn analyze_replays_for_cache_output(
         config: &GenerateCacheConfig,
         logger: Option<&(dyn Fn(String) + Send + Sync + '_)>,
@@ -2594,20 +2626,24 @@ impl DetailedReplayAnalyzer {
         timing_report.resolve_main_handles = resolve_main_handles_start.elapsed();
 
         let load_existing_cache_start = Instant::now();
-        let existing_detailed_cache_entries =
-            CacheReplayEntry::load_existing_detailed_cache_entries(
-                config.output_file.as_path(),
-                logger,
-            );
+        let existing_detailed_cache_entries = runtime
+            .existing_detailed_cache_entries()
+            .unwrap_or_default();
         timing_report.load_existing_cache = load_existing_cache_start.elapsed();
-        let temp_file_path =
-            DetailedReplayAnalyzer::cache_output_temp_file_path(config.output_file.as_path());
+        let cache_entry_sink = runtime.cache_entry_sink();
+        let cache_entry_sink_batch_size = runtime.cache_entry_sink_batch_size();
 
         let stop_controller = runtime.stop_controller.clone();
         let collect_detailed_report_timings = runtime.detailed_report_timings_enabled();
         let stop_requested = Arc::new(AtomicBool::new(false));
         let entries = if replay_files.is_empty() {
-            let progress = GenerateCacheProgressReporter::new(0, 0, logger, temp_file_path.clone());
+            let progress = GenerateCacheProgressReporter::new(
+                0,
+                0,
+                logger,
+                cache_entry_sink.clone(),
+                cache_entry_sink_batch_size,
+            );
             progress.log_completion();
             HashMap::new()
         } else {
@@ -2669,7 +2705,8 @@ impl DetailedReplayAnalyzer {
                 total_candidates,
                 reused_entries.len(),
                 logger,
-                temp_file_path.clone(),
+                cache_entry_sink,
+                cache_entry_sink_batch_size,
             ));
 
             if total_candidates == 0 {
@@ -2706,11 +2743,16 @@ impl DetailedReplayAnalyzer {
                                 if let Some(entry) = result.entry()
                                     && entry.detailed_analysis
                                 {
-                                    let temp_entry_write_start = Instant::now();
-                                    progress_for_workers.add_temp_entry(entry);
+                                    let cache_entry_write_start = Instant::now();
+                                    if let Err(error) = progress_for_workers.add_cache_entry(entry)
+                                    {
+                                        progress_for_workers.emit(format!(
+                                            "Warning: failed to write cache entries: {error}"
+                                        ));
+                                    }
                                     result
                                         .timing_mut()
-                                        .add_temp_entry_write(temp_entry_write_start.elapsed());
+                                        .add_temp_entry_write(cache_entry_write_start.elapsed());
                                 }
                                 let progress_record_start = Instant::now();
                                 progress_for_workers.record_processed_file();
@@ -2753,10 +2795,10 @@ impl DetailedReplayAnalyzer {
                 } else {
                     progress.log_completion();
                 }
-                timing_report.set_temp_persist_stats(
-                    progress.temp_persisted_entries(),
-                    progress.temp_persisted_bytes(),
-                );
+                if let Err(error) = progress.flush_cache_entries() {
+                    progress.emit(format!("Warning: failed to write cache entries: {error}"));
+                }
+                timing_report.set_temp_persist_stats(progress.cache_persisted_entries(), 0);
                 reused_entries
             }
         };
@@ -2774,12 +2816,6 @@ impl DetailedReplayAnalyzer {
         let sort_entries_start = Instant::now();
         all_entries.sort_by(|left, right| left.cmp_cache_order(right));
         timing_report.sort_entries = sort_entries_start.elapsed();
-
-        let cleanup_temp_file_start = Instant::now();
-        if temp_file_path.exists() {
-            let _ = fs::remove_file(&temp_file_path);
-        }
-        timing_report.cleanup_temp_file = cleanup_temp_file_start.elapsed();
 
         Ok(GeneratedCacheOutput {
             entries: all_entries,
