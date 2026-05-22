@@ -1,7 +1,6 @@
 use s2coop_analyzer::cache_overall_stats_generator::CacheReplayEntry;
 use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use std::borrow::Borrow;
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::path::PathBuf;
@@ -224,46 +223,6 @@ impl TestHelperOps {
         new_entries: Vec<CacheReplayEntry>,
     ) -> Vec<CacheReplayEntry> {
         TauriOverlayOps::merge_cache_entries(existing_by_hash, new_entries)
-    }
-}
-
-impl TestHelperOps {
-    pub fn stats_replays_for_response_from_path(
-        include_detailed: bool,
-        cached_replays: &[ReplayInfo],
-        cache_path: &Path,
-    ) -> Vec<ReplayInfo> {
-        let (main_names, main_handles) = TestHelperOps::default_main_identity();
-        TestHelperOps::stats_replays_for_response_from_path_with_identity(
-            include_detailed,
-            cached_replays,
-            cache_path,
-            &main_names,
-            &main_handles,
-        )
-    }
-}
-
-impl TestHelperOps {
-    pub fn stats_replays_for_response_from_path_with_identity(
-        include_detailed: bool,
-        cached_replays: &[ReplayInfo],
-        cache_path: &Path,
-        main_names: &HashSet<String>,
-        main_handles: &HashSet<String>,
-    ) -> Vec<ReplayInfo> {
-        let dictionary = TestHelperOps::load_dictionary();
-        match crate::replay_analysis::ReplayAnalysis::stats_replays_for_response_from_path_with_dictionary(
-        include_detailed,
-        cached_replays,
-        cache_path,
-        main_names,
-        main_handles,
-        &dictionary,
-    ) {
-        Cow::Borrowed(replays) => replays.to_vec(),
-        Cow::Owned(replays) => replays,
-    }
     }
 }
 

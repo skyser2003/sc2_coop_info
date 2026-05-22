@@ -22,9 +22,9 @@ use crate::shared_types::{
     OverlayPlayerStatsPayload, OverlayPlayerStatsRow, ReplayScanProgressPayload,
 };
 use crate::{
-    AnalysisMode, AppSettings, PathManagerOps, ReplayCacheDatabase, ReplayCacheEntryQuery,
-    ReplayInfo, ReplayWatcherMessage, Sc2GameState, Sc2GameStateTracker, Sc2GameStateTransition,
-    StatsState, TauriOverlayOps, UNLIMITED_REPLAY_LIMIT,
+    AppSettings, PathManagerOps, ReplayCacheDatabase, ReplayCacheEntryQuery, ReplayInfo,
+    ReplayWatcherMessage, Sc2GameState, Sc2GameStateTracker, Sc2GameStateTransition, StatsState,
+    TauriOverlayOps,
     overlay_info::{ResolvedHotkeyBinding, RuntimeFlags},
     replay_analysis::ReplayAnalysis,
 };
@@ -907,7 +907,7 @@ impl BackendState {
     fn cached_replays_from_database(&self, limit: usize) -> Vec<ReplayInfo> {
         let cache_path = PathManagerOps::get_cache_path();
         let entries = match ReplayCacheDatabase::open_for_cache_path(&cache_path)
-            .and_then(|database| database.load_entries(ReplayCacheEntryQuery::all(limit)))
+            .and_then(|database| database.load_summary_entries(ReplayCacheEntryQuery::all(limit)))
         {
             Ok(entries) => entries,
             Err(error) => {
@@ -955,27 +955,12 @@ impl BackendState {
         Some(self.replay_info_from_cache_entry(&entry))
     }
 
-    pub fn replay_cache_snapshot(&self) -> Vec<ReplayInfo> {
-        self.cached_replays_from_database(UNLIMITED_REPLAY_LIMIT)
-    }
-
     pub fn sync_replay_cache_slots(&self, limit: usize) -> Vec<ReplayInfo> {
-        let main_names = self.configured_main_names();
-        let main_handles = self.configured_main_handles();
-        let settings = self.read_settings_memory();
-        let resources = self.replay_analysis_resources().ok();
-        self.replay_state
-            .lock()
-            .map(|state| {
-                state.sync_replay_cache_slots_with_resources(
-                    limit,
-                    &settings,
-                    &main_names,
-                    &main_handles,
-                    resources.as_deref(),
-                )
-            })
-            .unwrap_or_default()
+        let replays = self.cached_replays_from_database(limit);
+        if let Ok(state) = self.replay_state.lock() {
+            state.sync_selected_replay_file_from_replays(&replays);
+        }
+        replays
     }
 
     pub fn get_current_replay_file(&self) -> Option<String> {
@@ -1113,69 +1098,12 @@ impl BackendState {
         });
     }
 
-    pub fn refresh_stats_snapshot_after_replay_upsert(&self, upserted_replay: &ReplayInfo) {
-        let mut stats_replays = self.replay_cache_snapshot();
-        stats_replays.retain(|replay| replay.file != upserted_replay.file);
-        stats_replays.push(upserted_replay.clone());
-        ReplayInfo::sort_replays(&mut stats_replays);
-
-        let mut stats = match self.stats.lock() {
-            Ok(stats) => stats,
-            Err(_) => return,
-        };
-
-        if !stats.ready() || stats.analysis_running() {
-            return;
-        }
-
-        let include_detailed = stats.include_detailed_stats_for_cache(&stats_replays);
-        let mode = AnalysisMode::from_include_detailed(include_detailed);
-        let main_names = self.configured_main_names();
-        let main_handles = self.configured_main_handles();
-        let dictionary = self.dictionary_data().ok();
-        let snapshot = dictionary
-            .as_deref()
-            .map(|dictionary| {
-                ReplayAnalysis::build_rebuild_snapshot_with_dictionary(
-                    &stats_replays,
-                    include_detailed,
-                    &main_names,
-                    &main_handles,
-                    dictionary,
-                )
-            })
-            .unwrap_or_else(|| {
-                crate::StatsSnapshot::new(
-                    true,
-                    stats_replays.len() as u64,
-                    Vec::new(),
-                    Vec::new(),
-                    Value::Null,
-                    Default::default(),
-                    "Dictionary data is unavailable.",
-                )
-            });
-        TauriOverlayOps::apply_rebuild_snapshot(&mut stats, snapshot, mode);
-        if !include_detailed {
-            if let Some(dictionary) = dictionary.as_deref() {
-                stats.sync_detailed_analysis_status_from_replays_with_dictionary(
-                    &stats_replays,
-                    dictionary,
-                );
-            } else {
-                stats.sync_detailed_analysis_status_from_replays(&stats_replays);
-            }
-        }
-    }
-
     pub fn record_replay_cache_update(&self, replay: &ReplayInfo) {
         if let Ok(mut current_replay_files) = self.stats_current_replay_files.lock() {
             current_replay_files.insert(replay.file.clone());
         }
 
         self.set_current_replay_file(Some(&replay.file));
-
-        self.refresh_stats_snapshot_after_replay_upsert(replay);
     }
 
     pub fn record_replay_cache_update_if_persistable(
@@ -1246,54 +1174,7 @@ impl ReplayState {
         self.selected_replay_file.clone()
     }
 
-    pub fn sync_full_replay_cache_slots(
-        &self,
-        main_names: &HashSet<String>,
-        main_handles: &HashSet<String>,
-    ) -> Vec<ReplayInfo> {
-        let settings = AppSettings::from_saved_file();
-        self.sync_full_replay_cache_slots_with_resources(&settings, main_names, main_handles, None)
-    }
-
-    pub fn sync_full_replay_cache_slots_with_resources(
-        &self,
-        settings: &AppSettings,
-        main_names: &HashSet<String>,
-        main_handles: &HashSet<String>,
-        resources: Option<&ReplayAnalysisResources>,
-    ) -> Vec<ReplayInfo> {
-        let from_detailed_analysis = resources
-            .map(|resources| {
-                ReplayAnalysis::load_detailed_analysis_replays_snapshot_from_path_with_dictionary(
-                    &crate::path_manager::PathManagerOps::get_cache_path(),
-                    UNLIMITED_REPLAY_LIMIT,
-                    main_names,
-                    main_handles,
-                    resources.dictionary_data(),
-                )
-            })
-            .unwrap_or_default();
-
-        let replays = if from_detailed_analysis.is_empty() {
-            resources
-                .map(|resources| {
-                    let scan_progress = ReplayScanProgress::default();
-                    let replay_scan_in_flight = AtomicBool::new(false);
-                    ReplayAnalysis::analyze_replays_with_resources(
-                        UNLIMITED_REPLAY_LIMIT,
-                        settings,
-                        main_names,
-                        main_handles,
-                        &scan_progress,
-                        &replay_scan_in_flight,
-                        resources,
-                    )
-                })
-                .unwrap_or_default()
-        } else {
-            from_detailed_analysis
-        };
-
+    fn sync_selected_replay_file_from_replays(&self, replays: &[ReplayInfo]) {
         let selected = replays.first().map(|replay| replay.file.clone());
 
         if let Ok(mut selected_file) = self.selected_replay_file.lock() {
@@ -1304,47 +1185,6 @@ impl ReplayState {
                 }
             }
         }
-
-        replays
-    }
-
-    pub fn sync_replay_cache_slots(
-        &self,
-        limit: usize,
-        main_names: &HashSet<String>,
-        main_handles: &HashSet<String>,
-    ) -> Vec<ReplayInfo> {
-        let settings = AppSettings::from_saved_file();
-        self.sync_replay_cache_slots_with_resources(
-            limit,
-            &settings,
-            main_names,
-            main_handles,
-            None,
-        )
-    }
-
-    pub fn sync_replay_cache_slots_with_resources(
-        &self,
-        limit: usize,
-        settings: &AppSettings,
-        main_names: &HashSet<String>,
-        main_handles: &HashSet<String>,
-        resources: Option<&ReplayAnalysisResources>,
-    ) -> Vec<ReplayInfo> {
-        let replays = self.sync_full_replay_cache_slots_with_resources(
-            settings,
-            main_names,
-            main_handles,
-            resources,
-        );
-
-        let mut limited = replays.clone();
-        if limit > 0 {
-            limited.truncate(limit);
-        }
-
-        limited
     }
 
     pub fn get_current_replay_file(&self) -> Option<String> {

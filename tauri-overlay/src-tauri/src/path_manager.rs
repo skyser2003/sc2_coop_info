@@ -80,14 +80,18 @@ impl PathManagerOps {
 
 impl PathManagerOps {
     pub fn get_cache_path() -> PathBuf {
-        let filename = "cache_overall_stats.json";
+        let filename = "cache_overall_stats.sqlite3";
         PathManagerOps::write_data_dir()
             .join("generated")
             .join(filename)
     }
 
+    pub fn get_legacy_cache_json_path() -> PathBuf {
+        PathManagerOps::get_cache_path().with_extension("json")
+    }
+
     pub fn get_cache_db_path() -> PathBuf {
-        PathManagerOps::get_cache_path().with_extension("sqlite3")
+        PathManagerOps::get_cache_path()
     }
 }
 

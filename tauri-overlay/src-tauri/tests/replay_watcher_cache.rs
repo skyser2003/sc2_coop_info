@@ -92,7 +92,7 @@ fn record_replay_cache_update_updates_current_files_and_selection() {
 }
 
 #[test]
-fn record_replay_cache_update_refreshes_ready_stats_with_detailed_data() {
+fn record_replay_cache_update_does_not_rebuild_ready_stats_snapshot() {
     let state = test_backend_state();
     let mut updated_replay = ReplayInfo::with_players(
         ReplayPlayerInfo::default()
@@ -140,14 +140,14 @@ fn record_replay_cache_update_refreshes_ready_stats_with_detailed_data() {
         .expect("stats mutex should not be poisoned");
     let analysis = stats
         .analysis_cloned()
-        .expect("analysis should be present after refresh");
+        .expect("analysis should remain present after cache update");
 
-    assert_eq!(stats.games(), 1);
+    assert_eq!(stats.games(), 0);
     assert_eq!(stats.message(), "Scanned 1 replay file(s).");
     assert!(
         analysis
             .get("UnitData")
-            .is_some_and(|value| !value.is_null())
+            .is_some_and(|value| value.is_null())
     );
 }
 
@@ -155,13 +155,17 @@ fn record_replay_cache_update_refreshes_ready_stats_with_detailed_data() {
 fn persist_detailed_cache_entry_to_path_writes_and_replaces_entry() {
     let root = unique_temp_path("persist_detailed_cache");
     std::fs::create_dir_all(&root).expect("temp root should be created");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
     let replay_file = TestHelperOps::test_replay_path("persisted.SC2Replay");
 
     let original = sample_cache_entry(&replay_file, "same-hash", "2025-01-01 00:00:00", "Defeat");
     let updated = sample_cache_entry(&replay_file, "same-hash", "2026-01-01 00:00:00", "Victory");
-    let payload = serde_json::to_vec(&vec![original]).expect("cache payload should serialize");
-    std::fs::write(&cache_path, payload).expect("cache file should be written");
+    let mut database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    database
+        .replace_entries(&[original])
+        .expect("cache entry should be written");
+    drop(database);
 
     TauriOverlayOps::persist_detailed_cache_entry_to_path(&cache_path, &updated)
         .expect("cache entry should persist");

@@ -2,9 +2,9 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     CacheCountValue, CacheNumericValue, CachePlayer, CacheReplayEntry, CacheUnitStats,
     ProtocolBuildValue, ReplayBuildInfo,
 };
-use sco_tauri_overlay::{ReplayAnalysis, TestHelperOps};
+use sco_tauri_overlay::{ReplayAnalysis, ReplayAnalysisOps, ReplayCacheDatabase, TestHelperOps};
 use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo, StatsState, UNLIMITED_REPLAY_LIMIT};
-use serde_json::{Value, json};
+use serde_json::json;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -180,39 +180,45 @@ fn merge_cached_detailed_replays_from_path(
 }
 
 #[test]
-fn stats_response_prefers_detailed_analysis_cache_when_unit_data_is_enabled() {
+fn sqlite_statistics_payload_uses_detailed_cache_unit_data() {
     let root = unique_temp_path("stats_source");
     std::fs::create_dir_all(&root).expect("temp root should be created");
     let replay_path = root.join("example.SC2Replay");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
     std::fs::write(&replay_path, []).expect("replay file should be created");
 
-    let payload = serde_json::to_vec(&vec![sample_cache_entry(&replay_path)])
-        .expect("cache should serialize");
-    std::fs::write(&cache_path, payload).expect("cache file should be written");
+    let mut database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    database
+        .replace_entries(&[sample_cache_entry(&replay_path)])
+        .expect("cache entry should be written");
+    drop(database);
 
-    let stale_replay = sample_replay(
-        &replay_path.display().to_string(),
-        player("Stale Main", "1-S2-1-111", "Dehaka").with_units(json!({
-            "Primal Hydralisk": [1, 0, 1, 1.0]
-        })),
-        player("Stale Ally", "1-S2-1-222", "Abathur").with_units(json!({})),
+    let database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should reopen");
+    let dictionary = TestHelperOps::load_dictionary();
+    let main_handles = HashSet::from(["1-s2-1-111".to_string()]);
+    let payload = database
+        .load_statistics_payload(
+            &sco_tauri_overlay::ReplayCacheStatsQuery::new(
+                sco_tauri_overlay::ReplayCacheReadScope::DetailedOnly,
+                0,
+            ),
+            &HashSet::new(),
+            &main_handles,
+            &dictionary,
+        )
+        .expect("statistics payload should load from sqlite");
+    assert_eq!(payload.games(), 1);
+    assert_eq!(
+        payload.analysis()["UnitData"]["main"]["Raynor"]["Marine"]["created"],
+        json!(8)
     );
-
-    let stale_replays = [stale_replay];
-    let replays = TestHelperOps::stats_replays_for_response_from_path_with_identity(
-        true,
-        &stale_replays,
-        &cache_path,
-        &HashSet::new(),
-        &HashSet::new(),
+    assert_eq!(
+        payload.analysis()["UnitData"]["ally"]["Karax"]["Zealot"]["created"],
+        json!(2)
     );
-
-    assert_eq!(replays.len(), 1);
-    assert_eq!(replays[0].main_commander(), "Raynor");
-    assert_eq!(replays[0].ally_commander(), "Karax");
-    assert_eq!(replays[0].main_units()["Marine"], json!([8, 2, 99, 0.75]));
-    assert!(replays[0].main_units().get("Primal Hydralisk").is_none());
+    assert!(payload.analysis()["UnitData"]["main"]["Dehaka"].is_null());
 
     let _ = std::fs::remove_file(&cache_path);
     let _ = std::fs::remove_file(&replay_path);
@@ -220,21 +226,55 @@ fn stats_response_prefers_detailed_analysis_cache_when_unit_data_is_enabled() {
 }
 
 #[test]
-fn stats_replays_for_response_prefers_in_memory_stats_cache() {
-    let resident_replay = sample_replay(
-        "fixtures/replays/resident.SC2Replay",
-        player("Resident Main", "1-S2-1-111", "Fenix").with_units(json!({
-            "Adept": [6, 1, 23, 0.5]
-        })),
-        player("Resident Ally", "1-S2-1-222", "Karax").with_units(json!({})),
+fn sqlite_statistics_payload_matches_rebuild_payload_for_same_cache_rows() {
+    let root = unique_temp_path("stats_payload_match");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let replay_path = root.join("example.SC2Replay");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
+    std::fs::write(&replay_path, []).expect("replay file should be created");
+
+    let entry = sample_cache_entry(&replay_path);
+    let mut database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    database
+        .replace_entries(std::slice::from_ref(&entry))
+        .expect("cache entry should be written");
+
+    let dictionary = TestHelperOps::load_dictionary();
+    let main_names = HashSet::new();
+    let main_handles = HashSet::from(["1-s2-1-111".to_string()]);
+    let replay =
+        ReplayAnalysisOps::replay_info_from_cache_entry_with_dictionary(&entry, &dictionary)
+            .oriented_for_main_identity(&main_names, &main_handles);
+    let rebuild_payload = ReplayAnalysis::rebuild_analysis_payload_with_dictionary(
+        &[replay],
+        true,
+        &main_names,
+        &main_handles,
+        &dictionary,
+    );
+    let database_payload = database
+        .load_statistics_payload(
+            &sco_tauri_overlay::ReplayCacheStatsQuery::new(
+                sco_tauri_overlay::ReplayCacheReadScope::DetailedOnly,
+                0,
+            ),
+            &main_names,
+            &main_handles,
+            &dictionary,
+        )
+        .expect("statistics payload should load from sqlite");
+
+    assert_eq!(
+        database_payload.analysis(),
+        rebuild_payload
+            .get("analysis")
+            .expect("rebuild payload should contain analysis")
     );
 
-    let resident_replays = [resident_replay];
-    let replays = ReplayAnalysis::stats_replays_for_response(true, &resident_replays);
-
-    assert_eq!(replays.len(), 1);
-    assert_eq!(replays[0].main_commander(), "Fenix");
-    assert_eq!(replays[0].main_units()["Adept"], json!([6, 1, 23, 0.5]));
+    let _ = std::fs::remove_file(&cache_path);
+    let _ = std::fs::remove_file(&replay_path);
+    let _ = std::fs::remove_dir(&root);
 }
 
 #[test]
@@ -242,12 +282,15 @@ fn merge_cached_detailed_replays_replaces_matching_simple_entries() {
     let root = unique_temp_path("merge_detailed_cache");
     std::fs::create_dir_all(&root).expect("temp root should be created");
     let replay_path = root.join("example.SC2Replay");
-    let cache_path = root.join("cache_overall_stats");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
     std::fs::write(&replay_path, []).expect("replay file should be created");
 
-    let payload = serde_json::to_vec(&vec![sample_cache_entry(&replay_path)])
-        .expect("cache should serialize");
-    std::fs::write(&cache_path, payload).expect("cache file should be written");
+    let mut database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    database
+        .replace_entries(&[sample_cache_entry(&replay_path)])
+        .expect("cache entry should be written");
+    drop(database);
 
     let simple_replay = sample_replay(
         &replay_path.display().to_string(),
@@ -270,32 +313,6 @@ fn merge_cached_detailed_replays_replaces_matching_simple_entries() {
     let _ = std::fs::remove_file(&cache_path);
     let _ = std::fs::remove_file(&replay_path);
     let _ = std::fs::remove_dir(&root);
-}
-
-#[test]
-fn stats_source_replays_for_response_matches_wx_show_all_behavior() {
-    let mut current_replay = ReplayInfo::default();
-    current_replay.set_file("fixtures/replays/current.SC2Replay");
-    let mut historic_replay = ReplayInfo::default();
-    historic_replay.set_file("fixtures/replays/historic.SC2Replay");
-    let current_files = HashSet::from([current_replay.file().to_string()]);
-
-    let selected_replays = [current_replay.clone(), historic_replay.clone()];
-    let current_only = ReplayAnalysis::stats_source_replays_for_response(
-        "/config/stats?show_all=0",
-        &selected_replays,
-        &current_files,
-    );
-    assert_eq!(current_only.len(), 1);
-    assert_eq!(current_only[0].file(), current_replay.file());
-
-    let all_replays = [current_replay, historic_replay];
-    let show_all = ReplayAnalysis::stats_source_replays_for_response(
-        "/config/stats?show_all=1",
-        &all_replays,
-        &current_files,
-    );
-    assert_eq!(show_all.len(), 2);
 }
 
 #[test]
@@ -323,19 +340,17 @@ fn detailed_stats_counts_uses_cache_marker_without_unit_payloads() {
 }
 
 #[test]
-fn should_include_detailed_stats_response_uses_cache_marker_without_unit_payloads() {
+fn stats_response_has_detailed_analysis_reads_unit_payload() {
     let response = json!({
         "analysis": {
-            "UnitData": Value::Null
+            "UnitData": {
+                "main": {}
+            }
         }
     });
-    let mut cached_replay = ReplayInfo::default();
-    cached_replay.set_file("fixtures/replays/cached_detailed.SC2Replay");
-    cached_replay.set_is_detailed(true);
 
-    assert!(ReplayAnalysis::should_include_detailed_stats_response(
-        &response,
-        &[cached_replay]
+    assert!(ReplayAnalysis::stats_response_has_detailed_analysis(
+        &response
     ));
 }
 

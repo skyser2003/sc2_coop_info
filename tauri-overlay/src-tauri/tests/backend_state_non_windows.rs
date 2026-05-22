@@ -56,28 +56,17 @@ fn sync_detailed_analysis_status_from_replays_reports_cached_progress() {
 }
 
 #[test]
-fn should_include_detailed_stats_response_uses_cached_detailed_replays() {
+fn stats_response_has_detailed_analysis_reads_unit_payload() {
     let response = json!({
         "analysis": {
-            "UnitData": Value::Null
+            "UnitData": {
+                "main": {}
+            }
         }
     });
-    let mut cached_replay = ReplayInfo::default();
-    cached_replay.set_file(TestHelperOps::test_replay_path("cached_detailed.SC2Replay"));
-    cached_replay.set_player_stats(
-        vec![
-            ReplayPlayerInfo::default().with_units(json!({
-                "Marine": [4, 1, 10, 0.5]
-            })),
-            ReplayPlayerInfo::default(),
-        ],
-        0,
-    );
-    let cached_replays = vec![cached_replay];
 
-    assert!(ReplayAnalysis::should_include_detailed_stats_response(
-        &response,
-        &cached_replays
+    assert!(ReplayAnalysis::stats_response_has_detailed_analysis(
+        &response
     ));
 }
 

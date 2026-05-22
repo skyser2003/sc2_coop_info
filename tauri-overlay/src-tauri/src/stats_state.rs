@@ -1,6 +1,5 @@
 use crate::shared_types::{LocalizedLabels, ReplayScanProgressPayload};
 use crate::{AppSettings, ReplayInfo, StatsStatePayload, TauriOverlayOps};
-use s2coop_analyzer::cache_overall_stats_generator::CacheReplayEntry;
 use serde_json::Value;
 
 pub(crate) type StatsStateParts = (
@@ -34,7 +33,6 @@ pub enum AnalysisMode {
 pub(crate) struct AnalysisOutcome {
     reported_replay_count: usize,
     replays: Vec<ReplayInfo>,
-    final_cache_entries: Vec<CacheReplayEntry>,
     analysis_completed: bool,
 }
 
@@ -42,22 +40,19 @@ impl AnalysisOutcome {
     pub(crate) fn new(
         reported_replay_count: usize,
         replays: Vec<ReplayInfo>,
-        final_cache_entries: Vec<CacheReplayEntry>,
         analysis_completed: bool,
     ) -> Self {
         Self {
             reported_replay_count,
             replays,
-            final_cache_entries,
             analysis_completed,
         }
     }
 
-    pub(crate) fn into_parts(self) -> (usize, Vec<ReplayInfo>, Vec<CacheReplayEntry>, bool) {
+    pub(crate) fn into_parts(self) -> (usize, Vec<ReplayInfo>, bool) {
         (
             self.reported_replay_count,
             self.replays,
-            self.final_cache_entries,
             self.analysis_completed,
         )
     }
@@ -258,14 +253,6 @@ impl StatsState {
                 self.detailed_analysis_status = TauriOverlayOps::analysis_status_text(mode, phase);
             }
         }
-    }
-
-    pub(crate) fn include_detailed_stats_for_cache(&self, replays: &[ReplayInfo]) -> bool {
-        self.analysis
-            .as_ref()
-            .and_then(|analysis| analysis.get("UnitData"))
-            .is_some_and(|value| !value.is_null())
-            || replays.iter().any(ReplayInfo::has_detailed_analysis_cache)
     }
 
     pub(crate) fn as_payload(&self, scan_progress: ReplayScanProgressPayload) -> Value {

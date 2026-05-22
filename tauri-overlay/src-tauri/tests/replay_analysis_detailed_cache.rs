@@ -136,7 +136,8 @@ fn load_detailed_analysis_replays_snapshot_from_path_imports_legacy_cache_file_i
     std::fs::create_dir_all(&root).expect("temp root should be created");
     let replay_path = root.join("example.SC2Replay");
     let ignored_replay_path = root.join("ignored.SC2Replay");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
+    let legacy_json_path = ReplayCacheDatabase::legacy_json_path_for_cache_path(&cache_path);
 
     std::fs::write(&replay_path, []).expect("replay file should be created");
     std::fs::write(&ignored_replay_path, []).expect("ignored replay file should be created");
@@ -146,7 +147,7 @@ fn load_detailed_analysis_replays_snapshot_from_path_imports_legacy_cache_file_i
         sample_cache_entry(&ignored_replay_path, false),
     ];
     let payload = serde_json::to_vec(&entries).expect("cache payload should serialize");
-    std::fs::write(&cache_path, payload).expect("cache file should be written");
+    std::fs::write(&legacy_json_path, payload).expect("legacy cache file should be written");
 
     let replays = TestHelperOps::load_detailed_analysis_replays_snapshot_from_path(&cache_path, 0);
 
@@ -182,11 +183,11 @@ fn load_detailed_analysis_replays_snapshot_from_path_imports_legacy_cache_file_i
             .any(|entry| entry.file == ignored_replay_path.display().to_string())
     );
     assert!(
-        !cache_path.exists(),
+        !legacy_json_path.exists(),
         "legacy cache JSON should be deleted after successful SQLite import"
     );
 
-    let _ = std::fs::remove_file(&cache_path);
+    let _ = std::fs::remove_file(&legacy_json_path);
     let _ = std::fs::remove_file(&replay_path);
     let _ = std::fs::remove_file(&ignored_replay_path);
     let _ = std::fs::remove_dir_all(&root);
@@ -251,8 +252,9 @@ fn load_detailed_analysis_replays_snapshot_from_path_recovers_temp_cache_entries
     std::fs::create_dir_all(&root).expect("temp root should be created");
     let existing_replay_path = root.join("existing.SC2Replay");
     let recovered_replay_path = root.join("recovered.SC2Replay");
-    let cache_path = root.join("cache_overall_stats.json");
-    let temp_path = cache_path.with_extension("temp.jsonl");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
+    let legacy_json_path = ReplayCacheDatabase::legacy_json_path_for_cache_path(&cache_path);
+    let temp_path = ReplayCacheDatabase::legacy_temp_jsonl_path_for_cache_path(&cache_path);
 
     std::fs::write(&existing_replay_path, []).expect("existing replay file should be created");
     std::fs::write(&recovered_replay_path, []).expect("recovered replay file should be created");
@@ -262,7 +264,7 @@ fn load_detailed_analysis_replays_snapshot_from_path_recovers_temp_cache_entries
 
     let payload =
         serde_json::to_vec(&vec![existing_entry.clone()]).expect("cache payload should serialize");
-    std::fs::write(&cache_path, payload).expect("cache file should be written");
+    std::fs::write(&legacy_json_path, payload).expect("legacy cache file should be written");
     std::fs::write(
         &temp_path,
         format!(
@@ -290,7 +292,7 @@ fn load_detailed_analysis_replays_snapshot_from_path_recovers_temp_cache_entries
         "temp cache should be removed after recovery"
     );
     assert!(
-        !cache_path.exists(),
+        !legacy_json_path.exists(),
         "legacy cache JSON should be deleted after successful SQLite import"
     );
 
@@ -311,7 +313,7 @@ fn load_detailed_analysis_replays_snapshot_from_path_recovers_temp_cache_entries
             .any(|entry| entry.file == recovered_entry.file)
     );
 
-    let _ = std::fs::remove_file(&cache_path);
+    let _ = std::fs::remove_file(&legacy_json_path);
     let _ = std::fs::remove_file(&existing_replay_path);
     let _ = std::fs::remove_file(&recovered_replay_path);
     let _ = std::fs::remove_dir_all(&root);
@@ -323,8 +325,9 @@ fn load_detailed_analysis_replays_snapshot_from_path_persists_simple_temp_entry_
     std::fs::create_dir_all(&root).expect("temp root should be created");
     let existing_replay_path = root.join("existing.SC2Replay");
     let recovered_replay_path = root.join("recovered_simple.SC2Replay");
-    let cache_path = root.join("cache_overall_stats.json");
-    let temp_path = cache_path.with_extension("temp.jsonl");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
+    let legacy_json_path = ReplayCacheDatabase::legacy_json_path_for_cache_path(&cache_path);
+    let temp_path = ReplayCacheDatabase::legacy_temp_jsonl_path_for_cache_path(&cache_path);
 
     std::fs::write(&existing_replay_path, []).expect("existing replay file should be created");
     std::fs::write(&recovered_replay_path, []).expect("recovered replay file should be created");
@@ -334,7 +337,7 @@ fn load_detailed_analysis_replays_snapshot_from_path_persists_simple_temp_entry_
 
     let payload =
         serde_json::to_vec(&vec![existing_entry.clone()]).expect("cache payload should serialize");
-    std::fs::write(&cache_path, payload).expect("cache file should be written");
+    std::fs::write(&legacy_json_path, payload).expect("legacy cache file should be written");
     std::fs::write(
         &temp_path,
         format!(
@@ -356,7 +359,7 @@ fn load_detailed_analysis_replays_snapshot_from_path_persists_simple_temp_entry_
         "temp cache should be removed after recovery"
     );
     assert!(
-        !cache_path.exists(),
+        !legacy_json_path.exists(),
         "legacy cache JSON should be deleted after successful SQLite import"
     );
 
@@ -377,7 +380,7 @@ fn load_detailed_analysis_replays_snapshot_from_path_persists_simple_temp_entry_
             .any(|entry| entry.file == recovered_entry.file && !entry.detailed_analysis)
     );
 
-    let _ = std::fs::remove_file(&cache_path);
+    let _ = std::fs::remove_file(&legacy_json_path);
     let _ = std::fs::remove_file(&existing_replay_path);
     let _ = std::fs::remove_file(&recovered_replay_path);
     let _ = std::fs::remove_dir_all(&root);

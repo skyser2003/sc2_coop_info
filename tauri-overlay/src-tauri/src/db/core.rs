@@ -4,6 +4,8 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     CacheCountValue, CacheNumericValue, CacheReplayEntry, ProtocolBuildValue,
 };
 use s2coop_analyzer::detailed_replay_analysis::{CacheEntrySink, CacheEntrySinkError};
+use serde_json::Value;
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
@@ -213,6 +215,19 @@ pub struct ReplayCacheStatsQuery {
     max_date_seconds: Option<u64>,
     player_filter: String,
     difficulty_exclusions: Vec<ReplayCacheStatsDifficultyExclusion>,
+    region_exclusions: Vec<String>,
+    current_replay_files: Vec<String>,
+    restrict_to_current_replay_files: bool,
+    include_sub_15: bool,
+    include_over_15: bool,
+    include_ally_sub_15: bool,
+    include_ally_over_15: bool,
+    include_main_normal_mastery: bool,
+    include_main_abnormal_mastery: bool,
+    include_ally_normal_mastery: bool,
+    include_ally_abnormal_mastery: bool,
+    include_both_main: bool,
+    main_handle_keys: Vec<String>,
 }
 
 impl ReplayCacheStatsQuery {
@@ -230,7 +245,30 @@ impl ReplayCacheStatsQuery {
             max_date_seconds: None,
             player_filter: String::new(),
             difficulty_exclusions: Vec::new(),
+            region_exclusions: Vec::new(),
+            current_replay_files: Vec::new(),
+            restrict_to_current_replay_files: false,
+            include_sub_15: true,
+            include_over_15: true,
+            include_ally_sub_15: true,
+            include_ally_over_15: true,
+            include_main_normal_mastery: true,
+            include_main_abnormal_mastery: true,
+            include_ally_normal_mastery: true,
+            include_ally_abnormal_mastery: true,
+            include_both_main: true,
+            main_handle_keys: Vec::new(),
         }
+    }
+
+    pub fn with_scope(mut self, scope: ReplayCacheReadScope) -> Self {
+        self.scope = scope;
+        self
+    }
+
+    pub fn with_limit(mut self, limit: usize) -> Self {
+        self.limit = limit;
+        self
     }
 
     pub fn with_mutation_filters(
@@ -275,6 +313,55 @@ impl ReplayCacheStatsQuery {
         difficulty_exclusions: Vec<ReplayCacheStatsDifficultyExclusion>,
     ) -> Self {
         self.difficulty_exclusions = difficulty_exclusions;
+        self
+    }
+
+    pub fn with_region_exclusions(mut self, region_exclusions: Vec<String>) -> Self {
+        self.region_exclusions = region_exclusions;
+        self
+    }
+
+    pub fn with_current_replay_files(mut self, current_replay_files: Vec<String>) -> Self {
+        self.current_replay_files = current_replay_files;
+        self.restrict_to_current_replay_files = true;
+        self
+    }
+
+    pub fn with_commander_level_filters(
+        mut self,
+        include_sub_15: bool,
+        include_over_15: bool,
+        include_ally_sub_15: bool,
+        include_ally_over_15: bool,
+    ) -> Self {
+        self.include_sub_15 = include_sub_15;
+        self.include_over_15 = include_over_15;
+        self.include_ally_sub_15 = include_ally_sub_15;
+        self.include_ally_over_15 = include_ally_over_15;
+        self
+    }
+
+    pub fn with_mastery_filters(
+        mut self,
+        include_main_normal_mastery: bool,
+        include_main_abnormal_mastery: bool,
+        include_ally_normal_mastery: bool,
+        include_ally_abnormal_mastery: bool,
+    ) -> Self {
+        self.include_main_normal_mastery = include_main_normal_mastery;
+        self.include_main_abnormal_mastery = include_main_abnormal_mastery;
+        self.include_ally_normal_mastery = include_ally_normal_mastery;
+        self.include_ally_abnormal_mastery = include_ally_abnormal_mastery;
+        self
+    }
+
+    pub fn with_main_identity_filters(
+        mut self,
+        include_both_main: bool,
+        main_handle_keys: Vec<String>,
+    ) -> Self {
+        self.include_both_main = include_both_main;
+        self.main_handle_keys = main_handle_keys;
         self
     }
 
@@ -324,6 +411,58 @@ impl ReplayCacheStatsQuery {
 
     pub(super) fn difficulty_exclusions(&self) -> &[ReplayCacheStatsDifficultyExclusion] {
         &self.difficulty_exclusions
+    }
+
+    pub(super) fn region_exclusions(&self) -> &[String] {
+        &self.region_exclusions
+    }
+
+    pub(super) fn current_replay_files(&self) -> &[String] {
+        &self.current_replay_files
+    }
+
+    pub(super) fn restrict_to_current_replay_files(&self) -> bool {
+        self.restrict_to_current_replay_files
+    }
+
+    pub(super) fn include_sub_15(&self) -> bool {
+        self.include_sub_15
+    }
+
+    pub(super) fn include_over_15(&self) -> bool {
+        self.include_over_15
+    }
+
+    pub(super) fn include_ally_sub_15(&self) -> bool {
+        self.include_ally_sub_15
+    }
+
+    pub(super) fn include_ally_over_15(&self) -> bool {
+        self.include_ally_over_15
+    }
+
+    pub(super) fn include_main_normal_mastery(&self) -> bool {
+        self.include_main_normal_mastery
+    }
+
+    pub(super) fn include_main_abnormal_mastery(&self) -> bool {
+        self.include_main_abnormal_mastery
+    }
+
+    pub(super) fn include_ally_normal_mastery(&self) -> bool {
+        self.include_ally_normal_mastery
+    }
+
+    pub(super) fn include_ally_abnormal_mastery(&self) -> bool {
+        self.include_ally_abnormal_mastery
+    }
+
+    pub(super) fn include_both_main(&self) -> bool {
+        self.include_both_main
+    }
+
+    pub(super) fn main_handle_keys(&self) -> &[String] {
+        &self.main_handle_keys
     }
 }
 
@@ -396,6 +535,67 @@ impl<T> ReplayCachePageResult<T> {
 
     pub fn total_rows(&self) -> usize {
         self.total_rows
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ReplayCacheStatisticsPayload {
+    analysis: Value,
+    prestige_names: BTreeMap<String, crate::shared_types::LocalizedLabels>,
+    games: u64,
+    detailed_parsed_count: u64,
+    total_valid_files: u64,
+    main_players: Vec<String>,
+    main_handles: Vec<String>,
+}
+
+impl ReplayCacheStatisticsPayload {
+    pub(super) fn new(
+        analysis: Value,
+        prestige_names: BTreeMap<String, crate::shared_types::LocalizedLabels>,
+        games: u64,
+        detailed_parsed_count: u64,
+        total_valid_files: u64,
+        main_players: Vec<String>,
+        main_handles: Vec<String>,
+    ) -> Self {
+        Self {
+            analysis,
+            prestige_names,
+            games,
+            detailed_parsed_count,
+            total_valid_files,
+            main_players,
+            main_handles,
+        }
+    }
+
+    pub fn analysis(&self) -> &Value {
+        &self.analysis
+    }
+
+    pub fn prestige_names(&self) -> &BTreeMap<String, crate::shared_types::LocalizedLabels> {
+        &self.prestige_names
+    }
+
+    pub fn games(&self) -> u64 {
+        self.games
+    }
+
+    pub fn detailed_parsed_count(&self) -> u64 {
+        self.detailed_parsed_count
+    }
+
+    pub fn total_valid_files(&self) -> u64 {
+        self.total_valid_files
+    }
+
+    pub fn main_players(&self) -> &[String] {
+        &self.main_players
+    }
+
+    pub fn main_handles(&self) -> &[String] {
+        &self.main_handles
     }
 }
 
@@ -1116,6 +1316,7 @@ impl ReplayCacheFileName {
 
 pub struct ReplayCacheDatabase {
     pub(super) cache_path: PathBuf,
+    legacy_cache_path: PathBuf,
     pub(super) db_path: PathBuf,
     pub(super) connection: Connection,
 }
@@ -1147,7 +1348,31 @@ impl CacheEntrySink for SqliteReplayCacheEntrySink {
 
 impl ReplayCacheDatabase {
     pub fn db_path_for_cache_path(cache_path: &Path) -> PathBuf {
-        cache_path.with_extension("sqlite3")
+        if cache_path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("sqlite3"))
+        {
+            cache_path.to_path_buf()
+        } else {
+            cache_path.with_extension("sqlite3")
+        }
+    }
+
+    pub fn legacy_json_path_for_cache_path(cache_path: &Path) -> PathBuf {
+        if cache_path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("sqlite3"))
+        {
+            cache_path.with_extension("json")
+        } else {
+            cache_path.to_path_buf()
+        }
+    }
+
+    pub fn legacy_temp_jsonl_path_for_cache_path(cache_path: &Path) -> PathBuf {
+        Self::legacy_json_path_for_cache_path(cache_path).with_extension("temp.jsonl")
     }
 
     pub fn db_related_paths_for_cache_path(cache_path: &Path) -> Vec<PathBuf> {
@@ -1188,6 +1413,7 @@ impl ReplayCacheDatabase {
 
     pub fn open_for_cache_path(cache_path: &Path) -> Result<Self, ReplayCacheDbError> {
         let db_path = Self::db_path_for_cache_path(cache_path);
+        let legacy_cache_path = Self::legacy_json_path_for_cache_path(cache_path);
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent).map_err(|source| ReplayCacheDbError::Io {
                 path: parent.to_path_buf(),
@@ -1223,6 +1449,7 @@ impl ReplayCacheDatabase {
         Self::initialize_schema(&mut connection, &db_path)?;
         let mut database = Self {
             cache_path: cache_path.to_path_buf(),
+            legacy_cache_path,
             db_path,
             connection,
         };
@@ -1478,7 +1705,7 @@ impl ReplayCacheDatabase {
             self.import_legacy_cache_file()?;
         }
 
-        let temp_path = Self::temp_cache_path(&self.cache_path);
+        let temp_path = Self::legacy_temp_jsonl_path_for_cache_path(&self.cache_path);
         if temp_path.exists() {
             self.import_temp_cache_file(&temp_path)?;
         }
@@ -1487,14 +1714,18 @@ impl ReplayCacheDatabase {
     }
 
     fn should_import_legacy_json(&self, db_existed: bool) -> bool {
-        if !self.cache_path.exists() {
+        if !self.legacy_cache_path.exists() {
             return false;
         }
         if !db_existed {
             return true;
         }
 
-        let Ok(json_modified) = self.cache_path.metadata().and_then(|meta| meta.modified()) else {
+        let Ok(json_modified) = self
+            .legacy_cache_path
+            .metadata()
+            .and_then(|meta| meta.modified())
+        else {
             return false;
         };
         let Ok(db_modified) = self.db_path.metadata().and_then(|meta| meta.modified()) else {
@@ -1503,15 +1734,11 @@ impl ReplayCacheDatabase {
         json_modified > db_modified
     }
 
-    fn temp_cache_path(cache_path: &Path) -> PathBuf {
-        cache_path.with_extension("temp.jsonl")
-    }
-
     pub fn import_legacy_cache_file(&mut self) -> Result<usize, ReplayCacheDbError> {
         let mut entries = self.read_legacy_cache_entries()?;
         Self::normalize_legacy_cache_dates_to_utc(&mut entries);
         let changed = self.upsert_entries_preserving_detailed(&entries)?;
-        Self::remove_imported_legacy_file(&self.cache_path)?;
+        Self::remove_imported_legacy_file(&self.legacy_cache_path)?;
         Ok(changed)
     }
 
@@ -1535,13 +1762,14 @@ impl ReplayCacheDatabase {
     }
 
     fn read_legacy_cache_entries(&self) -> Result<Vec<CacheReplayEntry>, ReplayCacheDbError> {
-        let payload = std::fs::read(&self.cache_path).map_err(|source| ReplayCacheDbError::Io {
-            path: self.cache_path.clone(),
-            source,
-        })?;
+        let payload =
+            std::fs::read(&self.legacy_cache_path).map_err(|source| ReplayCacheDbError::Io {
+                path: self.legacy_cache_path.clone(),
+                source,
+            })?;
         serde_json::from_slice::<Vec<CacheReplayEntry>>(&payload).map_err(|source| {
             ReplayCacheDbError::Json {
-                path: self.cache_path.clone(),
+                path: self.legacy_cache_path.clone(),
                 source,
             }
         })

@@ -10,6 +10,6 @@ pub use core::{
     ReplayCacheDatabase, ReplayCacheDbError, ReplayCacheDifficultyFilter, ReplayCacheEntryQuery,
     ReplayCacheGameSortKey, ReplayCacheGamesPageQuery, ReplayCachePage, ReplayCachePageResult,
     ReplayCachePlayerNote, ReplayCachePlayerSortKey, ReplayCachePlayersPageQuery,
-    ReplayCacheReadScope, ReplayCacheSortDirection, ReplayCacheStatsDifficultyExclusion,
-    ReplayCacheStatsQuery, SqliteReplayCacheEntrySink,
+    ReplayCacheReadScope, ReplayCacheSortDirection, ReplayCacheStatisticsPayload,
+    ReplayCacheStatsDifficultyExclusion, ReplayCacheStatsQuery, SqliteReplayCacheEntrySink,
 };

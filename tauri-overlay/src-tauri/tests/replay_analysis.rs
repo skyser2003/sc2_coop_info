@@ -1,5 +1,8 @@
 use sco_tauri_overlay::{AppSettings, ReplayInfo, ReplayPlayerInfo, TauriOverlayOps};
-use sco_tauri_overlay::{PathManagerOps, ReplayAnalysis, ReplayAnalysisOps, TestHelperOps};
+use sco_tauri_overlay::{
+    PathManagerOps, ReplayAnalysis, ReplayAnalysisOps, ReplayCacheDatabase, ReplayCacheReadScope,
+    ReplayCacheStatsQuery, TestHelperOps,
+};
 use serde_json::Value;
 use serde_json::json;
 use std::collections::HashSet;
@@ -393,15 +396,18 @@ fn miner_evacuation_fastest_payload_matches_reference_fastest_replay() {
 
     let main_names = settings.configured_main_names();
     let main_handles = settings.configured_main_handles();
-    let replays = TestHelperOps::stats_replays_for_response_from_path_with_identity(
-        true,
-        &[],
-        &current_cache,
-        &main_names,
-        &main_handles,
-    );
-    let snapshot = TestHelperOps::build_rebuild_snapshot(&replays, true);
-    let Some(fastest) = snapshot
+    let dictionary = TestHelperOps::load_dictionary();
+    let database = ReplayCacheDatabase::open_for_cache_path(&current_cache)
+        .expect("fixture cache database should open");
+    let payload = database
+        .load_statistics_payload(
+            &ReplayCacheStatsQuery::new(ReplayCacheReadScope::DetailedOnly, 0),
+            &main_names,
+            &main_handles,
+            &dictionary,
+        )
+        .expect("fixture statistics payload should load from sqlite");
+    let Some(fastest) = payload
         .analysis()
         .get("MapData")
         .and_then(Value::as_object)
@@ -435,7 +441,7 @@ fn miner_evacuation_fastest_payload_matches_reference_fastest_replay() {
 
     assert_eq!(players[0]["name"], fastest["main"]);
     assert!(
-        snapshot
+        payload
             .main_handles()
             .iter()
             .any(|handle| Some(handle.as_str()) == players[0]["handle"].as_str())
@@ -455,13 +461,13 @@ fn miner_evacuation_fastest_payload_matches_reference_fastest_replay() {
     assert_eq!(players[1]["prestige_name"], json!("Chief Engineer"));
 
     assert!(
-        snapshot
+        payload
             .main_players()
             .iter()
             .any(|name| Some(name.as_str()) == players[0]["name"].as_str())
     );
     assert!(
-        snapshot
+        payload
             .main_handles()
             .iter()
             .any(|handle| Some(handle.as_str()) == players[0]["handle"].as_str())
@@ -470,55 +476,86 @@ fn miner_evacuation_fastest_payload_matches_reference_fastest_replay() {
 
 #[test]
 fn mastery_sum_filters_partition_existing_cache_replays() {
-    let Some((current_cache, settings)) = replay_analysis_fixture_paths() else {
+    let Some((current_cache, _settings)) = replay_analysis_fixture_paths() else {
         eprintln!("skipping exclusive stats partition test: required cache fixtures are missing");
         return;
     };
 
-    let main_names = settings.configured_main_names();
-    let main_handles = settings.configured_main_handles();
-    let replays = TestHelperOps::stats_replays_for_response_from_path_with_identity(
-        true,
-        &[],
-        &current_cache,
-        &main_names,
-        &main_handles,
-    );
-
-    let total = TestHelperOps::filter_replays_for_stats("/config/stats", &replays).len();
-    let wins_only =
-        TestHelperOps::filter_replays_for_stats("/config/stats?include_losses=0", &replays).len();
-    let losses_only =
-        TestHelperOps::filter_replays_for_stats("/config/stats?include_wins=0", &replays).len();
-    let main_levels_1_14 =
-        TestHelperOps::filter_replays_for_stats("/config/stats?over_15=0", &replays).len();
-    let main_levels_15_plus =
-        TestHelperOps::filter_replays_for_stats("/config/stats?sub_15=0", &replays).len();
-    let ally_levels_1_14 =
-        TestHelperOps::filter_replays_for_stats("/config/stats?ally_over_15=0", &replays).len();
-    let ally_levels_15_plus =
-        TestHelperOps::filter_replays_for_stats("/config/stats?ally_sub_15=0", &replays).len();
+    let database = ReplayCacheDatabase::open_for_cache_path(&current_cache)
+        .expect("fixture cache database should open");
+    let total = database
+        .count_entries_for_stats(&ReplayCacheStatsQuery::new(
+            ReplayCacheReadScope::DetailedOnly,
+            0,
+        ))
+        .expect("total stats count should query");
+    let wins_only = database
+        .count_entries_for_stats(
+            &ReplayCacheStatsQuery::new(ReplayCacheReadScope::DetailedOnly, 0)
+                .with_result_filters(true, false),
+        )
+        .expect("wins-only stats count should query");
+    let losses_only = database
+        .count_entries_for_stats(
+            &ReplayCacheStatsQuery::new(ReplayCacheReadScope::DetailedOnly, 0)
+                .with_result_filters(false, true),
+        )
+        .expect("losses-only stats count should query");
+    let main_levels_1_14 = database
+        .count_entries_for_stats(
+            &ReplayCacheStatsQuery::new(ReplayCacheReadScope::DetailedOnly, 0)
+                .with_commander_level_filters(true, false, true, true),
+        )
+        .expect("main low-level stats count should query");
+    let main_levels_15_plus = database
+        .count_entries_for_stats(
+            &ReplayCacheStatsQuery::new(ReplayCacheReadScope::DetailedOnly, 0)
+                .with_commander_level_filters(false, true, true, true),
+        )
+        .expect("main high-level stats count should query");
+    let ally_levels_1_14 = database
+        .count_entries_for_stats(
+            &ReplayCacheStatsQuery::new(ReplayCacheReadScope::DetailedOnly, 0)
+                .with_commander_level_filters(true, true, true, false),
+        )
+        .expect("ally low-level stats count should query");
+    let ally_levels_15_plus = database
+        .count_entries_for_stats(
+            &ReplayCacheStatsQuery::new(ReplayCacheReadScope::DetailedOnly, 0)
+                .with_commander_level_filters(true, true, false, true),
+        )
+        .expect("ally high-level stats count should query");
     assert_eq!(total, wins_only + losses_only);
     assert_eq!(total, main_levels_1_14 + main_levels_15_plus);
     assert_eq!(total, ally_levels_1_14 + ally_levels_15_plus);
     assert_eq!(
         total,
-        TestHelperOps::filter_replays_for_stats("/config/stats?main_abnormal_mastery=0", &replays)
-            .len()
-            + TestHelperOps::filter_replays_for_stats(
-                "/config/stats?main_normal_mastery=0",
-                &replays
+        database
+            .count_entries_for_stats(
+                &ReplayCacheStatsQuery::new(ReplayCacheReadScope::DetailedOnly, 0)
+                    .with_mastery_filters(true, false, true, true),
             )
-            .len()
+            .expect("main normal mastery stats count should query")
+            + database
+                .count_entries_for_stats(
+                    &ReplayCacheStatsQuery::new(ReplayCacheReadScope::DetailedOnly, 0)
+                        .with_mastery_filters(false, true, true, true),
+                )
+                .expect("main abnormal mastery stats count should query")
     );
     assert_eq!(
         total,
-        TestHelperOps::filter_replays_for_stats("/config/stats?ally_abnormal_mastery=0", &replays)
-            .len()
-            + TestHelperOps::filter_replays_for_stats(
-                "/config/stats?ally_normal_mastery=0",
-                &replays
+        database
+            .count_entries_for_stats(
+                &ReplayCacheStatsQuery::new(ReplayCacheReadScope::DetailedOnly, 0)
+                    .with_mastery_filters(true, true, true, false),
             )
-            .len()
+            .expect("ally normal mastery stats count should query")
+            + database
+                .count_entries_for_stats(
+                    &ReplayCacheStatsQuery::new(ReplayCacheReadScope::DetailedOnly, 0)
+                        .with_mastery_filters(true, true, false, true),
+                )
+                .expect("ally abnormal mastery stats count should query")
     );
 }

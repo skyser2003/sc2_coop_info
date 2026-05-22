@@ -128,7 +128,7 @@ impl CliApplication {
 }
 
 fn generate_cache_output_placeholder() -> PathBuf {
-    std::env::temp_dir().join("s2coop-cli-cache-output-unused.json")
+    std::env::temp_dir().join("s2coop-cli-cache-output-unused.sqlite3")
 }
 
 struct RepositoryRootResolver;

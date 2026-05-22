@@ -7,11 +7,11 @@ use s2coop_analyzer::cache_overall_stats_generator::{
 };
 use s2coop_analyzer::detailed_replay_analysis::CacheEntrySink;
 use sco_tauri_overlay::{
-    ReplayCacheDatabase, ReplayCacheDbError, ReplayCacheDifficultyFilter, ReplayCacheEntryQuery,
-    ReplayCacheGameSortKey, ReplayCacheGamesPageQuery, ReplayCachePage, ReplayCachePlayerNote,
-    ReplayCachePlayerSortKey, ReplayCachePlayersPageQuery, ReplayCacheReadScope,
-    ReplayCacheSortDirection, ReplayCacheStatsDifficultyExclusion, ReplayCacheStatsQuery,
-    SqliteReplayCacheEntrySink,
+    PathManagerOps, ReplayCacheDatabase, ReplayCacheDbError, ReplayCacheDifficultyFilter,
+    ReplayCacheEntryQuery, ReplayCacheGameSortKey, ReplayCacheGamesPageQuery, ReplayCachePage,
+    ReplayCachePlayerNote, ReplayCachePlayerSortKey, ReplayCachePlayersPageQuery,
+    ReplayCacheReadScope, ReplayCacheSortDirection, ReplayCacheStatsDifficultyExclusion,
+    ReplayCacheStatsQuery, SqliteReplayCacheEntrySink,
 };
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -170,12 +170,32 @@ fn local_timestamp_text_as_utc(
 }
 
 #[test]
+fn path_manager_uses_sqlite_as_primary_cache_file() {
+    assert_eq!(
+        PathManagerOps::get_cache_path()
+            .extension()
+            .and_then(|value| value.to_str()),
+        Some("sqlite3")
+    );
+    assert_eq!(
+        PathManagerOps::get_cache_db_path(),
+        PathManagerOps::get_cache_path()
+    );
+    assert_eq!(
+        PathManagerOps::get_legacy_cache_json_path()
+            .extension()
+            .and_then(|value| value.to_str()),
+        Some("json")
+    );
+}
+
+#[test]
 fn database_related_paths_include_sqlite_sidecars() {
-    let cache_path = PathBuf::from("generated").join("cache_overall_stats.json");
+    let cache_path = PathBuf::from("generated").join("cache_overall_stats.sqlite3");
     let paths = ReplayCacheDatabase::db_related_paths_for_cache_path(&cache_path);
 
     assert_eq!(paths.len(), 4);
-    assert_eq!(paths[0], cache_path.with_extension("sqlite3"));
+    assert_eq!(paths[0], cache_path);
     assert_eq!(
         paths[1].file_name().and_then(|value| value.to_str()),
         Some("cache_overall_stats.sqlite3-wal")
@@ -188,13 +208,17 @@ fn database_related_paths_include_sqlite_sidecars() {
         paths[3].file_name().and_then(|value| value.to_str()),
         Some("cache_overall_stats.sqlite3-journal")
     );
+
+    let legacy_path = PathBuf::from("generated").join("cache_overall_stats.json");
+    let legacy_paths = ReplayCacheDatabase::db_related_paths_for_cache_path(&legacy_path);
+    assert_eq!(legacy_paths[0], legacy_path.with_extension("sqlite3"));
 }
 
 #[test]
 fn sqlite_cache_schema_stores_typed_columns_without_payload_json() {
     let root = unique_temp_path("replay_cache_db_typed_schema");
     std::fs::create_dir_all(&root).expect("temp root should be created");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
     let db_path = ReplayCacheDatabase::db_path_for_cache_path(&cache_path);
     let mut entry = sample_cache_entry(
         "typed.SC2Replay",
@@ -307,7 +331,7 @@ fn sqlite_cache_schema_stores_typed_columns_without_payload_json() {
 fn sqlite_cache_stores_player_identity_by_handle() {
     let root = unique_temp_path("replay_cache_db_player_infos");
     std::fs::create_dir_all(&root).expect("temp root should be created");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
     let db_path = ReplayCacheDatabase::db_path_for_cache_path(&cache_path);
     let mut first = sample_cache_entry(
         "player-info-first.SC2Replay",
@@ -402,7 +426,7 @@ fn sqlite_cache_detailed_override_updates_player_kill_ratio_only() {
 
     let root = unique_temp_path("replay_cache_db_player_info_detailed_override");
     std::fs::create_dir_all(&root).expect("temp root should be created");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
     let db_path = ReplayCacheDatabase::db_path_for_cache_path(&cache_path);
     let mut simple = sample_cache_entry(
         "override.SC2Replay",
@@ -490,7 +514,7 @@ fn sqlite_cache_detailed_override_updates_player_kill_ratio_only() {
 fn sqlite_cache_stores_player_masteries_and_icon_orders_as_json_arrays() {
     let root = unique_temp_path("replay_cache_db_player_json_arrays");
     std::fs::create_dir_all(&root).expect("temp root should be created");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
     let db_path = ReplayCacheDatabase::db_path_for_cache_path(&cache_path);
     let mut entry = sample_cache_entry(
         "player-arrays.SC2Replay",
@@ -585,7 +609,7 @@ fn sqlite_cache_stores_player_masteries_and_icon_orders_as_json_arrays() {
 fn sqlite_cache_stores_bonus_as_json_array() {
     let root = unique_temp_path("replay_cache_db_bonus_json_array");
     std::fs::create_dir_all(&root).expect("temp root should be created");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
     let db_path = ReplayCacheDatabase::db_path_for_cache_path(&cache_path);
     let mut entry = sample_cache_entry(
         "bonus-array.SC2Replay",
@@ -639,7 +663,7 @@ fn sqlite_cache_stores_bonus_as_json_array() {
 fn sqlite_cache_reconstructs_hidden_player_unit_counts_without_hidden_text_columns() {
     let root = unique_temp_path("replay_cache_db_unit_hidden_schema");
     std::fs::create_dir_all(&root).expect("temp root should be created");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
     let db_path = ReplayCacheDatabase::db_path_for_cache_path(&cache_path);
     let mut entry = sample_cache_entry(
         "unit-hidden.SC2Replay",
@@ -699,7 +723,7 @@ fn sqlite_cache_reconstructs_hidden_player_unit_counts_without_hidden_text_colum
 fn sqlite_cache_does_not_persist_dummy_pid_zero_players() {
     let root = unique_temp_path("replay_cache_db_no_dummy_pid");
     std::fs::create_dir_all(&root).expect("temp root should be created");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
     let db_path = ReplayCacheDatabase::db_path_for_cache_path(&cache_path);
     let mut entry = sample_cache_entry(
         "dummy.SC2Replay",
@@ -752,7 +776,7 @@ fn sqlite_cache_does_not_persist_dummy_pid_zero_players() {
 fn sqlite_cache_stores_player_stats_as_json_arrays() {
     let root = unique_temp_path("replay_cache_db_stat_arrays");
     std::fs::create_dir_all(&root).expect("temp root should be created");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
     let db_path = ReplayCacheDatabase::db_path_for_cache_path(&cache_path);
     let mut entry = sample_cache_entry(
         "stat-arrays.SC2Replay",
@@ -829,7 +853,7 @@ fn sqlite_cache_stores_player_stats_as_json_arrays() {
 fn sqlite_cache_stores_weekly_rows_for_weekly_tab_queries() {
     let root = unique_temp_path("replay_cache_db_weeklies");
     std::fs::create_dir_all(&root).expect("temp root should be created");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
     let db_path = ReplayCacheDatabase::db_path_for_cache_path(&cache_path);
     let mut weekly = sample_cache_entry(
         "weekly.SC2Replay",
@@ -903,7 +927,7 @@ fn sqlite_cache_detailed_override_keeps_aggregate_tables_deduplicated() {
 
     let root = unique_temp_path("replay_cache_db_override_aggregate_dedup");
     std::fs::create_dir_all(&root).expect("temp root should be created");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
     let db_path = ReplayCacheDatabase::db_path_for_cache_path(&cache_path);
     let mut simple = sample_cache_entry(
         "weekly-override.SC2Replay",
@@ -984,7 +1008,7 @@ fn sqlite_cache_detailed_override_keeps_aggregate_tables_deduplicated() {
 fn sqlite_cache_same_file_replacement_removes_stale_aggregate_rows() {
     let root = unique_temp_path("replay_cache_db_same_file_replacement_dedup");
     std::fs::create_dir_all(&root).expect("temp root should be created");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
     let db_path = ReplayCacheDatabase::db_path_for_cache_path(&cache_path);
     let mut old_entry = sample_cache_entry(
         "same-file.SC2Replay",
@@ -1057,7 +1081,7 @@ fn sqlite_cache_same_file_replacement_removes_stale_aggregate_rows() {
 fn sqlite_summary_entries_skip_heavy_child_payloads() {
     let root = unique_temp_path("replay_cache_db_summary_entries");
     std::fs::create_dir_all(&root).expect("temp root should be created");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
     let mut entry = sample_cache_entry(
         "summary.SC2Replay",
         "summary-hash",
@@ -1134,7 +1158,7 @@ fn sqlite_summary_entries_skip_heavy_child_payloads() {
 fn sqlite_games_page_query_filters_sorts_and_offsets_in_database() {
     let root = unique_temp_path("replay_cache_db_games_page");
     std::fs::create_dir_all(&root).expect("temp root should be created");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
     let mut alpha = sample_cache_entry(
         "alpha.SC2Replay",
         "alpha-hash",
@@ -1206,7 +1230,7 @@ fn sqlite_games_page_query_filters_sorts_and_offsets_in_database() {
 fn sqlite_statistics_query_prefilters_replays_in_database() {
     let root = unique_temp_path("replay_cache_db_stats_filter");
     std::fs::create_dir_all(&root).expect("temp root should be created");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
 
     let mut included = sample_cache_entry(
         "stats-included.SC2Replay",
@@ -1216,7 +1240,9 @@ fn sqlite_statistics_query_prefilters_replays_in_database() {
         "Victory",
     );
     included.accurate_length = CacheNumericValue::Integer(900);
-    included.players = vec![sample_player(1, "Alice"), sample_player(2, "Partner")];
+    let mut included_main = sample_player(1, "Alice");
+    included_main.masteries = Some([31, 30, 30, 0, 0, 0]);
+    included.players = vec![included_main, sample_player(2, "Partner")];
 
     let mut defeated = sample_cache_entry(
         "stats-defeat.SC2Replay",
@@ -1270,6 +1296,35 @@ fn sqlite_statistics_query_prefilters_replays_in_database() {
     too_late.accurate_length = CacheNumericValue::Integer(900);
     too_late.players = vec![sample_player(1, "Late"), sample_player(2, "Partner")];
 
+    let mut eu_region = sample_cache_entry(
+        "stats-eu.SC2Replay",
+        "stats-eu-hash",
+        "2026-01-02 00:00:00",
+        true,
+        "Victory",
+    );
+    eu_region.region = "EU".to_string();
+    eu_region.accurate_length = CacheNumericValue::Integer(900);
+    let mut eu_main = sample_player(1, "Euro");
+    eu_main.masteries = Some([31, 30, 30, 0, 0, 0]);
+    eu_region.players = vec![eu_main, sample_player(2, "Partner")];
+
+    let mut low_level = sample_cache_entry(
+        "stats-low-level.SC2Replay",
+        "stats-low-level-hash",
+        "2026-01-02 00:00:00",
+        true,
+        "Victory",
+    );
+    low_level.accurate_length = CacheNumericValue::Integer(900);
+    let mut low_main = sample_player(1, "Low");
+    low_main.commander_level = Some(1);
+    low_main.masteries = Some([0, 0, 0, 0, 0, 0]);
+    let mut low_ally = sample_player(2, "Low Partner");
+    low_ally.commander_level = Some(1);
+    low_ally.masteries = Some([0, 0, 0, 0, 0, 0]);
+    low_level.players = vec![low_main, low_ally];
+
     let mut database =
         ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
     database
@@ -1280,6 +1335,8 @@ fn sqlite_statistics_query_prefilters_replays_in_database() {
             brutal_plus,
             too_short,
             too_late,
+            eu_region,
+            low_level,
         ])
         .expect("entries should write");
 
@@ -1294,18 +1351,61 @@ fn sqlite_statistics_query_prefilters_replays_in_database() {
         .with_player_filter("A*".to_string())
         .with_difficulty_exclusions(vec![ReplayCacheStatsDifficultyExclusion::BrutalPlus3]);
 
-    let entries = database
-        .load_summary_entries_for_stats(&query)
-        .expect("filtered stats entries should load");
+    let matching_count = database
+        .count_entries_for_stats(&query)
+        .expect("filtered stats entries should count");
+    assert_eq!(matching_count, 1);
 
-    assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].hash, "stats-included-hash");
+    let current_file_query = query
+        .clone()
+        .with_current_replay_files(vec!["stats-included.SC2Replay".to_string()]);
+    assert!(
+        database
+            .has_detailed_entries_for_stats(&current_file_query)
+            .expect("detailed stats existence should query")
+    );
+    let current_file_count = database
+        .count_entries_for_stats(&current_file_query)
+        .expect("current-file filtered stats entries should count");
+    assert_eq!(current_file_count, 1);
 
-    let full_entries = database
-        .load_entries_for_stats(&query)
-        .expect("filtered full stats entries should load");
-    assert_eq!(full_entries.len(), 1);
-    assert_eq!(full_entries[0].hash, "stats-included-hash");
+    let empty_current_file_query = query.clone().with_current_replay_files(Vec::new());
+    assert!(
+        !database
+            .has_detailed_entries_for_stats(&empty_current_file_query)
+            .expect("empty current-file detailed stats existence should query")
+    );
+    assert!(
+        database
+            .count_entries_for_stats(&empty_current_file_query)
+            .expect("empty current-file filtered stats entries should count")
+            == 0
+    );
+
+    let level_query = ReplayCacheStatsQuery::new(ReplayCacheReadScope::DetailedOnly, 0)
+        .with_result_filters(true, false)
+        .with_commander_level_filters(false, true, true, true);
+    let level_count = database
+        .count_entries_for_stats(&level_query)
+        .expect("level-filtered stats entries should count");
+    assert_eq!(level_count, 6);
+
+    let mastery_query = ReplayCacheStatsQuery::new(ReplayCacheReadScope::DetailedOnly, 0)
+        .with_result_filters(true, false)
+        .with_mastery_filters(false, true, true, true);
+    let mastery_count = database
+        .count_entries_for_stats(&mastery_query)
+        .expect("mastery-filtered stats entries should count");
+    assert_eq!(mastery_count, 2);
+
+    let region_query = ReplayCacheStatsQuery::new(ReplayCacheReadScope::DetailedOnly, 0)
+        .with_result_filters(true, false)
+        .with_mastery_filters(false, true, true, true)
+        .with_region_exclusions(vec!["EU".to_string()]);
+    let region_count = database
+        .count_entries_for_stats(&region_query)
+        .expect("region-filtered stats entries should count");
+    assert_eq!(region_count, 1);
 
     let _ = std::fs::remove_dir_all(&root);
 }
@@ -1330,7 +1430,7 @@ fn sqlite_players_page_query_aggregates_searches_notes_and_offsets_in_database()
 
     let root = unique_temp_path("replay_cache_db_players_page");
     std::fs::create_dir_all(&root).expect("temp root should be created");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
     let mut first = sample_cache_entry(
         "players-first.SC2Replay",
         "players-first-hash",
@@ -1418,7 +1518,7 @@ fn sqlite_players_page_query_aggregates_searches_notes_and_offsets_in_database()
 fn sqlite_cache_entry_sink_writes_entries_to_database() {
     let root = unique_temp_path("replay_cache_db_sink");
     std::fs::create_dir_all(&root).expect("temp root should be created");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
     let entry = sample_cache_entry(
         "sink.SC2Replay",
         "sink-hash",
@@ -1449,7 +1549,8 @@ fn sqlite_cache_entry_sink_writes_entries_to_database() {
 fn imports_legacy_json_cache_file_into_database() {
     let root = unique_temp_path("replay_cache_db_import");
     std::fs::create_dir_all(&root).expect("temp root should be created");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
+    let legacy_json_path = ReplayCacheDatabase::legacy_json_path_for_cache_path(&cache_path);
     let older = sample_cache_entry(
         "older.SC2Replay",
         "older-hash",
@@ -1464,7 +1565,7 @@ fn imports_legacy_json_cache_file_into_database() {
         true,
         "Victory",
     );
-    write_legacy_cache(&cache_path, &[older, newer]);
+    write_legacy_cache(&legacy_json_path, &[older, newer]);
 
     let database = ReplayCacheDatabase::open_for_cache_path(&cache_path)
         .expect("database should import legacy cache");
@@ -1482,7 +1583,7 @@ fn imports_legacy_json_cache_file_into_database() {
     assert!(cached_files.contains("newer.SC2Replay"));
     assert!(ReplayCacheDatabase::db_path_for_cache_path(&cache_path).exists());
     assert!(
-        !cache_path.exists(),
+        !legacy_json_path.exists(),
         "legacy cache JSON should be deleted after successful SQLite import"
     );
 
@@ -1493,7 +1594,8 @@ fn imports_legacy_json_cache_file_into_database() {
 fn legacy_cache_import_saves_replay_dates_as_utc() {
     let root = unique_temp_path("replay_cache_db_import_utc_date");
     std::fs::create_dir_all(&root).expect("temp root should be created");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
+    let legacy_json_path = ReplayCacheDatabase::legacy_json_path_for_cache_path(&cache_path);
     let entry = sample_cache_entry(
         "legacy-local-date.SC2Replay",
         "legacy-local-date-hash",
@@ -1501,7 +1603,7 @@ fn legacy_cache_import_saves_replay_dates_as_utc() {
         true,
         "Victory",
     );
-    write_legacy_cache(&cache_path, std::slice::from_ref(&entry));
+    write_legacy_cache(&legacy_json_path, std::slice::from_ref(&entry));
 
     let database = ReplayCacheDatabase::open_for_cache_path(&cache_path)
         .expect("database should import legacy cache");
@@ -1522,7 +1624,7 @@ fn legacy_cache_import_saves_replay_dates_as_utc() {
 fn preserving_upsert_keeps_existing_detailed_entry_over_simple_entry() {
     let root = unique_temp_path("replay_cache_db_preserve");
     std::fs::create_dir_all(&root).expect("temp root should be created");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
     let replay_file = root
         .join("persisted.SC2Replay")
         .to_string_lossy()
@@ -1566,7 +1668,7 @@ fn preserving_upsert_keeps_existing_detailed_entry_over_simple_entry() {
 fn sqlite_navigation_candidates_load_adjacent_replays_without_full_cache_scan() {
     let root = unique_temp_path("replay_cache_db_navigation_candidates");
     std::fs::create_dir_all(&root).expect("temp root should be created");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
     let newest = sample_cache_entry(
         "newest.SC2Replay",
         "newest-hash",
@@ -1631,7 +1733,7 @@ fn sqlite_navigation_candidates_load_adjacent_replays_without_full_cache_scan() 
 fn opening_future_schema_version_returns_typed_error() {
     let root = unique_temp_path("replay_cache_db_future_schema");
     std::fs::create_dir_all(&root).expect("temp root should be created");
-    let cache_path = root.join("cache_overall_stats.json");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
     let db_path = ReplayCacheDatabase::db_path_for_cache_path(&cache_path);
     let connection = Connection::open(&db_path).expect("sqlite file should be created");
     connection

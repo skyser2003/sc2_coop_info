@@ -5,7 +5,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     CachePlayer, CachePlayerStatsSeries, CacheReplayEntry, CacheUnitStats, ReplayBuildInfo,
     ReplayMessage,
 };
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
 impl ReplayCacheDatabase {
     pub fn load_entries(
@@ -606,17 +606,6 @@ impl ReplayCacheDatabase {
             result: record.result,
             weekly: record.weekly,
         })
-    }
-
-    pub fn load_entries_by_hash(
-        &self,
-    ) -> Result<HashMap<String, CacheReplayEntry>, ReplayCacheDbError> {
-        Ok(self
-            .load_entries(ReplayCacheEntryQuery::all(0))?
-            .into_iter()
-            .filter(|entry| !entry.hash.is_empty())
-            .map(|entry| (entry.hash.clone(), entry))
-            .collect())
     }
 
     pub fn load_cached_files(&self) -> Result<HashSet<String>, ReplayCacheDbError> {
