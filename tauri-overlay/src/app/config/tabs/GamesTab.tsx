@@ -16,6 +16,7 @@ import {
     pageCountForRows,
     TablePagination,
 } from "./tablePagination";
+import { formatReplayTimestampLocal } from "./timeFormat";
 import type { DisplayValue, DifficultyFilters, MutatorData } from "../types";
 import { RaceIcon } from "../../components/RaceIcon";
 
@@ -270,20 +271,7 @@ export default function GamesTab({
     const visualRequestSeq = React.useRef<number>(0);
 
     const formatReplayTime = (value: DisplayValue) => {
-        const num = Number(value);
-        if (!Number.isFinite(num) || num <= 0) {
-            return "-";
-        }
-        const date = new Date(num * 1000);
-        if (Number.isNaN(date.getTime())) {
-            return "-";
-        }
-        const year = date.getUTCFullYear();
-        const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-        const day = String(date.getUTCDate()).padStart(2, "0");
-        const hh = String(date.getUTCHours()).padStart(2, "0");
-        const mm = String(date.getUTCMinutes()).padStart(2, "0");
-        return `${year}-${month}-${day} ${hh}:${mm}`;
+        return formatReplayTimestampLocal(value, { includeSeconds: false });
     };
 
     const formatChatTime = (value: DisplayValue) => {

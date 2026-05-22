@@ -15,6 +15,34 @@ async function expectHotkeyIdle(input: Locator): Promise<void> {
     await expect(input).toHaveAttribute("placeholder", "Press shortcut");
 }
 
+async function expectedLocalReplayTimestamp(
+    page: Page,
+    seconds: number,
+    includeSeconds: boolean,
+): Promise<string> {
+    return page.evaluate(
+        ({ includeSeconds: shouldIncludeSeconds, timestampSeconds }) => {
+            const date = new Date(timestampSeconds * 1000);
+            const padded = (value: number): string =>
+                String(value).padStart(2, "0");
+            const dateText = [
+                date.getFullYear(),
+                padded(date.getMonth() + 1),
+                padded(date.getDate()),
+            ].join("-");
+            const timeParts = [
+                padded(date.getHours()),
+                padded(date.getMinutes()),
+            ];
+            if (shouldIncludeSeconds) {
+                timeParts.push(padded(date.getSeconds()));
+            }
+            return `${dateText} ${timeParts.join(":")}`;
+        },
+        { includeSeconds, timestampSeconds: seconds },
+    );
+}
+
 async function installTauriMock(
     page,
     statsPayload = null,
@@ -1659,8 +1687,13 @@ test.describe("Config route", () => {
         await page.goto("/", { waitUntil: "domcontentloaded" });
         await page.getByRole("tab", { name: "Players" }).click();
 
+        const expectedTime = await expectedLocalReplayTimestamp(
+            page,
+            1538345544,
+            true,
+        );
         await expect(page.locator("tbody tr").nth(0)).toContainText(
-            "2018-09-30 22:12:24",
+            expectedTime,
         );
     });
 

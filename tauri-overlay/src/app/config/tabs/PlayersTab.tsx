@@ -10,6 +10,7 @@ import {
     pageCountForRows,
     TablePagination,
 } from "./tablePagination";
+import { formatReplayTimestampLocal } from "./timeFormat";
 
 type PlayerNotes = Readonly<Record<string, string>>;
 
@@ -61,23 +62,7 @@ function formatPercentCompat(value: DisplayValue) {
 }
 
 function formatReplayTime(value: DisplayValue) {
-    const num = Number(value);
-    if (!Number.isFinite(num) || num <= 0) {
-        return "-";
-    }
-
-    const date = new Date(num * 1000);
-    if (Number.isNaN(date.getTime())) {
-        return "-";
-    }
-
-    const year = date.getUTCFullYear();
-    const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-    const day = String(date.getUTCDate()).padStart(2, "0");
-    const hh = String(date.getUTCHours()).padStart(2, "0");
-    const mm = String(date.getUTCMinutes()).padStart(2, "0");
-    const ss = String(date.getUTCSeconds()).padStart(2, "0");
-    return `${year}-${month}-${day} ${hh}:${mm}:${ss}`;
+    return formatReplayTimestampLocal(value, { includeSeconds: true });
 }
 
 function normalizeHandleKey(value: string): string {
