@@ -73,20 +73,25 @@ impl ReplayCacheDatabase {
             .transpose()
     }
 
-    fn load_entry_by_id(
+    fn load_record_by_id(
         &self,
         replay_id: i64,
-    ) -> Result<Option<CacheReplayEntry>, ReplayCacheDbError> {
-        let record = self
-            .connection
+    ) -> Result<Option<ReplayCacheEntryRecord>, ReplayCacheDbError> {
+        self.connection
             .query_row(
                 ReplayCacheEntrySql::SELECT_BY_ID,
                 params![replay_id],
                 ReplayCacheEntryRecord::from_row,
             )
             .optional()
-            .map_err(|source| self.sqlite_error(source))?;
-        record
+            .map_err(|source| self.sqlite_error(source))
+    }
+
+    fn load_entry_by_id(
+        &self,
+        replay_id: i64,
+    ) -> Result<Option<CacheReplayEntry>, ReplayCacheDbError> {
+        self.load_record_by_id(replay_id)?
             .map(|record| self.entry_from_record(record))
             .transpose()
     }
@@ -95,10 +100,18 @@ impl ReplayCacheDatabase {
         &self,
         file: &str,
     ) -> Result<Option<CacheReplayEntry>, ReplayCacheDbError> {
-        if let Some(entry) = self.load_entry_by_exact_file(file)? {
-            return Ok(Some(entry));
-        }
+        self.load_record_by_file(file)?
+            .map(|record| self.entry_from_record(record))
+            .transpose()
+    }
 
+    fn load_record_by_file(
+        &self,
+        file: &str,
+    ) -> Result<Option<ReplayCacheEntryRecord>, ReplayCacheDbError> {
+        if let Some(record) = self.load_record_by_exact_file(file)? {
+            return Ok(Some(record));
+        }
         let file_name = ReplayCacheFileName::from_replay_file(file).into_string();
         if file_name.trim().is_empty() {
             return Ok(None);
@@ -113,15 +126,15 @@ impl ReplayCacheDatabase {
             .optional()
             .map_err(|source| self.sqlite_error(source))?;
         replay_id
-            .map(|replay_id| self.load_entry_by_id(replay_id))
+            .map(|replay_id| self.load_record_by_id(replay_id))
             .transpose()
             .map(Option::flatten)
     }
 
-    fn load_entry_by_exact_file(
+    fn load_record_by_exact_file(
         &self,
         file: &str,
-    ) -> Result<Option<CacheReplayEntry>, ReplayCacheDbError> {
+    ) -> Result<Option<ReplayCacheEntryRecord>, ReplayCacheDbError> {
         let replay_id = self
             .connection
             .query_row(
@@ -132,7 +145,7 @@ impl ReplayCacheDatabase {
             .optional()
             .map_err(|source| self.sqlite_error(source))?;
         replay_id
-            .map(|replay_id| self.load_entry_by_id(replay_id))
+            .map(|replay_id| self.load_record_by_id(replay_id))
             .transpose()
             .map(Option::flatten)
     }
@@ -149,6 +162,98 @@ impl ReplayCacheDatabase {
             .map(|replay_id| self.load_entry_by_id(replay_id))
             .transpose()
             .map(Option::flatten)
+    }
+
+    pub fn load_navigation_candidates(
+        &self,
+        current_file: Option<&str>,
+        delta: i64,
+        replay_data_active: bool,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<CacheReplayEntry>, ReplayCacheDbError> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+
+        let current_file = current_file
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let replay_ids = match (replay_data_active, current_file, delta) {
+            (true, Some(current_file), delta) if delta != 0 => {
+                match self.load_record_by_file(current_file)? {
+                    Some(record) => self.load_adjacent_entry_ids(&record, delta, offset, limit)?,
+                    None => self.load_entry_ids_page(offset, limit)?,
+                }
+            }
+            _ => self.load_entry_ids_page(offset, limit)?,
+        };
+
+        let mut entries = Vec::with_capacity(replay_ids.len());
+        for replay_id in replay_ids {
+            if let Some(entry) = self.load_entry_by_id(replay_id)? {
+                entries.push(entry);
+            }
+        }
+        Ok(entries)
+    }
+
+    fn load_entry_ids_page(
+        &self,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<i64>, ReplayCacheDbError> {
+        let mut statement = self
+            .connection
+            .prepare(ReplayCacheEntrySql::SELECT_IDS_PAGE)
+            .map_err(|source| self.sqlite_error(source))?;
+        let rows = statement
+            .query_map(
+                params![Self::usize_to_i64(limit), Self::usize_to_i64(offset)],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|source| self.sqlite_error(source))?;
+        Self::collect_replay_ids(rows, self)
+    }
+
+    fn load_adjacent_entry_ids(
+        &self,
+        current: &ReplayCacheEntryRecord,
+        delta: i64,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<i64>, ReplayCacheDbError> {
+        let steps = usize::try_from(delta.unsigned_abs())
+            .unwrap_or(usize::MAX)
+            .max(1);
+        let adjusted_offset = offset.saturating_add(steps.saturating_sub(1));
+        let sql = if delta > 0 {
+            ReplayCacheEntrySql::SELECT_NEWER_IDS
+        } else {
+            ReplayCacheEntrySql::SELECT_OLDER_IDS
+        };
+        let mut statement = self
+            .connection
+            .prepare(sql)
+            .map_err(|source| self.sqlite_error(source))?;
+        let rows = statement
+            .query_map(
+                params![
+                    ReplayCacheEntryRecord::u64_to_i64(current.date_seconds),
+                    &current.date_text,
+                    &current.file,
+                    &current.hash,
+                    Self::usize_to_i64(limit),
+                    Self::usize_to_i64(adjusted_offset),
+                ],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|source| self.sqlite_error(source))?;
+        Self::collect_replay_ids(rows, self)
+    }
+
+    fn usize_to_i64(value: usize) -> i64 {
+        i64::try_from(value).unwrap_or(i64::MAX)
     }
 
     fn entry_from_record(

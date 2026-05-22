@@ -318,6 +318,31 @@ impl ReplayCacheEntrySql {
         FROM replay_cache_entries
         WHERE id = ?1
     ";
+    pub(super) const SELECT_IDS_PAGE: &'static str = "
+        SELECT id FROM replay_cache_entries
+        ORDER BY date_seconds DESC, date_text DESC, file DESC, hash DESC
+        LIMIT ?1 OFFSET ?2
+    ";
+    pub(super) const SELECT_NEWER_IDS: &'static str = "
+        SELECT id FROM replay_cache_entries
+        WHERE
+            date_seconds > ?1 OR
+            (date_seconds = ?1 AND date_text > ?2) OR
+            (date_seconds = ?1 AND date_text = ?2 AND file > ?3) OR
+            (date_seconds = ?1 AND date_text = ?2 AND file = ?3 AND hash > ?4)
+        ORDER BY date_seconds ASC, date_text ASC, file ASC, hash ASC
+        LIMIT ?5 OFFSET ?6
+    ";
+    pub(super) const SELECT_OLDER_IDS: &'static str = "
+        SELECT id FROM replay_cache_entries
+        WHERE
+            date_seconds < ?1 OR
+            (date_seconds = ?1 AND date_text < ?2) OR
+            (date_seconds = ?1 AND date_text = ?2 AND file < ?3) OR
+            (date_seconds = ?1 AND date_text = ?2 AND file = ?3 AND hash < ?4)
+        ORDER BY date_seconds DESC, date_text DESC, file DESC, hash DESC
+        LIMIT ?5 OFFSET ?6
+    ";
     pub(super) const SELECT_ID_BY_EXACT_FILE: &'static str =
         "SELECT id FROM replay_cache_entries WHERE file = ?1";
     pub(super) const SELECT_ID_BY_FILE_NAME: &'static str = "
@@ -785,7 +810,7 @@ impl ReplayCacheDatabase {
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_replay_cache_entries_date
-                    ON replay_cache_entries(date_seconds DESC, date_text DESC, file DESC);
+                    ON replay_cache_entries(date_seconds DESC, date_text DESC, file DESC, hash DESC);
                 CREATE INDEX IF NOT EXISTS idx_replay_cache_entries_file
                     ON replay_cache_entries(file);
                 CREATE INDEX IF NOT EXISTS idx_replay_cache_entries_file_name

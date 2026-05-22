@@ -20,10 +20,7 @@ use crate::shared_types::{
     EmptyPayload, FirstWinBonusTimerPayload, OverlayReplayPayload, OverlayScreenshotRequestPayload,
     ReplayDataRecord, ReplayPlayerSeries, SharedTypesOps,
 };
-use crate::{
-    BackendState, PathManagerOps, ReplayCacheDatabase, ReplayCacheEntryQuery, ReplayInfo,
-    TauriOverlayOps, UNLIMITED_REPLAY_LIMIT,
-};
+use crate::{BackendState, PathManagerOps, ReplayCacheDatabase, ReplayInfo, TauriOverlayOps};
 
 pub(crate) const MENU_ITEM_SHOW_CONFIG: &str = "show_config";
 pub(crate) const MENU_ITEM_SHOW_OVERLAY: &str = "show_overlay";
@@ -1272,29 +1269,49 @@ impl OverlayInfoOps {
         ))
     }
 
-    fn replay_list_from_database(state: &BackendState, limit: usize) -> Option<Vec<ReplayInfo>> {
+    fn replay_move_candidate_from_database(
+        state: &BackendState,
+        delta: i64,
+    ) -> Result<Option<ReplayInfo>, String> {
+        const CANDIDATE_BATCH_SIZE: usize = 32;
+
         let cache_path = PathManagerOps::get_cache_path();
         let database = ReplayCacheDatabase::open_for_cache_path(&cache_path).map_err(|error| {
             crate::sco_log!("[SCO/cache-db] replay move cache lookup failed: {error}");
-            error
-        });
-        let Ok(database) = database else {
-            return None;
-        };
-        let entries = database
-            .load_entries(ReplayCacheEntryQuery::all(limit))
-            .map_err(|error| {
-                crate::sco_log!("[SCO/cache-db] replay move row lookup failed: {error}");
-                error
-            })
-            .ok()?;
-        let mut replays = entries
-            .iter()
-            .filter(|entry| Path::new(&entry.file).exists())
-            .map(|entry| TauriOverlayOps::replay_info_from_cache_entry_for_state(state, entry))
-            .collect::<Vec<_>>();
-        ReplayInfo::sort_replays(&mut replays);
-        Some(replays)
+            error.to_string()
+        })?;
+
+        let selected = state.get_current_replay_file();
+        let replay_data_active = state.overlay_replay_data_active();
+        let mut offset = 0usize;
+        loop {
+            let entries = database
+                .load_navigation_candidates(
+                    selected.as_deref(),
+                    delta,
+                    replay_data_active,
+                    offset,
+                    CANDIDATE_BATCH_SIZE,
+                )
+                .map_err(|error| {
+                    crate::sco_log!("[SCO/cache-db] replay move row lookup failed: {error}");
+                    error.to_string()
+                })?;
+            if entries.is_empty() {
+                return Ok(None);
+            }
+
+            let entries_len = entries.len();
+            if let Some(entry) = entries
+                .into_iter()
+                .find(|entry| Path::new(&entry.file).exists())
+            {
+                return Ok(Some(
+                    TauriOverlayOps::replay_info_from_cache_entry_for_state(state, &entry),
+                ));
+            }
+            offset = offset.saturating_add(entries_len);
+        }
     }
 
     pub(crate) fn replay_show_for_window(
@@ -1340,30 +1357,18 @@ impl OverlayInfoOps {
         state: &BackendState,
         delta: i64,
     ) -> crate::OverlayActionResponse {
-        let replays = OverlayInfoOps::replay_list_from_database(state, UNLIMITED_REPLAY_LIMIT)
-            .unwrap_or_else(|| state.sync_replay_cache_slots(UNLIMITED_REPLAY_LIMIT));
-
-        if replays.is_empty() {
-            return crate::OverlayActionResponse::failure("No replays available");
-        }
-
-        let selected = state.get_current_replay_file();
         let replay_data_active = state.overlay_replay_data_active();
-        let current_index = TauriOverlayOps::replay_index_by_file(&replays, &selected);
-        let index = OverlayInfoOps::replay_move_target_index(
-            &replays,
-            &selected,
-            delta,
-            replay_data_active,
-        );
-        if OverlayInfoOps::replay_move_should_be_ignored(current_index, index, replay_data_active) {
-            return crate::OverlayActionResponse::success("Replay move ignored");
-        }
-
-        let replay = &replays[index];
+        let replay = match OverlayInfoOps::replay_move_candidate_from_database(state, delta) {
+            Ok(Some(replay)) => replay,
+            Ok(None) if replay_data_active => {
+                return crate::OverlayActionResponse::success("Replay move ignored");
+            }
+            Ok(None) => return crate::OverlayActionResponse::failure("No replays available"),
+            Err(error) => return crate::OverlayActionResponse::failure(error),
+        };
         let file = replay.file.clone();
 
-        OverlayInfoOps::emit_replay_to_overlay_from_replay(app, replay, false);
+        OverlayInfoOps::emit_replay_to_overlay_from_replay(app, &replay, false);
         state.set_overlay_replay_data_active(true);
         state.set_current_replay_file(Some(&file));
 

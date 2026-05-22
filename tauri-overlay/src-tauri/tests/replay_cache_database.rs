@@ -758,6 +758,71 @@ fn preserving_upsert_keeps_existing_detailed_entry_over_simple_entry() {
 }
 
 #[test]
+fn sqlite_navigation_candidates_load_adjacent_replays_without_full_cache_scan() {
+    let root = unique_temp_path("replay_cache_db_navigation_candidates");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let cache_path = root.join("cache_overall_stats.json");
+    let newest = sample_cache_entry(
+        "newest.SC2Replay",
+        "newest-hash",
+        "2026-01-03 00:00:00",
+        true,
+        "Victory",
+    );
+    let middle = sample_cache_entry(
+        "middle.SC2Replay",
+        "middle-hash",
+        "2026-01-02 00:00:00",
+        true,
+        "Victory",
+    );
+    let oldest = sample_cache_entry(
+        "oldest.SC2Replay",
+        "oldest-hash",
+        "2026-01-01 00:00:00",
+        true,
+        "Victory",
+    );
+
+    let mut database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    database
+        .replace_entries(&[oldest.clone(), middle.clone(), newest.clone()])
+        .expect("entries should write");
+
+    let inactive = database
+        .load_navigation_candidates(Some(&oldest.file), -1, false, 0, 1)
+        .expect("inactive navigation should load latest replay");
+    assert_eq!(
+        inactive.first().map(|entry| entry.hash.as_str()),
+        Some("newest-hash")
+    );
+
+    let newer = database
+        .load_navigation_candidates(Some(&middle.file), 1, true, 0, 1)
+        .expect("newer navigation should load adjacent replay");
+    assert_eq!(
+        newer.first().map(|entry| entry.hash.as_str()),
+        Some("newest-hash")
+    );
+
+    let older = database
+        .load_navigation_candidates(Some(&middle.file), -1, true, 0, 1)
+        .expect("older navigation should load adjacent replay");
+    assert_eq!(
+        older.first().map(|entry| entry.hash.as_str()),
+        Some("oldest-hash")
+    );
+
+    let past_latest = database
+        .load_navigation_candidates(Some(&newest.file), 1, true, 0, 1)
+        .expect("latest replay should query successfully");
+    assert!(past_latest.is_empty());
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
 fn opening_future_schema_version_returns_typed_error() {
     let root = unique_temp_path("replay_cache_db_future_schema");
     std::fs::create_dir_all(&root).expect("temp root should be created");
