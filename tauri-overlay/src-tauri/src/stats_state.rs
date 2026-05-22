@@ -265,7 +265,7 @@ impl StatsState {
             .as_ref()
             .and_then(|analysis| analysis.get("UnitData"))
             .is_some_and(|value| !value.is_null())
-            || replays.iter().any(ReplayInfo::has_detailed_unit_stats)
+            || replays.iter().any(ReplayInfo::has_detailed_analysis_cache)
     }
 
     pub(crate) fn as_payload(&self, scan_progress: ReplayScanProgressPayload) -> Value {

@@ -4426,7 +4426,7 @@ impl ReplayAnalysis {
         let total_valid_files = filtered_replays.len() as u64;
         let detailed_parsed_count = filtered_replays
             .iter()
-            .filter(|replay| replay.has_detailed_unit_stats())
+            .filter(|replay| replay.has_detailed_analysis_cache())
             .count() as u64;
         (detailed_parsed_count, total_valid_files)
     }
@@ -4441,7 +4441,7 @@ impl ReplayAnalysis {
             .is_some_and(|value| !value.is_null())
             || cached_replays
                 .iter()
-                .any(ReplayInfo::has_detailed_unit_stats)
+                .any(ReplayInfo::has_detailed_analysis_cache)
     }
 
     pub fn build_stats_response(

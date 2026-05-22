@@ -943,6 +943,10 @@ impl ReplayInfo {
                 .is_some_and(|units| !units.is_empty())
     }
 
+    pub(crate) fn has_detailed_analysis_cache(&self) -> bool {
+        self.is_detailed || self.has_detailed_unit_stats()
+    }
+
     pub fn as_games_row_payload_with_dictionary(
         &self,
         dictionary: &Sc2DictionaryData,
@@ -3432,7 +3436,7 @@ impl StatsState {
             .filter(|replay| {
                 replay.result != "Unparsed"
                     && replay.map.trim().starts_with("AC_")
-                    && replay.has_detailed_unit_stats()
+                    && replay.has_detailed_analysis_cache()
             })
             .count();
 
@@ -3463,7 +3467,7 @@ impl StatsState {
             .filter(|replay| {
                 replay.result != "Unparsed"
                     && dictionary.canonicalize_coop_map_id(&replay.map).is_some()
-                    && replay.has_detailed_unit_stats()
+                    && replay.has_detailed_analysis_cache()
             })
             .count();
 

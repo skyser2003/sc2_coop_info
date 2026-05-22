@@ -3,8 +3,8 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     ProtocolBuildValue, ReplayBuildInfo,
 };
 use sco_tauri_overlay::{ReplayAnalysis, TestHelperOps};
-use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo, UNLIMITED_REPLAY_LIMIT};
-use serde_json::json;
+use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo, StatsState, UNLIMITED_REPLAY_LIMIT};
+use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -299,14 +299,13 @@ fn stats_source_replays_for_response_matches_wx_show_all_behavior() {
 }
 
 #[test]
-fn detailed_stats_counts_only_replays_with_unit_payloads() {
-    let detailed_replay = sample_replay(
+fn detailed_stats_counts_uses_cache_marker_without_unit_payloads() {
+    let mut detailed_replay = sample_replay(
         "fixtures/replays/detailed.SC2Replay",
-        ReplayPlayerInfo::default().with_units(json!({
-            "Marine": [6, 1, 9, 0.5]
-        })),
+        ReplayPlayerInfo::default(),
         ReplayPlayerInfo::default(),
     );
+    detailed_replay.set_is_detailed(true);
     let mut simple_replay = ReplayInfo::default();
     simple_replay.set_file("fixtures/replays/simple.SC2Replay");
     let mut amon_only_replay = ReplayInfo::default();
@@ -321,4 +320,42 @@ fn detailed_stats_counts_only_replays_with_unit_payloads() {
 
     assert_eq!(detailed_parsed_count, 2);
     assert_eq!(total_valid_files, 3);
+}
+
+#[test]
+fn should_include_detailed_stats_response_uses_cache_marker_without_unit_payloads() {
+    let response = json!({
+        "analysis": {
+            "UnitData": Value::Null
+        }
+    });
+    let mut cached_replay = ReplayInfo::default();
+    cached_replay.set_file("fixtures/replays/cached_detailed.SC2Replay");
+    cached_replay.set_is_detailed(true);
+
+    assert!(ReplayAnalysis::should_include_detailed_stats_response(
+        &response,
+        &[cached_replay]
+    ));
+}
+
+#[test]
+fn detailed_analysis_status_counts_cache_marker_without_unit_payloads() {
+    let mut stats = StatsState::default();
+    let mut detailed_replay = ReplayInfo::default();
+    detailed_replay.set_file("fixtures/replays/detailed_marker.SC2Replay");
+    detailed_replay.set_map(test_map_id("Void Launch"));
+    detailed_replay.set_result("Victory");
+    detailed_replay.set_is_detailed(true);
+    let mut simple_replay = ReplayInfo::default();
+    simple_replay.set_file("fixtures/replays/simple.SC2Replay");
+    simple_replay.set_map(test_map_id("Void Launch"));
+    simple_replay.set_result("Victory");
+
+    stats.sync_detailed_analysis_status_from_replays(&[detailed_replay, simple_replay]);
+
+    assert_eq!(
+        stats.detailed_analysis_status(),
+        "Detailed analysis: loaded from cache (1/2)."
+    );
 }
