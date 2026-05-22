@@ -9,7 +9,8 @@ use s2coop_analyzer::detailed_replay_analysis::CacheEntrySink;
 use sco_tauri_overlay::{
     ReplayCacheDatabase, ReplayCacheDbError, ReplayCacheDifficultyFilter, ReplayCacheEntryQuery,
     ReplayCacheGameSortKey, ReplayCacheGamesPageQuery, ReplayCachePage, ReplayCachePlayerNote,
-    ReplayCachePlayerSortKey, ReplayCachePlayersPageQuery, ReplayCacheSortDirection,
+    ReplayCachePlayerSortKey, ReplayCachePlayersPageQuery, ReplayCacheReadScope,
+    ReplayCacheSortDirection, ReplayCacheStatsDifficultyExclusion, ReplayCacheStatsQuery,
     SqliteReplayCacheEntrySink,
 };
 use std::collections::BTreeMap;
@@ -131,6 +132,15 @@ fn sqlite_table_row_count(db_path: &Path, table_name: &str) -> i64 {
     connection
         .query_row(&sql, [], |row| row.get::<_, i64>(0))
         .expect("table count should load")
+}
+
+fn utc_seconds(year: i32, month: u32, day: u32, hour: u32, minute: u32, second: u32) -> u64 {
+    Utc.with_ymd_and_hms(year, month, day, hour, minute, second)
+        .single()
+        .expect("test datetime should be valid")
+        .timestamp()
+        .try_into()
+        .expect("test datetime should be positive")
 }
 
 fn sqlite_user_version(db_path: &Path) -> i32 {
@@ -1188,6 +1198,114 @@ fn sqlite_games_page_query_filters_sorts_and_offsets_in_database() {
         .expect("filtered games page should load");
     assert_eq!(mutation_search_page.total_rows(), 1);
     assert_eq!(mutation_search_page.rows()[0].hash, rifts.hash);
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn sqlite_statistics_query_prefilters_replays_in_database() {
+    let root = unique_temp_path("replay_cache_db_stats_filter");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let cache_path = root.join("cache_overall_stats.json");
+
+    let mut included = sample_cache_entry(
+        "stats-included.SC2Replay",
+        "stats-included-hash",
+        "2026-01-02 00:00:00",
+        true,
+        "Victory",
+    );
+    included.accurate_length = CacheNumericValue::Integer(900);
+    included.players = vec![sample_player(1, "Alice"), sample_player(2, "Partner")];
+
+    let mut defeated = sample_cache_entry(
+        "stats-defeat.SC2Replay",
+        "stats-defeat-hash",
+        "2026-01-02 00:00:00",
+        true,
+        "Defeat",
+    );
+    defeated.accurate_length = CacheNumericValue::Integer(900);
+    defeated.players = vec![sample_player(1, "Defeated"), sample_player(2, "Partner")];
+
+    let mut mutation = sample_cache_entry(
+        "stats-mutation.SC2Replay",
+        "stats-mutation-hash",
+        "2026-01-02 00:00:00",
+        true,
+        "Victory",
+    );
+    mutation.extension = true;
+    mutation.accurate_length = CacheNumericValue::Integer(900);
+    mutation.players = vec![sample_player(1, "Mutation"), sample_player(2, "Partner")];
+
+    let mut brutal_plus = sample_cache_entry(
+        "stats-bplus.SC2Replay",
+        "stats-bplus-hash",
+        "2026-01-02 00:00:00",
+        true,
+        "Victory",
+    );
+    brutal_plus.brutal_plus = 3;
+    brutal_plus.accurate_length = CacheNumericValue::Integer(900);
+    brutal_plus.players = vec![sample_player(1, "Plus"), sample_player(2, "Partner")];
+
+    let mut too_short = sample_cache_entry(
+        "stats-short.SC2Replay",
+        "stats-short-hash",
+        "2026-01-02 00:00:00",
+        true,
+        "Victory",
+    );
+    too_short.accurate_length = CacheNumericValue::Integer(300);
+    too_short.players = vec![sample_player(1, "Short"), sample_player(2, "Partner")];
+
+    let mut too_late = sample_cache_entry(
+        "stats-late.SC2Replay",
+        "stats-late-hash",
+        "2026-01-05 00:00:00",
+        true,
+        "Victory",
+    );
+    too_late.accurate_length = CacheNumericValue::Integer(900);
+    too_late.players = vec![sample_player(1, "Late"), sample_player(2, "Partner")];
+
+    let mut database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    database
+        .replace_entries(&[
+            included,
+            defeated,
+            mutation,
+            brutal_plus,
+            too_short,
+            too_late,
+        ])
+        .expect("entries should write");
+
+    let query = ReplayCacheStatsQuery::new(ReplayCacheReadScope::DetailedOnly, 0)
+        .with_mutation_filters(false, true)
+        .with_result_filters(true, false)
+        .with_length_seconds(600, 1_200)
+        .with_date_seconds(
+            Some(utc_seconds(2026, 1, 1, 0, 0, 0)),
+            Some(utc_seconds(2026, 1, 4, 0, 0, 0)),
+        )
+        .with_player_filter("A*".to_string())
+        .with_difficulty_exclusions(vec![ReplayCacheStatsDifficultyExclusion::BrutalPlus3]);
+
+    let entries = database
+        .load_summary_entries_for_stats(&query)
+        .expect("filtered stats entries should load");
+
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].hash, "stats-included-hash");
+
+    let full_entries = database
+        .load_entries_for_stats(&query)
+        .expect("filtered full stats entries should load");
+    assert_eq!(full_entries.len(), 1);
+    assert_eq!(full_entries[0].hash, "stats-included-hash");
 
     let _ = std::fs::remove_dir_all(&root);
 }

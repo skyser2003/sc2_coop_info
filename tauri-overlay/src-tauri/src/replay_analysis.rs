@@ -28,6 +28,7 @@ use crate::shared_types::{
 };
 use crate::{
     AppSettings, CommanderUnitRollup, ReplayCacheDatabase, ReplayCacheEntryQuery,
+    ReplayCacheReadScope, ReplayCacheStatsDifficultyExclusion, ReplayCacheStatsQuery,
     ReplayChatMessage, ReplayInfo, ReplayPlayerInfo, StatsSnapshot, StatsState, TauriOverlayOps,
     UNLIMITED_REPLAY_LIMIT, UnitStatsRollup,
 };
@@ -94,6 +95,277 @@ impl<'a> StatsResponseBuildInput<'a> {
             main_names,
             main_handles,
         }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct StatsReplayFilter {
+    include_mutations: bool,
+    include_normal_games: bool,
+    include_wins: bool,
+    include_losses: bool,
+    include_both_main: bool,
+    include_sub_15: bool,
+    include_over_15: bool,
+    include_ally_sub_15: bool,
+    include_ally_over_15: bool,
+    include_main_normal_mastery: bool,
+    include_main_abnormal_mastery: bool,
+    include_ally_normal_mastery: bool,
+    include_ally_abnormal_mastery: bool,
+    show_all: bool,
+    min_length_seconds: u64,
+    max_length_seconds: u64,
+    min_date_seconds: Option<u64>,
+    max_date_seconds: Option<u64>,
+    player_filter: String,
+    difficulty_exclusions: Vec<ReplayCacheStatsDifficultyExclusion>,
+    region_exclusions: HashSet<String>,
+}
+
+impl StatsReplayFilter {
+    fn from_path(path: &str) -> Self {
+        let include_wins = TauriOverlayOps::parse_query_value(path, "include_wins")
+            .map(|_| TauriOverlayOps::parse_query_bool(path, "include_wins", true))
+            .unwrap_or(true);
+        let include_losses = TauriOverlayOps::parse_query_value(path, "include_losses")
+            .map(|_| TauriOverlayOps::parse_query_bool(path, "include_losses", true))
+            .unwrap_or_else(|| !TauriOverlayOps::parse_query_bool(path, "wins_only", false));
+        let min_length_seconds = TauriOverlayOps::parse_query_i64(path, "minlength")
+            .and_then(|value| u64::try_from(value.max(0)).ok())
+            .unwrap_or(0)
+            .saturating_mul(60);
+        let max_length_seconds = TauriOverlayOps::parse_query_i64(path, "maxlength")
+            .and_then(|value| u64::try_from(value.max(0)).ok())
+            .unwrap_or(0)
+            .saturating_mul(60);
+        let difficulty_exclusions = TauriOverlayOps::parse_query_csv(path, "difficulty_filter")
+            .into_iter()
+            .filter_map(|value| ReplayCacheStatsDifficultyExclusion::from_query_value(&value))
+            .collect();
+        let region_exclusions = TauriOverlayOps::parse_query_csv(path, "region_filter")
+            .into_iter()
+            .map(|value| value.to_ascii_uppercase())
+            .collect();
+
+        Self {
+            include_mutations: TauriOverlayOps::parse_query_bool(path, "include_mutations", true),
+            include_normal_games: TauriOverlayOps::parse_query_bool(
+                path,
+                "include_normal_games",
+                true,
+            ),
+            include_wins,
+            include_losses,
+            include_both_main: TauriOverlayOps::parse_query_bool(path, "include_both_main", true),
+            include_sub_15: TauriOverlayOps::parse_query_bool(path, "sub_15", true),
+            include_over_15: TauriOverlayOps::parse_query_bool(path, "over_15", true),
+            include_ally_sub_15: TauriOverlayOps::parse_query_bool(path, "ally_sub_15", true),
+            include_ally_over_15: TauriOverlayOps::parse_query_bool(path, "ally_over_15", true),
+            include_main_normal_mastery: TauriOverlayOps::parse_query_bool(
+                path,
+                "main_normal_mastery",
+                true,
+            ),
+            include_main_abnormal_mastery: TauriOverlayOps::parse_query_bool(
+                path,
+                "main_abnormal_mastery",
+                true,
+            ),
+            include_ally_normal_mastery: TauriOverlayOps::parse_query_bool(
+                path,
+                "ally_normal_mastery",
+                true,
+            ),
+            include_ally_abnormal_mastery: TauriOverlayOps::parse_query_bool(
+                path,
+                "ally_abnormal_mastery",
+                true,
+            ),
+            show_all: TauriOverlayOps::parse_query_bool(path, "show_all", true),
+            min_length_seconds,
+            max_length_seconds,
+            min_date_seconds: ReplayAnalysisOps::query_date_boundary_seconds(path, "mindate"),
+            max_date_seconds: ReplayAnalysisOps::query_date_boundary_seconds(path, "maxdate"),
+            player_filter: TauriOverlayOps::parse_query_value(path, "player")
+                .unwrap_or_default()
+                .trim()
+                .to_ascii_lowercase(),
+            difficulty_exclusions,
+            region_exclusions,
+        }
+    }
+
+    fn to_cache_query(&self, scope: ReplayCacheReadScope, limit: usize) -> ReplayCacheStatsQuery {
+        ReplayCacheStatsQuery::new(scope, limit)
+            .with_mutation_filters(self.include_mutations, self.include_normal_games)
+            .with_result_filters(self.include_wins, self.include_losses)
+            .with_length_seconds(self.min_length_seconds, self.max_length_seconds)
+            .with_date_seconds(self.min_date_seconds, self.max_date_seconds)
+            .with_player_filter(self.player_filter.clone())
+            .with_difficulty_exclusions(self.difficulty_exclusions.clone())
+    }
+
+    fn source_replays_for_response<'a>(
+        &self,
+        replays: &'a [ReplayInfo],
+        current_replay_files: &HashSet<String>,
+    ) -> Vec<&'a ReplayInfo> {
+        if self.show_all {
+            return replays.iter().collect();
+        }
+
+        replays
+            .iter()
+            .filter(|replay| current_replay_files.contains(&replay.file))
+            .collect()
+    }
+
+    fn filter_refs<'a>(
+        &self,
+        replays: &[&'a ReplayInfo],
+        main_handles: &HashSet<String>,
+        dictionary: &Sc2DictionaryData,
+    ) -> Vec<&'a ReplayInfo> {
+        replays
+            .iter()
+            .copied()
+            .filter(|replay| self.matches(replay, main_handles, dictionary))
+            .collect()
+    }
+
+    fn matches(
+        &self,
+        replay: &ReplayInfo,
+        main_handles: &HashSet<String>,
+        dictionary: &Sc2DictionaryData,
+    ) -> bool {
+        if replay.result == "Unparsed" {
+            return false;
+        }
+        if dictionary.canonicalize_coop_map_id(&replay.map).is_none() {
+            return false;
+        }
+
+        if !self.include_mutations && replay.extension {
+            return false;
+        }
+        if !self.include_normal_games && !replay.extension {
+            return false;
+        }
+        let Some(is_victory) = TauriOverlayOps::result_is_victory(&replay.result) else {
+            return false;
+        };
+        if !self.include_wins && is_victory {
+            return false;
+        }
+        if !self.include_losses && !is_victory {
+            return false;
+        }
+
+        if self.min_length_seconds > 0 && replay.accurate_length < self.min_length_seconds as f64 {
+            return false;
+        }
+        if self.max_length_seconds > 0 && replay.accurate_length > self.max_length_seconds as f64 {
+            return false;
+        }
+
+        let replay_date_seconds = replay.date_seconds_for_filter();
+        if let Some(min_date) = self.min_date_seconds
+            && replay_date_seconds <= min_date
+        {
+            return false;
+        }
+        if let Some(max_date) = self.max_date_seconds
+            && replay_date_seconds >= max_date
+        {
+            return false;
+        }
+
+        if !self.include_sub_15 && replay.main_commander_level() < 15 {
+            return false;
+        }
+        if !self.include_over_15 && replay.main_commander_level() >= 15 {
+            return false;
+        }
+        if !self.include_ally_sub_15 && replay.ally_commander_level() < 15 {
+            return false;
+        }
+        if !self.include_ally_over_15 && replay.ally_commander_level() >= 15 {
+            return false;
+        }
+        let main_mastery_points =
+            ReplayAnalysisOps::mastery_points_invested(replay.main_masteries());
+        let ally_mastery_points =
+            ReplayAnalysisOps::mastery_points_invested(replay.ally_masteries());
+        if !self.include_main_normal_mastery && main_mastery_points <= 90 {
+            return false;
+        }
+        if !self.include_main_abnormal_mastery && main_mastery_points > 90 {
+            return false;
+        }
+        if !self.include_ally_normal_mastery && ally_mastery_points <= 90 {
+            return false;
+        }
+        if !self.include_ally_abnormal_mastery && ally_mastery_points > 90 {
+            return false;
+        }
+
+        if !main_handles.is_empty() && !self.include_both_main {
+            let p1_is_main = main_handles.contains(&ReplayAnalysis::normalized_handle_key(
+                &replay.main().handle,
+            ));
+            let p2_is_main = main_handles.contains(&ReplayAnalysis::normalized_handle_key(
+                &replay.ally().handle,
+            ));
+            if p1_is_main && p2_is_main {
+                return false;
+            }
+        }
+
+        if !self.player_filter.is_empty() {
+            let p1 = replay.main().name.to_ascii_lowercase();
+            let p2 = replay.ally().name.to_ascii_lowercase();
+            if !ReplayAnalysisOps::wildcard_match(&self.player_filter, &p1)
+                && !ReplayAnalysisOps::wildcard_match(&self.player_filter, &p2)
+            {
+                return false;
+            }
+        }
+
+        for exclusion in &self.difficulty_exclusions {
+            if let Some(bplus) = exclusion.brutal_plus_level() {
+                if replay.brutal_plus == u64::try_from(bplus).unwrap_or(0) {
+                    return false;
+                }
+                continue;
+            }
+
+            if replay.brutal_plus > 0 && exclusion.is_brutal_label() {
+                continue;
+            }
+
+            if let Some(label) = exclusion.difficulty_label()
+                && replay.difficulty.contains(label)
+            {
+                return false;
+            }
+        }
+
+        if !self.region_exclusions.is_empty() {
+            let region = TauriOverlayOps::infer_region_from_handle(&replay.main().handle)
+                .or_else(|| TauriOverlayOps::infer_region_from_handle(&replay.ally().handle))
+                .unwrap_or_else(|| "Unknown".to_string())
+                .to_ascii_uppercase();
+            if !matches!(region.as_str(), "NA" | "EU" | "KR" | "CN" | "PTR") {
+                return false;
+            }
+            if self.region_exclusions.contains(&region) {
+                return false;
+            }
+        }
+
+        true
     }
 }
 
@@ -1170,6 +1442,62 @@ impl ReplayAnalysisOps {
         };
 
         match database.load_entries(query) {
+            Ok(entries) => entries,
+            Err(error) => {
+                crate::sco_log!(
+                    "[SCO/cache] failed to read {log_label} database for '{}': {error}",
+                    cache_path.display()
+                );
+                Vec::new()
+            }
+        }
+    }
+
+    fn read_cache_summary_entries_for_stats(
+        cache_path: &Path,
+        log_label: &str,
+        query: &ReplayCacheStatsQuery,
+    ) -> Vec<CacheReplayEntry> {
+        let database = match ReplayCacheDatabase::open_for_cache_path(cache_path) {
+            Ok(database) => database,
+            Err(error) => {
+                crate::sco_log!(
+                    "[SCO/cache] failed to open {log_label} database for '{}': {error}",
+                    cache_path.display()
+                );
+                return Vec::new();
+            }
+        };
+
+        match database.load_summary_entries_for_stats(query) {
+            Ok(entries) => entries,
+            Err(error) => {
+                crate::sco_log!(
+                    "[SCO/cache] failed to read {log_label} database for '{}': {error}",
+                    cache_path.display()
+                );
+                Vec::new()
+            }
+        }
+    }
+
+    fn read_cache_entries_for_stats(
+        cache_path: &Path,
+        log_label: &str,
+        query: &ReplayCacheStatsQuery,
+    ) -> Vec<CacheReplayEntry> {
+        let database = match ReplayCacheDatabase::open_for_cache_path(cache_path) {
+            Ok(database) => database,
+            Err(error) => {
+                crate::sco_log!(
+                    "[SCO/cache] failed to open {log_label} database for '{}': {error}",
+                    cache_path.display()
+                );
+                return Vec::new();
+            }
+        };
+
+        match database.load_entries_for_stats(query) {
             Ok(entries) => entries,
             Err(error) => {
                 crate::sco_log!(
@@ -3811,6 +4139,72 @@ impl ReplayAnalysis {
         replays
     }
 
+    fn load_stats_summary_replays_snapshot_from_path_with_dictionary(
+        cache_path: &Path,
+        limit: usize,
+        filter: &StatsReplayFilter,
+        main_names: &HashSet<String>,
+        main_handles: &HashSet<String>,
+        dictionary: &Sc2DictionaryData,
+    ) -> Vec<ReplayInfo> {
+        let query = filter.to_cache_query(ReplayCacheReadScope::All, limit);
+        let mut replays = ReplayAnalysisOps::read_cache_summary_entries_for_stats(
+            cache_path,
+            "filtered unified cache",
+            &query,
+        )
+        .into_iter()
+        .filter(|entry| Path::new(&entry.file).exists())
+        .map(|entry| {
+            ReplayAnalysisOps::replay_info_from_cache_entry_with_dictionary(&entry, dictionary)
+                .oriented_for_main_identity(main_names, main_handles)
+        })
+        .collect::<Vec<_>>();
+
+        replays.sort_by(|a, b| b.date.cmp(&a.date).then_with(|| b.file.cmp(&a.file)));
+        if limit > 0 && replays.len() > limit {
+            replays.truncate(limit);
+        }
+
+        crate::sco_log!(
+            "[SCO/cache] loaded {} replay(s) from filtered unified cache '{}'",
+            replays.len(),
+            cache_path.display()
+        );
+
+        replays
+    }
+
+    fn load_stats_detailed_replays_snapshot_from_path_with_dictionary(
+        cache_path: &Path,
+        limit: usize,
+        filter: &StatsReplayFilter,
+        main_names: &HashSet<String>,
+        main_handles: &HashSet<String>,
+        dictionary: &Sc2DictionaryData,
+    ) -> Vec<ReplayInfo> {
+        let query = filter.to_cache_query(ReplayCacheReadScope::DetailedOnly, limit);
+        let entries = ReplayAnalysisOps::read_cache_entries_for_stats(
+            cache_path,
+            "filtered detailed-analysis cache",
+            &query,
+        );
+        let replays = Self::detailed_analysis_replays_snapshot_from_entries_with_dictionary(
+            &entries,
+            limit,
+            main_names,
+            main_handles,
+            dictionary,
+        );
+
+        crate::sco_log!(
+            "[SCO/cache] loaded {} replay(s) from filtered detailed-analysis cache '{}'",
+            replays.len(),
+            cache_path.display()
+        );
+        replays
+    }
+
     pub fn modified_seconds(path: &Path) -> u64 {
         path.metadata()
             .ok()
@@ -4221,196 +4615,7 @@ impl ReplayAnalysis {
         main_handles: &HashSet<String>,
         dictionary: &Sc2DictionaryData,
     ) -> bool {
-        let include_mutations = TauriOverlayOps::parse_query_bool(path, "include_mutations", true);
-        let include_normal_games =
-            TauriOverlayOps::parse_query_bool(path, "include_normal_games", true);
-        let include_wins = TauriOverlayOps::parse_query_value(path, "include_wins")
-            .map(|_| TauriOverlayOps::parse_query_bool(path, "include_wins", true))
-            .unwrap_or(true);
-        let include_losses = TauriOverlayOps::parse_query_value(path, "include_losses")
-            .map(|_| TauriOverlayOps::parse_query_bool(path, "include_losses", true))
-            .unwrap_or_else(|| !TauriOverlayOps::parse_query_bool(path, "wins_only", false));
-        let include_both_main = TauriOverlayOps::parse_query_bool(path, "include_both_main", true);
-        let include_sub_15 = TauriOverlayOps::parse_query_bool(path, "sub_15", true);
-        let include_over_15 = TauriOverlayOps::parse_query_bool(path, "over_15", true);
-        let include_ally_sub_15 = TauriOverlayOps::parse_query_bool(path, "ally_sub_15", true);
-        let include_ally_over_15 = TauriOverlayOps::parse_query_bool(path, "ally_over_15", true);
-        let include_main_normal_mastery =
-            TauriOverlayOps::parse_query_bool(path, "main_normal_mastery", true);
-        let include_main_abnormal_mastery =
-            TauriOverlayOps::parse_query_bool(path, "main_abnormal_mastery", true);
-        let include_ally_normal_mastery =
-            TauriOverlayOps::parse_query_bool(path, "ally_normal_mastery", true);
-        let include_ally_abnormal_mastery =
-            TauriOverlayOps::parse_query_bool(path, "ally_abnormal_mastery", true);
-
-        let min_length_minutes = TauriOverlayOps::parse_query_i64(path, "minlength")
-            .and_then(|value| u64::try_from(value.max(0)).ok())
-            .unwrap_or(0);
-        let max_length_minutes = TauriOverlayOps::parse_query_i64(path, "maxlength")
-            .and_then(|value| u64::try_from(value.max(0)).ok())
-            .unwrap_or(0);
-
-        let min_date_seconds = ReplayAnalysisOps::query_date_boundary_seconds(path, "mindate");
-        let max_date_seconds = ReplayAnalysisOps::query_date_boundary_seconds(path, "maxdate");
-
-        let player_filter = TauriOverlayOps::parse_query_value(path, "player")
-            .unwrap_or_default()
-            .trim()
-            .to_ascii_lowercase();
-        let difficulty_filter = TauriOverlayOps::parse_query_csv(path, "difficulty_filter");
-        let region_filter: HashSet<String> =
-            TauriOverlayOps::parse_query_csv(path, "region_filter")
-                .into_iter()
-                .map(|value| value.to_ascii_uppercase())
-                .collect();
-
-        let has_main_handles = !main_handles.is_empty();
-
-        if replay.result == "Unparsed" {
-            return false;
-        }
-        if dictionary.canonicalize_coop_map_id(&replay.map).is_none() {
-            return false;
-        }
-
-        if !include_mutations && replay.extension {
-            return false;
-        }
-        if !include_normal_games && !replay.extension {
-            return false;
-        }
-        let Some(is_victory) = TauriOverlayOps::result_is_victory(&replay.result) else {
-            return false;
-        };
-        if !include_wins && is_victory {
-            return false;
-        }
-        if !include_losses && !is_victory {
-            return false;
-        }
-
-        if min_length_minutes > 0 && replay.accurate_length < (min_length_minutes * 60) as f64 {
-            return false;
-        }
-        if max_length_minutes > 0 && replay.accurate_length > (max_length_minutes * 60) as f64 {
-            return false;
-        }
-
-        let replay_date_seconds = replay.date_seconds_for_filter();
-        if let Some(min_date) = min_date_seconds
-            && replay_date_seconds <= min_date
-        {
-            return false;
-        }
-        if let Some(max_date) = max_date_seconds
-            && replay_date_seconds >= max_date
-        {
-            return false;
-        }
-
-        if !include_sub_15 && replay.main_commander_level() < 15 {
-            return false;
-        }
-        if !include_over_15 && replay.main_commander_level() >= 15 {
-            return false;
-        }
-        if !include_ally_sub_15 && replay.ally_commander_level() < 15 {
-            return false;
-        }
-        if !include_ally_over_15 && replay.ally_commander_level() >= 15 {
-            return false;
-        }
-        let main_mastery_points =
-            ReplayAnalysisOps::mastery_points_invested(replay.main_masteries());
-        let ally_mastery_points =
-            ReplayAnalysisOps::mastery_points_invested(replay.ally_masteries());
-        if !include_main_normal_mastery && main_mastery_points <= 90 {
-            return false;
-        }
-        if !include_main_abnormal_mastery && main_mastery_points > 90 {
-            return false;
-        }
-        if !include_ally_normal_mastery && ally_mastery_points <= 90 {
-            return false;
-        }
-        if !include_ally_abnormal_mastery && ally_mastery_points > 90 {
-            return false;
-        }
-
-        if has_main_handles && !include_both_main {
-            let p1_is_main =
-                main_handles.contains(&Self::normalized_handle_key(&replay.main().handle));
-            let p2_is_main =
-                main_handles.contains(&Self::normalized_handle_key(&replay.ally().handle));
-            if p1_is_main && p2_is_main {
-                return false;
-            }
-        }
-
-        if !player_filter.is_empty() {
-            let p1 = replay.main().name.to_ascii_lowercase();
-            let p2 = replay.ally().name.to_ascii_lowercase();
-            if !ReplayAnalysisOps::wildcard_match(&player_filter, &p1)
-                && !ReplayAnalysisOps::wildcard_match(&player_filter, &p2)
-            {
-                return false;
-            }
-        }
-
-        if !difficulty_filter.is_empty() {
-            for blocked in &difficulty_filter {
-                if let Ok(bplus) = blocked.parse::<u64>() {
-                    if replay.brutal_plus == bplus {
-                        return false;
-                    }
-                    continue;
-                }
-
-                if replay.brutal_plus > 0 && blocked.eq_ignore_ascii_case("Brutal") {
-                    continue;
-                }
-
-                if replay.difficulty.contains(blocked) {
-                    return false;
-                }
-            }
-        }
-
-        if !region_filter.is_empty() {
-            let region = TauriOverlayOps::infer_region_from_handle(&replay.main().handle)
-                .or_else(|| TauriOverlayOps::infer_region_from_handle(&replay.ally().handle))
-                .unwrap_or_else(|| "Unknown".to_string())
-                .to_ascii_uppercase();
-            if !matches!(region.as_str(), "NA" | "EU" | "KR" | "CN" | "PTR") {
-                return false;
-            }
-            if region_filter.contains(&region) {
-                return false;
-            }
-        }
-
-        true
-    }
-
-    fn filter_replays_for_stats_refs_with_dictionary<'a>(
-        path: &str,
-        replays: &[&'a ReplayInfo],
-        main_handles: &HashSet<String>,
-        dictionary: &Sc2DictionaryData,
-    ) -> Vec<&'a ReplayInfo> {
-        replays
-            .iter()
-            .copied()
-            .filter(|replay| {
-                Self::replay_matches_stats_filters_with_dictionary(
-                    path,
-                    replay,
-                    main_handles,
-                    dictionary,
-                )
-            })
-            .collect()
+        StatsReplayFilter::from_path(path).matches(replay, main_handles, dictionary)
     }
 
     pub fn filter_replays_for_stats(path: &str, replays: &[ReplayInfo]) -> Vec<ReplayInfo> {
@@ -4497,6 +4702,7 @@ impl ReplayAnalysis {
             main_names,
             main_handles,
         } = input;
+        let stats_filter = StatsReplayFilter::from_path(path);
         let mut response = match stats.try_lock() {
             Ok(state) => state.as_payload(scan_progress.clone()),
             Err(error) => match error {
@@ -4521,10 +4727,12 @@ impl ReplayAnalysis {
             .and_then(Value::as_bool)
             .unwrap_or(false);
         if is_ready && !analysis_running {
+            let cache_path = PathManagerOps::get_cache_path();
             let database_replays =
-                Self::load_all_analysis_replays_snapshot_from_path_with_dictionary(
-                    &PathManagerOps::get_cache_path(),
+                Self::load_stats_summary_replays_snapshot_from_path_with_dictionary(
+                    &cache_path,
                     UNLIMITED_REPLAY_LIMIT,
+                    &stats_filter,
                     main_names,
                     main_handles,
                     dictionary,
@@ -4535,9 +4743,10 @@ impl ReplayAnalysis {
                         Self::should_include_detailed_stats_response(&response, &database_replays);
                     let stats_replays: Cow<'_, [ReplayInfo]> = if include_detailed {
                         let detailed_replays =
-                            Self::load_detailed_analysis_replays_snapshot_from_path_with_dictionary(
-                                &PathManagerOps::get_cache_path(),
+                            Self::load_stats_detailed_replays_snapshot_from_path_with_dictionary(
+                                &cache_path,
                                 UNLIMITED_REPLAY_LIMIT,
+                                &stats_filter,
                                 main_names,
                                 main_handles,
                                 dictionary,
@@ -4550,17 +4759,10 @@ impl ReplayAnalysis {
                     } else {
                         Cow::Borrowed(database_replays.as_slice())
                     };
-                    let selected_replays = Self::stats_source_replays_for_response(
-                        path,
-                        stats_replays.as_ref(),
-                        &current_replay_files,
-                    );
-                    let filtered_replays = Self::filter_replays_for_stats_refs_with_dictionary(
-                        path,
-                        &selected_replays,
-                        main_handles,
-                        dictionary,
-                    );
+                    let selected_replays = stats_filter
+                        .source_replays_for_response(stats_replays.as_ref(), &current_replay_files);
+                    let filtered_replays =
+                        stats_filter.filter_refs(&selected_replays, main_handles, dictionary);
                     let filtered_payload = Self::rebuild_analysis_payload_with_dictionary(
                         &filtered_replays,
                         include_detailed,

@@ -132,6 +132,201 @@ impl ReplayCacheEntryQuery {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ReplayCacheStatsDifficultyExclusion {
+    Casual,
+    Normal,
+    Hard,
+    Brutal,
+    BrutalPlus1,
+    BrutalPlus2,
+    BrutalPlus3,
+    BrutalPlus4,
+    BrutalPlus5,
+    BrutalPlus6,
+    Other(String),
+}
+
+impl ReplayCacheStatsDifficultyExclusion {
+    pub fn from_query_value(value: &str) -> Option<Self> {
+        let trimmed = value.trim();
+        match trimmed {
+            "Casual" => Some(Self::Casual),
+            "Normal" => Some(Self::Normal),
+            "Hard" => Some(Self::Hard),
+            "Brutal" => Some(Self::Brutal),
+            "1" | "BrutalPlus1" => Some(Self::BrutalPlus1),
+            "2" | "BrutalPlus2" => Some(Self::BrutalPlus2),
+            "3" | "BrutalPlus3" => Some(Self::BrutalPlus3),
+            "4" | "BrutalPlus4" => Some(Self::BrutalPlus4),
+            "5" | "BrutalPlus5" => Some(Self::BrutalPlus5),
+            "6" | "BrutalPlus6" => Some(Self::BrutalPlus6),
+            "" => None,
+            _ => Some(Self::Other(trimmed.to_string())),
+        }
+    }
+
+    pub fn brutal_plus_level(&self) -> Option<i64> {
+        match self {
+            Self::BrutalPlus1 => Some(1),
+            Self::BrutalPlus2 => Some(2),
+            Self::BrutalPlus3 => Some(3),
+            Self::BrutalPlus4 => Some(4),
+            Self::BrutalPlus5 => Some(5),
+            Self::BrutalPlus6 => Some(6),
+            _ => None,
+        }
+    }
+
+    pub fn difficulty_label(&self) -> Option<&str> {
+        match self {
+            Self::Casual => Some("Casual"),
+            Self::Normal => Some("Normal"),
+            Self::Hard => Some("Hard"),
+            Self::Brutal => Some("Brutal"),
+            Self::Other(value) => Some(value.as_str()),
+            Self::BrutalPlus1
+            | Self::BrutalPlus2
+            | Self::BrutalPlus3
+            | Self::BrutalPlus4
+            | Self::BrutalPlus5
+            | Self::BrutalPlus6 => None,
+        }
+    }
+
+    pub fn is_brutal_label(&self) -> bool {
+        matches!(self, Self::Brutal)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReplayCacheStatsQuery {
+    scope: ReplayCacheReadScope,
+    limit: usize,
+    include_mutations: bool,
+    include_normal_games: bool,
+    include_wins: bool,
+    include_losses: bool,
+    min_length_seconds: u64,
+    max_length_seconds: u64,
+    min_date_seconds: Option<u64>,
+    max_date_seconds: Option<u64>,
+    player_filter: String,
+    difficulty_exclusions: Vec<ReplayCacheStatsDifficultyExclusion>,
+}
+
+impl ReplayCacheStatsQuery {
+    pub fn new(scope: ReplayCacheReadScope, limit: usize) -> Self {
+        Self {
+            scope,
+            limit,
+            include_mutations: true,
+            include_normal_games: true,
+            include_wins: true,
+            include_losses: true,
+            min_length_seconds: 0,
+            max_length_seconds: 0,
+            min_date_seconds: None,
+            max_date_seconds: None,
+            player_filter: String::new(),
+            difficulty_exclusions: Vec::new(),
+        }
+    }
+
+    pub fn with_mutation_filters(
+        mut self,
+        include_mutations: bool,
+        include_normal_games: bool,
+    ) -> Self {
+        self.include_mutations = include_mutations;
+        self.include_normal_games = include_normal_games;
+        self
+    }
+
+    pub fn with_result_filters(mut self, include_wins: bool, include_losses: bool) -> Self {
+        self.include_wins = include_wins;
+        self.include_losses = include_losses;
+        self
+    }
+
+    pub fn with_length_seconds(mut self, min_length_seconds: u64, max_length_seconds: u64) -> Self {
+        self.min_length_seconds = min_length_seconds;
+        self.max_length_seconds = max_length_seconds;
+        self
+    }
+
+    pub fn with_date_seconds(
+        mut self,
+        min_date_seconds: Option<u64>,
+        max_date_seconds: Option<u64>,
+    ) -> Self {
+        self.min_date_seconds = min_date_seconds;
+        self.max_date_seconds = max_date_seconds;
+        self
+    }
+
+    pub fn with_player_filter(mut self, player_filter: String) -> Self {
+        self.player_filter = player_filter;
+        self
+    }
+
+    pub fn with_difficulty_exclusions(
+        mut self,
+        difficulty_exclusions: Vec<ReplayCacheStatsDifficultyExclusion>,
+    ) -> Self {
+        self.difficulty_exclusions = difficulty_exclusions;
+        self
+    }
+
+    pub(super) fn scope(&self) -> ReplayCacheReadScope {
+        self.scope
+    }
+
+    pub(super) fn limit(&self) -> usize {
+        self.limit
+    }
+
+    pub(super) fn include_mutations(&self) -> bool {
+        self.include_mutations
+    }
+
+    pub(super) fn include_normal_games(&self) -> bool {
+        self.include_normal_games
+    }
+
+    pub(super) fn include_wins(&self) -> bool {
+        self.include_wins
+    }
+
+    pub(super) fn include_losses(&self) -> bool {
+        self.include_losses
+    }
+
+    pub(super) fn min_length_seconds(&self) -> u64 {
+        self.min_length_seconds
+    }
+
+    pub(super) fn max_length_seconds(&self) -> u64 {
+        self.max_length_seconds
+    }
+
+    pub(super) fn min_date_seconds(&self) -> Option<u64> {
+        self.min_date_seconds
+    }
+
+    pub(super) fn max_date_seconds(&self) -> Option<u64> {
+        self.max_date_seconds
+    }
+
+    pub(super) fn player_filter(&self) -> &str {
+        &self.player_filter
+    }
+
+    pub(super) fn difficulty_exclusions(&self) -> &[ReplayCacheStatsDifficultyExclusion] {
+        &self.difficulty_exclusions
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReplayCacheSortDirection {
     Asc,
@@ -509,7 +704,7 @@ impl ReplayCacheTable {
     }
 }
 
-const REPLAY_CACHE_ENTRY_RECORD_COLUMNS: &str = "
+pub(super) const REPLAY_CACHE_ENTRY_RECORD_COLUMNS: &str = "
     id,
     hash,
     file,
@@ -1235,12 +1430,16 @@ impl ReplayCacheDatabase {
                     ON replay_cache_entries(file_name, date_seconds DESC);
                 CREATE INDEX IF NOT EXISTS idx_replay_cache_entries_detailed
                     ON replay_cache_entries(detailed_analysis, date_seconds DESC);
+                CREATE INDEX IF NOT EXISTS idx_replay_cache_entries_stats_filter
+                    ON replay_cache_entries(detailed_analysis, extension, date_seconds DESC, brutal_plus, result);
                 CREATE INDEX IF NOT EXISTS idx_replay_cache_entries_games_tab
                     ON replay_cache_entries(date_seconds DESC, result, difficulty_p1, difficulty_p2, map_name);
                 CREATE INDEX IF NOT EXISTS idx_replay_cache_players_handle
                     ON replay_cache_players(player_handle, replay_id);
                 CREATE INDEX IF NOT EXISTS idx_replay_cache_players_name
                     ON replay_cache_players(player_handle, player_name, replay_id);
+                CREATE INDEX IF NOT EXISTS idx_replay_cache_players_stats_name
+                    ON replay_cache_players(player_name COLLATE NOCASE, replay_id);
                 CREATE INDEX IF NOT EXISTS idx_replay_cache_players_commander
                     ON replay_cache_players(commander, replay_id);
                 CREATE INDEX IF NOT EXISTS idx_replay_player_infos_last_played
