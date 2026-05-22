@@ -20,6 +20,7 @@ use tauri::{AppHandle, Emitter, Manager, State, Wry, tray::TrayIconBuilder};
 mod app_settings;
 mod backend_state;
 mod command_payloads;
+mod db;
 mod game_launch_detector;
 mod live_game;
 mod logging;
@@ -29,7 +30,6 @@ mod path_manager;
 mod performance_overlay;
 mod randomizer;
 mod replay_analysis;
-mod replay_cache_db;
 mod replay_info;
 mod replay_visual;
 mod sc2_game_state;
@@ -44,6 +44,10 @@ pub use command_payloads::{
     ConfigReplayVisualPayload, ConfigReplaysPayload, ConfigWeekliesPayload, OverlayActionResponse,
     OverlayActionResult, StatsActionPayload, StatsStatePayload,
 };
+pub use db::{
+    ReplayCacheDatabase, ReplayCacheDbError, ReplayCacheEntryQuery, ReplayCacheReadScope,
+    SqliteReplayCacheEntrySink,
+};
 pub use game_launch_detector::{GameLaunchDetector, GameLaunchStatus};
 pub use logging::LoggingOps;
 pub use monitor_settings::{MonitorDescriptor, MonitorSettingsOps};
@@ -55,10 +59,6 @@ pub use path_manager::PathManagerOps;
 pub use randomizer::{RandomizerMutatorResult, RandomizerOps, RandomizerRequest, RandomizerResult};
 pub use replay_analysis::{
     PlayerRowPayload, ReplayAnalysis, ReplayAnalysisOps, StatsResponseBuildInput, WeeklyRowPayload,
-};
-pub use replay_cache_db::{
-    ReplayCacheDatabase, ReplayCacheDbError, ReplayCacheEntryQuery, ReplayCacheReadScope,
-    SqliteReplayCacheEntrySink,
 };
 pub use replay_info::{
     CommanderUnitRollup, GamesRowPayload, ReplayChatMessage, ReplayChatPayload, ReplayInfo,

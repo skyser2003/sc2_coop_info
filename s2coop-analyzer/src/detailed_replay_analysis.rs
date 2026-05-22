@@ -8,7 +8,7 @@ use crate::tauri_replay_analysis_impl::{
     ParsedReplayInput, ParsedReplayMessage, ParsedReplayPlayer, PlayerPositions, ReplayReport,
     ReplayReportDetailData, ReplayReportDetailedInput,
 };
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use s2protocol_port::{
     ProtocolStore, ProtocolStoreBuilder, ReplayDetails, ReplayEvent, ReplayInitData,
@@ -1076,7 +1076,7 @@ impl DetailedReplayAnalyzer {
 
     fn file_date_string(file: &Path) -> Result<String, std::io::Error> {
         let modified = fs::metadata(file)?.modified()?;
-        let datetime: DateTime<Local> = DateTime::from(modified);
+        let datetime: DateTime<Utc> = DateTime::from(modified);
         Ok(datetime.format("%Y:%m:%d:%H:%M:%S").to_string())
     }
 
