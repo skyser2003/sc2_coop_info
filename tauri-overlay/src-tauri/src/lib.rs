@@ -3634,15 +3634,10 @@ impl TauriOverlayOps {
                         captured = captured.saturating_add(1);
                         let detected_time =
                             chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-                        match state.persist_single_setting_value(
-                            today_win_bonus::TODAY_WIN_BONUS_SETTINGS_KEY,
-                            Value::String(detected_time.clone()),
-                        ) {
-                            Ok(()) => {}
-                            Err(error) => {
-                                save_error = Some(error.to_string());
-                            }
-                        }
+                        save_error = TauriOverlayOps::persist_today_win_bonus_detected_time(
+                            &state,
+                            detected_time.clone(),
+                        );
                         detected_at = Some(detected_time);
                         ended_reason = "detected";
                         break;
@@ -4009,6 +4004,19 @@ impl TauriOverlayOps {
         Duration::from_secs(u64::from(settings.duration().max(1)))
     }
 
+    fn persist_today_win_bonus_detected_time(
+        state: &BackendState,
+        detected_time: String,
+    ) -> Option<String> {
+        match state.persist_single_setting_value(
+            today_win_bonus::TODAY_WIN_BONUS_SETTINGS_KEY,
+            Value::String(detected_time),
+        ) {
+            Ok(()) => None,
+            Err(error) => Some(error.to_string()),
+        }
+    }
+
     fn log_sc2_game_state_transition(transition: Option<Sc2GameStateTransition>, reason: &str) {
         if let Some(transition) = transition {
             crate::sco_log!(
@@ -4018,6 +4026,58 @@ impl TauriOverlayOps {
                 reason
             );
         }
+    }
+
+    fn try_today_win_bonus_focus_scan(app: &tauri::AppHandle<Wry>, sc2_game_state: Sc2GameState) {
+        let scan_started_at = Instant::now();
+        let state = app.state::<BackendState>();
+        let mut today_win_bonus_capture = today_win_bonus::TodayWinBonusWindowCapture::new();
+        crate::sco_log!(
+            "[SCO/today-win-bonus] focus scan started sc2_game_state={:?} initial_capture_method='{}'",
+            sc2_game_state,
+            today_win_bonus::TodayWinBonusWindowCapture::initial_capture_method()
+        );
+
+        let mut detected_at = None::<String>;
+        let mut save_error = None::<String>;
+        let mut last_error = None::<String>;
+        let mut result = "not_detected";
+
+        match today_win_bonus_capture.capture_focused_sc2_window_detection() {
+            Ok(Some(detection)) if detection.found_today_win_bonus() => {
+                let detected_time =
+                    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+                save_error = TauriOverlayOps::persist_today_win_bonus_detected_time(
+                    &state,
+                    detected_time.clone(),
+                );
+                detected_at = Some(detected_time);
+                result = "detected";
+            }
+            Ok(Some(_detection)) => {}
+            Ok(None) => {
+                result = "skipped_not_focused";
+            }
+            Err(error) => {
+                last_error = Some(error);
+                result = "error";
+            }
+        }
+
+        let capture_fallback_state = today_win_bonus_capture.fallback_state();
+        crate::sco_log!(
+            "[SCO/today-win-bonus] focus scan summary sc2_game_state={:?} result={} window_capture_failures={} fallback_happened={} selected_fallback_method='{}' active_capture_method='{}' elapsed_ms={} detected_at='{}' save_error='{}' last_error='{}'",
+            sc2_game_state,
+            result,
+            capture_fallback_state.consecutive_window_capture_failures(),
+            capture_fallback_state.region_capture_fallback(),
+            today_win_bonus_capture.selected_fallback_method(),
+            today_win_bonus_capture.active_capture_method(),
+            scan_started_at.elapsed().as_millis(),
+            detected_at.as_deref().unwrap_or(""),
+            save_error.as_deref().unwrap_or(""),
+            last_error.as_deref().unwrap_or("")
+        );
     }
 
     fn first_win_bonus_timer_payload(
@@ -4059,6 +4119,7 @@ impl TauriOverlayOps {
             thread::sleep(Duration::from_secs(4));
 
             let mut timer_visible = false;
+            let mut previous_sc2_focused = None::<bool>;
             loop {
                 thread::sleep(Duration::from_secs(1));
 
@@ -4078,11 +4139,22 @@ impl TauriOverlayOps {
                 let sc2_focused =
                     today_win_bonus::TodayWinBonusDetector::focused_sc2_window_active()
                         .unwrap_or(false);
+                let sc2_focus_regained = previous_sc2_focused == Some(false) && sc2_focused;
+                previous_sc2_focused = Some(sc2_focused);
                 let visible = TauriOverlayOps::first_win_bonus_timer_should_be_visible(
                     &settings,
                     sc2_focused,
                     sc2_game_state,
                 );
+
+                if sc2_focus_regained
+                    && matches!(
+                        sc2_game_state,
+                        Sc2GameState::Lobby | Sc2GameState::GameEnded
+                    )
+                {
+                    TauriOverlayOps::try_today_win_bonus_focus_scan(&app, sc2_game_state);
+                }
 
                 if visible {
                     let payload = TauriOverlayOps::first_win_bonus_timer_payload(&settings, true);

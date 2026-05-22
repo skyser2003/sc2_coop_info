@@ -1691,6 +1691,21 @@
     width: 100%;
 }
 
+.configPage .mainInlineAction {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.configPage .mainInlineValue {
+    color: #93c5fd;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+
 .configPage .mainNumberRow input {
     inline-size: 8ch;
 }

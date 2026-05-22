@@ -83,6 +83,76 @@ function isFirstWinBonusDisplayMode(
     );
 }
 
+function padDatePart(value: number): string {
+    return String(value).padStart(2, "0");
+}
+
+function formatManualFirstWinBonusTimeDefault(now: Date): string {
+    return (
+        [
+            now.getFullYear(),
+            padDatePart(now.getMonth() + 1),
+            padDatePart(now.getDate()),
+        ].join("-") +
+        " " +
+        [padDatePart(now.getHours()), padDatePart(now.getMinutes())].join(":")
+    );
+}
+
+function parseManualFirstWinBonusTime(value: string): string | null {
+    const trimmed = value.trim();
+    const match = trimmed.match(
+        /^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?$/,
+    );
+    if (match === null) {
+        return null;
+    }
+
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const hour = Number(match[4]);
+    const minute = Number(match[5]);
+    const second = match[6] === undefined ? 0 : Number(match[6]);
+    const parsed = new Date(year, month - 1, day, hour, minute, second, 0);
+    if (
+        parsed.getFullYear() !== year ||
+        parsed.getMonth() !== month - 1 ||
+        parsed.getDate() !== day ||
+        parsed.getHours() !== hour ||
+        parsed.getMinutes() !== minute ||
+        parsed.getSeconds() !== second
+    ) {
+        return null;
+    }
+
+    return parsed.toISOString();
+}
+
+function formatManualFirstWinBonusTimeDisplay(
+    value: JsonValue | undefined,
+    neverSetText: string,
+): string {
+    if (typeof value !== "string" || value.trim() === "") {
+        return neverSetText;
+    }
+
+    const parsed = new Date(value);
+    if (!Number.isFinite(parsed.getTime())) {
+        return neverSetText;
+    }
+
+    const year = parsed.getFullYear();
+    const month = padDatePart(parsed.getMonth() + 1);
+    const day = padDatePart(parsed.getDate());
+    const hours24 = parsed.getHours();
+    const period = hours24 >= 12 ? "PM" : "AM";
+    const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
+    const minutes = padDatePart(parsed.getMinutes());
+
+    return `${year}-${month}-${day} ${hours12}:${minutes} ${period}`;
+}
+
 function getAtPathCompat(source: AppSettings | null, path: string[]) {
     return path.reduce(
         (acc: JsonValue | undefined, key) =>
@@ -821,6 +891,27 @@ export default function SettingsTab({
     )
         ? firstWinBonusDisplayModeValue
         : "always";
+    const manualFirstWinBonusTimeText = formatManualFirstWinBonusTimeDisplay(
+        read(["latest_today_win_bonus_time"], null),
+        t("ui_settings_first_win_bonus_manual_never_set"),
+    );
+    const promptManualFirstWinBonusTime = () => {
+        const value = window.prompt(
+            t("ui_settings_first_win_bonus_manual_prompt"),
+            formatManualFirstWinBonusTimeDefault(new Date()),
+        );
+        if (value === null) {
+            return;
+        }
+
+        const parsedTime = parseManualFirstWinBonusTime(value);
+        if (parsedTime === null) {
+            window.alert(t("ui_settings_first_win_bonus_manual_invalid"));
+            return;
+        }
+
+        onChange(["latest_today_win_bonus_time"], parsedTime);
+    };
 
     const hotkeyEntry = (
         id: string,
@@ -1433,6 +1524,65 @@ export default function SettingsTab({
                                                         ),
                                                     )}
                                                 </select>
+                                            </Grid>
+                                        </Grid>
+                                    </Grid>
+                                    <Grid size={12}>
+                                        <Grid
+                                            container
+                                            columns={10}
+                                            spacing={1.25}
+                                            alignItems="center"
+                                            className={
+                                                styles.mainSettingsRowGrid
+                                            }
+                                        >
+                                            <Grid size={4}>
+                                                <span
+                                                    className={
+                                                        styles.mainRowLabel
+                                                    }
+                                                >
+                                                    {t(
+                                                        "ui_settings_first_win_bonus_manual_label",
+                                                    )}
+                                                </span>
+                                            </Grid>
+                                            <Grid size={6}>
+                                                <div
+                                                    className={
+                                                        styles.mainInlineAction
+                                                    }
+                                                >
+                                                    <button
+                                                        type="button"
+                                                        className={
+                                                            styles.buttonNormal
+                                                        }
+                                                        onClick={
+                                                            promptManualFirstWinBonusTime
+                                                        }
+                                                        disabled={
+                                                            actions.isBusy
+                                                        }
+                                                    >
+                                                        {t(
+                                                            "ui_settings_first_win_bonus_manual_button",
+                                                        )}
+                                                    </button>
+                                                    <span
+                                                        className={[
+                                                            styles.mainInlineValue,
+                                                            styles.mono,
+                                                        ]
+                                                            .filter(Boolean)
+                                                            .join(" ")}
+                                                    >
+                                                        {
+                                                            manualFirstWinBonusTimeText
+                                                        }
+                                                    </span>
+                                                </div>
                                             </Grid>
                                         </Grid>
                                     </Grid>

@@ -72,6 +72,26 @@
         "en": "Always display",
         "ko": "항상 표시"
     },
+    "ui_settings_first_win_bonus_manual_label": {
+        "en": "Latest first win bonus time",
+        "ko": "최근 첫 승 보너스 시간"
+    },
+    "ui_settings_first_win_bonus_manual_button": {
+        "en": "Set manually",
+        "ko": "직접 설정"
+    },
+    "ui_settings_first_win_bonus_manual_never_set": {
+        "en": "Never set",
+        "ko": "설정되지 않음"
+    },
+    "ui_settings_first_win_bonus_manual_prompt": {
+        "en": "Enter latest first win bonus time (YYYY-MM-DD HH:mm).",
+        "ko": "최근 첫 승 보너스 시간을 입력하세요 (YYYY-MM-DD HH:mm)."
+    },
+    "ui_settings_first_win_bonus_manual_invalid": {
+        "en": "Invalid time. Use YYYY-MM-DD HH:mm.",
+        "ko": "잘못된 시간입니다. YYYY-MM-DD HH:mm 형식을 사용하세요."
+    },
     "ui_settings_dark_theme": {
         "en": "Dark theme",
         "ko": "다크 테마"
