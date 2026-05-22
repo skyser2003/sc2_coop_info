@@ -3,6 +3,7 @@ use rusqlite::{Connection, params};
 use s2coop_analyzer::cache_overall_stats_generator::{
     CacheCountValue, CacheIconValue, CacheNumericValue, CachePlayer, CachePlayerStatsSeries,
     CacheReplayEntry, CacheStatValue, CacheUnitStats, ProtocolBuildValue, ReplayBuildInfo,
+    ReplayMessage,
 };
 use s2coop_analyzer::detailed_replay_analysis::CacheEntrySink;
 use sco_tauri_overlay::{
@@ -605,6 +606,83 @@ fn sqlite_cache_stores_player_stats_as_json_arrays() {
     let loaded_stats = loaded.player_stats.expect("player stats should load");
     assert_eq!(loaded_stats.len(), 1);
     assert_eq!(loaded_stats[&1], sample_player_stats("Player One"));
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn sqlite_summary_entries_skip_heavy_child_payloads() {
+    let root = unique_temp_path("replay_cache_db_summary_entries");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let cache_path = root.join("cache_overall_stats.json");
+    let mut entry = sample_cache_entry(
+        "summary.SC2Replay",
+        "summary-hash",
+        "2026-01-01 00:00:00",
+        true,
+        "Victory",
+    );
+    let mut player = sample_player(1, "Player One");
+    player.masteries = Some([1, 2, 3, 4, 5, 6]);
+    player.icons = Some(BTreeMap::from([(
+        "Top Units".to_string(),
+        CacheIconValue::Order(vec!["Marine".to_string()]),
+    )]));
+    player.units = Some(BTreeMap::from([(
+        "Marine".to_string(),
+        CacheUnitStats(
+            CacheCountValue::Count(10),
+            CacheCountValue::Count(2),
+            20,
+            0.75,
+        ),
+    )]));
+    entry.players = vec![player];
+    entry.messages = vec![ReplayMessage {
+        player: 1,
+        text: "hello".to_string(),
+        time: 1.5,
+    }];
+    entry.amon_units = Some(BTreeMap::from([(
+        "Zergling".to_string(),
+        CacheUnitStats(
+            CacheCountValue::Count(30),
+            CacheCountValue::Count(30),
+            0,
+            0.0,
+        ),
+    )]));
+    entry.player_stats = Some(BTreeMap::from([(1, sample_player_stats("Player One"))]));
+
+    let mut database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    database
+        .replace_entries(std::slice::from_ref(&entry))
+        .expect("entry should write");
+
+    let summary = database
+        .load_summary_entries(ReplayCacheEntryQuery::all(0))
+        .expect("summary entries should load")
+        .pop()
+        .expect("summary entry should exist");
+    assert_eq!(summary.players.len(), 1);
+    assert_eq!(summary.players[0].masteries, Some([1, 2, 3, 4, 5, 6]));
+    assert!(summary.players[0].icons.is_none());
+    assert!(summary.players[0].units.is_none());
+    assert!(summary.messages.is_empty());
+    assert!(summary.amon_units.is_none());
+    assert!(summary.player_stats.is_none());
+
+    let full = database
+        .load_entries(ReplayCacheEntryQuery::all(0))
+        .expect("full entries should load")
+        .pop()
+        .expect("full entry should exist");
+    assert!(full.players[0].icons.is_some());
+    assert!(full.players[0].units.is_some());
+    assert!(!full.messages.is_empty());
+    assert!(full.amon_units.is_some());
+    assert!(full.player_stats.is_some());
 
     let _ = std::fs::remove_dir_all(&root);
 }

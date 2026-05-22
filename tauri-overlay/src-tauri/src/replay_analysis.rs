@@ -1125,6 +1125,34 @@ impl ReplayAnalysisOps {
 }
 
 impl ReplayAnalysisOps {
+    fn read_cache_summary_entries(
+        cache_path: &Path,
+        log_label: &str,
+        query: ReplayCacheEntryQuery,
+    ) -> Vec<CacheReplayEntry> {
+        let database = match ReplayCacheDatabase::open_for_cache_path(cache_path) {
+            Ok(database) => database,
+            Err(error) => {
+                crate::sco_log!(
+                    "[SCO/cache] failed to open {log_label} database for '{}': {error}",
+                    cache_path.display()
+                );
+                return Vec::new();
+            }
+        };
+
+        match database.load_summary_entries(query) {
+            Ok(entries) => entries,
+            Err(error) => {
+                crate::sco_log!(
+                    "[SCO/cache] failed to read {log_label} database for '{}': {error}",
+                    cache_path.display()
+                );
+                Vec::new()
+            }
+        }
+    }
+
     fn read_cache_entries(
         cache_path: &Path,
         log_label: &str,
@@ -3756,7 +3784,7 @@ impl ReplayAnalysis {
         main_handles: &HashSet<String>,
         dictionary: &Sc2DictionaryData,
     ) -> Vec<ReplayInfo> {
-        let mut replays = ReplayAnalysisOps::recover_cache_entries_from_temp(
+        let mut replays = ReplayAnalysisOps::read_cache_summary_entries(
             cache_path,
             "unified cache",
             ReplayCacheEntryQuery::all(0),
@@ -4505,13 +4533,23 @@ impl ReplayAnalysis {
                 Ok(current_replay_files) => {
                     let include_detailed =
                         Self::should_include_detailed_stats_response(&response, &database_replays);
-                    let stats_replays = Self::stats_replays_for_response_with_dictionary(
-                        include_detailed,
-                        &database_replays,
-                        main_names,
-                        main_handles,
-                        dictionary,
-                    );
+                    let stats_replays: Cow<'_, [ReplayInfo]> = if include_detailed {
+                        let detailed_replays =
+                            Self::load_detailed_analysis_replays_snapshot_from_path_with_dictionary(
+                                &PathManagerOps::get_cache_path(),
+                                UNLIMITED_REPLAY_LIMIT,
+                                main_names,
+                                main_handles,
+                                dictionary,
+                            );
+                        if detailed_replays.is_empty() {
+                            Cow::Borrowed(database_replays.as_slice())
+                        } else {
+                            Cow::Owned(detailed_replays)
+                        }
+                    } else {
+                        Cow::Borrowed(database_replays.as_slice())
+                    };
                     let selected_replays = Self::stats_source_replays_for_response(
                         path,
                         stats_replays.as_ref(),

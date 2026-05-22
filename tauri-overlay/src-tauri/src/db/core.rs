@@ -171,15 +171,51 @@ impl ReplayCacheTable {
     }
 }
 
+const REPLAY_CACHE_ENTRY_RECORD_COLUMNS: &str = "
+    id,
+    hash,
+    file,
+    file_name,
+    date_text,
+    date_seconds,
+    detailed_analysis,
+    result,
+    map_name,
+    difficulty_p1,
+    difficulty_p2,
+    ext_difficulty,
+    brutal_plus,
+    extension,
+    weekly,
+    region,
+    length_ingame_seconds,
+    length_realtime_kind,
+    length_realtime_int,
+    length_realtime_float,
+    form_length_realtime,
+    replay_build,
+    protocol_build_kind,
+    protocol_build_int,
+    protocol_build_text,
+    comp,
+    enemy_race,
+    has_amon_units,
+    has_bonus,
+    has_player_stats,
+    mutator_values,
+    bonus_values,
+    updated_at_seconds
+";
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum ReplayCacheEntryIdQuery {
+pub(super) enum ReplayCacheEntryRecordQuery {
     All,
     AllLimited,
     DetailedOnly,
     DetailedOnlyLimited,
 }
 
-impl ReplayCacheEntryIdQuery {
+impl ReplayCacheEntryRecordQuery {
     pub(super) fn from_entry_query(query: ReplayCacheEntryQuery) -> Self {
         match (query.scope(), query.limit()) {
             (ReplayCacheReadScope::All, 0) => Self::All,
@@ -198,37 +234,24 @@ impl ReplayCacheEntryIdQuery {
         }
     }
 
-    pub(super) fn sql(self) -> &'static str {
-        match self {
-            Self::All => {
-                "
-                SELECT id FROM replay_cache_entries
-                ORDER BY date_seconds DESC, date_text DESC, file DESC, hash DESC
-                "
-            }
-            Self::AllLimited => {
-                "
-                SELECT id FROM replay_cache_entries
-                ORDER BY date_seconds DESC, date_text DESC, file DESC, hash DESC
-                LIMIT ?1
-                "
-            }
-            Self::DetailedOnly => {
-                "
-                SELECT id FROM replay_cache_entries
-                WHERE detailed_analysis = 1
-                ORDER BY date_seconds DESC, date_text DESC, file DESC, hash DESC
-                "
-            }
-            Self::DetailedOnlyLimited => {
-                "
-                SELECT id FROM replay_cache_entries
-                WHERE detailed_analysis = 1
-                ORDER BY date_seconds DESC, date_text DESC, file DESC, hash DESC
-                LIMIT ?1
-                "
-            }
-        }
+    pub(super) fn sql(self) -> String {
+        let filter = match self {
+            Self::DetailedOnly | Self::DetailedOnlyLimited => "WHERE detailed_analysis = 1",
+            Self::All | Self::AllLimited => "",
+        };
+        let limit = match self {
+            Self::AllLimited | Self::DetailedOnlyLimited => "LIMIT ?1",
+            Self::All | Self::DetailedOnly => "",
+        };
+        format!(
+            "
+            SELECT {REPLAY_CACHE_ENTRY_RECORD_COLUMNS}
+            FROM replay_cache_entries
+            {filter}
+            ORDER BY date_seconds DESC, date_text DESC, file DESC, hash DESC
+            {limit}
+            "
+        )
     }
 }
 

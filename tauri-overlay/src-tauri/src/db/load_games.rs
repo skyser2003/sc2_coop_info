@@ -1,8 +1,11 @@
 use super::array_json::ReplayCacheArrayJson;
 use super::core::*;
 use rusqlite::{OptionalExtension, params};
-use s2coop_analyzer::cache_overall_stats_generator::{CacheReplayEntry, ReplayBuildInfo};
-use std::collections::{HashMap, HashSet};
+use s2coop_analyzer::cache_overall_stats_generator::{
+    CachePlayer, CachePlayerStatsSeries, CacheReplayEntry, CacheUnitStats, ReplayBuildInfo,
+    ReplayMessage,
+};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 impl ReplayCacheDatabase {
     pub fn load_entries(
@@ -16,29 +19,51 @@ impl ReplayCacheDatabase {
         &self,
         query: ReplayCacheEntryQuery,
     ) -> Result<Vec<CacheReplayEntry>, ReplayCacheDbError> {
-        let id_query = ReplayCacheEntryIdQuery::from_entry_query(query);
-        let mut statement = self
-            .connection
-            .prepare(id_query.sql())
-            .map_err(|source| self.sqlite_error(source))?;
-        let replay_ids = if let Some(limit) = id_query.limit(query) {
-            let rows = statement
-                .query_map(params![limit], |row| row.get::<_, i64>(0))
-                .map_err(|source| self.sqlite_error(source))?;
-            Self::collect_replay_ids(rows, self)?
-        } else {
-            let rows = statement
-                .query_map([], |row| row.get::<_, i64>(0))
-                .map_err(|source| self.sqlite_error(source))?;
-            Self::collect_replay_ids(rows, self)?
-        };
-        let mut entries = Vec::with_capacity(replay_ids.len());
-        for replay_id in replay_ids {
-            if let Some(entry) = self.load_entry_by_id(replay_id)? {
-                entries.push(entry);
-            }
+        let records = self.load_entry_records(query)?;
+        let mut entries = Vec::with_capacity(records.len());
+        for record in records {
+            entries.push(self.entry_from_record(record)?);
         }
         Ok(entries)
+    }
+
+    pub fn load_summary_entries(
+        &self,
+        query: ReplayCacheEntryQuery,
+    ) -> Result<Vec<CacheReplayEntry>, ReplayCacheDbError> {
+        let records = self.load_entry_records(query)?;
+        let replay_ids = records.iter().map(|record| record.id).collect::<Vec<_>>();
+        let mut players_by_replay_id = self.load_players_summary_by_replay_ids(&replay_ids)?;
+        let mut entries = Vec::with_capacity(records.len());
+        for record in records {
+            let players = players_by_replay_id.remove(&record.id).unwrap_or_default();
+            entries.push(self.summary_entry_from_record(record, players)?);
+        }
+        Ok(entries)
+    }
+
+    fn load_entry_records(
+        &self,
+        query: ReplayCacheEntryQuery,
+    ) -> Result<Vec<ReplayCacheEntryRecord>, ReplayCacheDbError> {
+        let record_query = ReplayCacheEntryRecordQuery::from_entry_query(query);
+        let sql = record_query.sql();
+        let mut statement = self
+            .connection
+            .prepare(&sql)
+            .map_err(|source| self.sqlite_error(source))?;
+        let records = if let Some(limit) = record_query.limit(query) {
+            let rows = statement
+                .query_map(params![limit], ReplayCacheEntryRecord::from_row)
+                .map_err(|source| self.sqlite_error(source))?;
+            Self::collect_entry_records(rows, self)?
+        } else {
+            let rows = statement
+                .query_map([], ReplayCacheEntryRecord::from_row)
+                .map_err(|source| self.sqlite_error(source))?;
+            Self::collect_entry_records(rows, self)?
+        };
+        Ok(records)
     }
 
     fn collect_replay_ids<MappedRows>(
@@ -53,6 +78,20 @@ impl ReplayCacheDatabase {
             replay_ids.push(row.map_err(|source| database.sqlite_error(source))?);
         }
         Ok(replay_ids)
+    }
+
+    fn collect_entry_records<MappedRows>(
+        rows: MappedRows,
+        database: &Self,
+    ) -> Result<Vec<ReplayCacheEntryRecord>, ReplayCacheDbError>
+    where
+        MappedRows: IntoIterator<Item = rusqlite::Result<ReplayCacheEntryRecord>>,
+    {
+        let mut records = Vec::new();
+        for row in rows {
+            records.push(row.map_err(|source| database.sqlite_error(source))?);
+        }
+        Ok(records)
     }
 
     pub fn load_entry_by_hash(
@@ -260,13 +299,40 @@ impl ReplayCacheDatabase {
         &self,
         record: ReplayCacheEntryRecord,
     ) -> Result<CacheReplayEntry, ReplayCacheDbError> {
+        let amon_units = if record.has_amon_units {
+            Some(self.load_amon_units(record.id)?)
+        } else {
+            None
+        };
+        let messages = self.load_messages(record.id)?;
+        let player_stats = if record.has_player_stats {
+            Some(self.load_player_stats(record.id)?)
+        } else {
+            None
+        };
+        let players = self.load_players(record.id)?;
+        self.entry_from_record_with_payloads(record, amon_units, messages, player_stats, players)
+    }
+
+    fn summary_entry_from_record(
+        &self,
+        record: ReplayCacheEntryRecord,
+        players: Vec<CachePlayer>,
+    ) -> Result<CacheReplayEntry, ReplayCacheDbError> {
+        self.entry_from_record_with_payloads(record, None, Vec::new(), None, players)
+    }
+
+    fn entry_from_record_with_payloads(
+        &self,
+        record: ReplayCacheEntryRecord,
+        amon_units: Option<BTreeMap<String, CacheUnitStats>>,
+        messages: Vec<ReplayMessage>,
+        player_stats: Option<BTreeMap<u8, CachePlayerStatsSeries>>,
+        players: Vec<CachePlayer>,
+    ) -> Result<CacheReplayEntry, ReplayCacheDbError> {
         Ok(CacheReplayEntry {
             accurate_length: record.length_realtime,
-            amon_units: if record.has_amon_units {
-                Some(self.load_amon_units(record.id)?)
-            } else {
-                None
-            },
+            amon_units,
             bonus: if record.has_bonus {
                 Some(ReplayCacheArrayJson::decode_strings(&record.bonus_values)?)
             } else {
@@ -286,14 +352,10 @@ impl ReplayCacheDatabase {
             hash: record.hash.clone(),
             length: record.length_ingame_seconds,
             map_name: record.map_name,
-            messages: self.load_messages(record.id)?,
+            messages,
             mutators: ReplayCacheArrayJson::decode_strings(&record.mutator_values)?,
-            player_stats: if record.has_player_stats {
-                Some(self.load_player_stats(record.id)?)
-            } else {
-                None
-            },
-            players: self.load_players(record.id)?,
+            player_stats,
+            players,
             region: record.region,
             result: record.result,
             weekly: record.weekly,

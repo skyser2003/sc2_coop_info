@@ -4628,7 +4628,8 @@ async fn config_replays_get(
             let from_database =
                 ReplayCacheDatabase::open_for_cache_path(&cache_path).and_then(|database| {
                     let total_replays = database.count_entries()?;
-                    let entries = database.load_entries(ReplayCacheEntryQuery::all(limit))?;
+                    let entries =
+                        database.load_summary_entries(ReplayCacheEntryQuery::all(limit))?;
                     Ok((entries, total_replays))
                 });
 
@@ -4727,7 +4728,7 @@ async fn config_players_get(
             .as_deref()
             .map(ReplayAnalysisResources::dictionary_data);
         let replays = ReplayCacheDatabase::open_for_cache_path(&cache_path)
-            .and_then(|database| database.load_entries(ReplayCacheEntryQuery::all(0)))
+            .and_then(|database| database.load_summary_entries(ReplayCacheEntryQuery::all(0)))
             .map(|entries| {
                 entries
                     .iter()
@@ -4797,18 +4798,33 @@ async fn config_weeklies_get(
     let resources = state.replay_analysis_resources().ok();
 
     let replays = tauri::async_runtime::spawn_blocking(move || {
-        replay_state
-            .lock()
-            .map(|state| {
-                state.sync_replay_cache_slots_with_resources(
+        let dictionary = resources
+            .as_deref()
+            .map(ReplayAnalysisResources::dictionary_data);
+        dictionary
+            .map(|dictionary| {
+                ReplayAnalysis::load_all_analysis_replays_snapshot_from_path_with_dictionary(
+                    &PathManagerOps::get_cache_path(),
                     UNLIMITED_REPLAY_LIMIT,
-                    &settings,
                     &main_names,
                     &main_handles,
-                    resources.as_deref(),
+                    dictionary,
                 )
             })
-            .unwrap_or_default()
+            .unwrap_or_else(|| {
+                replay_state
+                    .lock()
+                    .map(|state| {
+                        state.sync_replay_cache_slots_with_resources(
+                            UNLIMITED_REPLAY_LIMIT,
+                            &settings,
+                            &main_names,
+                            &main_handles,
+                            resources.as_deref(),
+                        )
+                    })
+                    .unwrap_or_default()
+            })
     })
     .await
     .map_err(|error| format!("Failed to load /config/weeklies: {error}"))?;
