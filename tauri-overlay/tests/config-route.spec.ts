@@ -89,6 +89,60 @@ async function installTauriMock(
                 { index: 1, label: "1 - Primary Monitor" },
                 { index: 2, label: "2 - Secondary Monitor" },
             ];
+            const pageRows = (rows, pageRequest) => {
+                const page = Math.max(1, Number(pageRequest?.page) || 1);
+                const rowsPerPage = Math.max(
+                    1,
+                    Number(pageRequest?.rowsPerPage) || 20,
+                );
+                const start = (page - 1) * rowsPerPage;
+                return rows.slice(start, start + rowsPerPage);
+            };
+            const sortedPlayerRows = (rows, pageRequest) => {
+                const sortKey = String(pageRequest?.sortKey || "last_seen");
+                const direction = pageRequest?.sortDirection === "asc" ? 1 : -1;
+                return [...rows].sort((left, right) => {
+                    const leftValue = Number(left[sortKey] || 0);
+                    const rightValue = Number(right[sortKey] || 0);
+                    if (
+                        Number.isFinite(leftValue) &&
+                        Number.isFinite(rightValue) &&
+                        leftValue !== rightValue
+                    ) {
+                        return leftValue < rightValue
+                            ? -1 * direction
+                            : direction;
+                    }
+                    return (
+                        String(left[sortKey] || "").localeCompare(
+                            String(right[sortKey] || ""),
+                        ) * direction
+                    );
+                });
+            };
+            const sortedGameRows = (rows, pageRequest) => {
+                const sortKey = String(pageRequest?.sortKey || "time");
+                const direction = pageRequest?.sortDirection === "asc" ? 1 : -1;
+                const valueKey = sortKey === "time" ? "date" : sortKey;
+                return [...rows].sort((left, right) => {
+                    const leftValue = Number(left[valueKey] || 0);
+                    const rightValue = Number(right[valueKey] || 0);
+                    if (
+                        Number.isFinite(leftValue) &&
+                        Number.isFinite(rightValue) &&
+                        leftValue !== rightValue
+                    ) {
+                        return leftValue < rightValue
+                            ? -1 * direction
+                            : direction;
+                    }
+                    return (
+                        String(left[valueKey] || "").localeCompare(
+                            String(right[valueKey] || ""),
+                        ) * direction
+                    );
+                });
+            };
             window.__SCO_ACTION_REQUESTS__ = [];
             window.__SCO_CONFIG_APPLY_REQUESTS__ = [];
             window.__SCO_CONFIG_SAVE_REQUESTS__ = [];
@@ -216,25 +270,43 @@ async function installTauriMock(
                             command,
                             request: cloneJson(request || {}),
                         });
-                        return (
+                        const response = cloneJson(
                             tabResponses.games || {
                                 status: "ok",
                                 replays: [],
                                 selected_replay_file: "",
-                            }
+                            },
                         );
+                        const pageRequest = request?.request || {};
+                        const rows = sortedGameRows(
+                            response.replays || [],
+                            pageRequest,
+                        );
+                        response.replays = pageRows(rows, pageRequest);
+                        response.total_replays =
+                            response.total_replays || rows.length;
+                        return response;
                     }
                     if (command === "config_players_get") {
                         window.__SCO_TAB_REQUESTS__.push({
                             command,
                             request: cloneJson(request || {}),
                         });
-                        return (
+                        const response = cloneJson(
                             tabResponses.players || {
                                 status: "ok",
                                 players: [],
-                            }
+                            },
                         );
+                        const pageRequest = request?.request || {};
+                        const rows = sortedPlayerRows(
+                            response.players || [],
+                            pageRequest,
+                        );
+                        response.players = pageRows(rows, pageRequest);
+                        response.total_players =
+                            response.total_players || rows.length;
+                        return response;
                     }
                     if (command === "config_weeklies_get") {
                         window.__SCO_TAB_REQUESTS__.push({
@@ -1717,7 +1789,13 @@ test.describe("Config route", () => {
             .toMatchObject({
                 command: "config_players_get",
                 request: {
-                    limit: 300,
+                    request: {
+                        page: 1,
+                        rowsPerPage: 20,
+                        search: "",
+                        sortKey: "last_seen",
+                        sortDirection: "desc",
+                    },
                 },
             });
     });

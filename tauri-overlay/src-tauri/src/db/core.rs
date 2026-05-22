@@ -133,7 +133,343 @@ impl ReplayCacheEntryQuery {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReplayCacheSortDirection {
+    Asc,
+    Desc,
+}
+
+impl ReplayCacheSortDirection {
+    pub fn from_query_value(value: Option<&str>, default: Self) -> Self {
+        match value.map(str::trim).map(str::to_ascii_lowercase).as_deref() {
+            Some("asc") => Self::Asc,
+            Some("desc") => Self::Desc,
+            _ => default,
+        }
+    }
+
+    pub(super) fn sql_keyword(self) -> &'static str {
+        match self {
+            Self::Asc => "ASC",
+            Self::Desc => "DESC",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ReplayCachePage {
+    page: usize,
+    rows_per_page: usize,
+}
+
+impl ReplayCachePage {
+    pub fn new(page: usize, rows_per_page: usize) -> Self {
+        Self {
+            page: page.max(1),
+            rows_per_page: rows_per_page.max(1),
+        }
+    }
+
+    pub(super) fn offset(&self) -> usize {
+        self.page
+            .saturating_sub(1)
+            .saturating_mul(self.rows_per_page)
+    }
+
+    pub(super) fn limit(&self) -> usize {
+        self.rows_per_page
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReplayCachePageResult<T> {
+    rows: Vec<T>,
+    total_rows: usize,
+}
+
+impl<T> ReplayCachePageResult<T> {
+    pub fn new(rows: Vec<T>, total_rows: usize) -> Self {
+        Self { rows, total_rows }
+    }
+
+    pub fn into_rows_and_total(self) -> (Vec<T>, usize) {
+        (self.rows, self.total_rows)
+    }
+
+    pub fn rows(&self) -> &[T] {
+        &self.rows
+    }
+
+    pub fn total_rows(&self) -> usize {
+        self.total_rows
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReplayCacheGameSortKey {
+    Map,
+    Result,
+    PlayerOne,
+    PlayerTwo,
+    Enemy,
+    Length,
+    Difficulty,
+    Mutators,
+    Time,
+    Actions,
+}
+
+impl ReplayCacheGameSortKey {
+    pub fn from_query_value(value: Option<&str>) -> Self {
+        match value.map(str::trim) {
+            Some("map") => Self::Map,
+            Some("result") => Self::Result,
+            Some("p1") => Self::PlayerOne,
+            Some("p2") => Self::PlayerTwo,
+            Some("enemy") => Self::Enemy,
+            Some("length") => Self::Length,
+            Some("difficulty") => Self::Difficulty,
+            Some("mutators") => Self::Mutators,
+            Some("actions") => Self::Actions,
+            Some("time") | None => Self::Time,
+            _ => Self::Time,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReplayCacheDifficultyFilter {
+    Casual,
+    Normal,
+    Hard,
+    Brutal,
+    BrutalPlus1,
+    BrutalPlus2,
+    BrutalPlus3,
+    BrutalPlus4,
+    BrutalPlus5,
+    BrutalPlus6,
+}
+
+impl ReplayCacheDifficultyFilter {
+    pub fn from_query_value(value: &str) -> Option<Self> {
+        match value.trim() {
+            "Casual" => Some(Self::Casual),
+            "Normal" => Some(Self::Normal),
+            "Hard" => Some(Self::Hard),
+            "Brutal" => Some(Self::Brutal),
+            "BrutalPlus1" => Some(Self::BrutalPlus1),
+            "BrutalPlus2" => Some(Self::BrutalPlus2),
+            "BrutalPlus3" => Some(Self::BrutalPlus3),
+            "BrutalPlus4" => Some(Self::BrutalPlus4),
+            "BrutalPlus5" => Some(Self::BrutalPlus5),
+            "BrutalPlus6" => Some(Self::BrutalPlus6),
+            _ => None,
+        }
+    }
+
+    pub fn all() -> Vec<Self> {
+        vec![
+            Self::Casual,
+            Self::Normal,
+            Self::Hard,
+            Self::Brutal,
+            Self::BrutalPlus1,
+            Self::BrutalPlus2,
+            Self::BrutalPlus3,
+            Self::BrutalPlus4,
+            Self::BrutalPlus5,
+            Self::BrutalPlus6,
+        ]
+    }
+
+    pub(super) fn brutal_plus_level(self) -> Option<i64> {
+        match self {
+            Self::BrutalPlus1 => Some(1),
+            Self::BrutalPlus2 => Some(2),
+            Self::BrutalPlus3 => Some(3),
+            Self::BrutalPlus4 => Some(4),
+            Self::BrutalPlus5 => Some(5),
+            Self::BrutalPlus6 => Some(6),
+            _ => None,
+        }
+    }
+
+    pub(super) fn regular_label(self) -> Option<&'static str> {
+        match self {
+            Self::Casual => Some("casual"),
+            Self::Normal => Some("normal"),
+            Self::Hard => Some("hard"),
+            Self::Brutal => Some("brutal"),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReplayCacheGamesPageQuery {
+    page: ReplayCachePage,
+    search: String,
+    sort_key: ReplayCacheGameSortKey,
+    sort_direction: ReplayCacheSortDirection,
+    difficulty_filters: Vec<ReplayCacheDifficultyFilter>,
+    include_normal_games: bool,
+    include_mutation_games: bool,
+}
+
+impl ReplayCacheGamesPageQuery {
+    pub fn new(
+        page: ReplayCachePage,
+        search: String,
+        sort_key: ReplayCacheGameSortKey,
+        sort_direction: ReplayCacheSortDirection,
+        difficulty_filters: Vec<ReplayCacheDifficultyFilter>,
+        include_normal_games: bool,
+        include_mutation_games: bool,
+    ) -> Self {
+        Self {
+            page,
+            search,
+            sort_key,
+            sort_direction,
+            difficulty_filters,
+            include_normal_games,
+            include_mutation_games,
+        }
+    }
+
+    pub(super) fn page(&self) -> ReplayCachePage {
+        self.page
+    }
+
+    pub(super) fn search(&self) -> &str {
+        &self.search
+    }
+
+    pub(super) fn sort_key(&self) -> ReplayCacheGameSortKey {
+        self.sort_key
+    }
+
+    pub(super) fn sort_direction(&self) -> ReplayCacheSortDirection {
+        self.sort_direction
+    }
+
+    pub(super) fn difficulty_filters(&self) -> &[ReplayCacheDifficultyFilter] {
+        &self.difficulty_filters
+    }
+
+    pub(super) fn include_normal_games(&self) -> bool {
+        self.include_normal_games
+    }
+
+    pub(super) fn include_mutation_games(&self) -> bool {
+        self.include_mutation_games
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReplayCachePlayerSortKey {
+    Handle,
+    Player,
+    Wins,
+    Losses,
+    Winrate,
+    Apm,
+    Commander,
+    Frequency,
+    Kills,
+    LastSeen,
+    Note,
+}
+
+impl ReplayCachePlayerSortKey {
+    pub fn from_query_value(value: Option<&str>) -> Self {
+        match value.map(str::trim) {
+            Some("handle") => Self::Handle,
+            Some("player") => Self::Player,
+            Some("wins") => Self::Wins,
+            Some("losses") => Self::Losses,
+            Some("winrate") => Self::Winrate,
+            Some("apm") => Self::Apm,
+            Some("commander") => Self::Commander,
+            Some("frequency") => Self::Frequency,
+            Some("kills") => Self::Kills,
+            Some("note") => Self::Note,
+            Some("last_seen") | None => Self::LastSeen,
+            _ => Self::LastSeen,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReplayCachePlayerNote {
+    handle: String,
+    note: String,
+}
+
+impl ReplayCachePlayerNote {
+    pub fn new(handle: String, note: String) -> Self {
+        Self { handle, note }
+    }
+
+    pub(super) fn handle(&self) -> &str {
+        &self.handle
+    }
+
+    pub(super) fn note(&self) -> &str {
+        &self.note
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReplayCachePlayersPageQuery {
+    page: ReplayCachePage,
+    search: String,
+    sort_key: ReplayCachePlayerSortKey,
+    sort_direction: ReplayCacheSortDirection,
+    notes: Vec<ReplayCachePlayerNote>,
+}
+
+impl ReplayCachePlayersPageQuery {
+    pub fn new(
+        page: ReplayCachePage,
+        search: String,
+        sort_key: ReplayCachePlayerSortKey,
+        sort_direction: ReplayCacheSortDirection,
+        notes: Vec<ReplayCachePlayerNote>,
+    ) -> Self {
+        Self {
+            page,
+            search,
+            sort_key,
+            sort_direction,
+            notes,
+        }
+    }
+
+    pub(super) fn page(&self) -> ReplayCachePage {
+        self.page
+    }
+
+    pub(super) fn search(&self) -> &str {
+        &self.search
+    }
+
+    pub(super) fn sort_key(&self) -> ReplayCachePlayerSortKey {
+        self.sort_key
+    }
+
+    pub(super) fn sort_direction(&self) -> ReplayCacheSortDirection {
+        self.sort_direction
+    }
+
+    pub(super) fn notes(&self) -> &[ReplayCachePlayerNote] {
+        &self.notes
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ReplayCacheTable {
+    Weekly,
     Players,
     PlayerUnits,
     PlayerIcons,
@@ -143,7 +479,8 @@ pub(super) enum ReplayCacheTable {
     PlayerStatSeries,
 }
 
-pub(super) const REPLAY_CACHE_CHILD_TABLES: [ReplayCacheTable; 7] = [
+pub(super) const REPLAY_CACHE_CHILD_TABLES: [ReplayCacheTable; 8] = [
+    ReplayCacheTable::Weekly,
     ReplayCacheTable::PlayerUnits,
     ReplayCacheTable::PlayerIconOrders,
     ReplayCacheTable::PlayerIcons,
@@ -157,6 +494,7 @@ impl ReplayCacheTable {
     pub(super) fn delete_by_replay_id_sql(self) -> &'static str {
         match self {
             Self::Players => "DELETE FROM replay_cache_players WHERE replay_id = ?1",
+            Self::Weekly => "DELETE FROM replay_cache_weeklies WHERE replay_id = ?1",
             Self::PlayerUnits => "DELETE FROM replay_cache_player_units WHERE replay_id = ?1",
             Self::PlayerIcons => "DELETE FROM replay_cache_player_icons WHERE replay_id = ?1",
             Self::PlayerIconOrders => {
@@ -261,8 +599,6 @@ impl ReplayCacheEntrySql {
     pub(super) const DELETE_ALL: &'static str = "DELETE FROM replay_cache_entries";
     pub(super) const DELETE_BY_FILE_EXCEPT_HASH: &'static str =
         "DELETE FROM replay_cache_entries WHERE file = ?1 AND hash <> ?2";
-    pub(super) const SELECT_DETAILED_BY_HASH: &'static str =
-        "SELECT detailed_analysis FROM replay_cache_entries WHERE hash = ?1";
     pub(super) const SELECT_ID_BY_HASH: &'static str =
         "SELECT id FROM replay_cache_entries WHERE hash = ?1";
     pub(super) const SELECT_BY_HASH: &'static str = "
@@ -635,6 +971,26 @@ impl ReplayCacheDatabase {
         PathBuf::from(value)
     }
 
+    pub(super) fn sqlite_contains_pattern(value: &str) -> String {
+        let mut pattern = String::with_capacity(value.len() + 2);
+        pattern.push('%');
+        for ch in value.trim().to_ascii_lowercase().chars() {
+            match ch {
+                '%' | '_' | '\\' => {
+                    pattern.push('\\');
+                    pattern.push(ch);
+                }
+                _ => pattern.push(ch),
+            }
+        }
+        pattern.push('%');
+        pattern
+    }
+
+    pub(super) fn usize_to_i64(value: usize) -> i64 {
+        i64::try_from(value).unwrap_or(i64::MAX)
+    }
+
     pub fn open_for_cache_path(cache_path: &Path) -> Result<Self, ReplayCacheDbError> {
         let db_path = Self::db_path_for_cache_path(cache_path);
         if let Some(parent) = db_path.parent() {
@@ -700,7 +1056,9 @@ impl ReplayCacheDatabase {
             });
         }
 
-        Self::create_current_schema(connection, db_path)
+        Self::create_current_schema(connection, db_path)?;
+        Self::create_current_indexes(connection, db_path)?;
+        Ok(())
     }
 
     fn create_current_schema(
@@ -746,16 +1104,28 @@ impl ReplayCacheDatabase {
                     updated_at_seconds INTEGER NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS replay_player_infos (
+                    handle TEXT PRIMARY KEY NOT NULL,
+                    wins INTEGER NOT NULL,
+                    losses INTEGER NOT NULL,
+                    average_apm REAL NOT NULL,
+                    latest_commander TEXT NOT NULL,
+                    commander_frequency REAL NOT NULL,
+                    kill_ratio REAL NOT NULL,
+                    latest_played_time INTEGER NOT NULL,
+                    updated_at_seconds INTEGER NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS replay_cache_players (
                     replay_id INTEGER NOT NULL REFERENCES replay_cache_entries(id) ON DELETE CASCADE,
                     pid INTEGER NOT NULL CHECK(pid > 0),
+                    player_name TEXT NOT NULL,
                     apm INTEGER,
                     commander TEXT,
                     commander_level INTEGER,
                     commander_mastery_level INTEGER,
-                    handle TEXT,
+                    player_handle TEXT NOT NULL REFERENCES replay_player_infos(handle) ON UPDATE CASCADE,
                     kills INTEGER,
-                    name TEXT,
                     observer INTEGER,
                     prestige INTEGER,
                     prestige_name TEXT,
@@ -766,6 +1136,15 @@ impl ReplayCacheDatabase {
                     has_units INTEGER NOT NULL,
                     mastery_values TEXT NOT NULL CHECK(json_valid(mastery_values)),
                     PRIMARY KEY (replay_id, pid)
+                );
+
+                CREATE TABLE IF NOT EXISTS replay_cache_weeklies (
+                    replay_id INTEGER PRIMARY KEY REFERENCES replay_cache_entries(id) ON DELETE CASCADE,
+                    result TEXT NOT NULL,
+                    map_name TEXT NOT NULL,
+                    difficulty TEXT NOT NULL,
+                    brutal_plus INTEGER NOT NULL,
+                    mutator_values TEXT NOT NULL CHECK(json_valid(mutator_values))
                 );
 
                 CREATE TABLE IF NOT EXISTS replay_cache_player_units (
@@ -824,7 +1203,7 @@ impl ReplayCacheDatabase {
                 CREATE TABLE IF NOT EXISTS replay_cache_player_stat_series (
                     replay_id INTEGER NOT NULL REFERENCES replay_cache_entries(id) ON DELETE CASCADE,
                     pid INTEGER NOT NULL CHECK(pid > 0),
-                    name TEXT NOT NULL,
+                    player_handle TEXT NOT NULL REFERENCES replay_player_infos(handle) ON UPDATE CASCADE,
                     supply_values TEXT NOT NULL CHECK(json_valid(supply_values)),
                     mining_values TEXT NOT NULL CHECK(json_valid(mining_values)),
                     army_values TEXT NOT NULL CHECK(json_valid(army_values)),
@@ -832,6 +1211,22 @@ impl ReplayCacheDatabase {
                     PRIMARY KEY (replay_id, pid)
                 );
 
+                PRAGMA user_version = 1;
+                ",
+            )
+            .map_err(|source| ReplayCacheDbError::Sqlite {
+                path: db_path.to_path_buf(),
+                source,
+            })
+    }
+
+    fn create_current_indexes(
+        connection: &mut Connection,
+        db_path: &Path,
+    ) -> Result<(), ReplayCacheDbError> {
+        connection
+            .execute_batch(
+                "
                 CREATE INDEX IF NOT EXISTS idx_replay_cache_entries_date
                     ON replay_cache_entries(date_seconds DESC, date_text DESC, file DESC, hash DESC);
                 CREATE INDEX IF NOT EXISTS idx_replay_cache_entries_file
@@ -843,21 +1238,36 @@ impl ReplayCacheDatabase {
                 CREATE INDEX IF NOT EXISTS idx_replay_cache_entries_games_tab
                     ON replay_cache_entries(date_seconds DESC, result, difficulty_p1, difficulty_p2, map_name);
                 CREATE INDEX IF NOT EXISTS idx_replay_cache_players_handle
-                    ON replay_cache_players(handle, replay_id);
+                    ON replay_cache_players(player_handle, replay_id);
+                CREATE INDEX IF NOT EXISTS idx_replay_cache_players_name
+                    ON replay_cache_players(player_handle, player_name, replay_id);
                 CREATE INDEX IF NOT EXISTS idx_replay_cache_players_commander
                     ON replay_cache_players(commander, replay_id);
+                CREATE INDEX IF NOT EXISTS idx_replay_player_infos_last_played
+                    ON replay_player_infos(latest_played_time DESC, handle ASC);
+                CREATE INDEX IF NOT EXISTS idx_replay_player_infos_wins
+                    ON replay_player_infos(wins DESC, handle ASC);
+                CREATE INDEX IF NOT EXISTS idx_replay_player_infos_losses
+                    ON replay_player_infos(losses DESC, handle ASC);
+                CREATE INDEX IF NOT EXISTS idx_replay_player_infos_apm
+                    ON replay_player_infos(average_apm DESC, handle ASC);
+                CREATE INDEX IF NOT EXISTS idx_replay_player_infos_commander
+                    ON replay_player_infos(latest_commander, latest_played_time DESC);
+                CREATE INDEX IF NOT EXISTS idx_replay_player_infos_kill_ratio
+                    ON replay_player_infos(kill_ratio DESC, handle ASC);
+                CREATE INDEX IF NOT EXISTS idx_replay_cache_weeklies_mutation
+                    ON replay_cache_weeklies(map_name, brutal_plus);
                 CREATE INDEX IF NOT EXISTS idx_replay_cache_player_units_unit
                     ON replay_cache_player_units(unit_name, replay_id);
                 CREATE INDEX IF NOT EXISTS idx_replay_cache_amon_units_unit
                     ON replay_cache_amon_units(unit_name, replay_id);
-
-                PRAGMA user_version = 1;
                 ",
             )
             .map_err(|source| ReplayCacheDbError::Sqlite {
                 path: db_path.to_path_buf(),
                 source,
-            })
+            })?;
+        Ok(())
     }
 
     fn import_legacy_cache_if_needed(

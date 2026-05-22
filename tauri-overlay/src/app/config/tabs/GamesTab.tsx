@@ -9,25 +9,14 @@ import type {
 import type { LanguageManager } from "../../i18n/languageManager";
 import styles from "../page.module.css";
 import ReplayVisualPlayer from "./ReplayVisualPlayer";
-import {
-    nextSortState,
-    sortIndicator,
-    sortRows,
-    type SortState,
-} from "./tableSort";
+import { nextSortState, sortIndicator, type SortState } from "./tableSort";
 import {
     clampPageNumber,
     TABLE_ROWS_PER_PAGE,
     pageCountForRows,
-    rowsForPage,
     TablePagination,
 } from "./tablePagination";
-import type {
-    DisplayValue,
-    DifficultyFilterKey,
-    DifficultyFilters,
-    MutatorData,
-} from "../types";
+import type { DisplayValue, DifficultyFilters, MutatorData } from "../types";
 import { RaceIcon } from "../../components/RaceIcon";
 
 type GamesTabState = {
@@ -37,14 +26,23 @@ type GamesTabState = {
     searchText: string;
     setSearchText: (value: string) => void;
     totalRows?: number;
-    loadedRows?: number;
-    ensureAllRowsLoaded?: () => Promise<void>;
-    ensureRowsForPage?: (page: number, rowsPerPage: number) => Promise<void>;
     refresh: () => void;
+    loadPage: (request: GamesPageRequest) => Promise<void>;
     showReplay: (file: string) => void;
     loadChat: (file: string) => Promise<ReplayChatPayload | null>;
     loadVisual: (file: string) => Promise<ReplayVisualPayload | null>;
     revealFile: (file: string) => void;
+};
+
+export type GamesPageRequest = {
+    page: number;
+    rowsPerPage: number;
+    search: string;
+    sortKey: string;
+    sortDirection: "asc" | "desc";
+    difficultyFilters: DifficultyFilters;
+    includeNormalGames: boolean;
+    includeMutationGames: boolean;
 };
 
 type GamesTabProps = {
@@ -205,52 +203,6 @@ function localizedMutatorDescription(
     );
 }
 
-function difficultyFilterKeyForRow(row: GamesRowPayload): DifficultyFilterKey {
-    const brutalPlus = Number(row.brutal_plus ?? 0);
-    if (Number.isFinite(brutalPlus) && brutalPlus > 0) {
-        switch (brutalPlus) {
-            case 1: {
-                return "BrutalPlus1";
-            }
-            case 2: {
-                return "BrutalPlus2";
-            }
-            case 3: {
-                return "BrutalPlus3";
-            }
-            case 4: {
-                return "BrutalPlus4";
-            }
-            case 5: {
-                return "BrutalPlus5";
-            }
-            case 6: {
-                return "BrutalPlus6";
-            }
-            default: {
-                console.error(
-                    `Brutal plus should be in range 1~6, but is ${brutalPlus}`,
-                );
-                return "Brutal";
-            }
-        }
-    }
-
-    const difficulty = String(row.difficulty || "")
-        .trim()
-        .toLowerCase();
-    if (difficulty === "casual") {
-        return "Casual";
-    }
-    if (difficulty === "normal") {
-        return "Normal";
-    }
-    if (difficulty === "hard") {
-        return "Hard";
-    }
-    return "Brutal";
-}
-
 function difficultyDisplayLabel(
     row: GamesRowPayload,
     languageManager: LanguageManager,
@@ -279,15 +231,6 @@ export default function GamesTab({
 }: GamesTabProps) {
     const t = (id: string) => languageManager.translate(id);
     const deferredSearchInput = React.useDeferredValue(state.searchText || "");
-    const formatText = (
-        id: string,
-        values: Record<string, string | number> = {},
-    ): string =>
-        Object.entries(values).reduce(
-            (text, [key, value]) =>
-                text.split(`{{${key}}}`).join(String(value)),
-            t(id),
-        );
     const data: readonly GamesRowPayload[] = Array.isArray(rows) ? rows : [];
     const searchText = deferredSearchInput.trim().toLowerCase();
     const [sortState, setSortState] = React.useState<SortState>({
@@ -498,176 +441,60 @@ export default function GamesTab({
         return () => window.removeEventListener("keydown", handleKeyDown);
     }, [visualModalOpen]);
 
-    const filtered = React.useMemo(
-        () =>
-            data.filter((row) => {
-                const difficultyKey = difficultyFilterKeyForRow(row);
-
-                if (!difficultyFilters[difficultyKey]) {
-                    return false;
-                }
-
-                const rowMutators = readMutators(row.mutators);
-                const isMutation =
-                    row.is_mutation === true || rowMutators.length > 0;
-                if (!includeNormalGames && !isMutation) {
-                    return false;
-                }
-                if (!includeMutationGames && isMutation) {
-                    return false;
-                }
-
-                if (searchText === "") {
-                    return true;
-                }
-
-                const mutatorSearch = rowMutators.flatMap((mutator) => [
-                    mutator.id,
-                    mutator.name,
-                    localizedMutatorName(
-                        mutator,
-                        languageManager,
-                        asTableValue,
-                    ),
-                    localizedMutatorDescription(
-                        mutator,
-                        languageManager,
-                        asTableValue,
-                    ),
-                ]);
-                const target = [
-                    row.map,
-                    languageManager.localize(row.map),
-                    row.result,
-                    languageManager.localize(row.result),
-                    row.p1,
-                    row.p2,
-                    row.slot1_commander,
-                    languageManager.localize(row.slot1_commander),
-                    row.slot2_commander,
-                    languageManager.localize(row.slot2_commander),
-                    row.main_commander,
-                    languageManager.localize(row.main_commander),
-                    row.ally_commander,
-                    languageManager.localize(row.ally_commander),
-                    row.difficulty,
-                    difficultyDisplayLabel(row, languageManager),
-                    row.enemy,
-                    languageManager.localize(row.enemy || "Unknown"),
-                    row.file,
-                    ...mutatorSearch,
-                ]
-                    .map((value) => asTableValue(value).toLowerCase())
-                    .join(" ");
-                return target.includes(searchText);
-            }),
+    const totalRowsForPagination = Math.max(
+        Number(state.totalRows) || 0,
+        data.length,
+    );
+    const totalPages = pageCountForRows(totalRowsForPagination);
+    const loadPageRef = React.useRef(state.loadPage);
+    React.useEffect(() => {
+        loadPageRef.current = state.loadPage;
+    }, [state.loadPage]);
+    const pageRequest = React.useCallback(
+        (page: number): GamesPageRequest => ({
+            page: clampPageNumber(page, totalPages),
+            rowsPerPage: TABLE_ROWS_PER_PAGE,
+            search: searchText,
+            sortKey: sortState?.key || "time",
+            sortDirection: sortState?.direction || "desc",
+            difficultyFilters,
+            includeNormalGames,
+            includeMutationGames,
+        }),
         [
-            asTableValue,
-            data,
             difficultyFilters,
             includeMutationGames,
             includeNormalGames,
-            languageManager,
             searchText,
+            sortState,
+            totalPages,
         ],
     );
 
-    const sorted = React.useMemo(
-        () =>
-            sortRows(filtered, sortState, (row, key) => {
-                if (key === "map") return languageManager.localize(row.map);
-                if (key === "result")
-                    return languageManager.localize(row.result);
-                if (key === "p1")
-                    return `${asTableValue(row.p1)} ${languageManager.localize(row.slot1_commander)}`;
-                if (key === "p2")
-                    return `${asTableValue(row.p2)} ${languageManager.localize(row.slot2_commander)}`;
-                if (key === "enemy") {
-                    return languageManager.localize(row.enemy || "Unknown");
-                }
-                if (key === "length") return Number(row.length || 0);
-                if (key === "difficulty")
-                    return difficultyDisplayLabel(row, languageManager);
-                if (key === "mutators") {
-                    return readMutators(row.mutators)
-                        .map((mutator) =>
-                            localizedMutatorName(
-                                mutator,
-                                languageManager,
-                                asTableValue,
-                            ),
-                        )
-                        .join(" ");
-                }
-                if (key === "time") return Number(row.date || 0);
-                if (key === "actions") return row.file || "";
-                return "";
-            }),
-        [asTableValue, filtered, languageManager, sortState],
-    );
-    const usingServerBackedPagination =
-        searchText === "" &&
-        includeNormalGames &&
-        includeMutationGames &&
-        Object.values(difficultyFilters).every(Boolean) &&
-        sortState?.key === "time" &&
-        sortState.direction === "desc";
-    const hasActiveClientFilters = !usingServerBackedPagination;
-    const totalRowsForPagination = usingServerBackedPagination
-        ? Math.max(Number(state.totalRows) || 0, sorted.length)
-        : sorted.length;
-
-    React.useEffect(() => {
-        if (!hasActiveClientFilters) {
-            return;
-        }
-        const loadedRows = Number(state.loadedRows) || 0;
-        const totalRows = Number(state.totalRows) || 0;
-        if (totalRows <= 0 || loadedRows >= totalRows) {
-            return;
-        }
-        void state.ensureAllRowsLoaded?.();
-    }, [
-        hasActiveClientFilters,
-        state.ensureAllRowsLoaded,
-        state.loadedRows,
-        state.totalRows,
-    ]);
-
     React.useEffect(() => {
         setCurrentPage(1);
-    }, [
-        difficultyFilters,
-        includeMutationGames,
-        includeNormalGames,
-        searchText,
-    ]);
+        void loadPageRef.current(pageRequest(1));
+    }, [pageRequest]);
 
     React.useEffect(() => {
-        setCurrentPage((page) =>
-            clampPageNumber(page, pageCountForRows(totalRowsForPagination)),
-        );
-    }, [totalRowsForPagination]);
-
-    const pagedRows = React.useMemo(
-        () => rowsForPage(sorted, currentPage),
-        [currentPage, sorted],
-    );
+        setCurrentPage((page) => clampPageNumber(page, totalPages));
+    }, [totalPages]);
 
     const handlePageChange = React.useCallback(
         (page: number) => {
             void (async () => {
-                if (
-                    usingServerBackedPagination &&
-                    typeof state.ensureRowsForPage === "function"
-                ) {
-                    await state.ensureRowsForPage(page, TABLE_ROWS_PER_PAGE);
-                }
-                setCurrentPage(page);
+                const request = pageRequest(page);
+                await loadPageRef.current(request);
+                setCurrentPage(request.page);
             })();
         },
-        [state, usingServerBackedPagination],
+        [pageRequest],
     );
+    const hasActiveQuery =
+        searchText !== "" ||
+        !includeNormalGames ||
+        !includeMutationGames ||
+        Object.values(difficultyFilters).some((enabled) => !enabled);
 
     const columns = [
         { key: "map", label: t("ui_games_column_map") },
@@ -819,19 +646,19 @@ export default function GamesTab({
                             </tr>
                         </thead>
                         <tbody>
-                            {sorted.length === 0 ? (
+                            {data.length === 0 ? (
                                 <tr>
                                     <td
                                         colSpan={10}
                                         className={styles.emptyCell}
                                     >
-                                        {data.length === 0
-                                            ? t("ui_games_empty")
-                                            : t("ui_games_empty_filtered")}
+                                        {hasActiveQuery
+                                            ? t("ui_games_empty_filtered")
+                                            : t("ui_games_empty")}
                                     </td>
                                 </tr>
                             ) : (
-                                pagedRows.map((row, idx) => {
+                                data.map((row, idx) => {
                                     const p1 = asTableValue(row.p1);
                                     const p2 = asTableValue(row.p2);
                                     const p1Commander = asTableValue(

@@ -44,10 +44,10 @@ import type {
     StatisticsTextFilterKey,
     StatsHelpers,
 } from "./types";
-import GamesTab from "./tabs/GamesTab";
+import GamesTab, { type GamesPageRequest } from "./tabs/GamesTab";
 import GenericTab from "./tabs/GenericTab";
 import PerformanceTab from "./tabs/PerformanceTab";
-import PlayersTab from "./tabs/PlayersTab";
+import PlayersTab, { type PlayersPageRequest } from "./tabs/PlayersTab";
 import RandomizerTab from "./tabs/RandomizerTab";
 import SettingsTab from "./tabs/SettingsTab";
 import StatisticsTab from "./tabs/StatisticsTab";
@@ -77,8 +77,8 @@ type TabDataState = {
 };
 type PathValueUpdater = (path: string[], value: JsonValue) => void;
 type LoadTabOptions = {
-    gamesLimit?: number;
-    playersLimit?: number;
+    gamesRequest?: GamesPageRequest;
+    playersRequest?: PlayersPageRequest;
 };
 type SettingsEditorProps = {
     onThemeModeChange: (darkThemeEnabled: boolean) => void;
@@ -152,6 +152,45 @@ type QueuedLiveApply = {
     requestSeq: number;
     successMessage: string;
 };
+
+function defaultGameDifficultyFilters(): GamesPageRequest["difficultyFilters"] {
+    return {
+        Casual: true,
+        Normal: true,
+        Hard: true,
+        Brutal: true,
+        BrutalPlus1: true,
+        BrutalPlus2: true,
+        BrutalPlus3: true,
+        BrutalPlus4: true,
+        BrutalPlus5: true,
+        BrutalPlus6: true,
+    };
+}
+
+function defaultGamesPageRequest(): GamesPageRequest {
+    return {
+        page: 1,
+        rowsPerPage: 20,
+        search: "",
+        sortKey: "time",
+        sortDirection: "desc",
+        difficultyFilters: defaultGameDifficultyFilters(),
+        includeNormalGames: true,
+        includeMutationGames: true,
+    };
+}
+
+function defaultPlayersPageRequest(): PlayersPageRequest {
+    return {
+        page: 1,
+        rowsPerPage: 20,
+        search: "",
+        sortKey: "last_seen",
+        sortDirection: "desc",
+    };
+}
+
 declare global {
     interface Window {
         __scoSetPerformanceVisibility?: (visible: boolean) => void;
@@ -855,19 +894,44 @@ async function updateConfigRequest(
     });
 }
 
+function enabledDifficultyFilters(
+    filters: GamesPageRequest["difficultyFilters"],
+): string[] {
+    return Object.entries(filters)
+        .filter(([, enabled]) => enabled)
+        .map(([key]) => key);
+}
+
 async function loadReplaysRequest(
-    limit: number,
+    request: GamesPageRequest,
 ): Promise<ConfigReplaysPayload> {
     return invokeConfigCommand<ConfigReplaysPayload>("config_replays_get", {
-        limit,
+        request: {
+            page: request.page,
+            rowsPerPage: request.rowsPerPage,
+            search: request.search,
+            sortKey: request.sortKey,
+            sortDirection: request.sortDirection,
+            difficultyFilters: enabledDifficultyFilters(
+                request.difficultyFilters,
+            ),
+            includeNormalGames: request.includeNormalGames,
+            includeMutationGames: request.includeMutationGames,
+        },
     });
 }
 
 async function loadPlayersRequest(
-    limit: number,
+    request: PlayersPageRequest,
 ): Promise<ConfigPlayersPayload> {
     return invokeConfigCommand<ConfigPlayersPayload>("config_players_get", {
-        limit,
+        request: {
+            page: request.page,
+            rowsPerPage: request.rowsPerPage,
+            search: request.search,
+            sortKey: request.sortKey,
+            sortDirection: request.sortDirection,
+        },
     });
 }
 
@@ -1246,8 +1310,12 @@ function SettingsEditor({
         players: false,
         weeklies: false,
     });
-    const gamesLoadLimitRef = useRef<number>(300);
-    const playersLoadLimitRef = useRef<number>(300);
+    const gamesPageRequestRef = useRef<GamesPageRequest>(
+        defaultGamesPageRequest(),
+    );
+    const playersPageRequestRef = useRef<PlayersPageRequest>(
+        defaultPlayersPageRequest(),
+    );
     const draftRef = useRef<AppSettings | null>(null);
     const settingsMutationRef = useRef<Promise<void>>(Promise.resolve());
     const latestLiveApplySeqRef = useRef<number>(0);
@@ -1784,25 +1852,21 @@ function SettingsEditor({
         tabLoadInFlightRef.current[tabId] = true;
         try {
             setIsBusy(true);
-            const gamesLimit =
-                Number(options.gamesLimit) > 0
-                    ? Number(options.gamesLimit)
-                    : gamesLoadLimitRef.current;
+            const gamesRequest =
+                options.gamesRequest || gamesPageRequestRef.current;
             if (tabId === "games") {
-                gamesLoadLimitRef.current = gamesLimit;
+                gamesPageRequestRef.current = gamesRequest;
             }
-            const playersLimit =
-                Number(options.playersLimit) > 0
-                    ? Number(options.playersLimit)
-                    : playersLoadLimitRef.current;
+            const playersRequest =
+                options.playersRequest || playersPageRequestRef.current;
             if (tabId === "players") {
-                playersLoadLimitRef.current = playersLimit;
+                playersPageRequestRef.current = playersRequest;
             }
             const payload =
                 tabId === "games"
-                    ? await loadReplaysRequest(gamesLimit)
+                    ? await loadReplaysRequest(gamesRequest)
                     : tabId === "players"
-                      ? await loadPlayersRequest(playersLimit)
+                      ? await loadPlayersRequest(playersRequest)
                       : await loadWeekliesRequest();
             setTabData((current) => ({
                 ...current,
@@ -2054,7 +2118,7 @@ function SettingsEditor({
         const result = await postAction(() => moveReplayRequest(delta));
         if (result) {
             await loadTabData("games", false, {
-                gamesLimit: gamesLoadLimitRef.current,
+                gamesRequest: gamesPageRequestRef.current,
             });
         }
     }
@@ -2703,47 +2767,13 @@ function SettingsEditor({
                     searchText: gamesSearch,
                     setSearchText: setGamesSearch,
                     totalRows: tabData.games?.totalRows || 0,
-                    loadedRows: Array.isArray(tabData.games?.rows)
-                        ? tabData.games.rows.length
-                        : 0,
                     refresh: () =>
                         loadTabData("games", true, {
-                            gamesLimit: gamesLoadLimitRef.current,
+                            gamesRequest: gamesPageRequestRef.current,
                         }),
-                    ensureAllRowsLoaded: async () => {
-                        const loadedRows = Array.isArray(tabData.games?.rows)
-                            ? tabData.games.rows.length
-                            : 0;
-                        const totalRows = Number(tabData.games?.totalRows) || 0;
-                        if (totalRows <= 0 || loadedRows >= totalRows) {
-                            return;
-                        }
+                    loadPage: async (request) => {
                         await loadTabData("games", true, {
-                            gamesLimit: totalRows,
-                        });
-                    },
-                    ensureRowsForPage: async (page, rowsPerPage) => {
-                        const safePage = Math.max(1, Number(page) || 1);
-                        const safeRowsPerPage = Math.max(
-                            1,
-                            Number(rowsPerPage) || 20,
-                        );
-                        const requiredRows = safePage * safeRowsPerPage;
-                        const loadedRows = Array.isArray(tabData.games?.rows)
-                            ? tabData.games.rows.length
-                            : 0;
-                        const totalRows = Number(tabData.games?.totalRows) || 0;
-                        if (
-                            requiredRows <= loadedRows ||
-                            (totalRows > 0 && loadedRows >= totalRows)
-                        ) {
-                            return;
-                        }
-                        await loadTabData("games", true, {
-                            gamesLimit: Math.max(
-                                gamesLoadLimitRef.current,
-                                requiredRows,
-                            ),
+                            gamesRequest: request,
                         });
                     },
                     showSelected: () => showSelectedReplay(),
@@ -2756,49 +2786,13 @@ function SettingsEditor({
                 playersState: {
                     isBusy,
                     totalRows: tabData.players?.totalRows || 0,
-                    loadedRows: Array.isArray(tabData.players?.rows)
-                        ? tabData.players.rows.length
-                        : 0,
                     refresh: () =>
                         loadTabData("players", true, {
-                            playersLimit: playersLoadLimitRef.current,
+                            playersRequest: playersPageRequestRef.current,
                         }),
-                    ensureAllRowsLoaded: async () => {
-                        const loadedRows = Array.isArray(tabData.players?.rows)
-                            ? tabData.players.rows.length
-                            : 0;
-                        const totalRows =
-                            Number(tabData.players?.totalRows) || 0;
-                        if (totalRows <= 0 || loadedRows >= totalRows) {
-                            return;
-                        }
+                    loadPage: async (request) => {
                         await loadTabData("players", true, {
-                            playersLimit: totalRows,
-                        });
-                    },
-                    ensureRowsForPage: async (page, rowsPerPage) => {
-                        const safePage = Math.max(1, Number(page) || 1);
-                        const safeRowsPerPage = Math.max(
-                            1,
-                            Number(rowsPerPage) || 20,
-                        );
-                        const requiredRows = safePage * safeRowsPerPage;
-                        const loadedRows = Array.isArray(tabData.players?.rows)
-                            ? tabData.players.rows.length
-                            : 0;
-                        const totalRows =
-                            Number(tabData.players?.totalRows) || 0;
-                        if (
-                            requiredRows <= loadedRows ||
-                            (totalRows > 0 && loadedRows >= totalRows)
-                        ) {
-                            return;
-                        }
-                        await loadTabData("players", true, {
-                            playersLimit: Math.max(
-                                playersLoadLimitRef.current,
-                                requiredRows,
-                            ),
+                            playersRequest: request,
                         });
                     },
                 },

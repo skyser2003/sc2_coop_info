@@ -6,7 +6,7 @@ use s2coop_analyzer::detailed_replay_analysis::{
     GenerateCacheStopController, GenerateCacheSummary, ReplayAnalysisResources, ReplayFileIdentity,
 };
 use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{self, Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -45,8 +45,10 @@ pub use command_payloads::{
     OverlayActionResult, StatsActionPayload, StatsStatePayload,
 };
 pub use db::{
-    ReplayCacheDatabase, ReplayCacheDbError, ReplayCacheEntryQuery, ReplayCacheReadScope,
-    SqliteReplayCacheEntrySink,
+    ReplayCacheDatabase, ReplayCacheDbError, ReplayCacheDifficultyFilter, ReplayCacheEntryQuery,
+    ReplayCacheGameSortKey, ReplayCacheGamesPageQuery, ReplayCachePage, ReplayCachePageResult,
+    ReplayCachePlayerNote, ReplayCachePlayerSortKey, ReplayCachePlayersPageQuery,
+    ReplayCacheReadScope, ReplayCacheSortDirection, SqliteReplayCacheEntrySink,
 };
 pub use game_launch_detector::{GameLaunchDetector, GameLaunchStatus};
 pub use logging::LoggingOps;
@@ -2823,15 +2825,6 @@ impl TauriOverlayOps {
 }
 
 impl TauriOverlayOps {
-    fn parse_query_usize(path: &str, key: &str, default: usize) -> usize {
-        TauriOverlayOps::parse_query_i64(path, key)
-            .and_then(|value| usize::try_from(value).ok())
-            .filter(|value| *value > 0)
-            .unwrap_or(default)
-    }
-}
-
-impl TauriOverlayOps {
     fn parse_query_value(path: &str, key: &str) -> Option<String> {
         let query = path.split('?').nth(1)?;
         for pair in query.split('&') {
@@ -4610,15 +4603,74 @@ async fn config_update(
     })
 }
 
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConfigReplaysPageRequest {
+    limit: Option<usize>,
+    page: Option<usize>,
+    rows_per_page: Option<usize>,
+    search: Option<String>,
+    sort_key: Option<String>,
+    sort_direction: Option<String>,
+    difficulty_filters: Option<Vec<String>>,
+    include_normal_games: Option<bool>,
+    include_mutation_games: Option<bool>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConfigPlayersPageRequest {
+    limit: Option<usize>,
+    page: Option<usize>,
+    rows_per_page: Option<usize>,
+    search: Option<String>,
+    sort_key: Option<String>,
+    sort_direction: Option<String>,
+}
+
 #[tauri::command]
 async fn config_replays_get(
     _app: tauri::AppHandle<Wry>,
-    limit: Option<usize>,
+    request: Option<ConfigReplaysPageRequest>,
     state: State<'_, BackendState>,
 ) -> Result<ConfigReplaysPayload, String> {
-    let path = format!("/config/replays?limit={}", limit.unwrap_or(300));
+    let request = request.unwrap_or_default();
+    let page = request.page.unwrap_or(1).max(1);
+    let rows_per_page = request
+        .rows_per_page
+        .or(request.limit)
+        .unwrap_or(300)
+        .max(1);
+    let search = request.search.unwrap_or_default();
+    let sort_key = ReplayCacheGameSortKey::from_query_value(request.sort_key.as_deref());
+    let sort_direction = ReplayCacheSortDirection::from_query_value(
+        request.sort_direction.as_deref(),
+        ReplayCacheSortDirection::Desc,
+    );
+    let difficulty_filters = request
+        .difficulty_filters
+        .unwrap_or_else(|| {
+            ReplayCacheDifficultyFilter::all()
+                .into_iter()
+                .map(|value| format!("{value:?}"))
+                .collect()
+        })
+        .iter()
+        .filter_map(|value| ReplayCacheDifficultyFilter::from_query_value(value))
+        .collect::<Vec<_>>();
+    let include_normal_games = request.include_normal_games.unwrap_or(true);
+    let include_mutation_games = request.include_mutation_games.unwrap_or(true);
+    let path = format!("/config/replays?page={page}&rows_per_page={rows_per_page}&search={search}");
     state.log_request("get", &path, &None);
-    let limit = TauriOverlayOps::parse_query_usize(&path, "limit", 300);
+    let query = ReplayCacheGamesPageQuery::new(
+        ReplayCachePage::new(page, rows_per_page),
+        search,
+        sort_key,
+        sort_direction,
+        difficulty_filters,
+        include_normal_games,
+        include_mutation_games,
+    );
     let replay_state = state.get_replay_state();
     let main_names = state.configured_main_names();
     let main_handles = state.configured_main_handles();
@@ -4631,9 +4683,8 @@ async fn config_replays_get(
             let cache_path = PathManagerOps::get_cache_path();
             let from_database =
                 ReplayCacheDatabase::open_for_cache_path(&cache_path).and_then(|database| {
-                    let total_replays = database.count_entries()?;
-                    let entries =
-                        database.load_summary_entries(ReplayCacheEntryQuery::all(limit))?;
+                    let page = database.load_summary_entries_page(&query)?;
+                    let (entries, total_replays) = page.into_rows_and_total();
                     Ok((entries, total_replays))
                 });
 
@@ -4645,7 +4696,6 @@ async fn config_replays_get(
                     .map(ReplayAnalysisResources::dictionary_data);
                 let replays = entries
                     .iter()
-                    .filter(|entry| Path::new(&entry.file).exists())
                     .map(|entry| {
                         dictionary
                             .map(|dictionary| {
@@ -4680,8 +4730,13 @@ async fn config_replays_get(
                 .unwrap_or_default();
             let total_replays = all_replays.len();
             let mut replays = all_replays;
-            if limit > 0 && replays.len() > limit {
-                replays.truncate(limit);
+            if rows_per_page > 0 {
+                let start = page.saturating_sub(1).saturating_mul(rows_per_page);
+                replays = replays
+                    .into_iter()
+                    .skip(start)
+                    .take(rows_per_page)
+                    .collect();
             }
             let selected_replay_file = replay_state
                 .as_ref()
@@ -4711,23 +4766,51 @@ async fn config_replays_get(
 #[tauri::command]
 async fn config_players_get(
     _app: tauri::AppHandle<Wry>,
-    limit: Option<usize>,
+    request: Option<ConfigPlayersPageRequest>,
     state: State<'_, BackendState>,
 ) -> Result<ConfigPlayersPayload, String> {
-    let path = format!(
-        "/config/players?limit={}",
-        limit.unwrap_or(UNLIMITED_REPLAY_LIMIT)
+    let request = request.unwrap_or_default();
+    let page = request.page.unwrap_or(1).max(1);
+    let rows_per_page = request
+        .rows_per_page
+        .or(request.limit)
+        .filter(|value| *value > 0)
+        .unwrap_or(300)
+        .max(1);
+    let search = request.search.unwrap_or_default();
+    let sort_key = ReplayCachePlayerSortKey::from_query_value(request.sort_key.as_deref());
+    let sort_direction = ReplayCacheSortDirection::from_query_value(
+        request.sort_direction.as_deref(),
+        ReplayCacheSortDirection::Desc,
     );
+    let path = format!("/config/players?page={page}&rows_per_page={rows_per_page}&search={search}");
     state.log_request("get", &path, &None);
-    let limit = TauriOverlayOps::parse_query_usize(&path, "limit", UNLIMITED_REPLAY_LIMIT);
     let replay_state = state.get_replay_state();
     let main_names = state.configured_main_names();
     let main_handles = state.configured_main_handles();
     let settings = state.read_settings_memory();
+    let player_notes = settings
+        .player_notes()
+        .iter()
+        .map(|(handle, note)| ReplayCachePlayerNote::new(handle.clone(), note.clone()))
+        .collect::<Vec<_>>();
+    let query = ReplayCachePlayersPageQuery::new(
+        ReplayCachePage::new(page, rows_per_page),
+        search,
+        sort_key,
+        sort_direction,
+        player_notes,
+    );
     let resources = state.replay_analysis_resources().ok();
 
     let (players, total_players) = tauri::async_runtime::spawn_blocking(move || {
         let cache_path = PathManagerOps::get_cache_path();
+        if let Ok(page) = ReplayCacheDatabase::open_for_cache_path(&cache_path)
+            .and_then(|database| database.load_player_rows_page(&query))
+        {
+            return page.into_rows_and_total();
+        }
+
         let dictionary = resources
             .as_deref()
             .map(ReplayAnalysisResources::dictionary_data);
@@ -4773,9 +4856,12 @@ async fn config_players_get(
                 .then_with(|| left.handle.cmp(&right.handle))
         });
         let total_players = players.len();
-        if limit > 0 && players.len() > limit {
-            players.truncate(limit);
-        }
+        let start = page.saturating_sub(1).saturating_mul(rows_per_page);
+        players = players
+            .into_iter()
+            .skip(start)
+            .take(rows_per_page)
+            .collect();
         (players, total_players)
     })
     .await
@@ -4807,13 +4893,20 @@ async fn config_weeklies_get(
             .map(ReplayAnalysisResources::dictionary_data);
         dictionary
             .map(|dictionary| {
-                ReplayAnalysis::load_all_analysis_replays_snapshot_from_path_with_dictionary(
-                    &PathManagerOps::get_cache_path(),
-                    UNLIMITED_REPLAY_LIMIT,
-                    &main_names,
-                    &main_handles,
-                    dictionary,
-                )
+                ReplayCacheDatabase::open_for_cache_path(&PathManagerOps::get_cache_path())
+                    .and_then(|database| database.load_weekly_replays())
+                    .unwrap_or_else(|error| {
+                        crate::sco_log!(
+                            "[SCO/weeklies] failed to load weekly rows from cache database: {error}"
+                        );
+                        ReplayAnalysis::load_all_analysis_replays_snapshot_from_path_with_dictionary(
+                            &PathManagerOps::get_cache_path(),
+                            UNLIMITED_REPLAY_LIMIT,
+                            &main_names,
+                            &main_handles,
+                            dictionary,
+                        )
+                    })
             })
             .unwrap_or_else(|| {
                 replay_state

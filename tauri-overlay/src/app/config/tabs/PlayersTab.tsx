@@ -3,17 +3,11 @@ import type { PlayerRowPayload } from "../../../bindings/overlay";
 import type { LanguageManager } from "../../i18n/languageManager";
 import type { DisplayValue } from "../types";
 import styles from "../page.module.css";
-import {
-    nextSortState,
-    sortIndicator,
-    sortRows,
-    type SortState,
-} from "./tableSort";
+import { nextSortState, sortIndicator, type SortState } from "./tableSort";
 import {
     TABLE_ROWS_PER_PAGE,
     clampPageNumber,
     pageCountForRows,
-    rowsForPage,
     TablePagination,
 } from "./tablePagination";
 
@@ -22,10 +16,16 @@ type PlayerNotes = Readonly<Record<string, string>>;
 type PlayersTabState = {
     isBusy: boolean;
     totalRows?: number;
-    loadedRows?: number;
     refresh: () => void;
-    ensureAllRowsLoaded?: () => Promise<void>;
-    ensureRowsForPage?: (page: number, rowsPerPage: number) => Promise<void>;
+    loadPage: (request: PlayersPageRequest) => Promise<void>;
+};
+
+export type PlayersPageRequest = {
+    page: number;
+    rowsPerPage: number;
+    search: string;
+    sortKey: string;
+    sortDirection: "asc" | "desc";
 };
 
 type PlayersTabProps = {
@@ -157,83 +157,38 @@ export default function PlayersTab({
     const [expandedPlayers, setExpandedPlayers] = React.useState<Set<string>>(
         () => new Set<string>(),
     );
-    const filtered = React.useMemo(() => {
-        const normalizedSearch = deferredSearchText.trim().toLowerCase();
-        if (normalizedSearch === "") {
-            return data;
-        }
-
-        return data.filter((row) => {
-            const handle = asTableValueCompat(row.handle).toLowerCase();
-            const player = asTableValueCompat(row.player).toLowerCase();
-            const note = row.resolvedNote.toLowerCase();
-            const playerNameMatch = row.playerNamesList.some((name) =>
-                name.toLowerCase().includes(normalizedSearch),
-            );
-            return (
-                handle.includes(normalizedSearch) ||
-                player.includes(normalizedSearch) ||
-                note.includes(normalizedSearch) ||
-                playerNameMatch
-            );
-        });
-    }, [data, deferredSearchText]);
-    const sorted = React.useMemo(
-        () =>
-            sortRows(filtered, sortState, (row, key) => {
-                if (key === "handle") return row.handle;
-                if (key === "player") return row.player;
-                if (key === "wins") return Number(row.wins || 0);
-                if (key === "losses") return Number(row.losses || 0);
-                if (key === "winrate") return Number(row.winrate || 0);
-                if (key === "apm") return Number(row.apm || 0);
-                if (key === "commander")
-                    return languageManager.localize(row.commander);
-                if (key === "frequency") return Number(row.frequency || 0);
-                if (key === "kills") return Number(row.kills || 0);
-                if (key === "last_seen") return Number(row.last_seen || 0);
-                if (key === "note") return row.resolvedNote;
-                return "";
-            }),
-        [filtered, languageManager, sortState],
+    const normalizedSearch = deferredSearchText.trim().toLowerCase();
+    const totalRowsForPagination = Math.max(
+        Number(state.totalRows) || 0,
+        data.length,
     );
-    const usingServerBackedPagination =
-        deferredSearchText.trim() === "" &&
-        sortState?.key === "last_seen" &&
-        sortState.direction === "desc";
-    const hasActiveClientTransforms = !usingServerBackedPagination;
-    const totalRowsForPagination = usingServerBackedPagination
-        ? Math.max(Number(state.totalRows) || 0, sorted.length)
-        : sorted.length;
     const totalPages = pageCountForRows(totalRowsForPagination);
-
+    const loadPageRef = React.useRef(state.loadPage);
     React.useEffect(() => {
-        if (!hasActiveClientTransforms) {
-            return;
-        }
-        const loadedRows = Number(state.loadedRows) || 0;
-        const totalRows = Number(state.totalRows) || 0;
-        if (totalRows <= 0 || loadedRows >= totalRows) {
-            return;
-        }
-        void state.ensureAllRowsLoaded?.();
-    }, [
-        hasActiveClientTransforms,
-        state.ensureAllRowsLoaded,
-        state.loadedRows,
-        state.totalRows,
-    ]);
+        loadPageRef.current = state.loadPage;
+    }, [state.loadPage]);
+    const pageRequest = React.useCallback(
+        (page: number): PlayersPageRequest => ({
+            page: clampPageNumber(page, totalPages),
+            rowsPerPage: TABLE_ROWS_PER_PAGE,
+            search: normalizedSearch,
+            sortKey: sortState?.key || "last_seen",
+            sortDirection: sortState?.direction || "desc",
+        }),
+        [normalizedSearch, sortState, totalPages],
+    );
 
     React.useEffect(() => {
         setCurrentPage(1);
-    }, [deferredSearchText, sortState]);
+        void loadPageRef.current(pageRequest(1));
+    }, [pageRequest]);
 
     React.useEffect(() => {
         setCurrentPage((page) => clampPageNumber(page, totalPages));
     }, [totalPages]);
 
     React.useEffect(() => {
-        const visiblePlayers = new Set(filtered.map((row) => row.handleKey));
+        const visiblePlayers = new Set(data.map((row) => row.handleKey));
         setExpandedPlayers((current) => {
             const next = new Set<string>();
             for (const handleKey of current) {
@@ -243,26 +198,17 @@ export default function PlayersTab({
             }
             return next.size === current.size ? current : next;
         });
-    }, [filtered]);
-
-    const pagedRows = React.useMemo(
-        () => rowsForPage(sorted, currentPage),
-        [currentPage, sorted],
-    );
+    }, [data]);
 
     const handlePageChange = React.useCallback(
         (page: number) => {
             void (async () => {
-                if (
-                    usingServerBackedPagination &&
-                    typeof state.ensureRowsForPage === "function"
-                ) {
-                    await state.ensureRowsForPage(page, TABLE_ROWS_PER_PAGE);
-                }
-                setCurrentPage(page);
+                const request = pageRequest(page);
+                await loadPageRef.current(request);
+                setCurrentPage(request.page);
             })();
         },
-        [state, usingServerBackedPagination],
+        [pageRequest],
     );
 
     const columns = [
@@ -361,7 +307,7 @@ export default function PlayersTab({
                             </tr>
                         </thead>
                         <tbody>
-                            {sorted.length === 0 ? (
+                            {data.length === 0 ? (
                                 <tr>
                                     <td
                                         colSpan={10}
@@ -371,7 +317,7 @@ export default function PlayersTab({
                                     </td>
                                 </tr>
                             ) : (
-                                pagedRows.map((row, idx) => {
+                                data.map((row, idx) => {
                                     const isExpanded = expandedPlayers.has(
                                         row.handleKey,
                                     );

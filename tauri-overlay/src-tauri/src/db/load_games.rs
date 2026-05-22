@@ -1,6 +1,6 @@
 use super::array_json::ReplayCacheArrayJson;
 use super::core::*;
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{OptionalExtension, params, params_from_iter, types::Value as SqlValue};
 use s2coop_analyzer::cache_overall_stats_generator::{
     CachePlayer, CachePlayerStatsSeries, CacheReplayEntry, CacheUnitStats, ReplayBuildInfo,
     ReplayMessage,
@@ -32,6 +32,25 @@ impl ReplayCacheDatabase {
         query: ReplayCacheEntryQuery,
     ) -> Result<Vec<CacheReplayEntry>, ReplayCacheDbError> {
         let records = self.load_entry_records(query)?;
+        self.summary_entries_from_records(records)
+    }
+
+    pub fn load_summary_entries_page(
+        &self,
+        query: &ReplayCacheGamesPageQuery,
+    ) -> Result<ReplayCachePageResult<CacheReplayEntry>, ReplayCacheDbError> {
+        let (where_sql, mut bind_values) = Self::games_page_where_clause(query);
+        let total_rows = self.count_game_page_rows(&where_sql, &bind_values)?;
+        let replay_ids = self.load_game_page_ids(&where_sql, &mut bind_values, query)?;
+        let records = self.load_entry_records_by_ids(&replay_ids)?;
+        let entries = self.summary_entries_from_records(records)?;
+        Ok(ReplayCachePageResult::new(entries, total_rows))
+    }
+
+    fn summary_entries_from_records(
+        &self,
+        records: Vec<ReplayCacheEntryRecord>,
+    ) -> Result<Vec<CacheReplayEntry>, ReplayCacheDbError> {
         let replay_ids = records.iter().map(|record| record.id).collect::<Vec<_>>();
         let mut players_by_replay_id = self.load_players_summary_by_replay_ids(&replay_ids)?;
         let mut entries = Vec::with_capacity(records.len());
@@ -40,6 +59,237 @@ impl ReplayCacheDatabase {
             entries.push(self.summary_entry_from_record(record, players)?);
         }
         Ok(entries)
+    }
+
+    fn count_game_page_rows(
+        &self,
+        where_sql: &str,
+        bind_values: &[SqlValue],
+    ) -> Result<usize, ReplayCacheDbError> {
+        let sql = format!(
+            "
+            WITH game_rows AS ({})
+            SELECT COUNT(*)
+            FROM game_rows
+            WHERE {where_sql}
+            ",
+            Self::games_page_base_sql()
+        );
+        let count = self
+            .connection
+            .query_row(&sql, params_from_iter(bind_values.iter()), |row| {
+                row.get::<_, i64>(0)
+            })
+            .map_err(|source| self.sqlite_error(source))?;
+        Ok(usize::try_from(count).unwrap_or(usize::MAX))
+    }
+
+    fn load_game_page_ids(
+        &self,
+        where_sql: &str,
+        bind_values: &mut Vec<SqlValue>,
+        query: &ReplayCacheGamesPageQuery,
+    ) -> Result<Vec<i64>, ReplayCacheDbError> {
+        let order_sql = Self::games_page_order_clause(query);
+        let sql = format!(
+            "
+            WITH game_rows AS ({})
+            SELECT id
+            FROM game_rows
+            WHERE {where_sql}
+            {order_sql}
+            LIMIT ? OFFSET ?
+            ",
+            Self::games_page_base_sql()
+        );
+        bind_values.push(SqlValue::Integer(Self::usize_to_i64(query.page().limit())));
+        bind_values.push(SqlValue::Integer(Self::usize_to_i64(query.page().offset())));
+        let mut statement = self
+            .connection
+            .prepare(&sql)
+            .map_err(|source| self.sqlite_error(source))?;
+        let rows = statement
+            .query_map(params_from_iter(bind_values.iter()), |row| {
+                row.get::<_, i64>(0)
+            })
+            .map_err(|source| self.sqlite_error(source))?;
+        Self::collect_replay_ids(rows, self)
+    }
+
+    fn load_entry_records_by_ids(
+        &self,
+        replay_ids: &[i64],
+    ) -> Result<Vec<ReplayCacheEntryRecord>, ReplayCacheDbError> {
+        let mut records = Vec::with_capacity(replay_ids.len());
+        for replay_id in replay_ids {
+            if let Some(record) = self.load_record_by_id(*replay_id)? {
+                records.push(record);
+            }
+        }
+        Ok(records)
+    }
+
+    fn games_page_base_sql() -> &'static str {
+        "
+        SELECT
+            e.id,
+            e.file,
+            e.date_seconds,
+            e.date_text,
+            e.hash,
+            e.result,
+            e.map_name,
+            CASE
+                WHEN TRIM(e.ext_difficulty) <> '' THEN e.ext_difficulty
+                WHEN TRIM(e.difficulty_p2) <> '' THEN e.difficulty_p2
+                WHEN TRIM(e.difficulty_p1) <> '' THEN e.difficulty_p1
+                ELSE 'Unknown'
+            END AS difficulty,
+            e.enemy_race,
+            CASE e.length_realtime_kind
+                WHEN 'float' THEN COALESCE(e.length_realtime_float, 0.0)
+                ELSE COALESCE(e.length_realtime_int, 0)
+            END AS length_realtime,
+            e.brutal_plus,
+            e.extension,
+            e.weekly,
+            e.mutator_values,
+            CASE
+                WHEN e.weekly = 1 OR json_array_length(e.mutator_values) > 0 THEN 1
+                ELSE 0
+            END AS is_mutation,
+            p1.player_name AS p1_name,
+            p2.player_name AS p2_name,
+            p1.commander AS p1_commander,
+            p2.commander AS p2_commander
+        FROM replay_cache_entries e
+        LEFT JOIN replay_cache_players p1 ON p1.replay_id = e.id AND p1.pid = 1
+        LEFT JOIN replay_cache_players p2 ON p2.replay_id = e.id AND p2.pid = 2
+        "
+    }
+
+    fn games_page_where_clause(query: &ReplayCacheGamesPageQuery) -> (String, Vec<SqlValue>) {
+        let mut clauses = Vec::new();
+        let mut bind_values = Vec::new();
+
+        if !query.include_normal_games() && !query.include_mutation_games() {
+            clauses.push("0 = 1".to_string());
+        } else if !query.include_normal_games() {
+            clauses.push("is_mutation = 1".to_string());
+        } else if !query.include_mutation_games() {
+            clauses.push("is_mutation = 0".to_string());
+        }
+
+        if let Some(difficulty_clause) = Self::games_difficulty_where_clause(query) {
+            clauses.push(difficulty_clause);
+        }
+
+        let search = query.search().trim();
+        if !search.is_empty() {
+            let pattern = Self::sqlite_contains_pattern(search);
+            clauses.push(
+                "
+                (
+                    LOWER(COALESCE(file, '')) LIKE ? ESCAPE '\\' OR
+                    LOWER(COALESCE(result, '')) LIKE ? ESCAPE '\\' OR
+                    LOWER(COALESCE(map_name, '')) LIKE ? ESCAPE '\\' OR
+                    LOWER(COALESCE(difficulty, '')) LIKE ? ESCAPE '\\' OR
+                    LOWER(COALESCE(enemy_race, 'Unknown')) LIKE ? ESCAPE '\\' OR
+                    LOWER(COALESCE(p1_name, '')) LIKE ? ESCAPE '\\' OR
+                    LOWER(COALESCE(p2_name, '')) LIKE ? ESCAPE '\\' OR
+                    LOWER(COALESCE(p1_commander, '')) LIKE ? ESCAPE '\\' OR
+                    LOWER(COALESCE(p2_commander, '')) LIKE ? ESCAPE '\\' OR
+                    LOWER(COALESCE(mutator_values, '')) LIKE ? ESCAPE '\\'
+                )
+                "
+                .to_string(),
+            );
+            for _ in 0..10 {
+                bind_values.push(SqlValue::Text(pattern.clone()));
+            }
+        }
+
+        let where_sql = if clauses.is_empty() {
+            "1 = 1".to_string()
+        } else {
+            clauses.join(" AND ")
+        };
+        (where_sql, bind_values)
+    }
+
+    fn games_difficulty_where_clause(query: &ReplayCacheGamesPageQuery) -> Option<String> {
+        let filters = query.difficulty_filters();
+        if filters.is_empty() {
+            return Some("0 = 1".to_string());
+        }
+
+        let all_filters = ReplayCacheDifficultyFilter::all();
+        if all_filters
+            .iter()
+            .all(|filter| filters.iter().any(|value| value == filter))
+        {
+            return None;
+        }
+
+        let mut clauses = Vec::new();
+        for filter in filters {
+            if let Some(level) = filter.brutal_plus_level() {
+                clauses.push(format!("brutal_plus = {level}"));
+            } else if let Some(label) = filter.regular_label() {
+                if *filter == ReplayCacheDifficultyFilter::Brutal {
+                    clauses.push(
+                        "
+                        (
+                            brutal_plus <= 0 AND
+                            LOWER(TRIM(difficulty)) NOT IN ('casual', 'normal', 'hard')
+                        )
+                        "
+                        .to_string(),
+                    );
+                } else {
+                    clauses.push(format!(
+                        "(brutal_plus <= 0 AND LOWER(TRIM(difficulty)) = '{label}')"
+                    ));
+                }
+            }
+        }
+
+        if clauses.is_empty() {
+            Some("0 = 1".to_string())
+        } else {
+            Some(format!("({})", clauses.join(" OR ")))
+        }
+    }
+
+    fn games_page_order_clause(query: &ReplayCacheGamesPageQuery) -> String {
+        let direction = query.sort_direction().sql_keyword();
+        let expression = match query.sort_key() {
+            ReplayCacheGameSortKey::Map => "LOWER(COALESCE(map_name, ''))",
+            ReplayCacheGameSortKey::Result => "LOWER(COALESCE(result, ''))",
+            ReplayCacheGameSortKey::PlayerOne => {
+                "LOWER(COALESCE(p1_name, '') || ' ' || COALESCE(p1_commander, ''))"
+            }
+            ReplayCacheGameSortKey::PlayerTwo => {
+                "LOWER(COALESCE(p2_name, '') || ' ' || COALESCE(p2_commander, ''))"
+            }
+            ReplayCacheGameSortKey::Enemy => "LOWER(COALESCE(enemy_race, 'Unknown'))",
+            ReplayCacheGameSortKey::Length => "length_realtime",
+            ReplayCacheGameSortKey::Difficulty => "LOWER(COALESCE(difficulty, ''))",
+            ReplayCacheGameSortKey::Mutators => "LOWER(COALESCE(mutator_values, ''))",
+            ReplayCacheGameSortKey::Time => "date_seconds",
+            ReplayCacheGameSortKey::Actions => "LOWER(COALESCE(file, ''))",
+        };
+        let time_direction = if query.sort_key() == ReplayCacheGameSortKey::Time {
+            direction
+        } else {
+            "DESC"
+        };
+        format!(
+            "
+            ORDER BY {expression} {direction},
+                date_seconds {time_direction}, date_text {time_direction}, file {time_direction}, hash {time_direction}
+            "
+        )
     }
 
     fn load_entry_records(
@@ -289,10 +539,6 @@ impl ReplayCacheDatabase {
             )
             .map_err(|source| self.sqlite_error(source))?;
         Self::collect_replay_ids(rows, self)
-    }
-
-    fn usize_to_i64(value: usize) -> i64 {
-        i64::try_from(value).unwrap_or(i64::MAX)
     }
 
     fn entry_from_record(

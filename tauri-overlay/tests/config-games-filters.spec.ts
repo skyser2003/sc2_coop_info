@@ -70,17 +70,65 @@ async function installGamesMock(page: Page, rows: readonly GamesRow[]) {
                     },
                 },
             });
-            const replaysPayload = (limitValue: number) => ({
-                status: "ok",
-                replays: initialRows.slice(
-                    0,
-                    Number.isFinite(limitValue) && limitValue > 0
-                        ? limitValue
-                        : initialRows.length,
-                ),
-                total_replays: initialRows.length,
-                selected_replay_file: "",
-            });
+            type ReplaysPageRequest = {
+                page?: number;
+                rowsPerPage?: number;
+                difficultyFilters?: string[];
+                includeNormalGames?: boolean;
+                includeMutationGames?: boolean;
+            };
+            const difficultyKey = (row: GamesRow): string => {
+                const brutalPlus = Number(row.brutal_plus || 0);
+                if (brutalPlus > 0) return `BrutalPlus${brutalPlus}`;
+                const difficulty = String(row.difficulty || "").toLowerCase();
+                if (difficulty === "casual") return "Casual";
+                if (difficulty === "normal") return "Normal";
+                if (difficulty === "hard") return "Hard";
+                return "Brutal";
+            };
+            const replaysPayload = (pageRequest?: ReplaysPageRequest) => {
+                const enabledDifficulties = new Set(
+                    pageRequest?.difficultyFilters || [
+                        "Casual",
+                        "Normal",
+                        "Hard",
+                        "Brutal",
+                        "BrutalPlus1",
+                        "BrutalPlus2",
+                        "BrutalPlus3",
+                        "BrutalPlus4",
+                        "BrutalPlus5",
+                        "BrutalPlus6",
+                    ],
+                );
+                const includeNormalGames =
+                    pageRequest?.includeNormalGames !== false;
+                const includeMutationGames =
+                    pageRequest?.includeMutationGames !== false;
+                const filteredRows = initialRows
+                    .filter((row) => {
+                        const isMutation =
+                            row.is_mutation === true ||
+                            row.weekly === true ||
+                            Number(row.mutators?.length || 0) > 0;
+                        if (!includeNormalGames && !isMutation) return false;
+                        if (!includeMutationGames && isMutation) return false;
+                        return enabledDifficulties.has(difficultyKey(row));
+                    })
+                    .sort((left, right) => right.date - left.date);
+                const page = Math.max(1, Number(pageRequest?.page) || 1);
+                const rowsPerPage = Math.max(
+                    1,
+                    Number(pageRequest?.rowsPerPage) || 20,
+                );
+                const start = (page - 1) * rowsPerPage;
+                return {
+                    status: "ok",
+                    replays: filteredRows.slice(start, start + rowsPerPage),
+                    total_replays: filteredRows.length,
+                    selected_replay_file: "",
+                };
+            };
 
             window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
                 unregisterListener: () => {},
@@ -94,6 +142,7 @@ async function installGamesMock(page: Page, rows: readonly GamesRow[]) {
                         limit?: number;
                         method?: string;
                         path?: string;
+                        request?: ReplaysPageRequest;
                     },
                 ) => {
                     if (command === "plugin:app|version") {
@@ -115,7 +164,9 @@ async function installGamesMock(page: Page, rows: readonly GamesRow[]) {
                         return configPayload();
                     }
                     if (command === "config_replays_get") {
-                        return replaysPayload(Number(request?.limit || 300));
+                        return replaysPayload(
+                            request?.request as ReplaysPageRequest | undefined,
+                        );
                     }
                     if (command === "config_players_get") {
                         return {
@@ -160,11 +211,7 @@ async function installGamesMock(page: Page, rows: readonly GamesRow[]) {
                         typeof path === "string" &&
                         path.startsWith("/config/replays?")
                     ) {
-                        const url = new URL(path, "http://127.0.0.1");
-                        const limit = Number(
-                            url.searchParams.get("limit") || "300",
-                        );
-                        return replaysPayload(limit);
+                        return replaysPayload();
                     }
 
                     if (

@@ -30,6 +30,11 @@ type TauriMockConfig = {
     players?: readonly PlayerRow[];
 };
 
+type PageRequest = {
+    page?: number;
+    rowsPerPage?: number;
+};
+
 async function installPaginationMock(
     page: Page,
     { games = [], players = [] }: TauriMockConfig = {},
@@ -43,6 +48,18 @@ async function installPaginationMock(
                 rng_choices: {},
             };
             const activeSettings = JSON.parse(JSON.stringify(settings));
+            const pageSlice = <T>(
+                rows: readonly T[],
+                pageRequest?: PageRequest,
+            ): readonly T[] => {
+                const page = Math.max(1, Number(pageRequest?.page) || 1);
+                const rowsPerPage = Math.max(
+                    1,
+                    Number(pageRequest?.rowsPerPage) || 20,
+                );
+                const start = (page - 1) * rowsPerPage;
+                return rows.slice(start, start + rowsPerPage);
+            };
 
             window.__TAURI_INTERNALS__ = {
                 invoke: async (
@@ -52,6 +69,7 @@ async function installPaginationMock(
                         limit?: number;
                         method?: string;
                         path?: string;
+                        request?: PageRequest;
                     },
                 ) => {
                     if (command === "plugin:app|version") {
@@ -108,30 +126,30 @@ async function installPaginationMock(
                     }
 
                     if (command === "config_replays_get") {
-                        const limit = Number(request?.limit || 300);
+                        const pageRequest = request?.request as
+                            | PageRequest
+                            | undefined;
+                        const sortedGames = [...initialGames].sort(
+                            (left, right) => right.date - left.date,
+                        );
                         return {
                             status: "ok",
-                            replays: initialGames.slice(
-                                0,
-                                Number.isFinite(limit) && limit > 0
-                                    ? limit
-                                    : initialGames.length,
-                            ),
+                            replays: pageSlice(sortedGames, pageRequest),
                             total_replays: initialGames.length,
                             selected_replay_file: "",
                         };
                     }
 
                     if (command === "config_players_get") {
-                        const limit = Number(request?.limit || 300);
+                        const pageRequest = request?.request as
+                            | PageRequest
+                            | undefined;
+                        const sortedPlayers = [...initialPlayers].sort(
+                            (left, right) => right.last_seen - left.last_seen,
+                        );
                         return {
                             status: "ok",
-                            players: initialPlayers.slice(
-                                0,
-                                Number.isFinite(limit) && limit > 0
-                                    ? limit
-                                    : initialPlayers.length,
-                            ),
+                            players: pageSlice(sortedPlayers, pageRequest),
                             total_players: initialPlayers.length,
                             loading: false,
                         };

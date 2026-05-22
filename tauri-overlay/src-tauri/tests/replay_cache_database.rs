@@ -7,7 +7,10 @@ use s2coop_analyzer::cache_overall_stats_generator::{
 };
 use s2coop_analyzer::detailed_replay_analysis::CacheEntrySink;
 use sco_tauri_overlay::{
-    ReplayCacheDatabase, ReplayCacheDbError, ReplayCacheEntryQuery, SqliteReplayCacheEntrySink,
+    ReplayCacheDatabase, ReplayCacheDbError, ReplayCacheDifficultyFilter, ReplayCacheEntryQuery,
+    ReplayCacheGameSortKey, ReplayCacheGamesPageQuery, ReplayCachePage, ReplayCachePlayerNote,
+    ReplayCachePlayerSortKey, ReplayCachePlayersPageQuery, ReplayCacheSortDirection,
+    SqliteReplayCacheEntrySink,
 };
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -217,8 +220,24 @@ fn sqlite_cache_schema_stores_typed_columns_without_payload_json() {
     assert!(!columns.contains(&"difficulty_right".to_string()));
     let player_columns = sqlite_table_columns(&db_path, "replay_cache_players");
     assert!(player_columns.contains(&"replay_id".to_string()));
+    assert!(player_columns.contains(&"player_handle".to_string()));
     assert!(player_columns.contains(&"mastery_values".to_string()));
+    assert!(!player_columns.contains(&"handle".to_string()));
+    assert!(!player_columns.contains(&"name".to_string()));
     assert!(!player_columns.contains(&"replay_hash".to_string()));
+    let player_info_columns = sqlite_table_columns(&db_path, "replay_player_infos");
+    assert!(player_info_columns.contains(&"handle".to_string()));
+    assert!(player_info_columns.contains(&"wins".to_string()));
+    assert!(player_info_columns.contains(&"losses".to_string()));
+    assert!(player_info_columns.contains(&"average_apm".to_string()));
+    assert!(player_info_columns.contains(&"latest_commander".to_string()));
+    assert!(player_info_columns.contains(&"kill_ratio".to_string()));
+    assert!(player_info_columns.contains(&"latest_played_time".to_string()));
+    assert!(!player_info_columns.contains(&"name".to_string()));
+    let weekly_columns = sqlite_table_columns(&db_path, "replay_cache_weeklies");
+    assert!(weekly_columns.contains(&"replay_id".to_string()));
+    assert!(weekly_columns.contains(&"difficulty".to_string()));
+    assert!(weekly_columns.contains(&"mutator_values".to_string()));
     let icon_columns = sqlite_table_columns(&db_path, "replay_cache_player_icons");
     assert!(!icon_columns.contains(&"order_values".to_string()));
     let icon_order_columns = sqlite_table_columns(&db_path, "replay_cache_player_icon_orders");
@@ -270,6 +289,189 @@ fn sqlite_cache_schema_stores_typed_columns_without_payload_json() {
         .expect("entry should load")
         .expect("entry should exist");
     assert_eq!(loaded.mutators, entry.mutators);
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn sqlite_cache_stores_player_identity_by_handle() {
+    let root = unique_temp_path("replay_cache_db_player_infos");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let cache_path = root.join("cache_overall_stats.json");
+    let db_path = ReplayCacheDatabase::db_path_for_cache_path(&cache_path);
+    let mut first = sample_cache_entry(
+        "player-info-first.SC2Replay",
+        "player-info-first-hash",
+        "2026-01-01 00:00:00",
+        true,
+        "Victory",
+    );
+    first.players = vec![sample_player(1, "Player One")];
+    let mut second = sample_cache_entry(
+        "player-info-second.SC2Replay",
+        "player-info-second-hash",
+        "2026-01-02 00:00:00",
+        true,
+        "Victory",
+    );
+    let mut renamed_player = sample_player(1, "Player Renamed");
+    renamed_player.handle = Some("1-S2-1-1".to_string());
+    second.players = vec![renamed_player];
+
+    let mut database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    database
+        .replace_entries(&[first, second])
+        .expect("entries should write");
+    drop(database);
+
+    let connection = Connection::open(&db_path).expect("sqlite database should open");
+    let player_info = connection
+        .query_row(
+            "
+            SELECT COUNT(*), MAX(wins), MAX(losses), MAX(average_apm), MAX(latest_commander),
+                MAX(kill_ratio), MAX(latest_played_time)
+            FROM replay_player_infos
+            WHERE handle = ?1
+            ",
+            params!["1-S2-1-1"],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, f64>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, f64>(5)?,
+                    row.get::<_, i64>(6)?,
+                ))
+            },
+        )
+        .expect("player info should load");
+    assert_eq!(player_info.0, 1);
+    assert_eq!(player_info.1, 2);
+    assert_eq!(player_info.2, 0);
+    assert!((player_info.3 - 120.0).abs() < 1e-9);
+    assert_eq!(player_info.4, "Raynor");
+    assert!((player_info.5 - 1.0).abs() < 1e-9);
+    assert!(player_info.6 > 0);
+    let replay_player_names = sqlite_table_columns(&db_path, "replay_cache_players");
+    assert!(replay_player_names.contains(&"player_name".to_string()));
+    assert!(!replay_player_names.contains(&"name".to_string()));
+    drop(connection);
+
+    let database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should reopen");
+    let loaded = database
+        .load_entry_by_hash("player-info-second-hash")
+        .expect("entry should load")
+        .expect("entry should exist");
+    assert_eq!(loaded.players[0].handle.as_deref(), Some("1-S2-1-1"));
+    assert_eq!(loaded.players[0].name.as_deref(), Some("Player Renamed"));
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn sqlite_cache_detailed_override_updates_player_kill_ratio_only() {
+    fn player(
+        pid: u8,
+        handle: &str,
+        name: &str,
+        commander: &str,
+        apm: u32,
+        kills: u64,
+    ) -> CachePlayer {
+        let mut player = sample_player(pid, name);
+        player.handle = Some(handle.to_string());
+        player.commander = Some(commander.to_string());
+        player.apm = Some(apm);
+        player.kills = Some(kills);
+        player
+    }
+
+    let root = unique_temp_path("replay_cache_db_player_info_detailed_override");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let cache_path = root.join("cache_overall_stats.json");
+    let db_path = ReplayCacheDatabase::db_path_for_cache_path(&cache_path);
+    let mut simple = sample_cache_entry(
+        "override.SC2Replay",
+        "override-hash",
+        "2026-01-01 00:00:00",
+        false,
+        "Victory",
+    );
+    simple.players = vec![
+        player(1, "1-S2-1-1", "Player One", "Raynor", 100, 10),
+        player(2, "1-S2-1-2", "Player Two", "Kerrigan", 50, 30),
+    ];
+    let mut detailed = simple.clone();
+    detailed.detailed_analysis = true;
+    detailed.result = "Defeat".to_string();
+    detailed.players = vec![
+        player(1, "1-S2-1-1", "Player One", "Swann", 300, 30),
+        player(2, "1-S2-1-2", "Player Two", "Kerrigan", 50, 10),
+    ];
+
+    let mut database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    database
+        .upsert_entries_preserving_detailed(std::slice::from_ref(&simple))
+        .expect("simple entry should write");
+    database
+        .upsert_entries_preserving_detailed(std::slice::from_ref(&detailed))
+        .expect("detailed entry should update");
+    drop(database);
+
+    let connection = Connection::open(&db_path).expect("sqlite database should open");
+    let aggregate = connection
+        .query_row(
+            "
+            SELECT wins, losses, average_apm, latest_commander, kill_ratio
+            FROM replay_player_infos
+            WHERE handle = ?1
+            ",
+            params!["1-S2-1-1"],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, f64>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, f64>(4)?,
+                ))
+            },
+        )
+        .expect("player aggregate should load");
+    assert_eq!(aggregate.0, 1);
+    assert_eq!(aggregate.1, 0);
+    assert!((aggregate.2 - 100.0).abs() < 1e-9);
+    assert_eq!(aggregate.3, "Raynor");
+    assert!((aggregate.4 - 0.75).abs() < 1e-9);
+
+    let replay_player = connection
+        .query_row(
+            "
+            SELECT result, commander, apm, kills
+            FROM replay_cache_players
+            WHERE player_handle = ?1
+            ",
+            params!["1-S2-1-1"],
+            |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                ))
+            },
+        )
+        .expect("replay player row should load");
+    assert_eq!(replay_player.0.as_deref(), Some("Victory"));
+    assert_eq!(replay_player.1.as_deref(), Some("Swann"));
+    assert_eq!(replay_player.2, Some(300));
+    assert_eq!(replay_player.3, Some(30));
+    drop(connection);
 
     let _ = std::fs::remove_dir_all(&root);
 }
@@ -549,6 +751,7 @@ fn sqlite_cache_stores_player_stats_as_json_arrays() {
         true,
         "Victory",
     );
+    entry.players = vec![sample_player(1, "Player One")];
     entry.player_stats = Some(BTreeMap::from([
         (0, sample_player_stats("Dummy")),
         (1, sample_player_stats("Player One")),
@@ -567,6 +770,8 @@ fn sqlite_cache_stores_player_stats_as_json_arrays() {
     ));
     let columns = sqlite_table_columns(&db_path, "replay_cache_player_stat_series");
     assert!(columns.contains(&"replay_id".to_string()));
+    assert!(columns.contains(&"player_handle".to_string()));
+    assert!(!columns.contains(&"name".to_string()));
     assert!(!columns.contains(&"replay_hash".to_string()));
     assert!(columns.contains(&"supply_values".to_string()));
     assert!(columns.contains(&"mining_values".to_string()));
@@ -606,6 +811,234 @@ fn sqlite_cache_stores_player_stats_as_json_arrays() {
     let loaded_stats = loaded.player_stats.expect("player stats should load");
     assert_eq!(loaded_stats.len(), 1);
     assert_eq!(loaded_stats[&1], sample_player_stats("Player One"));
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn sqlite_cache_stores_weekly_rows_for_weekly_tab_queries() {
+    let root = unique_temp_path("replay_cache_db_weeklies");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let cache_path = root.join("cache_overall_stats.json");
+    let db_path = ReplayCacheDatabase::db_path_for_cache_path(&cache_path);
+    let mut weekly = sample_cache_entry(
+        "weekly.SC2Replay",
+        "weekly-hash",
+        "2026-01-01 00:00:00",
+        false,
+        "Victory",
+    );
+    weekly.weekly = true;
+    weekly.ext_difficulty = "Brutal".to_string();
+    weekly.brutal_plus = 2;
+    weekly.mutators = vec!["Void Rifts".to_string(), "Avenger".to_string()];
+    let mut normal = sample_cache_entry(
+        "normal.SC2Replay",
+        "normal-hash",
+        "2026-01-02 00:00:00",
+        false,
+        "Victory",
+    );
+    normal.weekly = false;
+
+    let mut database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    database
+        .replace_entries(&[weekly.clone(), normal])
+        .expect("entries should write");
+    drop(database);
+
+    assert_eq!(sqlite_table_row_count(&db_path, "replay_cache_weeklies"), 1);
+    let connection = Connection::open(&db_path).expect("sqlite database should open");
+    let weekly_row = connection
+        .query_row(
+            "
+            SELECT difficulty, brutal_plus, json_array_length(mutator_values)
+            FROM replay_cache_weeklies
+            ",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            },
+        )
+        .expect("weekly row should load");
+    assert_eq!(weekly_row, ("Brutal".to_string(), 2, 2));
+    drop(connection);
+
+    let database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should reopen");
+    let weekly_replays = database
+        .load_weekly_replays()
+        .expect("weekly replays should load");
+    assert_eq!(weekly_replays.len(), 1);
+    assert!(weekly_replays[0].weekly());
+    assert_eq!(weekly_replays[0].difficulty(), "Brutal");
+    assert_eq!(weekly_replays[0].brutal_plus(), 2);
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn sqlite_cache_detailed_override_keeps_aggregate_tables_deduplicated() {
+    fn player(pid: u8, handle: &str, name: &str, kills: u64) -> CachePlayer {
+        let mut player = sample_player(pid, name);
+        player.handle = Some(handle.to_string());
+        player.kills = Some(kills);
+        player
+    }
+
+    let root = unique_temp_path("replay_cache_db_override_aggregate_dedup");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let cache_path = root.join("cache_overall_stats.json");
+    let db_path = ReplayCacheDatabase::db_path_for_cache_path(&cache_path);
+    let mut simple = sample_cache_entry(
+        "weekly-override.SC2Replay",
+        "weekly-override-hash",
+        "2026-01-01 00:00:00",
+        false,
+        "Victory",
+    );
+    simple.weekly = true;
+    simple.brutal_plus = 1;
+    simple.mutators = vec!["Void Rifts".to_string()];
+    simple.players = vec![
+        player(1, "1-S2-1-100", "Player One", 10),
+        player(2, "1-S2-1-200", "Player Two", 30),
+    ];
+    let mut detailed = simple.clone();
+    detailed.detailed_analysis = true;
+    detailed.brutal_plus = 3;
+    detailed.mutators = vec!["Void Rifts".to_string(), "Avenger".to_string()];
+    detailed.players = vec![
+        player(1, "1-S2-1-100", "Player One", 30),
+        player(2, "1-S2-1-200", "Player Two", 10),
+    ];
+
+    let mut database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    database
+        .upsert_entries_preserving_detailed(std::slice::from_ref(&simple))
+        .expect("simple entry should write");
+    database
+        .upsert_entries_preserving_detailed(std::slice::from_ref(&detailed))
+        .expect("detailed entry should override simple entry");
+    drop(database);
+
+    assert_eq!(sqlite_table_row_count(&db_path, "replay_cache_entries"), 1);
+    assert_eq!(sqlite_table_row_count(&db_path, "replay_cache_players"), 2);
+    assert_eq!(sqlite_table_row_count(&db_path, "replay_player_infos"), 2);
+    assert_eq!(sqlite_table_row_count(&db_path, "replay_cache_weeklies"), 1);
+
+    let connection = Connection::open(&db_path).expect("sqlite database should open");
+    let weekly_row = connection
+        .query_row(
+            "
+            SELECT brutal_plus, json_array_length(mutator_values)
+            FROM replay_cache_weeklies
+            ",
+            [],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+        )
+        .expect("weekly row should load");
+    assert_eq!(weekly_row, (3, 2));
+    let player_info = connection
+        .query_row(
+            "
+            SELECT wins, losses, kill_ratio
+            FROM replay_player_infos
+            WHERE handle = ?1
+            ",
+            params!["1-S2-1-100"],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, f64>(2)?,
+                ))
+            },
+        )
+        .expect("player aggregate should load");
+    assert_eq!(player_info.0, 1);
+    assert_eq!(player_info.1, 0);
+    assert!((player_info.2 - 0.75).abs() < 1e-9);
+    drop(connection);
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn sqlite_cache_same_file_replacement_removes_stale_aggregate_rows() {
+    let root = unique_temp_path("replay_cache_db_same_file_replacement_dedup");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let cache_path = root.join("cache_overall_stats.json");
+    let db_path = ReplayCacheDatabase::db_path_for_cache_path(&cache_path);
+    let mut old_entry = sample_cache_entry(
+        "same-file.SC2Replay",
+        "same-file-old-hash",
+        "2026-01-01 00:00:00",
+        true,
+        "Victory",
+    );
+    old_entry.weekly = true;
+    old_entry.players = vec![sample_player(1, "Old Player")];
+    let mut new_entry = sample_cache_entry(
+        "same-file.SC2Replay",
+        "same-file-new-hash",
+        "2026-01-02 00:00:00",
+        true,
+        "Defeat",
+    );
+    let mut new_player = sample_player(1, "New Player");
+    new_player.handle = Some("1-S2-1-999".to_string());
+    new_entry.weekly = true;
+    new_entry.brutal_plus = 4;
+    new_entry.players = vec![new_player];
+
+    let mut database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    database
+        .upsert_entries_preserving_detailed(std::slice::from_ref(&old_entry))
+        .expect("old entry should write");
+    database
+        .upsert_entries_preserving_detailed(std::slice::from_ref(&new_entry))
+        .expect("new same-file entry should replace old entry");
+    drop(database);
+
+    assert_eq!(sqlite_table_row_count(&db_path, "replay_cache_entries"), 1);
+    assert_eq!(sqlite_table_row_count(&db_path, "replay_cache_players"), 1);
+    assert_eq!(sqlite_table_row_count(&db_path, "replay_player_infos"), 1);
+    assert_eq!(sqlite_table_row_count(&db_path, "replay_cache_weeklies"), 1);
+
+    let connection = Connection::open(&db_path).expect("sqlite database should open");
+    let stored = connection
+        .query_row(
+            "
+            SELECT e.hash, p.player_handle, info.handle, weekly.brutal_plus
+            FROM replay_cache_entries e
+            INNER JOIN replay_cache_players p ON p.replay_id = e.id
+            INNER JOIN replay_player_infos info ON info.handle = p.player_handle
+            INNER JOIN replay_cache_weeklies weekly ON weekly.replay_id = e.id
+            ",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            },
+        )
+        .expect("replacement row should load");
+    assert_eq!(stored.0, "same-file-new-hash");
+    assert_eq!(stored.1, "1-S2-1-999");
+    assert_eq!(stored.2, "1-S2-1-999");
+    assert_eq!(stored.3, 4);
+    drop(connection);
 
     let _ = std::fs::remove_dir_all(&root);
 }
@@ -688,6 +1121,182 @@ fn sqlite_summary_entries_skip_heavy_child_payloads() {
 }
 
 #[test]
+fn sqlite_games_page_query_filters_sorts_and_offsets_in_database() {
+    let root = unique_temp_path("replay_cache_db_games_page");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let cache_path = root.join("cache_overall_stats.json");
+    let mut alpha = sample_cache_entry(
+        "alpha.SC2Replay",
+        "alpha-hash",
+        "2026-01-01 00:00:00",
+        false,
+        "Victory",
+    );
+    alpha.map_name = "Alpha Map".to_string();
+    alpha.players = vec![sample_player(1, "Alpha P1"), sample_player(2, "Alpha P2")];
+    let mut beta = sample_cache_entry(
+        "beta.SC2Replay",
+        "beta-hash",
+        "2026-01-02 00:00:00",
+        false,
+        "Victory",
+    );
+    beta.map_name = "Beta Map".to_string();
+    beta.players = vec![sample_player(1, "Beta P1"), sample_player(2, "Beta P2")];
+    let mut rifts = sample_cache_entry(
+        "rifts.SC2Replay",
+        "rifts-hash",
+        "2026-01-03 00:00:00",
+        false,
+        "Victory",
+    );
+    rifts.map_name = "Gamma Map".to_string();
+    rifts.weekly = true;
+    rifts.mutators = vec!["Void Rifts".to_string()];
+    rifts.players = vec![sample_player(1, "Rifts P1"), sample_player(2, "Rifts P2")];
+
+    let mut database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    database
+        .replace_entries(&[beta, rifts.clone(), alpha])
+        .expect("entries should write");
+
+    let second_map_page = database
+        .load_summary_entries_page(&ReplayCacheGamesPageQuery::new(
+            ReplayCachePage::new(2, 1),
+            String::new(),
+            ReplayCacheGameSortKey::Map,
+            ReplayCacheSortDirection::Asc,
+            ReplayCacheDifficultyFilter::all(),
+            true,
+            true,
+        ))
+        .expect("games page should load");
+    assert_eq!(second_map_page.total_rows(), 3);
+    assert_eq!(second_map_page.rows()[0].hash, "beta-hash");
+
+    let mutation_search_page = database
+        .load_summary_entries_page(&ReplayCacheGamesPageQuery::new(
+            ReplayCachePage::new(1, 20),
+            "rifts".to_string(),
+            ReplayCacheGameSortKey::Time,
+            ReplayCacheSortDirection::Desc,
+            ReplayCacheDifficultyFilter::all(),
+            false,
+            true,
+        ))
+        .expect("filtered games page should load");
+    assert_eq!(mutation_search_page.total_rows(), 1);
+    assert_eq!(mutation_search_page.rows()[0].hash, rifts.hash);
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn sqlite_players_page_query_aggregates_searches_notes_and_offsets_in_database() {
+    fn player(
+        pid: u8,
+        handle: &str,
+        name: &str,
+        commander: &str,
+        apm: u32,
+        kills: u64,
+    ) -> CachePlayer {
+        let mut player = sample_player(pid, name);
+        player.handle = Some(handle.to_string());
+        player.commander = Some(commander.to_string());
+        player.apm = Some(apm);
+        player.kills = Some(kills);
+        player
+    }
+
+    let root = unique_temp_path("replay_cache_db_players_page");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let cache_path = root.join("cache_overall_stats.json");
+    let mut first = sample_cache_entry(
+        "players-first.SC2Replay",
+        "players-first-hash",
+        "2026-01-01 00:00:00",
+        false,
+        "Victory",
+    );
+    first.players = vec![
+        player(1, "1-S2-1-10", "Alice", "Raynor", 100, 30),
+        player(2, "1-S2-1-20", "Bob", "Kerrigan", 50, 10),
+    ];
+    let mut second = sample_cache_entry(
+        "players-second.SC2Replay",
+        "players-second-hash",
+        "2026-01-02 00:00:00",
+        false,
+        "Defeat",
+    );
+    second.players = vec![
+        player(1, "1-S2-1-10", "Alice Prime", "Raynor", 200, 20),
+        player(2, "1-S2-1-30", "Charlie", "Artanis", 80, 20),
+    ];
+    let mut third = sample_cache_entry(
+        "players-third.SC2Replay",
+        "players-third-hash",
+        "2026-01-03 00:00:00",
+        false,
+        "Victory",
+    );
+    third.players = vec![
+        player(1, "1-S2-1-20", "Bob", "Kerrigan", 70, 40),
+        player(2, "1-S2-1-40", "Delta", "Swann", 60, 10),
+    ];
+
+    let mut database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    database
+        .replace_entries(&[first, second, third])
+        .expect("entries should write");
+
+    let wins_page = database
+        .load_player_rows_page(&ReplayCachePlayersPageQuery::new(
+            ReplayCachePage::new(1, 1),
+            String::new(),
+            ReplayCachePlayerSortKey::Wins,
+            ReplayCacheSortDirection::Desc,
+            Vec::new(),
+        ))
+        .expect("players page should load");
+    assert_eq!(wins_page.total_rows(), 4);
+    assert_eq!(wins_page.rows()[0].handle, "1-S2-1-20");
+    assert_eq!(wins_page.rows()[0].wins, 2);
+
+    let fourth_last_seen_page = database
+        .load_player_rows_page(&ReplayCachePlayersPageQuery::new(
+            ReplayCachePage::new(4, 1),
+            String::new(),
+            ReplayCachePlayerSortKey::LastSeen,
+            ReplayCacheSortDirection::Desc,
+            Vec::new(),
+        ))
+        .expect("fourth players page should load");
+    assert_eq!(fourth_last_seen_page.total_rows(), 4);
+    assert_eq!(fourth_last_seen_page.rows()[0].handle, "1-S2-1-30");
+
+    let note_search_page = database
+        .load_player_rows_page(&ReplayCachePlayersPageQuery::new(
+            ReplayCachePage::new(1, 20),
+            "favorite".to_string(),
+            ReplayCachePlayerSortKey::LastSeen,
+            ReplayCacheSortDirection::Desc,
+            vec![ReplayCachePlayerNote::new(
+                "1-S2-1-30".to_string(),
+                "favorite ally".to_string(),
+            )],
+        ))
+        .expect("note search players page should load");
+    assert_eq!(note_search_page.total_rows(), 1);
+    assert_eq!(note_search_page.rows()[0].handle, "1-S2-1-30");
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
 fn sqlite_cache_entry_sink_writes_entries_to_database() {
     let root = unique_temp_path("replay_cache_db_sink");
     std::fs::create_dir_all(&root).expect("temp root should be created");
@@ -719,7 +1328,7 @@ fn sqlite_cache_entry_sink_writes_entries_to_database() {
 }
 
 #[test]
-fn imports_legacy_cache_file_into_sqlite_database() {
+fn imports_legacy_json_cache_file_into_database() {
     let root = unique_temp_path("replay_cache_db_import");
     std::fs::create_dir_all(&root).expect("temp root should be created");
     let cache_path = root.join("cache_overall_stats.json");

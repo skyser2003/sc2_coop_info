@@ -103,10 +103,13 @@ impl ReplayCacheDatabase {
             .connection
             .prepare(
                 "
-                SELECT pid, name, supply_values, mining_values, army_values, killed_values
-                FROM replay_cache_player_stat_series
-                WHERE replay_id = ?1
-                ORDER BY pid ASC
+                SELECT stats.pid, COALESCE(player.player_name, ''), stats.supply_values, stats.mining_values,
+                    stats.army_values, stats.killed_values
+                FROM replay_cache_player_stat_series stats
+                LEFT JOIN replay_cache_players player
+                    ON player.replay_id = stats.replay_id AND player.pid = stats.pid
+                WHERE stats.replay_id = ?1
+                ORDER BY stats.pid ASC
                 ",
             )
             .map_err(|source| self.sqlite_error(source))?;
