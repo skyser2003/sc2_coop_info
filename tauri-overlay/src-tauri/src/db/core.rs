@@ -1,5 +1,5 @@
 use chrono::{Local, LocalResult, TimeZone, Utc};
-use rusqlite::{Connection, Row};
+use rusqlite::{Connection, ErrorCode, Row};
 use s2coop_analyzer::cache_overall_stats_generator::{
     CacheCountValue, CacheNumericValue, CacheReplayEntry, ProtocolBuildValue,
 };
@@ -9,12 +9,16 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::array_json::ReplayCacheArrayJson;
 use crate::replay_analysis::ReplayAnalysisOps;
 
 const CURRENT_SCHEMA_VERSION: i32 = 1;
+const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(60);
+const SQLITE_LOCK_RETRY_WINDOW: Duration = Duration::from_secs(120);
+const SQLITE_LOCK_RETRY_DELAY: Duration = Duration::from_millis(100);
 
 #[derive(Debug)]
 pub enum ReplayCacheDbError {
@@ -94,6 +98,18 @@ impl Error for ReplayCacheDbError {
             Self::JsonArray { source, .. } => Some(source),
             Self::Sqlite { source, .. } => Some(source),
             Self::UnsupportedSchema { .. } => None,
+        }
+    }
+}
+
+impl ReplayCacheDbError {
+    pub(super) fn is_sqlite_lock(&self) -> bool {
+        match self {
+            Self::Sqlite { source, .. } => matches!(
+                source.sqlite_error_code(),
+                Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked)
+            ),
+            _ => false,
         }
     }
 }
@@ -1347,6 +1363,24 @@ impl CacheEntrySink for SqliteReplayCacheEntrySink {
 }
 
 impl ReplayCacheDatabase {
+    pub(super) fn retry_sqlite_lock<T>(
+        mut operation: impl FnMut() -> Result<T, ReplayCacheDbError>,
+    ) -> Result<T, ReplayCacheDbError> {
+        let started_at = Instant::now();
+        loop {
+            match operation() {
+                Ok(value) => return Ok(value),
+                Err(error)
+                    if error.is_sqlite_lock()
+                        && started_at.elapsed() < SQLITE_LOCK_RETRY_WINDOW =>
+                {
+                    thread::sleep(SQLITE_LOCK_RETRY_DELAY);
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
+
     pub fn db_path_for_cache_path(cache_path: &Path) -> PathBuf {
         if cache_path
             .extension()
@@ -1412,6 +1446,10 @@ impl ReplayCacheDatabase {
     }
 
     pub fn open_for_cache_path(cache_path: &Path) -> Result<Self, ReplayCacheDbError> {
+        Self::retry_sqlite_lock(|| Self::open_for_cache_path_once(cache_path))
+    }
+
+    fn open_for_cache_path_once(cache_path: &Path) -> Result<Self, ReplayCacheDbError> {
         let db_path = Self::db_path_for_cache_path(cache_path);
         let legacy_cache_path = Self::legacy_json_path_for_cache_path(cache_path);
         if let Some(parent) = db_path.parent() {
@@ -1428,7 +1466,7 @@ impl ReplayCacheDatabase {
                 source,
             })?;
         connection
-            .busy_timeout(Duration::from_secs(5))
+            .busy_timeout(SQLITE_BUSY_TIMEOUT)
             .map_err(|source| ReplayCacheDbError::Sqlite {
                 path: db_path.clone(),
                 source,
@@ -1476,6 +1514,10 @@ impl ReplayCacheDatabase {
                 version: schema_version,
                 supported: CURRENT_SCHEMA_VERSION,
             });
+        }
+
+        if schema_version == CURRENT_SCHEMA_VERSION {
+            return Ok(());
         }
 
         Self::create_current_schema(connection, db_path)?;

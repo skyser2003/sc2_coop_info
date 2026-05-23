@@ -624,11 +624,11 @@ impl GenerateCacheTimingReport {
         self.replay_analysis_progress_record += timing.progress_record();
     }
 
-    pub(super) fn add_simple_analysis_timing(&mut self, timing: &SimpleReplayAnalysisTiming) {
+    pub(super) fn add_simple_analysis_timing(&mut self, timing: &CandidateReplayAnalysisTiming) {
         self.simple_analysis_worker += timing.total();
-        self.simple_analysis_parse += timing.parse();
+        self.simple_analysis_parse += timing.parse_simple();
         self.simple_analysis_parse_breakdown
-            .add(timing.parse_breakdown());
+            .add(timing.parse_simple_breakdown());
     }
 
     pub(super) fn set_temp_persist_stats(&mut self, entries: usize, bytes: usize) {
@@ -1473,6 +1473,8 @@ impl CandidateReplayCollectionTiming {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(super) struct CandidateReplayAnalysisTiming {
     pub(super) total: Duration,
+    pub(super) parse_simple: Duration,
+    pub(super) parse_simple_breakdown: ReplayEntryParseTiming,
     pub(super) parse_detailed: Duration,
     pub(super) parse_detailed_breakdown: ReplayEntryParseTiming,
     pub(super) parse_basic_fallback: Duration,
@@ -1504,6 +1506,14 @@ impl CandidateReplayAnalysisTiming {
 
     fn total(&self) -> Duration {
         self.total
+    }
+
+    fn parse_simple(&self) -> Duration {
+        self.parse_simple
+    }
+
+    fn parse_simple_breakdown(&self) -> &ReplayEntryParseTiming {
+        &self.parse_simple_breakdown
     }
 
     fn parse_detailed(&self) -> Duration {
@@ -1540,38 +1550,5 @@ impl CandidateReplayAnalysisTiming {
 
     fn progress_record(&self) -> Duration {
         self.progress_record
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub(super) struct SimpleReplayAnalysisTiming {
-    pub(super) total: Duration,
-    pub(super) parse: Duration,
-    pub(super) parse_breakdown: ReplayEntryParseTiming,
-}
-
-impl SimpleReplayAnalysisTiming {
-    pub(super) fn new(
-        total: Duration,
-        parse: Duration,
-        parse_breakdown: ReplayEntryParseTiming,
-    ) -> Self {
-        Self {
-            total,
-            parse,
-            parse_breakdown,
-        }
-    }
-
-    fn total(&self) -> Duration {
-        self.total
-    }
-
-    fn parse(&self) -> Duration {
-        self.parse
-    }
-
-    fn parse_breakdown(&self) -> &ReplayEntryParseTiming {
-        &self.parse_breakdown
     }
 }

@@ -1,6 +1,6 @@
 use super::array_json::ReplayCacheArrayJson;
 use super::core::*;
-use rusqlite::{OptionalExtension, Row, Transaction, params};
+use rusqlite::{OptionalExtension, Row, Transaction, TransactionBehavior, params};
 use s2coop_analyzer::cache_overall_stats_generator::{
     CacheIconValue, CachePlayer, CachePlayerStatsSeries, CacheReplayEntry, CacheUnitStats,
     ReplayMessage,
@@ -194,10 +194,17 @@ impl ReplayCacheDatabase {
         &mut self,
         entries: &[CacheReplayEntry],
     ) -> Result<usize, ReplayCacheDbError> {
+        Self::retry_sqlite_lock(|| self.upsert_entries_preserving_detailed_once(entries))
+    }
+
+    fn upsert_entries_preserving_detailed_once(
+        &mut self,
+        entries: &[CacheReplayEntry],
+    ) -> Result<usize, ReplayCacheDbError> {
         let db_path = self.db_path.clone();
         let tx = self
             .connection
-            .transaction()
+            .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|source| ReplayCacheDbError::Sqlite {
                 path: db_path.clone(),
                 source,
@@ -226,10 +233,17 @@ impl ReplayCacheDatabase {
         &mut self,
         entries: &[CacheReplayEntry],
     ) -> Result<usize, ReplayCacheDbError> {
+        Self::retry_sqlite_lock(|| self.replace_entries_once(entries))
+    }
+
+    fn replace_entries_once(
+        &mut self,
+        entries: &[CacheReplayEntry],
+    ) -> Result<usize, ReplayCacheDbError> {
         let db_path = self.db_path.clone();
         let tx = self
             .connection
-            .transaction()
+            .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|source| ReplayCacheDbError::Sqlite {
                 path: db_path.clone(),
                 source,

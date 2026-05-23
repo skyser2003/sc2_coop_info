@@ -7,14 +7,17 @@ use s2coop_analyzer::cache_overall_stats_generator::{
 };
 use s2coop_analyzer::detailed_replay_analysis::CacheEntrySink;
 use sco_tauri_overlay::{
-    PathManagerOps, ReplayCacheDatabase, ReplayCacheDbError, ReplayCacheDifficultyFilter,
-    ReplayCacheEntryQuery, ReplayCacheGameSortKey, ReplayCacheGamesPageQuery, ReplayCachePage,
-    ReplayCachePlayerNote, ReplayCachePlayerSortKey, ReplayCachePlayersPageQuery,
-    ReplayCacheReadScope, ReplayCacheSortDirection, ReplayCacheStatsDifficultyExclusion,
-    ReplayCacheStatsQuery, SqliteReplayCacheEntrySink,
+    PathManagerOps, QueuedReplayCacheEntrySink, ReplayCacheDatabase, ReplayCacheDbError,
+    ReplayCacheDifficultyFilter, ReplayCacheEntryQuery, ReplayCacheGameSortKey,
+    ReplayCacheGamesPageQuery, ReplayCachePage, ReplayCachePlayerNote, ReplayCachePlayerSortKey,
+    ReplayCachePlayersPageQuery, ReplayCacheReadScope, ReplayCacheSortDirection,
+    ReplayCacheStatsDifficultyExclusion, ReplayCacheStatsQuery, ReplayCacheWriteQueue,
+    SqliteReplayCacheEntrySink,
 };
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Barrier};
+use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn unique_temp_path(label: &str) -> PathBuf {
@@ -1541,6 +1544,166 @@ fn sqlite_cache_entry_sink_writes_entries_to_database() {
         .expect("sink entry should persist");
     assert_eq!(persisted.file, entry.file);
     assert!(persisted.detailed_analysis);
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn concurrent_worker_batches_wait_for_sqlite_writer_lock() {
+    let root = unique_temp_path("replay_cache_db_concurrent_batches");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
+    let worker_count = 8usize;
+    let batches_per_worker = 6usize;
+    let start_barrier = Arc::new(Barrier::new(worker_count));
+
+    let handles = (0..worker_count)
+        .map(|worker_index| {
+            let cache_path = cache_path.clone();
+            let start_barrier = Arc::clone(&start_barrier);
+            thread::spawn(move || {
+                start_barrier.wait();
+                let mut changed = 0usize;
+                for batch_index in 0..batches_per_worker {
+                    let replay_index = worker_index * batches_per_worker + batch_index;
+                    let mut entry = sample_cache_entry(
+                        &format!("concurrent-{replay_index}.SC2Replay"),
+                        &format!("concurrent-hash-{replay_index}"),
+                        &format!("2026:01:01:00:00:{:02}", replay_index % 60),
+                        false,
+                        "Victory",
+                    );
+                    entry.players = vec![
+                        sample_player(1, "Concurrent One"),
+                        sample_player(2, "Concurrent Two"),
+                    ];
+                    let mut database = ReplayCacheDatabase::open_for_cache_path(&cache_path)
+                        .expect("worker database should open");
+                    changed = changed.saturating_add(
+                        database
+                            .upsert_entries_preserving_detailed(&[entry])
+                            .expect("worker batch should persist"),
+                    );
+                }
+                changed
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let changed = handles
+        .into_iter()
+        .map(|handle| handle.join().expect("worker should finish"))
+        .sum::<usize>();
+    let database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should reopen");
+    let expected_entries = worker_count * batches_per_worker;
+
+    assert_eq!(changed, expected_entries);
+    assert_eq!(
+        database
+            .count_entries()
+            .expect("cache entries should count"),
+        expected_entries
+    );
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn cache_write_queue_serializes_parallel_worker_batches() {
+    let root = unique_temp_path("replay_cache_db_write_queue");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
+    let worker_count = 8usize;
+    let batches_per_worker = 6usize;
+    let start_barrier = Arc::new(Barrier::new(worker_count));
+    let write_queue = ReplayCacheWriteQueue::start(cache_path.clone());
+    let sender = write_queue.sender();
+
+    let handles = (0..worker_count)
+        .map(|worker_index| {
+            let sender = sender.clone();
+            let start_barrier = Arc::clone(&start_barrier);
+            thread::spawn(move || {
+                start_barrier.wait();
+                for batch_index in 0..batches_per_worker {
+                    let replay_index = worker_index * batches_per_worker + batch_index;
+                    let mut entry = sample_cache_entry(
+                        &format!("queued-{replay_index}.SC2Replay"),
+                        &format!("queued-hash-{replay_index}"),
+                        &format!("2026:01:01:00:01:{:02}", replay_index % 60),
+                        false,
+                        "Victory",
+                    );
+                    entry.players = vec![
+                        sample_player(1, "Queued One"),
+                        sample_player(2, "Queued Two"),
+                    ];
+                    sender
+                        .write_entries(vec![entry])
+                        .expect("worker batch should queue");
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+
+    for handle in handles {
+        handle.join().expect("worker should finish");
+    }
+    drop(sender);
+    let write_result = write_queue.finish();
+    let database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should reopen");
+    let expected_entries = worker_count * batches_per_worker;
+
+    assert_eq!(write_result.persisted_entries(), expected_entries);
+    assert_eq!(write_result.failed_batches(), 0);
+    assert_eq!(
+        database
+            .count_entries()
+            .expect("cache entries should count"),
+        expected_entries
+    );
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn queued_cache_entry_sink_uses_writer_queue_for_detailed_batches() {
+    let root = unique_temp_path("replay_cache_db_queued_sink");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
+    let write_queue = ReplayCacheWriteQueue::start(cache_path.clone());
+    let sink = QueuedReplayCacheEntrySink::new(write_queue.sender());
+    let mut first = sample_cache_entry(
+        "queued-sink-first.SC2Replay",
+        "queued-sink-first-hash",
+        "2026:01:01:00:02:00",
+        true,
+        "Victory",
+    );
+    first.players = vec![sample_player(1, "Queued Sink One")];
+    let mut second = sample_cache_entry(
+        "queued-sink-second.SC2Replay",
+        "queued-sink-second-hash",
+        "2026:01:01:00:03:00",
+        true,
+        "Victory",
+    );
+    second.players = vec![sample_player(2, "Queued Sink Two")];
+
+    let queued = sink
+        .write_entries(&[first, second])
+        .expect("queued sink should accept entries");
+    drop(sink);
+    let write_result = write_queue.finish();
+    let database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should reopen");
+
+    assert_eq!(queued, 2);
+    assert_eq!(write_result.persisted_entries(), 2);
+    assert_eq!(write_result.failed_batches(), 0);
+    assert_eq!(database.count_entries().expect("entries should count"), 2);
 
     let _ = std::fs::remove_dir_all(&root);
 }

@@ -45,11 +45,13 @@ pub use command_payloads::{
     OverlayActionResult, StatsActionPayload, StatsStatePayload,
 };
 pub use db::{
-    ReplayCacheDatabase, ReplayCacheDbError, ReplayCacheDifficultyFilter, ReplayCacheEntryQuery,
-    ReplayCacheGameSortKey, ReplayCacheGamesPageQuery, ReplayCachePage, ReplayCachePageResult,
-    ReplayCachePlayerNote, ReplayCachePlayerSortKey, ReplayCachePlayersPageQuery,
-    ReplayCacheReadScope, ReplayCacheSortDirection, ReplayCacheStatisticsPayload,
-    ReplayCacheStatsDifficultyExclusion, ReplayCacheStatsQuery, SqliteReplayCacheEntrySink,
+    QueuedReplayCacheEntrySink, ReplayCacheDatabase, ReplayCacheDbError,
+    ReplayCacheDifficultyFilter, ReplayCacheEntryQuery, ReplayCacheGameSortKey,
+    ReplayCacheGamesPageQuery, ReplayCachePage, ReplayCachePageResult, ReplayCachePlayerNote,
+    ReplayCachePlayerSortKey, ReplayCachePlayersPageQuery, ReplayCacheReadScope,
+    ReplayCacheSortDirection, ReplayCacheStatisticsPayload, ReplayCacheStatsDifficultyExclusion,
+    ReplayCacheStatsQuery, ReplayCacheWriteQueue, ReplayCacheWriteResult,
+    ReplayCacheWriteSendError, ReplayCacheWriteSender, SqliteReplayCacheEntrySink,
 };
 pub use game_launch_detector::{GameLaunchDetector, GameLaunchStatus};
 pub use logging::LoggingOps;
@@ -1912,21 +1914,31 @@ impl TauriOverlayOps {
             .map_err(|error| format!("Failed to access replay analysis resources: {error}"))?;
 
         let config = GenerateCacheConfig::new(account_dir, output_file.clone());
+        let cache_writer = ReplayCacheWriteQueue::start(output_file.clone());
         let runtime = GenerateCacheRuntimeOptions::default()
             .with_worker_count(worker_count)
             .with_stop_controller(stop_controller)
-            .with_cache_entry_sink(Arc::new(SqliteReplayCacheEntrySink::new(
-                output_file.clone(),
+            .with_cache_entry_sink(Arc::new(QueuedReplayCacheEntrySink::new(
+                cache_writer.sender(),
             )))
             .with_cache_entry_sink_batch_size(10)
             .with_existing_detailed_cache_entries(existing_detailed_cache_entries);
-        DetailedReplayAnalyzer::analyze_full_detailed(
+        let analysis_result = DetailedReplayAnalyzer::analyze_full_detailed(
             &config,
             resources.as_ref(),
             Some(&logger),
             &runtime,
-        )
-        .map_err(|error| format!("Failed to generate '{}': {error}", output_file.display()))
+        );
+        drop(runtime);
+        let write_result = cache_writer.finish();
+        if write_result.failed_batches() > 0 {
+            return Err(format!(
+                "Failed to persist {} detailed-analysis cache writer batch(es)",
+                write_result.failed_batches()
+            ));
+        }
+        analysis_result
+            .map_err(|error| format!("Failed to generate '{}': {error}", output_file.display()))
     }
 }
 
@@ -3305,12 +3317,18 @@ impl TauriOverlayOps {
             })?;
         }
 
-        ReplayCacheDatabase::open_for_cache_path(cache_path)
-            .and_then(|mut database| {
-                database.upsert_entries_preserving_detailed(std::slice::from_ref(entry))
-            })
-            .map(|_| ())
-            .map_err(|error| error.to_string())
+        let write_result = ReplayCacheWriteQueue::write_entries_to_path(
+            cache_path.to_path_buf(),
+            std::slice::from_ref(entry),
+        )
+        .map_err(|error| error.to_string())?;
+        if write_result.failed_batches() > 0 {
+            return Err(format!(
+                "Failed to persist {} detailed cache writer batch(es)",
+                write_result.failed_batches()
+            ));
+        }
+        Ok(())
     }
 }
 

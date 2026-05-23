@@ -35,7 +35,7 @@ use crate::stats_counter_core::{
     StatsCounterDictionaries,
 };
 use rayon::ThreadPoolBuilder;
-use rayon::iter::{IntoParallelRefIterator, ParallelBridge, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use replay_event_handlers::{
     IdentifiedWavesMap, ReplayEventHandlers, ReplayEventStringSets, ReplayMapAnalysisFlags,
     ReplayPlayerIdSet, StatsCounterTarget, TextListMapping, UnitBornOrInitEventFields,
@@ -46,7 +46,6 @@ use timing::{
     AnalyzerTimingConfig, CandidateReplayAnalysisTiming, CandidateReplayCollectionTiming,
     ReplayAnalysisNoopTimingCollector, ReplayAnalysisTiming, ReplayAnalysisTimingCollector,
     ReplayBaseParseTiming, ReplayEntryParseTiming, ReplayReportTimingSpan,
-    SimpleReplayAnalysisTiming,
 };
 pub use timing::{DetailedReplayReportTiming, GenerateCacheTimingReport, ReplayTiming};
 
@@ -529,6 +528,270 @@ struct ReplayBaseParseFilters {
 struct ReplayBaseParseOptions {
     include_events: bool,
     filters: ReplayBaseParseFilters,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReplayCacheParseMode {
+    Simple,
+    DetailedBase,
+}
+
+impl ReplayCacheParseMode {
+    fn include_events(self) -> bool {
+        match self {
+            Self::Simple => false,
+            Self::DetailedBase => true,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ReplayCacheParallelParseOptions {
+    mode: ReplayCacheParseMode,
+    worker_count: usize,
+    stop_controller: Option<Arc<GenerateCacheStopController>>,
+    cache_entry_sink: Option<Arc<dyn CacheEntrySink>>,
+    cache_entry_sink_batch_size: usize,
+}
+
+impl ReplayCacheParallelParseOptions {
+    pub fn simple_saved_cache(worker_count: usize) -> Self {
+        Self::saved_cache(ReplayCacheParseMode::Simple, worker_count)
+    }
+
+    pub fn simple_saved_cache_half_cores() -> Self {
+        Self::simple_saved_cache(GenerateCacheRuntimeOptions::half_cpu_worker_cap())
+    }
+
+    pub fn saved_cache(mode: ReplayCacheParseMode, worker_count: usize) -> Self {
+        Self {
+            mode,
+            worker_count: worker_count.max(1),
+            stop_controller: None,
+            cache_entry_sink: None,
+            cache_entry_sink_batch_size: 10,
+        }
+    }
+
+    pub fn with_stop_controller(
+        mut self,
+        stop_controller: Option<Arc<GenerateCacheStopController>>,
+    ) -> Self {
+        self.stop_controller = stop_controller;
+        self
+    }
+
+    pub fn with_cache_entry_sink(mut self, sink: Arc<dyn CacheEntrySink>) -> Self {
+        self.cache_entry_sink = Some(sink);
+        self
+    }
+
+    pub fn with_cache_entry_sink_batch_size(mut self, batch_size: usize) -> Self {
+        self.cache_entry_sink_batch_size = batch_size.max(1);
+        self
+    }
+
+    pub fn mode(&self) -> ReplayCacheParseMode {
+        self.mode
+    }
+
+    pub fn worker_count(&self) -> usize {
+        self.worker_count
+    }
+
+    fn resolved_worker_count(&self, total_files: usize) -> usize {
+        self.worker_count.max(1).min(total_files.max(1))
+    }
+
+    fn stop_controller(&self) -> Option<Arc<GenerateCacheStopController>> {
+        self.stop_controller.clone()
+    }
+
+    fn cache_entry_sink(&self) -> Option<Arc<dyn CacheEntrySink>> {
+        self.cache_entry_sink.clone()
+    }
+
+    fn cache_entry_sink_batch_size(&self) -> usize {
+        self.cache_entry_sink_batch_size
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ReplayCacheParsedEntry {
+    path: PathBuf,
+    entry: Option<CacheReplayEntry>,
+    panicked: bool,
+}
+
+impl ReplayCacheParsedEntry {
+    fn new(path: PathBuf, entry: Option<CacheReplayEntry>, panicked: bool) -> Self {
+        Self {
+            path,
+            entry,
+            panicked,
+        }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn entry(&self) -> Option<&CacheReplayEntry> {
+        self.entry.as_ref()
+    }
+
+    pub fn panicked(&self) -> bool {
+        self.panicked
+    }
+
+    pub fn into_parts(self) -> (PathBuf, Option<CacheReplayEntry>, bool) {
+        (self.path, self.entry, self.panicked)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ReplayCacheParallelMapResult<T> {
+    values: Vec<T>,
+    completed: bool,
+    worker_count: usize,
+    persisted_entries: usize,
+}
+
+impl<T> ReplayCacheParallelMapResult<T> {
+    fn new(values: Vec<T>, completed: bool, worker_count: usize, persisted_entries: usize) -> Self {
+        Self {
+            values,
+            completed,
+            worker_count,
+            persisted_entries,
+        }
+    }
+
+    pub fn into_values(self) -> Vec<T> {
+        self.values
+    }
+
+    pub fn values(&self) -> &[T] {
+        &self.values
+    }
+
+    pub fn completed(&self) -> bool {
+        self.completed
+    }
+
+    pub fn worker_count(&self) -> usize {
+        self.worker_count
+    }
+
+    pub fn persisted_entries(&self) -> usize {
+        self.persisted_entries
+    }
+}
+
+struct ReplayCacheEntrySinkBuffer {
+    sink: Option<Arc<dyn CacheEntrySink>>,
+    batch_size: usize,
+    pending_entries: std::sync::Mutex<Vec<CacheReplayEntry>>,
+    persisted_entries: AtomicUsize,
+}
+
+struct ParallelMapResult<T> {
+    values: Vec<T>,
+    completed: bool,
+    worker_count: usize,
+}
+
+impl<T> ParallelMapResult<T> {
+    fn new(values: Vec<T>, completed: bool, worker_count: usize) -> Self {
+        Self {
+            values,
+            completed,
+            worker_count,
+        }
+    }
+
+    fn into_values(self) -> Vec<T> {
+        self.values
+    }
+
+    fn values(&self) -> &[T] {
+        &self.values
+    }
+
+    fn completed(&self) -> bool {
+        self.completed
+    }
+
+    fn worker_count(&self) -> usize {
+        self.worker_count
+    }
+}
+
+impl ReplayCacheEntrySinkBuffer {
+    fn new(sink: Option<Arc<dyn CacheEntrySink>>, batch_size: usize) -> Self {
+        Self {
+            sink,
+            batch_size: batch_size.max(1),
+            pending_entries: std::sync::Mutex::new(Vec::new()),
+            persisted_entries: AtomicUsize::new(0),
+        }
+    }
+
+    fn add_entry(&self, entry: &CacheReplayEntry) -> Result<(), CacheEntrySinkError> {
+        if self.sink.is_none() {
+            return Ok(());
+        }
+
+        let pending = {
+            let mut pending_entries = self
+                .pending_entries
+                .lock()
+                .map_err(|_| CacheEntrySinkError::new("cache entry buffer lock poisoned"))?;
+            pending_entries.push(entry.clone());
+            if pending_entries.len() < self.batch_size {
+                return Ok(());
+            }
+            std::mem::take(&mut *pending_entries)
+        };
+
+        self.write_entries(pending)
+    }
+
+    fn flush(&self) -> Result<(), CacheEntrySinkError> {
+        if self.sink.is_none() {
+            return Ok(());
+        }
+
+        let pending = {
+            let mut pending_entries = self
+                .pending_entries
+                .lock()
+                .map_err(|_| CacheEntrySinkError::new("cache entry buffer lock poisoned"))?;
+            if pending_entries.is_empty() {
+                return Ok(());
+            }
+            std::mem::take(&mut *pending_entries)
+        };
+
+        self.write_entries(pending)
+    }
+
+    fn write_entries(&self, entries: Vec<CacheReplayEntry>) -> Result<(), CacheEntrySinkError> {
+        if entries.is_empty() {
+            return Ok(());
+        }
+        let Some(sink) = self.sink.as_ref() else {
+            return Ok(());
+        };
+        let changed = sink.write_entries(&entries)?;
+        self.persisted_entries
+            .fetch_add(changed, AtomicOrdering::Relaxed);
+        Ok(())
+    }
+
+    fn persisted_entries(&self) -> usize {
+        self.persisted_entries.load(AtomicOrdering::Relaxed)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1813,6 +2076,8 @@ pub enum GenerateCacheError {
     ThreadPoolBuildFailed(String),
     #[error("failed to canonicalize cache payload: {0}")]
     CanonicalizeFailed(#[source] serde_json::Error),
+    #[error("failed to write cache entries: {0}")]
+    CacheEntrySink(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1821,7 +2086,169 @@ enum FullAnalysisMode {
     Detailed,
 }
 
+impl FullAnalysisMode {
+    fn is_detailed(self) -> bool {
+        self == Self::Detailed
+    }
+
+    fn stopped_message(self) -> &'static str {
+        match self {
+            Self::Simple => "Simple analysis stopped after the current work finished.",
+            Self::Detailed => "Detailed analysis stopped after the current work finished.",
+        }
+    }
+
+    fn progress_label(self) -> &'static str {
+        match self {
+            Self::Simple => "Simple analysis",
+            Self::Detailed => "Detailed analysis",
+        }
+    }
+}
+
 impl DetailedReplayAnalyzer {
+    pub fn simple_analysis_worker_count() -> usize {
+        GenerateCacheRuntimeOptions::half_cpu_worker_cap()
+    }
+
+    fn run_parallel_map<T, R, F>(
+        items: Vec<T>,
+        worker_count: usize,
+        stop_controller: Option<Arc<GenerateCacheStopController>>,
+        map_item: F,
+    ) -> Result<ParallelMapResult<R>, GenerateCacheError>
+    where
+        T: Send,
+        R: Send,
+        F: Fn(T) -> Option<R> + Send + Sync,
+    {
+        if items.is_empty() {
+            return Ok(ParallelMapResult::new(
+                Vec::new(),
+                true,
+                worker_count.max(1),
+            ));
+        }
+
+        let worker_count = worker_count.max(1).min(items.len().max(1));
+        let thread_pool = Self::build_thread_pool(worker_count)?;
+        let stop_requested = Arc::new(AtomicBool::new(false));
+        let stop_requested_for_workers = Arc::clone(&stop_requested);
+        let values = thread_pool.install(|| {
+            items
+                .into_par_iter()
+                .filter_map(|item| {
+                    if stop_requested_for_workers.load(AtomicOrdering::Acquire) {
+                        return None;
+                    }
+                    if stop_controller
+                        .as_ref()
+                        .is_some_and(|controller| controller.stop_requested())
+                    {
+                        stop_requested_for_workers.store(true, AtomicOrdering::Release);
+                        return None;
+                    }
+                    map_item(item)
+                })
+                .collect::<Vec<R>>()
+        });
+
+        Ok(ParallelMapResult::new(
+            values,
+            !stop_requested.load(AtomicOrdering::Acquire),
+            worker_count,
+        ))
+    }
+
+    pub fn parse_saved_cache_entries_parallel_map<T, F>(
+        replay_files: Vec<PathBuf>,
+        resources: &ReplayAnalysisResources,
+        options: &ReplayCacheParallelParseOptions,
+        map_entry: F,
+    ) -> Result<ReplayCacheParallelMapResult<T>, GenerateCacheError>
+    where
+        T: Send,
+        F: Fn(ReplayCacheParsedEntry) -> T + Send + Sync,
+    {
+        if replay_files.is_empty() {
+            return Ok(ReplayCacheParallelMapResult::new(
+                Vec::new(),
+                true,
+                options.worker_count(),
+                0,
+            ));
+        }
+
+        let worker_count = options.resolved_worker_count(replay_files.len());
+        let sink_buffer = Arc::new(ReplayCacheEntrySinkBuffer::new(
+            options.cache_entry_sink(),
+            options.cache_entry_sink_batch_size(),
+        ));
+        let sink_buffer_for_workers = Arc::clone(&sink_buffer);
+        let sink_errors = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let sink_errors_for_workers = Arc::clone(&sink_errors);
+        let parse_options = ReplayBaseParseOptions {
+            include_events: options.mode().include_events(),
+            filters: ReplayBaseParseFilters::saved_cache(),
+        };
+
+        let parallel_result = Self::run_parallel_map(
+            replay_files,
+            worker_count,
+            options.stop_controller(),
+            |path| {
+                let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    CacheReplayEntry::parse_with_options_timed(&path, resources, parse_options)
+                }));
+                let parsed_entry = match parsed {
+                    Ok(parsed) => {
+                        let entry = parsed.into_parts().0.map(|(entry, _)| entry);
+                        ReplayCacheParsedEntry::new(path, entry, false)
+                    }
+                    Err(_) => ReplayCacheParsedEntry::new(path, None, true),
+                };
+
+                if let Some(entry) = parsed_entry.entry()
+                    && let Err(error) = sink_buffer_for_workers.add_entry(entry)
+                {
+                    match sink_errors_for_workers.lock() {
+                        Ok(mut errors) => errors.push(error.to_string()),
+                        Err(poisoned) => poisoned.into_inner().push(error.to_string()),
+                    }
+                }
+
+                Some(map_entry(parsed_entry))
+            },
+        )?;
+
+        sink_buffer
+            .flush()
+            .map_err(|error| GenerateCacheError::CacheEntrySink(error.to_string()))?;
+        let sink_errors = match sink_errors.lock() {
+            Ok(errors) => errors.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        };
+        if let Some(error) = sink_errors.first() {
+            return Err(GenerateCacheError::CacheEntrySink(error.clone()));
+        }
+
+        let completed = parallel_result.completed();
+        let worker_count = parallel_result.worker_count();
+        Ok(ReplayCacheParallelMapResult::new(
+            parallel_result.into_values(),
+            completed,
+            worker_count,
+            sink_buffer.persisted_entries(),
+        ))
+    }
+
+    fn build_thread_pool(worker_count: usize) -> Result<rayon::ThreadPool, GenerateCacheError> {
+        ThreadPoolBuilder::new()
+            .num_threads(worker_count.max(1))
+            .build()
+            .map_err(|error| GenerateCacheError::ThreadPoolBuildFailed(error.to_string()))
+    }
+
     pub fn analyze_full_simple(
         config: &GenerateCacheConfig,
         resources: &ReplayAnalysisResources,
@@ -1908,10 +2335,7 @@ impl DetailedReplayAnalyzer {
             cache_output.timing_report.worker_count
         };
         let build_canonicalize_thread_pool_start = Instant::now();
-        let canonicalize_thread_pool = ThreadPoolBuilder::new()
-            .num_threads(canonical_worker_count)
-            .build()
-            .map_err(|error| GenerateCacheError::ThreadPoolBuildFailed(error.to_string()))?;
+        let canonicalize_thread_pool = Self::build_thread_pool(canonical_worker_count)?;
         cache_output.timing_report.build_canonicalize_thread_pool =
             build_canonicalize_thread_pool_start.elapsed();
 
@@ -2051,19 +2475,18 @@ impl ReplayFileCandidate {
 
 struct GenerateCacheProgressReporter<'a> {
     logger: Option<&'a (dyn Fn(String) + Send + Sync + 'a)>,
+    analysis_label: &'static str,
     total_files: usize,
     report_interval: usize,
     start_time: Instant,
     processed_files: AtomicUsize,
     next_report_target: AtomicUsize,
-    cache_entry_sink: Option<Arc<dyn CacheEntrySink>>,
-    cache_entry_sink_batch_size: usize,
-    pending_cache_entries: std::sync::Mutex<Vec<CacheReplayEntry>>,
-    cache_persisted_entries: AtomicUsize,
+    cache_entry_sink_buffer: ReplayCacheEntrySinkBuffer,
 }
 
 impl<'a> GenerateCacheProgressReporter<'a> {
     fn new(
+        mode: FullAnalysisMode,
         total_files: usize,
         initial_processed_files: usize,
         logger: Option<&'a (dyn Fn(String) + Send + Sync + 'a)>,
@@ -2074,6 +2497,7 @@ impl<'a> GenerateCacheProgressReporter<'a> {
         let initial_processed_files = initial_processed_files.min(total_files);
         Self {
             logger,
+            analysis_label: mode.progress_label(),
             total_files,
             report_interval,
             start_time: Instant::now(),
@@ -2083,10 +2507,10 @@ impl<'a> GenerateCacheProgressReporter<'a> {
                 report_interval,
                 initial_processed_files,
             )),
-            cache_entry_sink,
-            cache_entry_sink_batch_size,
-            pending_cache_entries: std::sync::Mutex::new(Vec::new()),
-            cache_persisted_entries: AtomicUsize::new(0),
+            cache_entry_sink_buffer: ReplayCacheEntrySinkBuffer::new(
+                cache_entry_sink,
+                cache_entry_sink_batch_size,
+            ),
         }
     }
 
@@ -2096,7 +2520,10 @@ impl<'a> GenerateCacheProgressReporter<'a> {
             return;
         }
 
-        self.emit("Starting detailed analysis!".to_string());
+        self.emit(format!(
+            "Starting {}!",
+            self.analysis_label.to_ascii_lowercase()
+        ));
         self.emit(self.progress_message(self.processed_files.load(AtomicOrdering::Relaxed)));
     }
 
@@ -2143,72 +2570,26 @@ impl<'a> GenerateCacheProgressReporter<'a> {
 
     fn log_completion(&self) {
         self.emit(format!(
-            "Detailed analysis completed! {}/{} | 100%",
-            self.total_files, self.total_files
+            "{} completed! {}/{} | 100%",
+            self.analysis_label, self.total_files, self.total_files
         ));
         self.emit(format!(
-            "Detailed analysis completed in {:.0} seconds!",
+            "{} completed in {:.0} seconds!",
+            self.analysis_label,
             self.start_time.elapsed().as_secs_f64()
         ));
     }
 
     fn add_cache_entry(&self, entry: &CacheReplayEntry) -> Result<(), CacheEntrySinkError> {
-        if self.cache_entry_sink.is_none() {
-            return Ok(());
-        }
-
-        let pending = {
-            let mut pending_entries = self
-                .pending_cache_entries
-                .lock()
-                .map_err(|_| CacheEntrySinkError::new("cache entry buffer lock poisoned"))?;
-            pending_entries.push(entry.clone());
-            if pending_entries.len() < self.cache_entry_sink_batch_size {
-                return Ok(());
-            }
-            std::mem::take(&mut *pending_entries)
-        };
-
-        self.write_cache_entries(pending)
+        self.cache_entry_sink_buffer.add_entry(entry)
     }
 
     fn flush_cache_entries(&self) -> Result<(), CacheEntrySinkError> {
-        if self.cache_entry_sink.is_none() {
-            return Ok(());
-        }
-
-        let pending = {
-            let mut pending_entries = self
-                .pending_cache_entries
-                .lock()
-                .map_err(|_| CacheEntrySinkError::new("cache entry buffer lock poisoned"))?;
-            if pending_entries.is_empty() {
-                return Ok(());
-            }
-            std::mem::take(&mut *pending_entries)
-        };
-
-        self.write_cache_entries(pending)
-    }
-
-    fn write_cache_entries(
-        &self,
-        entries: Vec<CacheReplayEntry>,
-    ) -> Result<(), CacheEntrySinkError> {
-        if entries.is_empty() {
-            return Ok(());
-        }
-        let Some(sink) = self.cache_entry_sink.as_ref() else {
-            return Ok(());
-        };
-        let changed = sink.write_entries(&entries)?;
-        self.cache_persisted_entries
-            .fetch_add(changed, AtomicOrdering::Relaxed);
-        Ok(())
+        self.cache_entry_sink_buffer.flush()
     }
 
     fn cache_persisted_entries(&self) -> usize {
-        self.cache_persisted_entries.load(AtomicOrdering::Relaxed)
+        self.cache_entry_sink_buffer.persisted_entries()
     }
 
     fn emit(&self, message: String) {
@@ -2342,26 +2723,6 @@ impl CandidateReplayAnalysisResult {
     }
 }
 
-#[derive(Debug, Clone)]
-struct SimpleReplayAnalysisResult {
-    entry: Option<CacheReplayEntry>,
-    timing: SimpleReplayAnalysisTiming,
-}
-
-impl SimpleReplayAnalysisResult {
-    fn new(entry: Option<CacheReplayEntry>, timing: SimpleReplayAnalysisTiming) -> Self {
-        Self { entry, timing }
-    }
-
-    fn timing(&self) -> &SimpleReplayAnalysisTiming {
-        &self.timing
-    }
-
-    fn into_entry(self) -> Option<CacheReplayEntry> {
-        self.entry
-    }
-}
-
 impl CandidateReplay {
     fn collect_for_cache_lookup_timed(replay_path: &Path) -> CandidateReplayCollectionResult {
         let total_start = Instant::now();
@@ -2401,6 +2762,7 @@ impl CandidateReplay {
 
     fn analyze_timed(
         &self,
+        mode: FullAnalysisMode,
         main_handles: &HashSet<String>,
         resources: &ReplayAnalysisResources,
         collect_detailed_report_timings: bool,
@@ -2408,6 +2770,21 @@ impl CandidateReplay {
         let total_start = Instant::now();
         let mut timing = CandidateReplayAnalysisTiming::default();
         let path = self.path.as_path();
+
+        if !mode.is_detailed() {
+            let parsed_simple = CacheReplayEntry::parse_with_options_timed(
+                path,
+                resources,
+                ReplayBaseParseOptions {
+                    include_events: false,
+                    filters: ReplayBaseParseFilters::saved_cache(),
+                },
+            );
+            timing.parse_simple = parsed_simple.timing().total;
+            timing.parse_simple_breakdown.add(parsed_simple.timing());
+            let entry = parsed_simple.into_parts().0.map(|(entry, _)| entry);
+            return CandidateReplayAnalysisResult::new(entry, timing.finish(total_start.elapsed()));
+        }
 
         let parsed_detailed = CacheReplayEntry::parse_with_options_timed(
             path,
@@ -2612,25 +2989,29 @@ impl DetailedReplayAnalyzer {
         timing_report.collect_replay_files = collect_replay_files_start.elapsed();
         timing_report.total_replay_files = replay_files.len();
 
-        if mode == FullAnalysisMode::Simple {
-            return DetailedReplayAnalyzer::analyze_simple_replays_for_cache_output(
-                replay_files,
-                runtime,
-                resources,
-                timing_report,
-            );
-        }
-
-        let resolve_main_handles_start = Instant::now();
-        let main_handles = DetailedReplayAnalyzer::resolve_main_handles(&config.account_dir);
-        timing_report.resolve_main_handles = resolve_main_handles_start.elapsed();
+        let main_handles = if mode.is_detailed() {
+            let resolve_main_handles_start = Instant::now();
+            let main_handles = DetailedReplayAnalyzer::resolve_main_handles(&config.account_dir);
+            timing_report.resolve_main_handles = resolve_main_handles_start.elapsed();
+            main_handles
+        } else {
+            HashSet::new()
+        };
 
         let load_existing_cache_start = Instant::now();
-        let existing_detailed_cache_entries = runtime
-            .existing_detailed_cache_entries()
-            .unwrap_or_default();
+        let existing_detailed_cache_entries = if mode.is_detailed() {
+            runtime
+                .existing_detailed_cache_entries()
+                .unwrap_or_default()
+        } else {
+            HashMap::new()
+        };
         timing_report.load_existing_cache = load_existing_cache_start.elapsed();
-        let cache_entry_sink = runtime.cache_entry_sink();
+        let cache_entry_sink = if mode.is_detailed() {
+            runtime.cache_entry_sink()
+        } else {
+            None
+        };
         let cache_entry_sink_batch_size = runtime.cache_entry_sink_batch_size();
 
         let stop_controller = runtime.stop_controller.clone();
@@ -2638,6 +3019,7 @@ impl DetailedReplayAnalyzer {
         let stop_requested = Arc::new(AtomicBool::new(false));
         let entries = if replay_files.is_empty() {
             let progress = GenerateCacheProgressReporter::new(
+                mode,
                 0,
                 0,
                 logger,
@@ -2649,40 +3031,30 @@ impl DetailedReplayAnalyzer {
         } else {
             let worker_count = runtime.resolved_worker_count(replay_files.len());
             timing_report.worker_count = worker_count;
-            let build_thread_pool_start = Instant::now();
-            let thread_pool = ThreadPoolBuilder::new()
-                .num_threads(worker_count)
-                .build()
-                .map_err(|error| GenerateCacheError::ThreadPoolBuildFailed(error.to_string()))?;
-            timing_report.build_thread_pool = build_thread_pool_start.elapsed();
-            let should_collect_cache_lookup_hashes = !existing_detailed_cache_entries.is_empty();
-            let stop_requested_for_candidates = stop_requested.clone();
-            let stop_controller_for_candidates = stop_controller.clone();
+            let should_collect_cache_lookup_hashes =
+                mode.is_detailed() && !existing_detailed_cache_entries.is_empty();
             let collect_candidates_start = Instant::now();
-            let candidate_replay_results = thread_pool.install(|| {
-                replay_files
-                    .par_iter()
-                    .filter_map(|path| {
-                        if stop_controller_for_candidates
-                            .as_ref()
-                            .is_some_and(|controller| controller.stop_requested())
-                        {
-                            stop_requested_for_candidates.store(true, AtomicOrdering::Release);
-                            return None;
-                        }
-                        Some(if should_collect_cache_lookup_hashes {
-                            CandidateReplay::collect_for_cache_lookup_timed(path)
-                        } else {
-                            CandidateReplay::collect_without_cache_lookup_timed(path)
-                        })
+            let candidate_replay_results = Self::run_parallel_map(
+                replay_files,
+                worker_count,
+                stop_controller.clone(),
+                |path| {
+                    Some(if should_collect_cache_lookup_hashes {
+                        CandidateReplay::collect_for_cache_lookup_timed(path.as_path())
+                    } else {
+                        CandidateReplay::collect_without_cache_lookup_timed(path.as_path())
                     })
-                    .collect::<Vec<CandidateReplayCollectionResult>>()
-            });
+                },
+            )?;
+            if !candidate_replay_results.completed() {
+                stop_requested.store(true, AtomicOrdering::Release);
+            }
             timing_report.collect_candidates_parallel = collect_candidates_start.elapsed();
-            for candidate_result in &candidate_replay_results {
+            for candidate_result in candidate_replay_results.values() {
                 timing_report.add_candidate_collection_timing(candidate_result.timing());
             }
             let candidate_replays = candidate_replay_results
+                .into_values()
                 .into_iter()
                 .map(CandidateReplayCollectionResult::into_candidate)
                 .collect::<Vec<CandidateReplay>>();
@@ -2702,6 +3074,7 @@ impl DetailedReplayAnalyzer {
             CandidateReplay::sort_pending_by_analysis_priority(&mut pending_candidates);
             timing_report.sort_pending_candidates = sort_pending_candidates_start.elapsed();
             let progress = Arc::new(GenerateCacheProgressReporter::new(
+                mode,
                 total_candidates,
                 reused_entries.len(),
                 logger,
@@ -2718,54 +3091,64 @@ impl DetailedReplayAnalyzer {
                     HashMap::new()
                 } else {
                     let progress_for_workers = Arc::clone(&progress);
-                    let stop_requested_for_workers = stop_requested.clone();
-                    let stop_controller_for_workers = stop_controller.clone();
+                    let pending_candidate_replays = pending_candidates
+                        .into_iter()
+                        .map(|(_, candidate)| candidate)
+                        .collect::<Vec<CandidateReplay>>();
 
                     let replay_analysis_start = Instant::now();
-                    let analyzed_results = thread_pool.install(|| {
-                        pending_candidates
-                            .into_iter()
-                            .map(|(_, candidate)| candidate)
-                            .par_bridge()
-                            .filter_map(|candidate| {
-                                if stop_controller_for_workers
-                                    .as_ref()
-                                    .is_some_and(|controller| controller.stop_requested())
-                                {
-                                    stop_requested_for_workers.store(true, AtomicOrdering::Release);
-                                    return None;
+                    let analyzed_result = Self::run_parallel_map(
+                        pending_candidate_replays,
+                        worker_count,
+                        stop_controller.clone(),
+                        |candidate| {
+                            let mut result = candidate.analyze_timed(
+                                mode,
+                                &main_handles,
+                                resources,
+                                collect_detailed_report_timings,
+                            );
+                            if mode.is_detailed()
+                                && let Some(entry) = result.entry()
+                                && entry.detailed_analysis
+                            {
+                                let cache_entry_write_start = Instant::now();
+                                if let Err(error) = progress_for_workers.add_cache_entry(entry) {
+                                    progress_for_workers.emit(format!(
+                                        "Warning: failed to write cache entries: {error}"
+                                    ));
                                 }
-                                let mut result = candidate.analyze_timed(
-                                    &main_handles,
-                                    resources,
-                                    collect_detailed_report_timings,
-                                );
-                                if let Some(entry) = result.entry()
-                                    && entry.detailed_analysis
-                                {
-                                    let cache_entry_write_start = Instant::now();
-                                    if let Err(error) = progress_for_workers.add_cache_entry(entry)
-                                    {
-                                        progress_for_workers.emit(format!(
-                                            "Warning: failed to write cache entries: {error}"
-                                        ));
-                                    }
-                                    result
-                                        .timing_mut()
-                                        .add_temp_entry_write(cache_entry_write_start.elapsed());
-                                }
-                                let progress_record_start = Instant::now();
-                                progress_for_workers.record_processed_file();
                                 result
                                     .timing_mut()
-                                    .add_progress_record(progress_record_start.elapsed());
-                                Some(result)
-                            })
-                            .collect::<Vec<CandidateReplayAnalysisResult>>()
-                    });
-                    timing_report.replay_analysis_parallel = replay_analysis_start.elapsed();
-                    for result in &analyzed_results {
-                        timing_report.add_replay_analysis_timing(result.timing());
+                                    .add_temp_entry_write(cache_entry_write_start.elapsed());
+                            }
+                            let progress_record_start = Instant::now();
+                            progress_for_workers.record_processed_file();
+                            result
+                                .timing_mut()
+                                .add_progress_record(progress_record_start.elapsed());
+                            Some(result)
+                        },
+                    )?;
+                    if !analyzed_result.completed() {
+                        stop_requested.store(true, AtomicOrdering::Release);
+                    }
+                    let analyzed_results = analyzed_result.into_values();
+                    match mode {
+                        FullAnalysisMode::Simple => {
+                            timing_report.simple_analysis_parallel =
+                                replay_analysis_start.elapsed();
+                            for result in &analyzed_results {
+                                timing_report.add_simple_analysis_timing(result.timing());
+                            }
+                        }
+                        FullAnalysisMode::Detailed => {
+                            timing_report.replay_analysis_parallel =
+                                replay_analysis_start.elapsed();
+                            for result in &analyzed_results {
+                                timing_report.add_replay_analysis_timing(result.timing());
+                            }
+                        }
                     }
 
                     let collect_analyzed_entries_start = Instant::now();
@@ -2787,10 +3170,7 @@ impl DetailedReplayAnalyzer {
                 timing_report.merge_entries += merge_entries_start.elapsed();
                 if stop_requested.load(AtomicOrdering::Acquire) {
                     if let Some(logger) = logger {
-                        logger(
-                            "Detailed analysis stopped after the current work finished."
-                                .to_string(),
-                        );
+                        logger(mode.stopped_message().to_string());
                     }
                 } else {
                     progress.log_completion();
@@ -2819,89 +3199,6 @@ impl DetailedReplayAnalyzer {
 
         Ok(GeneratedCacheOutput {
             entries: all_entries,
-            completed: !stop_requested.load(AtomicOrdering::Acquire),
-            timing_report,
-        })
-    }
-
-    fn analyze_simple_replays_for_cache_output(
-        replay_files: Vec<PathBuf>,
-        runtime: &GenerateCacheRuntimeOptions,
-        resources: &ReplayAnalysisResources,
-        mut timing_report: GenerateCacheTimingReport,
-    ) -> Result<GeneratedCacheOutput, GenerateCacheError> {
-        if replay_files.is_empty() {
-            return Ok(GeneratedCacheOutput {
-                entries: Vec::new(),
-                completed: true,
-                timing_report,
-            });
-        }
-
-        let worker_count = runtime.resolved_worker_count(replay_files.len());
-        timing_report.worker_count = worker_count;
-        let build_thread_pool_start = Instant::now();
-        let thread_pool = ThreadPoolBuilder::new()
-            .num_threads(worker_count)
-            .build()
-            .map_err(|error| GenerateCacheError::ThreadPoolBuildFailed(error.to_string()))?;
-        timing_report.build_thread_pool = build_thread_pool_start.elapsed();
-        let stop_controller = runtime.stop_controller.clone();
-        let stop_requested = Arc::new(AtomicBool::new(false));
-        let stop_requested_for_workers = stop_requested.clone();
-        let simple_analysis_start = Instant::now();
-        let simple_results = thread_pool.install(|| {
-            replay_files
-                .par_iter()
-                .filter_map(|path| {
-                    if stop_controller
-                        .as_ref()
-                        .is_some_and(|controller| controller.stop_requested())
-                    {
-                        stop_requested_for_workers.store(true, AtomicOrdering::Release);
-                        return None;
-                    }
-
-                    let total_start = Instant::now();
-                    let parse_start = Instant::now();
-                    let parsed = CacheReplayEntry::parse_with_options_timed(
-                        path,
-                        resources,
-                        ReplayBaseParseOptions {
-                            include_events: false,
-                            filters: ReplayBaseParseFilters::saved_cache(),
-                        },
-                    );
-                    let parse = parse_start.elapsed();
-                    let (entry, parse_breakdown) = parsed.into_parts();
-                    Some(SimpleReplayAnalysisResult::new(
-                        entry.map(|(entry, _)| entry),
-                        SimpleReplayAnalysisTiming::new(
-                            total_start.elapsed(),
-                            parse,
-                            parse_breakdown,
-                        ),
-                    ))
-                })
-                .collect::<Vec<SimpleReplayAnalysisResult>>()
-        });
-        timing_report.simple_analysis_parallel = simple_analysis_start.elapsed();
-        for result in &simple_results {
-            timing_report.add_simple_analysis_timing(result.timing());
-        }
-        let entries = simple_results
-            .into_iter()
-            .filter_map(SimpleReplayAnalysisResult::into_entry)
-            .collect::<Vec<CacheReplayEntry>>();
-        timing_report.analyzed_entry_count = entries.len();
-
-        let mut entries = entries;
-        let sort_entries_start = Instant::now();
-        entries.sort_by(|left, right| left.cmp_cache_order(right));
-        timing_report.sort_entries = sort_entries_start.elapsed();
-
-        Ok(GeneratedCacheOutput {
-            entries,
             completed: !stop_requested.load(AtomicOrdering::Acquire),
             timing_report,
         })

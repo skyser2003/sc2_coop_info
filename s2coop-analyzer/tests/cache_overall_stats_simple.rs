@@ -4,6 +4,7 @@ use s2coop_analyzer::detailed_replay_analysis::{
     DetailedReplayAnalyzer, GenerateCacheConfig, GenerateCacheRuntimeOptions,
 };
 use std::fs;
+use std::time::Duration;
 use tempfile::TempDir;
 
 #[test]
@@ -24,6 +25,20 @@ fn full_simple_analysis_writes_cache_for_empty_valid_set() {
     assert_eq!(summary.scanned_replays(), 0);
     assert!(summary.completed());
     assert!(summary.cache_entries().is_empty());
+    assert_eq!(summary.timing_report().total_replay_files(), 1);
+    assert_eq!(summary.timing_report().candidate_count(), 1);
+    assert_eq!(summary.timing_report().pending_candidate_count(), 1);
+    assert_eq!(summary.timing_report().reused_candidate_count(), 0);
+    assert_eq!(
+        summary.timing_report().replay_analysis_parse_detailed(),
+        Duration::ZERO
+    );
+    assert_eq!(
+        summary
+            .timing_report()
+            .replay_analysis_parse_basic_fallback(),
+        Duration::ZERO
+    );
     assert!(
         !output_file.exists(),
         "legacy cache json should not be written"
