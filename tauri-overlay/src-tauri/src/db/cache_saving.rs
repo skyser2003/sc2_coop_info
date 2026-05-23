@@ -230,7 +230,7 @@ impl ReplayCacheDatabase {
         Ok(changed)
     }
 
-    pub(crate) fn upsert_unsaved_replay_checks(
+    pub fn upsert_unsaved_replay_checks(
         &mut self,
         checks: &[CacheReplayCheck],
     ) -> Result<usize, ReplayCacheDbError> {

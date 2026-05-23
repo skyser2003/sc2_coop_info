@@ -6,9 +6,11 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::services::replay_watcher::ReplayWatcherMessage;
+use crate::stats_units::StatsUnitDataOps;
 use crate::{
-    AppSettings, BackendState, CommanderUnitRollup, ReplayInfo, ReplayWatcherMessage,
-    StatsSnapshot, TauriOverlayOps, replay_analysis::WeeklyRowPayload,
+    AppSettings, BackendState, CommanderUnitRollup, ReplayInfo, StatsSnapshot, TauriOverlayOps,
+    replay_analysis::WeeklyRowPayload,
 };
 
 pub struct TestHelperOps;
@@ -250,7 +252,7 @@ impl TestHelperOps {
         side_rollup: std::collections::BTreeMap<String, CommanderUnitRollup>,
     ) -> serde_json::Value {
         let dictionary = TestHelperOps::load_dictionary();
-        TauriOverlayOps::build_commander_unit_data_with_dictionary(side_rollup, &dictionary)
+        StatsUnitDataOps::build_commander_unit_data_with_dictionary(side_rollup, &dictionary)
     }
 }
 

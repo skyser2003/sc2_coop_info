@@ -18,13 +18,13 @@ use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use serde::Serialize;
 use serde_json::{Map, Value};
 
-use crate::shared_types::{
-    OverlayPlayerStatsPayload, OverlayPlayerStatsRow, ReplayScanProgressPayload,
-};
+use crate::replay_scan_progress::ReplayScanProgress;
+use crate::replay_state::ReplayState;
+use crate::services::replay_watcher::ReplayWatcherMessage;
+use crate::shared_types::{OverlayPlayerStatsPayload, OverlayPlayerStatsRow};
 use crate::{
     AppSettings, PathManagerOps, ReplayCacheDatabase, ReplayCacheEntryQuery, ReplayInfo,
-    ReplayWatcherMessage, Sc2GameState, Sc2GameStateTracker, Sc2GameStateTransition, StatsState,
-    TauriOverlayOps,
+    Sc2GameState, Sc2GameStateTracker, Sc2GameStateTransition, StatsState, TauriOverlayOps,
     overlay_info::{ResolvedHotkeyBinding, RuntimeFlags},
     replay_analysis::ReplayAnalysis,
 };
@@ -92,187 +92,6 @@ pub struct BackendState {
     analyzer_data_dir: PathBuf,
     dictionary_data: Arc<Mutex<CachedLoad<Sc2DictionaryData>>>,
     replay_analysis_resources: Arc<Mutex<CachedLoad<ReplayAnalysisResources>>>,
-}
-
-pub struct ReplayState {
-    selected_replay_file: Arc<Mutex<Option<String>>>,
-}
-
-#[derive(Debug)]
-pub struct ReplayScanProgress {
-    total: AtomicU64,
-    cache_hits: AtomicU64,
-    to_parse: AtomicU64,
-    newly_parsed: AtomicU64,
-    completed: AtomicU64,
-    failed: AtomicU64,
-    parse_skipped: AtomicU64,
-    started_at_ms: AtomicU64,
-    elapsed_ms: AtomicU64,
-    stage: Mutex<String>,
-    status: Mutex<String>,
-}
-
-impl BackendStateOps {
-    fn now_millis() -> u64 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
-            .unwrap_or(0)
-    }
-}
-
-impl Default for ReplayScanProgress {
-    fn default() -> Self {
-        Self {
-            stage: Mutex::new("idle".to_string()),
-            status: Mutex::new("Idle".to_string()),
-            total: AtomicU64::new(0),
-            cache_hits: AtomicU64::new(0),
-            to_parse: AtomicU64::new(0),
-            newly_parsed: AtomicU64::new(0),
-            completed: AtomicU64::new(0),
-            failed: AtomicU64::new(0),
-            parse_skipped: AtomicU64::new(0),
-            started_at_ms: AtomicU64::new(0),
-            elapsed_ms: AtomicU64::new(0),
-        }
-    }
-}
-
-impl ReplayScanProgress {
-    pub(crate) fn set_total(&self, value: u64) {
-        self.total.store(value, Ordering::Release);
-    }
-
-    pub(crate) fn set_cache_hits(&self, value: u64) {
-        self.cache_hits.store(value, Ordering::Release);
-    }
-
-    pub(crate) fn set_to_parse(&self, value: u64) {
-        self.to_parse.store(value, Ordering::Release);
-    }
-
-    pub(crate) fn increment_newly_parsed(&self) {
-        self.newly_parsed.fetch_add(1, Ordering::AcqRel);
-    }
-
-    pub(crate) fn increment_completed(&self) {
-        self.completed.fetch_add(1, Ordering::AcqRel);
-    }
-
-    pub(crate) fn set_failed(&self, value: u64) {
-        self.failed.store(value, Ordering::Release);
-    }
-
-    pub(crate) fn increment_failed(&self) {
-        self.failed.fetch_add(1, Ordering::AcqRel);
-    }
-
-    pub(crate) fn set_parse_skipped(&self, value: u64) {
-        self.parse_skipped.store(value, Ordering::Release);
-    }
-
-    pub fn reset(&self, stage: &str) {
-        self.total.store(0, Ordering::Release);
-        self.cache_hits.store(0, Ordering::Release);
-        self.to_parse.store(0, Ordering::Release);
-        self.newly_parsed.store(0, Ordering::Release);
-        self.completed.store(0, Ordering::Release);
-        self.failed.store(0, Ordering::Release);
-        self.parse_skipped.store(0, Ordering::Release);
-        self.started_at_ms
-            .store(BackendStateOps::now_millis(), Ordering::Release);
-        self.elapsed_ms.store(0, Ordering::Release);
-        if let Ok(mut value) = self.stage.lock() {
-            *value = stage.to_string();
-        }
-        if let Ok(mut value) = self.status.lock() {
-            *value = "Parsing".to_string();
-        }
-    }
-
-    pub fn set_stage(&self, stage: &str) {
-        if let Ok(mut value) = self.stage.lock() {
-            *value = stage.to_string();
-        }
-    }
-
-    pub fn set_status(&self, status: &str) {
-        if let Ok(mut value) = self.status.lock() {
-            *value = status.to_string();
-        }
-        if status == "Completed" {
-            let started_at = self.started_at_ms.load(Ordering::Acquire);
-            if started_at > 0 {
-                let elapsed = BackendStateOps::now_millis().saturating_sub(started_at);
-                self.elapsed_ms.store(elapsed, Ordering::Release);
-            }
-        }
-    }
-
-    pub fn set_counts(&self, total: u64, completed: u64) {
-        let bounded_completed = completed.min(total);
-        self.total.store(total, Ordering::Release);
-        self.completed.store(bounded_completed, Ordering::Release);
-        self.to_parse
-            .store(total.saturating_sub(bounded_completed), Ordering::Release);
-        self.cache_hits.store(0, Ordering::Release);
-        self.newly_parsed.store(0, Ordering::Release);
-        self.failed.store(0, Ordering::Release);
-        self.parse_skipped.store(0, Ordering::Release);
-    }
-
-    pub fn as_payload(&self) -> ReplayScanProgressPayload {
-        let stage = self
-            .stage
-            .lock()
-            .map(|value| value.clone())
-            .unwrap_or_else(|_| "unknown".to_string());
-        let status = self
-            .status
-            .lock()
-            .map(|value| value.clone())
-            .unwrap_or_else(|_| "Parsing".to_string());
-        let total = self.total.load(Ordering::Acquire);
-        let cache_hits = self.cache_hits.load(Ordering::Acquire);
-        let to_parse = self.to_parse.load(Ordering::Acquire);
-        let newly_parsed = self.newly_parsed.load(Ordering::Acquire);
-        let completed = self.completed.load(Ordering::Acquire);
-        let failed = self.failed.load(Ordering::Acquire);
-        let parse_skipped = self.parse_skipped.load(Ordering::Acquire);
-        let started_at = self.started_at_ms.load(Ordering::Acquire);
-        let stored_elapsed = self.elapsed_ms.load(Ordering::Acquire);
-        let elapsed_ms = if status == "Parsing" && started_at > 0 {
-            BackendStateOps::now_millis().saturating_sub(started_at)
-        } else {
-            stored_elapsed
-        };
-        let effective_total = if total > 0 {
-            total
-        } else {
-            cache_hits.saturating_add(to_parse)
-        };
-        ReplayScanProgressPayload {
-            stage,
-            status: status.clone(),
-            parsing_status: status,
-            total: effective_total,
-            total_replay_files: effective_total,
-            cache_hits,
-            files_already_cached: cache_hits,
-            to_parse,
-            completed,
-            newly_parsed,
-            newly_parsed_files: newly_parsed,
-            failed,
-            parse_failed_files: failed,
-            parse_skipped,
-            parse_skipped_files: parse_skipped,
-            elapsed_ms,
-            total_time_taken_ms: elapsed_ms,
-        }
-    }
 }
 
 impl BackendStateOps {
@@ -419,9 +238,7 @@ impl BackendState {
             performance_edit_mode: Arc::new(AtomicBool::new(false)),
             file_logging_enabled: Arc::new(AtomicBool::new(file_logging_enabled)),
             replay_watcher_sender: Arc::new(Mutex::new(None)),
-            replay_state: Arc::new(Mutex::new(ReplayState {
-                selected_replay_file: Arc::new(Mutex::new(None)),
-            })),
+            replay_state: Arc::new(Mutex::new(ReplayState::new())),
             sc2_game_state: Arc::new(Mutex::new(Sc2GameStateTracker::new(Instant::now()))),
             analyzer_data_dir: crate::path_manager::PathManagerOps::get_json_data_dir(),
             dictionary_data: Arc::new(Mutex::new(CachedLoad::Uninitialized)),
@@ -528,16 +345,13 @@ impl BackendState {
         self.read_settings_memory().runtime_flags()
     }
 
-    pub(crate) fn set_replay_watcher_sender(
-        &self,
-        sender: Option<mpsc::Sender<ReplayWatcherMessage>>,
-    ) {
+    pub fn set_replay_watcher_sender(&self, sender: Option<mpsc::Sender<ReplayWatcherMessage>>) {
         if let Ok(mut cached_sender) = self.replay_watcher_sender.lock() {
             *cached_sender = sender;
         }
     }
 
-    pub(crate) fn request_replay_watcher_root_refresh(&self) {
+    pub fn request_replay_watcher_root_refresh(&self) {
         let sender = self
             .replay_watcher_sender
             .lock()
@@ -550,7 +364,7 @@ impl BackendState {
         }
     }
 
-    pub(crate) fn append_log_line_if_enabled(&self, message: &str) {
+    pub fn append_log_line_if_enabled(&self, message: &str) {
         if !self.file_logging_enabled() {
             return;
         }
@@ -560,7 +374,7 @@ impl BackendState {
         }
     }
 
-    pub(crate) fn log_request(&self, method: &str, path: &str, body: &Option<Value>) {
+    pub fn log_request(&self, method: &str, path: &str, body: &Option<Value>) {
         let serialized_body = body.as_ref().map(|payload| {
             serde_json::to_string(payload).unwrap_or_else(|_| "<invalid-json>".into())
         });
@@ -658,7 +472,7 @@ impl BackendState {
         self.file_logging_enabled.load(Ordering::Acquire)
     }
 
-    pub(crate) fn resolved_overlay_hotkey_bindings(&self) -> Vec<ResolvedHotkeyBinding> {
+    pub fn resolved_overlay_hotkey_bindings(&self) -> Vec<ResolvedHotkeyBinding> {
         self.read_settings_memory()
             .resolved_overlay_hotkey_bindings()
     }
@@ -781,7 +595,7 @@ impl BackendState {
         handles
     }
 
-    pub(crate) fn overlay_player_stats_payload(&self) -> OverlayPlayerStatsPayload {
+    pub fn overlay_player_stats_payload(&self) -> OverlayPlayerStatsPayload {
         let selected_file = self.get_current_replay_file();
         let selected = self.cached_replay_by_file_or_latest(selected_file.as_deref());
 
@@ -817,7 +631,7 @@ impl BackendState {
         self.overlay_player_stats_payload_for_player(&player_handle, &player_name)
     }
 
-    pub(crate) fn overlay_player_stats_payload_for_player(
+    pub fn overlay_player_stats_payload_for_player(
         &self,
         player_handle: &str,
         player_name: &str,
@@ -1082,11 +896,7 @@ impl BackendState {
 
             match replay_state.lock() {
                 Ok(state) => {
-                    if let Ok(mut selected_file) = state.selected_replay_file.lock()
-                        && selected_file.is_none()
-                    {
-                        *selected_file = selected;
-                    }
+                    state.set_current_replay_file_if_empty(selected);
                 }
                 Err(error) => {
                     crate::sco_log!("[SCO/players] failed to access replay state: {error}");
@@ -1166,43 +976,5 @@ impl BackendState {
         ReplayCacheDatabase::open_for_cache_path(&PathManagerOps::get_cache_path())
             .and_then(|database| database.count_entries())
             .unwrap_or_default()
-    }
-}
-
-impl ReplayState {
-    pub fn selected_replay_file_handle(&self) -> Arc<Mutex<Option<String>>> {
-        self.selected_replay_file.clone()
-    }
-
-    fn sync_selected_replay_file_from_replays(&self, replays: &[ReplayInfo]) {
-        let selected = replays.first().map(|replay| replay.file.clone());
-
-        if let Ok(mut selected_file) = self.selected_replay_file.lock() {
-            match selected_file.as_ref() {
-                Some(current) if replays.iter().any(|replay| &replay.file == current) => {}
-                _ => {
-                    *selected_file = selected;
-                }
-            }
-        }
-    }
-
-    pub fn get_current_replay_file(&self) -> Option<String> {
-        self.selected_replay_file
-            .lock()
-            .ok()
-            .and_then(|current| current.clone())
-    }
-
-    pub fn set_current_replay_file(&self, filename: Option<&str>) {
-        if let Ok(mut selected_file) = self.selected_replay_file.lock() {
-            *selected_file = filename.map(ToString::to_string);
-        }
-    }
-
-    pub fn clear_replay_cache_slots(&self) {
-        if let Ok(mut selected_replay_file) = self.selected_replay_file.lock() {
-            *selected_replay_file = None;
-        }
     }
 }

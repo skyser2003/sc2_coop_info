@@ -105,7 +105,7 @@ impl Error for ReplayCacheDbError {
 }
 
 impl ReplayCacheDbError {
-    pub(super) fn is_sqlite_lock(&self) -> bool {
+    pub fn is_sqlite_lock(&self) -> bool {
         match self {
             Self::Sqlite { source, .. } => matches!(
                 source.sqlite_error_code(),
@@ -383,103 +383,103 @@ impl ReplayCacheStatsQuery {
         self
     }
 
-    pub(super) fn scope(&self) -> ReplayCacheReadScope {
+    pub fn scope(&self) -> ReplayCacheReadScope {
         self.scope
     }
 
-    pub(super) fn limit(&self) -> usize {
+    pub fn limit(&self) -> usize {
         self.limit
     }
 
-    pub(super) fn include_mutations(&self) -> bool {
+    pub fn include_mutations(&self) -> bool {
         self.include_mutations
     }
 
-    pub(super) fn include_normal_games(&self) -> bool {
+    pub fn include_normal_games(&self) -> bool {
         self.include_normal_games
     }
 
-    pub(super) fn include_wins(&self) -> bool {
+    pub fn include_wins(&self) -> bool {
         self.include_wins
     }
 
-    pub(super) fn include_losses(&self) -> bool {
+    pub fn include_losses(&self) -> bool {
         self.include_losses
     }
 
-    pub(super) fn min_length_seconds(&self) -> u64 {
+    pub fn min_length_seconds(&self) -> u64 {
         self.min_length_seconds
     }
 
-    pub(super) fn max_length_seconds(&self) -> u64 {
+    pub fn max_length_seconds(&self) -> u64 {
         self.max_length_seconds
     }
 
-    pub(super) fn min_date_seconds(&self) -> Option<u64> {
+    pub fn min_date_seconds(&self) -> Option<u64> {
         self.min_date_seconds
     }
 
-    pub(super) fn max_date_seconds(&self) -> Option<u64> {
+    pub fn max_date_seconds(&self) -> Option<u64> {
         self.max_date_seconds
     }
 
-    pub(super) fn player_filter(&self) -> &str {
+    pub fn player_filter(&self) -> &str {
         &self.player_filter
     }
 
-    pub(super) fn difficulty_exclusions(&self) -> &[ReplayCacheStatsDifficultyExclusion] {
+    pub fn difficulty_exclusions(&self) -> &[ReplayCacheStatsDifficultyExclusion] {
         &self.difficulty_exclusions
     }
 
-    pub(super) fn region_exclusions(&self) -> &[String] {
+    pub fn region_exclusions(&self) -> &[String] {
         &self.region_exclusions
     }
 
-    pub(super) fn current_replay_files(&self) -> &[String] {
+    pub fn current_replay_files(&self) -> &[String] {
         &self.current_replay_files
     }
 
-    pub(super) fn restrict_to_current_replay_files(&self) -> bool {
+    pub fn restrict_to_current_replay_files(&self) -> bool {
         self.restrict_to_current_replay_files
     }
 
-    pub(super) fn include_sub_15(&self) -> bool {
+    pub fn include_sub_15(&self) -> bool {
         self.include_sub_15
     }
 
-    pub(super) fn include_over_15(&self) -> bool {
+    pub fn include_over_15(&self) -> bool {
         self.include_over_15
     }
 
-    pub(super) fn include_ally_sub_15(&self) -> bool {
+    pub fn include_ally_sub_15(&self) -> bool {
         self.include_ally_sub_15
     }
 
-    pub(super) fn include_ally_over_15(&self) -> bool {
+    pub fn include_ally_over_15(&self) -> bool {
         self.include_ally_over_15
     }
 
-    pub(super) fn include_main_normal_mastery(&self) -> bool {
+    pub fn include_main_normal_mastery(&self) -> bool {
         self.include_main_normal_mastery
     }
 
-    pub(super) fn include_main_abnormal_mastery(&self) -> bool {
+    pub fn include_main_abnormal_mastery(&self) -> bool {
         self.include_main_abnormal_mastery
     }
 
-    pub(super) fn include_ally_normal_mastery(&self) -> bool {
+    pub fn include_ally_normal_mastery(&self) -> bool {
         self.include_ally_normal_mastery
     }
 
-    pub(super) fn include_ally_abnormal_mastery(&self) -> bool {
+    pub fn include_ally_abnormal_mastery(&self) -> bool {
         self.include_ally_abnormal_mastery
     }
 
-    pub(super) fn include_both_main(&self) -> bool {
+    pub fn include_both_main(&self) -> bool {
         self.include_both_main
     }
 
-    pub(super) fn main_handle_keys(&self) -> &[String] {
+    pub fn main_handle_keys(&self) -> &[String] {
         &self.main_handle_keys
     }
 }
@@ -499,7 +499,7 @@ impl ReplayCacheSortDirection {
         }
     }
 
-    pub(super) fn sql_keyword(self) -> &'static str {
+    pub fn sql_keyword(self) -> &'static str {
         match self {
             Self::Asc => "ASC",
             Self::Desc => "DESC",
@@ -521,13 +521,13 @@ impl ReplayCachePage {
         }
     }
 
-    pub(super) fn offset(&self) -> usize {
+    pub fn offset(&self) -> usize {
         self.page
             .saturating_sub(1)
             .saturating_mul(self.rows_per_page)
     }
 
-    pub(super) fn limit(&self) -> usize {
+    pub fn limit(&self) -> usize {
         self.rows_per_page
     }
 }
@@ -568,7 +568,7 @@ pub struct ReplayCacheStatisticsPayload {
 }
 
 impl ReplayCacheStatisticsPayload {
-    pub(super) fn new(
+    pub fn new(
         analysis: Value,
         prestige_names: BTreeMap<String, crate::shared_types::LocalizedLabels>,
         games: u64,
@@ -695,7 +695,7 @@ impl ReplayCacheDifficultyFilter {
         ]
     }
 
-    pub(super) fn brutal_plus_level(self) -> Option<i64> {
+    pub fn brutal_plus_level(self) -> Option<i64> {
         match self {
             Self::BrutalPlus1 => Some(1),
             Self::BrutalPlus2 => Some(2),
@@ -707,7 +707,7 @@ impl ReplayCacheDifficultyFilter {
         }
     }
 
-    pub(super) fn regular_label(self) -> Option<&'static str> {
+    pub fn regular_label(self) -> Option<&'static str> {
         match self {
             Self::Casual => Some("casual"),
             Self::Normal => Some("normal"),
@@ -750,31 +750,31 @@ impl ReplayCacheGamesPageQuery {
         }
     }
 
-    pub(super) fn page(&self) -> ReplayCachePage {
+    pub fn page(&self) -> ReplayCachePage {
         self.page
     }
 
-    pub(super) fn search(&self) -> &str {
+    pub fn search(&self) -> &str {
         &self.search
     }
 
-    pub(super) fn sort_key(&self) -> ReplayCacheGameSortKey {
+    pub fn sort_key(&self) -> ReplayCacheGameSortKey {
         self.sort_key
     }
 
-    pub(super) fn sort_direction(&self) -> ReplayCacheSortDirection {
+    pub fn sort_direction(&self) -> ReplayCacheSortDirection {
         self.sort_direction
     }
 
-    pub(super) fn difficulty_filters(&self) -> &[ReplayCacheDifficultyFilter] {
+    pub fn difficulty_filters(&self) -> &[ReplayCacheDifficultyFilter] {
         &self.difficulty_filters
     }
 
-    pub(super) fn include_normal_games(&self) -> bool {
+    pub fn include_normal_games(&self) -> bool {
         self.include_normal_games
     }
 
-    pub(super) fn include_mutation_games(&self) -> bool {
+    pub fn include_mutation_games(&self) -> bool {
         self.include_mutation_games
     }
 }
@@ -824,11 +824,11 @@ impl ReplayCachePlayerNote {
         Self { handle, note }
     }
 
-    pub(super) fn handle(&self) -> &str {
+    pub fn handle(&self) -> &str {
         &self.handle
     }
 
-    pub(super) fn note(&self) -> &str {
+    pub fn note(&self) -> &str {
         &self.note
     }
 }
@@ -859,29 +859,29 @@ impl ReplayCachePlayersPageQuery {
         }
     }
 
-    pub(super) fn page(&self) -> ReplayCachePage {
+    pub fn page(&self) -> ReplayCachePage {
         self.page
     }
 
-    pub(super) fn search(&self) -> &str {
+    pub fn search(&self) -> &str {
         &self.search
     }
 
-    pub(super) fn sort_key(&self) -> ReplayCachePlayerSortKey {
+    pub fn sort_key(&self) -> ReplayCachePlayerSortKey {
         self.sort_key
     }
 
-    pub(super) fn sort_direction(&self) -> ReplayCacheSortDirection {
+    pub fn sort_direction(&self) -> ReplayCacheSortDirection {
         self.sort_direction
     }
 
-    pub(super) fn notes(&self) -> &[ReplayCachePlayerNote] {
+    pub fn notes(&self) -> &[ReplayCachePlayerNote] {
         &self.notes
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum ReplayCacheTable {
+pub enum ReplayCacheTable {
     Weekly,
     Players,
     PlayerUnits,
@@ -892,7 +892,7 @@ pub(super) enum ReplayCacheTable {
     PlayerStatSeries,
 }
 
-pub(super) const REPLAY_CACHE_CHILD_TABLES: [ReplayCacheTable; 8] = [
+pub const REPLAY_CACHE_CHILD_TABLES: [ReplayCacheTable; 8] = [
     ReplayCacheTable::Weekly,
     ReplayCacheTable::PlayerUnits,
     ReplayCacheTable::PlayerIconOrders,
@@ -904,7 +904,7 @@ pub(super) const REPLAY_CACHE_CHILD_TABLES: [ReplayCacheTable; 8] = [
 ];
 
 impl ReplayCacheTable {
-    pub(super) fn delete_by_replay_id_sql(self) -> &'static str {
+    pub fn delete_by_replay_id_sql(self) -> &'static str {
         match self {
             Self::Players => "DELETE FROM replay_cache_players WHERE replay_id = ?1",
             Self::Weekly => "DELETE FROM replay_cache_weeklies WHERE replay_id = ?1",
@@ -922,7 +922,7 @@ impl ReplayCacheTable {
     }
 }
 
-pub(super) const REPLAY_CACHE_ENTRY_RECORD_COLUMNS: &str = "
+pub const REPLAY_CACHE_ENTRY_RECORD_COLUMNS: &str = "
     id,
     hash,
     file,
@@ -959,7 +959,7 @@ pub(super) const REPLAY_CACHE_ENTRY_RECORD_COLUMNS: &str = "
 ";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum ReplayCacheEntryRecordQuery {
+pub enum ReplayCacheEntryRecordQuery {
     All,
     AllLimited,
     DetailedOnly,
@@ -967,7 +967,7 @@ pub(super) enum ReplayCacheEntryRecordQuery {
 }
 
 impl ReplayCacheEntryRecordQuery {
-    pub(super) fn from_entry_query(query: ReplayCacheEntryQuery) -> Self {
+    pub fn from_entry_query(query: ReplayCacheEntryQuery) -> Self {
         match (query.scope(), query.limit()) {
             (ReplayCacheReadScope::All, 0) => Self::All,
             (ReplayCacheReadScope::All, _) => Self::AllLimited,
@@ -976,7 +976,7 @@ impl ReplayCacheEntryRecordQuery {
         }
     }
 
-    pub(super) fn limit(self, query: ReplayCacheEntryQuery) -> Option<i64> {
+    pub fn limit(self, query: ReplayCacheEntryQuery) -> Option<i64> {
         match self {
             Self::All | Self::DetailedOnly => None,
             Self::AllLimited | Self::DetailedOnlyLimited => {
@@ -985,7 +985,7 @@ impl ReplayCacheEntryRecordQuery {
         }
     }
 
-    pub(super) fn sql(self) -> String {
+    pub fn sql(self) -> String {
         let filter = match self {
             Self::DetailedOnly | Self::DetailedOnlyLimited => "WHERE detailed_analysis = 1",
             Self::All | Self::AllLimited => "",
@@ -1006,15 +1006,15 @@ impl ReplayCacheEntryRecordQuery {
     }
 }
 
-pub(super) struct ReplayCacheEntrySql;
+pub struct ReplayCacheEntrySql;
 
 impl ReplayCacheEntrySql {
-    pub(super) const DELETE_ALL: &'static str = "DELETE FROM replay_cache_entries";
-    pub(super) const DELETE_BY_FILE_EXCEPT_HASH: &'static str =
+    pub const DELETE_ALL: &'static str = "DELETE FROM replay_cache_entries";
+    pub const DELETE_BY_FILE_EXCEPT_HASH: &'static str =
         "DELETE FROM replay_cache_entries WHERE file = ?1 AND hash <> ?2";
-    pub(super) const SELECT_ID_BY_HASH: &'static str =
+    pub const SELECT_ID_BY_HASH: &'static str =
         "SELECT id FROM replay_cache_entries WHERE hash = ?1";
-    pub(super) const SELECT_BY_HASH: &'static str = "
+    pub const SELECT_BY_HASH: &'static str = "
         SELECT
             id,
             hash,
@@ -1052,7 +1052,7 @@ impl ReplayCacheEntrySql {
         FROM replay_cache_entries
         WHERE hash = ?1
     ";
-    pub(super) const SELECT_BY_ID: &'static str = "
+    pub const SELECT_BY_ID: &'static str = "
         SELECT
             id,
             hash,
@@ -1090,12 +1090,12 @@ impl ReplayCacheEntrySql {
         FROM replay_cache_entries
         WHERE id = ?1
     ";
-    pub(super) const SELECT_IDS_PAGE: &'static str = "
+    pub const SELECT_IDS_PAGE: &'static str = "
         SELECT id FROM replay_cache_entries
         ORDER BY date_seconds DESC, date_text DESC, file DESC, hash DESC
         LIMIT ?1 OFFSET ?2
     ";
-    pub(super) const SELECT_NEWER_IDS: &'static str = "
+    pub const SELECT_NEWER_IDS: &'static str = "
         SELECT id FROM replay_cache_entries
         WHERE
             date_seconds > ?1 OR
@@ -1105,7 +1105,7 @@ impl ReplayCacheEntrySql {
         ORDER BY date_seconds ASC, date_text ASC, file ASC, hash ASC
         LIMIT ?5 OFFSET ?6
     ";
-    pub(super) const SELECT_OLDER_IDS: &'static str = "
+    pub const SELECT_OLDER_IDS: &'static str = "
         SELECT id FROM replay_cache_entries
         WHERE
             date_seconds < ?1 OR
@@ -1115,57 +1115,57 @@ impl ReplayCacheEntrySql {
         ORDER BY date_seconds DESC, date_text DESC, file DESC, hash DESC
         LIMIT ?5 OFFSET ?6
     ";
-    pub(super) const SELECT_ID_BY_EXACT_FILE: &'static str =
+    pub const SELECT_ID_BY_EXACT_FILE: &'static str =
         "SELECT id FROM replay_cache_entries WHERE file = ?1";
-    pub(super) const SELECT_ID_BY_FILE_NAME: &'static str = "
+    pub const SELECT_ID_BY_FILE_NAME: &'static str = "
         SELECT id FROM replay_cache_entries
         WHERE file_name = ?1
         ORDER BY date_seconds DESC, date_text DESC, file DESC, hash DESC
         LIMIT 1
     ";
-    pub(super) const SELECT_LATEST_ID: &'static str = "
+    pub const SELECT_LATEST_ID: &'static str = "
         SELECT id FROM replay_cache_entries
         ORDER BY date_seconds DESC, date_text DESC, file DESC, hash DESC
         LIMIT 1
     ";
-    pub(super) const SELECT_FILES: &'static str = "SELECT file FROM replay_cache_entries";
+    pub const SELECT_FILES: &'static str = "SELECT file FROM replay_cache_entries";
 }
 
 #[derive(Debug)]
-pub(super) struct ReplayCacheEntryRecord {
-    pub(super) id: i64,
-    pub(super) hash: String,
-    pub(super) file: String,
-    pub(super) file_name: String,
-    pub(super) date_text: String,
-    pub(super) date_seconds: u64,
-    pub(super) detailed_analysis: bool,
-    pub(super) result: String,
-    pub(super) map_name: String,
-    pub(super) difficulty_p1: String,
-    pub(super) difficulty_p2: String,
-    pub(super) ext_difficulty: String,
-    pub(super) brutal_plus: u32,
-    pub(super) extension: bool,
-    pub(super) weekly: bool,
-    pub(super) region: String,
-    pub(super) length_ingame_seconds: u64,
-    pub(super) length_realtime: CacheNumericValue,
-    pub(super) form_length_realtime: String,
-    pub(super) replay_build: u32,
-    pub(super) protocol_build: ProtocolBuildValue,
-    pub(super) comp: Option<String>,
-    pub(super) enemy_race: Option<String>,
-    pub(super) has_amon_units: bool,
-    pub(super) has_bonus: bool,
-    pub(super) has_player_stats: bool,
-    pub(super) mutator_values: String,
-    pub(super) bonus_values: String,
-    pub(super) updated_at_seconds: u64,
+pub struct ReplayCacheEntryRecord {
+    pub id: i64,
+    pub hash: String,
+    pub file: String,
+    pub file_name: String,
+    pub date_text: String,
+    pub date_seconds: u64,
+    pub detailed_analysis: bool,
+    pub result: String,
+    pub map_name: String,
+    pub difficulty_p1: String,
+    pub difficulty_p2: String,
+    pub ext_difficulty: String,
+    pub brutal_plus: u32,
+    pub extension: bool,
+    pub weekly: bool,
+    pub region: String,
+    pub length_ingame_seconds: u64,
+    pub length_realtime: CacheNumericValue,
+    pub form_length_realtime: String,
+    pub replay_build: u32,
+    pub protocol_build: ProtocolBuildValue,
+    pub comp: Option<String>,
+    pub enemy_race: Option<String>,
+    pub has_amon_units: bool,
+    pub has_bonus: bool,
+    pub has_player_stats: bool,
+    pub mutator_values: String,
+    pub bonus_values: String,
+    pub updated_at_seconds: u64,
 }
 
 impl ReplayCacheEntryRecord {
-    pub(super) fn from_entry(entry: &CacheReplayEntry) -> Result<Self, ReplayCacheDbError> {
+    pub fn from_entry(entry: &CacheReplayEntry) -> Result<Self, ReplayCacheDbError> {
         let date_seconds =
             ReplayAnalysisOps::parse_replay_timestamp_seconds(&entry.date).unwrap_or(0);
         Ok(Self {
@@ -1203,7 +1203,7 @@ impl ReplayCacheEntryRecord {
         })
     }
 
-    pub(super) fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
+    pub fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
         Ok(Self {
             id: row.get("id")?,
             hash: row.get("hash")?,
@@ -1245,27 +1245,27 @@ impl ReplayCacheEntryRecord {
         })
     }
 
-    pub(super) fn bool_to_i64(value: bool) -> i64 {
+    pub fn bool_to_i64(value: bool) -> i64 {
         if value { 1 } else { 0 }
     }
 
-    pub(super) fn i64_to_bool(value: i64) -> bool {
+    pub fn i64_to_bool(value: i64) -> bool {
         value != 0
     }
 
-    pub(super) fn u64_to_i64(value: u64) -> i64 {
+    pub fn u64_to_i64(value: u64) -> i64 {
         i64::try_from(value).unwrap_or(i64::MAX)
     }
 
-    pub(super) fn i64_to_u64(value: i64) -> u64 {
+    pub fn i64_to_u64(value: i64) -> u64 {
         u64::try_from(value).unwrap_or_default()
     }
 
-    pub(super) fn i64_to_u32(value: i64) -> u32 {
+    pub fn i64_to_u32(value: i64) -> u32 {
         u32::try_from(value).unwrap_or_default()
     }
 
-    pub(super) fn cache_numeric_columns(
+    pub fn cache_numeric_columns(
         value: &CacheNumericValue,
     ) -> (&'static str, Option<i64>, Option<f64>) {
         match value {
@@ -1274,7 +1274,7 @@ impl ReplayCacheEntryRecord {
         }
     }
 
-    pub(super) fn cache_numeric_from_columns(
+    pub fn cache_numeric_from_columns(
         kind: &str,
         int_value: Option<i64>,
         float_value: Option<f64>,
@@ -1288,7 +1288,7 @@ impl ReplayCacheEntryRecord {
         }
     }
 
-    pub(super) fn protocol_build_columns(
+    pub fn protocol_build_columns(
         value: &ProtocolBuildValue,
     ) -> (&'static str, Option<i64>, Option<String>) {
         match value {
@@ -1297,7 +1297,7 @@ impl ReplayCacheEntryRecord {
         }
     }
 
-    pub(super) fn protocol_build_from_columns(
+    pub fn protocol_build_from_columns(
         kind: &str,
         int_value: Option<i64>,
         text_value: Option<String>,
@@ -1311,12 +1311,12 @@ impl ReplayCacheEntryRecord {
 }
 
 #[derive(Debug)]
-pub(super) struct ReplayCacheFileName {
+pub struct ReplayCacheFileName {
     value: String,
 }
 
 impl ReplayCacheFileName {
-    pub(super) fn from_replay_file(file: &str) -> Self {
+    pub fn from_replay_file(file: &str) -> Self {
         let value = file
             .rsplit(['/', '\\'])
             .next()
@@ -1327,16 +1327,16 @@ impl ReplayCacheFileName {
         Self { value }
     }
 
-    pub(super) fn into_string(self) -> String {
+    pub fn into_string(self) -> String {
         self.value
     }
 }
 
 pub struct ReplayCacheDatabase {
-    pub(super) cache_path: PathBuf,
+    pub cache_path: PathBuf,
     legacy_cache_path: PathBuf,
-    pub(super) db_path: PathBuf,
-    pub(super) connection: Connection,
+    pub db_path: PathBuf,
+    pub connection: Connection,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1371,7 +1371,7 @@ impl CacheEntrySink for SqliteReplayCacheEntrySink {
 }
 
 impl ReplayCacheDatabase {
-    pub(super) fn retry_sqlite_lock<T>(
+    pub fn retry_sqlite_lock<T>(
         mut operation: impl FnMut() -> Result<T, ReplayCacheDbError>,
     ) -> Result<T, ReplayCacheDbError> {
         let started_at = Instant::now();
@@ -1433,7 +1433,7 @@ impl ReplayCacheDatabase {
         PathBuf::from(value)
     }
 
-    pub(super) fn sqlite_contains_pattern(value: &str) -> String {
+    pub fn sqlite_contains_pattern(value: &str) -> String {
         let mut pattern = String::with_capacity(value.len() + 2);
         pattern.push('%');
         for ch in value.trim().to_ascii_lowercase().chars() {
@@ -1449,7 +1449,7 @@ impl ReplayCacheDatabase {
         pattern
     }
 
-    pub(super) fn usize_to_i64(value: usize) -> i64 {
+    pub fn usize_to_i64(value: usize) -> i64 {
         i64::try_from(value).unwrap_or(i64::MAX)
     }
 
@@ -1937,14 +1937,14 @@ impl ReplayCacheDatabase {
         Ok(entries)
     }
 
-    pub(super) fn count_value_columns(value: &CacheCountValue) -> (&'static str, Option<i64>) {
+    pub fn count_value_columns(value: &CacheCountValue) -> (&'static str, Option<i64>) {
         match value {
             CacheCountValue::Count(value) => ("count", Some(*value)),
             CacheCountValue::Hidden(_) => ("hidden", None),
         }
     }
 
-    pub(super) fn count_value_columns_with_hidden(
+    pub fn count_value_columns_with_hidden(
         value: &CacheCountValue,
     ) -> (&'static str, Option<i64>, Option<String>) {
         match value {
@@ -1953,10 +1953,7 @@ impl ReplayCacheDatabase {
         }
     }
 
-    pub(super) fn count_value_from_kind_and_count(
-        kind: String,
-        count: Option<i64>,
-    ) -> CacheCountValue {
+    pub fn count_value_from_kind_and_count(kind: String, count: Option<i64>) -> CacheCountValue {
         if kind == "hidden" {
             CacheCountValue::Hidden("-".to_string())
         } else {
@@ -1964,7 +1961,7 @@ impl ReplayCacheDatabase {
         }
     }
 
-    pub(super) fn count_value_from_columns(
+    pub fn count_value_from_columns(
         kind: String,
         count: Option<i64>,
         hidden: Option<String>,
@@ -1976,14 +1973,14 @@ impl ReplayCacheDatabase {
         }
     }
 
-    pub(super) fn sqlite_error(&self, source: rusqlite::Error) -> ReplayCacheDbError {
+    pub fn sqlite_error(&self, source: rusqlite::Error) -> ReplayCacheDbError {
         ReplayCacheDbError::Sqlite {
             path: self.db_path.clone(),
             source,
         }
     }
 
-    pub(super) fn now_seconds() -> u64 {
+    pub fn now_seconds() -> u64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|duration| duration.as_secs())

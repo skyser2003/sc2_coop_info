@@ -6,6 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 use ts_rs::TS;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
@@ -79,6 +80,254 @@ pub struct ConfigReplayVisualPayload {
 
 #[derive(Clone, Debug, Deserialize, Serialize, TS)]
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct StatsFastestMapPlayer {
+    pub name: String,
+    pub handle: String,
+    pub commander: String,
+    #[ts(type = "number")]
+    pub apm: u64,
+    #[serde(rename = "mastery_level")]
+    #[ts(type = "number")]
+    pub mastery_level: u64,
+    #[ts(type = "Array<number>")]
+    pub masteries: Vec<u64>,
+    #[ts(type = "number")]
+    pub prestige: u64,
+    #[serde(rename = "prestige_name")]
+    pub prestige_name: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct StatsFastestMapDetails {
+    pub length: f64,
+    pub file: String,
+    #[ts(type = "number")]
+    pub date: u64,
+    pub difficulty: String,
+    pub players: Vec<StatsFastestMapPlayer>,
+    #[serde(rename = "enemy_race")]
+    pub enemy_race: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct StatsMapDataRow {
+    pub id: String,
+    pub average_victory_time: f64,
+    pub frequency: f64,
+    #[serde(rename = "Victory")]
+    #[ts(type = "number")]
+    pub victory: u64,
+    #[serde(rename = "Defeat")]
+    #[ts(type = "number")]
+    pub defeat: u64,
+    #[serde(rename = "Winrate")]
+    pub winrate: f64,
+    pub bonus: f64,
+    #[serde(rename = "detailedCount")]
+    #[ts(type = "number")]
+    pub detailed_count: u64,
+    #[serde(rename = "Fastest")]
+    pub fastest: StatsFastestMapDetails,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct StatsCommanderDataRow {
+    #[serde(rename = "Frequency")]
+    pub frequency: f64,
+    #[serde(rename = "Victory")]
+    #[ts(type = "number")]
+    pub victory: u64,
+    #[serde(rename = "Defeat")]
+    #[ts(type = "number")]
+    pub defeat: u64,
+    #[serde(rename = "Winrate")]
+    pub winrate: f64,
+    #[serde(rename = "MedianAPM")]
+    pub median_apm: f64,
+    #[serde(rename = "KillFraction")]
+    pub kill_fraction: f64,
+    #[serde(rename = "Mastery")]
+    #[ts(type = "Record<string, number>")]
+    pub mastery: BTreeMap<String, f64>,
+    #[serde(rename = "MasteryDistribution")]
+    #[ts(type = "Record<string, Record<string, number>>")]
+    pub mastery_distribution: BTreeMap<String, BTreeMap<String, f64>>,
+    #[serde(rename = "MasteryDistributionByPrestige")]
+    #[ts(type = "Record<string, Record<string, Record<string, number>>>")]
+    pub mastery_distribution_by_prestige: BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>,
+    #[serde(rename = "Prestige")]
+    #[ts(type = "Record<string, number>")]
+    pub prestige: BTreeMap<String, f64>,
+    #[serde(rename = "MasteryByPrestige")]
+    #[ts(type = "Record<string, Record<string, number>>")]
+    pub mastery_by_prestige: BTreeMap<String, BTreeMap<String, f64>>,
+    #[serde(rename = "detailedCount")]
+    #[ts(type = "number")]
+    pub detailed_count: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct StatsDifficultyDataRow {
+    #[serde(rename = "Victory")]
+    #[ts(type = "number")]
+    pub victory: u64,
+    #[serde(rename = "Defeat")]
+    #[ts(type = "number")]
+    pub defeat: u64,
+    #[serde(rename = "Winrate")]
+    pub winrate: f64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct StatsRegionDataRow {
+    pub frequency: f64,
+    #[serde(rename = "Victory")]
+    #[ts(type = "number")]
+    pub victory: u64,
+    #[serde(rename = "Defeat")]
+    #[ts(type = "number")]
+    pub defeat: u64,
+    pub winrate: f64,
+    #[ts(type = "number")]
+    pub max_asc: u64,
+    #[ts(type = "Record<string, number>")]
+    pub prestiges: BTreeMap<String, u64>,
+    pub max_com: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct StatsPlayerDataRow {
+    #[ts(type = "number")]
+    pub wins: u64,
+    #[ts(type = "number")]
+    pub losses: u64,
+    pub winrate: f64,
+    pub kills: f64,
+    pub apm: f64,
+    pub frequency: f64,
+    #[ts(type = "number")]
+    pub last_seen: u64,
+    pub commander: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum StatsUnitCountValue {
+    Count(i64),
+    Hidden(String),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum StatsUnitRatioValue {
+    Ratio(f64),
+    Hidden(String),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct StatsCommanderUnitRow {
+    #[ts(type = "number | string")]
+    pub created: StatsUnitCountValue,
+    pub made: f64,
+    #[ts(type = "number | string")]
+    pub lost: StatsUnitCountValue,
+    pub lost_percent: Option<f64>,
+    #[ts(type = "number")]
+    pub kills: i64,
+    #[serde(rename = "KD")]
+    pub kd: Option<f64>,
+    pub kill_percentage: f64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct StatsCommanderUnitRows {
+    #[serde(default)]
+    pub count: u64,
+    #[serde(flatten)]
+    pub units: BTreeMap<String, StatsCommanderUnitRow>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct StatsAmonUnitRow {
+    #[ts(type = "number")]
+    pub created: i64,
+    #[ts(type = "number")]
+    pub lost: i64,
+    #[ts(type = "number")]
+    pub kills: i64,
+    #[serde(rename = "KD")]
+    #[ts(type = "number | string")]
+    pub kd: StatsUnitRatioValue,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct StatsUnitDataPayload {
+    #[ts(
+        type = "Record<string, ({ count: number } & Record<string, StatsCommanderUnitRow | number>) | null>"
+    )]
+    pub main: BTreeMap<String, Option<StatsCommanderUnitRows>>,
+    #[ts(
+        type = "Record<string, ({ count: number } & Record<string, StatsCommanderUnitRow | number>) | null>"
+    )]
+    pub ally: BTreeMap<String, Option<StatsCommanderUnitRows>>,
+    pub amon: BTreeMap<String, StatsAmonUnitRow>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct StatsAnalysisPayload {
+    #[serde(rename = "MapData")]
+    pub map_data: BTreeMap<String, StatsMapDataRow>,
+    #[serde(rename = "CommanderData")]
+    pub commander_data: BTreeMap<String, StatsCommanderDataRow>,
+    #[serde(rename = "AllyCommanderData")]
+    pub ally_commander_data: BTreeMap<String, StatsCommanderDataRow>,
+    #[serde(rename = "DifficultyData")]
+    pub difficulty_data: BTreeMap<String, StatsDifficultyDataRow>,
+    #[serde(rename = "RegionData")]
+    pub region_data: BTreeMap<String, StatsRegionDataRow>,
+    #[serde(rename = "PlayerData")]
+    pub player_data: BTreeMap<String, StatsPlayerDataRow>,
+    #[serde(rename = "AmonData")]
+    pub amon_data: BTreeMap<String, StatsAmonUnitRow>,
+    #[serde(rename = "UnitData")]
+    pub unit_data: Option<StatsUnitDataPayload>,
+    #[serde(
+        rename = "MapDataReady",
+        default,
+        skip_serializing_if = "Self::map_data_ready_is_false"
+    )]
+    pub map_data_ready: bool,
+}
+
+impl StatsAnalysisPayload {
+    fn map_data_ready_is_false(value: &bool) -> bool {
+        !*value
+    }
+
+    pub fn from_value(value: Value) -> Result<Self, serde_json::Error> {
+        serde_json::from_value(value)
+    }
+
+    pub fn from_optional_value(value: Option<Value>) -> Result<Option<Self>, serde_json::Error> {
+        match value {
+            Some(Value::Null) | None => Ok(None),
+            Some(value) => Self::from_value(value).map(Some),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct StatsStatePayload {
     pub ready: bool,
     #[ts(type = "number")]
@@ -87,9 +336,8 @@ pub struct StatsStatePayload {
     pub detailed_parsed_count: u64,
     #[ts(type = "number")]
     pub total_valid_files: u64,
-    #[ts(type = "Record<string, any> | null")]
     #[ts(optional)]
-    pub analysis: Option<Value>,
+    pub analysis: Option<StatsAnalysisPayload>,
     pub main_players: Vec<String>,
     pub main_handles: Vec<String>,
     pub analysis_running: bool,

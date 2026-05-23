@@ -7,7 +7,7 @@ use tauri::{Emitter, Manager, Runtime, Wry};
 
 use crate::{AppSettings, BackendState, shared_types::PerformanceVisibilityPayload};
 
-pub(crate) const PERFORMANCE_VISIBILITY_EVENT: &str = "sco://performance-visibility";
+pub const PERFORMANCE_VISIBILITY_EVENT: &str = "sco://performance-visibility";
 
 const DEFAULT_WINDOW_WIDTH: u32 = 780;
 const MIN_WINDOW_WIDTH: u32 = 760;
@@ -59,14 +59,14 @@ struct PerformancePayload {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct PerformanceGeometry {
+pub struct PerformanceGeometry {
     x: i32,
     y: i32,
     width: u32,
     height: u32,
 }
 
-pub(crate) struct PerformanceOverlayOps;
+pub struct PerformanceOverlayOps;
 
 impl PerformanceOverlayOps {
     fn required_window_height() -> u32 {
@@ -79,7 +79,7 @@ impl PerformanceOverlayOps {
 }
 
 impl PerformanceGeometry {
-    pub(crate) fn new(x: i32, y: i32, width: u32, height: u32) -> Self {
+    pub fn new(x: i32, y: i32, width: u32, height: u32) -> Self {
         Self {
             x,
             y,
@@ -88,7 +88,7 @@ impl PerformanceGeometry {
         }
     }
 
-    pub(crate) fn normalized(mut self) -> Self {
+    pub fn normalized(mut self) -> Self {
         self.width = self.width.max(MIN_WINDOW_WIDTH);
         self.height = self
             .height
@@ -96,19 +96,19 @@ impl PerformanceGeometry {
         self
     }
 
-    pub(crate) fn x(&self) -> i32 {
+    pub fn x(&self) -> i32 {
         self.x
     }
 
-    pub(crate) fn y(&self) -> i32 {
+    pub fn y(&self) -> i32 {
         self.y
     }
 
-    pub(crate) fn width(&self) -> u32 {
+    pub fn width(&self) -> u32 {
         self.width
     }
 
-    pub(crate) fn height(&self) -> u32 {
+    pub fn height(&self) -> u32 {
         self.height
     }
 }
@@ -307,7 +307,7 @@ impl PerformanceOverlayOps {
 }
 
 impl PerformanceOverlayOps {
-    pub(crate) fn emit_performance_script<R: Runtime>(app: &tauri::AppHandle<R>, script: &str) {
+    pub fn emit_performance_script<R: Runtime>(app: &tauri::AppHandle<R>, script: &str) {
         if let Some(window) = app.get_webview_window("performance") {
             let _ = window.eval(script);
         }
@@ -315,7 +315,7 @@ impl PerformanceOverlayOps {
 }
 
 impl PerformanceOverlayOps {
-    pub(crate) fn apply_saved_geometry(window: &tauri::WebviewWindow<Wry>) -> Result<(), String> {
+    pub fn apply_saved_geometry(window: &tauri::WebviewWindow<Wry>) -> Result<(), String> {
         let settings = window.state::<BackendState>().read_settings_memory();
         let geometry = settings
             .saved_performance_geometry()
@@ -326,7 +326,7 @@ impl PerformanceOverlayOps {
 }
 
 impl PerformanceOverlayOps {
-    pub(crate) fn persist_geometry(window: &tauri::WebviewWindow<Wry>) {
+    pub fn persist_geometry(window: &tauri::WebviewWindow<Wry>) {
         let state = window.state::<BackendState>();
         let Some(geometry) = PerformanceOverlayOps::current_geometry(window) else {
             return;
@@ -342,7 +342,7 @@ impl PerformanceOverlayOps {
 }
 
 impl PerformanceOverlayOps {
-    pub(crate) fn start_drag(app: &tauri::AppHandle<Wry>) -> Result<(), String> {
+    pub fn start_drag(app: &tauri::AppHandle<Wry>) -> Result<(), String> {
         let Some(window) = app.get_webview_window("performance") else {
             return Err("Performance window not available".to_string());
         };
@@ -353,7 +353,7 @@ impl PerformanceOverlayOps {
 }
 
 impl PerformanceOverlayOps {
-    pub(crate) fn show_window<R: Runtime>(app: &tauri::AppHandle<R>) {
+    pub fn show_window<R: Runtime>(app: &tauri::AppHandle<R>) {
         if let Some(window) = app.get_webview_window("performance") {
             let _ = window.show();
             let _ = window.set_ignore_cursor_events(true);
@@ -363,7 +363,7 @@ impl PerformanceOverlayOps {
 }
 
 impl PerformanceOverlayOps {
-    pub(crate) fn hide_window<R: Runtime>(app: &tauri::AppHandle<R>) {
+    pub fn hide_window<R: Runtime>(app: &tauri::AppHandle<R>) {
         app.state::<BackendState>().set_performance_edit_mode(false);
         if let Some(window) = app.get_webview_window("performance") {
             let _ = window
@@ -376,7 +376,7 @@ impl PerformanceOverlayOps {
 }
 
 impl PerformanceOverlayOps {
-    pub(crate) fn set_edit_mode<R: Runtime>(app: &tauri::AppHandle<R>, enabled: bool) {
+    pub fn set_edit_mode<R: Runtime>(app: &tauri::AppHandle<R>, enabled: bool) {
         app.state::<BackendState>()
             .set_performance_edit_mode(enabled);
 
@@ -408,7 +408,7 @@ impl PerformanceOverlayOps {
 }
 
 impl PerformanceOverlayOps {
-    pub(crate) fn toggle_edit_mode<R: Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    pub fn toggle_edit_mode<R: Runtime>(app: &tauri::AppHandle<R>) -> bool {
         let next = !app.state::<BackendState>().performance_edit_mode();
         PerformanceOverlayOps::set_edit_mode(app, next);
         next
@@ -416,7 +416,7 @@ impl PerformanceOverlayOps {
 }
 
 impl PerformanceOverlayOps {
-    pub(crate) fn set_visibility<R: Runtime>(
+    pub fn set_visibility<R: Runtime>(
         app: &tauri::AppHandle<R>,
         visible: bool,
         persist_setting: bool,
@@ -451,7 +451,7 @@ impl PerformanceOverlayOps {
 }
 
 impl PerformanceOverlayOps {
-    pub(crate) fn apply_settings(app: &tauri::AppHandle<Wry>) {
+    pub fn apply_settings(app: &tauri::AppHandle<Wry>) {
         let settings = app.state::<BackendState>().read_settings_memory();
         if let Some(window) = app.get_webview_window("performance")
             && let Err(error) = PerformanceOverlayOps::apply_saved_geometry(&window)
@@ -468,7 +468,7 @@ impl PerformanceOverlayOps {
 }
 
 impl PerformanceOverlayOps {
-    pub(crate) fn spawn_monitor(app: tauri::AppHandle<Wry>) {
+    pub fn spawn_monitor(app: tauri::AppHandle<Wry>) {
         thread::spawn(move || {
             let mut system = System::new_all();
             let mut networks = Networks::new_with_refreshed_list();

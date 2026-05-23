@@ -1,7 +1,7 @@
 mod array_json;
 mod cache_saving;
 mod cache_writer;
-pub(super) mod core;
+mod core;
 mod load_games;
 mod load_players;
 mod load_statistics;

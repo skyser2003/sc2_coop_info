@@ -78,10 +78,7 @@ impl CachePlayerRecord {
 }
 
 impl ReplayCacheDatabase {
-    pub(super) fn load_players(
-        &self,
-        replay_id: i64,
-    ) -> Result<Vec<CachePlayer>, ReplayCacheDbError> {
+    pub fn load_players(&self, replay_id: i64) -> Result<Vec<CachePlayer>, ReplayCacheDbError> {
         self.load_players_with_child_data(replay_id, true)
     }
 
@@ -119,7 +116,7 @@ impl ReplayCacheDatabase {
         Ok(players)
     }
 
-    pub(super) fn load_players_summary_by_replay_ids(
+    pub fn load_players_summary_by_replay_ids(
         &self,
         replay_ids: &[i64],
     ) -> Result<HashMap<i64, Vec<CachePlayer>>, ReplayCacheDbError> {

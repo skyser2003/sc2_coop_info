@@ -22,27 +22,26 @@ use crate::shared_types::{
 };
 use crate::{BackendState, PathManagerOps, ReplayCacheDatabase, ReplayInfo, TauriOverlayOps};
 
-pub(crate) const MENU_ITEM_SHOW_CONFIG: &str = "show_config";
-pub(crate) const MENU_ITEM_SHOW_OVERLAY: &str = "show_overlay";
-pub(crate) const MENU_ITEM_QUIT: &str = "quit";
-pub(crate) const OVERLAY_WINDOW_LABEL: &str = "overlay";
-pub(crate) const SC2_OVERLAY_WINDOW_LABEL: &str = "sc2-overlay";
-pub(crate) const PERFORMANCE_WINDOW_LABEL: &str = "performance";
+pub const MENU_ITEM_SHOW_CONFIG: &str = "show_config";
+pub const MENU_ITEM_SHOW_OVERLAY: &str = "show_overlay";
+pub const MENU_ITEM_QUIT: &str = "quit";
+pub const OVERLAY_WINDOW_LABEL: &str = "overlay";
+pub const SC2_OVERLAY_WINDOW_LABEL: &str = "sc2-overlay";
+pub const PERFORMANCE_WINDOW_LABEL: &str = "performance";
 
-pub(crate) const OVERLAY_REPLAY_PAYLOAD_EVENT: &str = "sco://overlay-replay-payload";
-pub(crate) const OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT: &str =
-    "sco://overlay-show-hide-player-stats";
-pub(crate) const OVERLAY_PLAYER_STATS_EVENT: &str = "sco://overlay-player-stats";
-pub(crate) const OVERLAY_INIT_COLORS_DURATION_EVENT: &str = "sco://overlay-init-colors-duration";
-pub(crate) const OVERLAY_SHOWSTATS_EVENT: &str = "sco://overlay-showstats";
-pub(crate) const OVERLAY_HIDESTATS_EVENT: &str = "sco://overlay-hidestats";
-pub(crate) const OVERLAY_SHOWHIDE_EVENT: &str = "sco://overlay-showhide";
-pub(crate) const OVERLAY_SET_SHOW_CHARTS_FROM_CONFIG_EVENT: &str =
+pub const OVERLAY_REPLAY_PAYLOAD_EVENT: &str = "sco://overlay-replay-payload";
+pub const OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT: &str = "sco://overlay-show-hide-player-stats";
+pub const OVERLAY_PLAYER_STATS_EVENT: &str = "sco://overlay-player-stats";
+pub const OVERLAY_INIT_COLORS_DURATION_EVENT: &str = "sco://overlay-init-colors-duration";
+pub const OVERLAY_SHOWSTATS_EVENT: &str = "sco://overlay-showstats";
+pub const OVERLAY_HIDESTATS_EVENT: &str = "sco://overlay-hidestats";
+pub const OVERLAY_SHOWHIDE_EVENT: &str = "sco://overlay-showhide";
+pub const OVERLAY_SET_SHOW_CHARTS_FROM_CONFIG_EVENT: &str =
     "sco://overlay-set-show-charts-from-config";
-pub(crate) const OVERLAY_SCREENSHOT_REQUEST_EVENT: &str = "sco://overlay-screenshot-request";
-pub(crate) const OVERLAY_FIRST_WIN_BONUS_TIMER_EVENT: &str = "sco://overlay-first-win-bonus-timer";
+pub const OVERLAY_SCREENSHOT_REQUEST_EVENT: &str = "sco://overlay-screenshot-request";
+pub const OVERLAY_FIRST_WIN_BONUS_TIMER_EVENT: &str = "sco://overlay-first-win-bonus-timer";
 
-pub(crate) const OVERLAY_HOTKEY_DEFAULTS: [(&str, &str); 6] = [
+pub const OVERLAY_HOTKEY_DEFAULTS: [(&str, &str); 6] = [
     ("hotkey_show/hide", "Ctrl+Shift+*"),
     ("hotkey_show", ""),
     ("hotkey_hide", ""),
@@ -51,7 +50,7 @@ pub(crate) const OVERLAY_HOTKEY_DEFAULTS: [(&str, &str); 6] = [
     ("hotkey_winrates", "Ctrl+Alt+-"),
 ];
 
-pub(crate) const OVERLAY_HOTKEY_BINDINGS: [(&str, &str); 7] = [
+pub const OVERLAY_HOTKEY_BINDINGS: [(&str, &str); 7] = [
     ("hotkey_show/hide", "overlay_show_hide"),
     ("hotkey_show", "overlay_show"),
     ("hotkey_hide", "overlay_hide"),
@@ -103,7 +102,7 @@ impl OverlayInfoOps {
     }
 }
 
-pub(crate) struct OverlayPlacement {
+pub struct OverlayPlacement {
     monitor: usize,
     width: f64,
     height: f64,
@@ -128,7 +127,7 @@ pub struct ResolvedHotkeyBinding {
 }
 
 impl OverlayPlacement {
-    pub(crate) fn new(
+    pub fn new(
         monitor: usize,
         width: f64,
         height: f64,
@@ -146,27 +145,27 @@ impl OverlayPlacement {
         }
     }
 
-    pub(crate) fn monitor(&self) -> usize {
+    pub fn monitor(&self) -> usize {
         self.monitor
     }
 
-    pub(crate) fn width(&self) -> f64 {
+    pub fn width(&self) -> f64 {
         self.width
     }
 
-    pub(crate) fn height(&self) -> f64 {
+    pub fn height(&self) -> f64 {
         self.height
     }
 
-    pub(crate) fn top_offset(&self) -> i32 {
+    pub fn top_offset(&self) -> i32 {
         self.top_offset
     }
 
-    pub(crate) fn right_offset(&self) -> i32 {
+    pub fn right_offset(&self) -> i32 {
         self.right_offset
     }
 
-    pub(crate) fn subtract_height(&self) -> i32 {
+    pub fn subtract_height(&self) -> i32 {
         self.subtract_height
     }
 }
@@ -680,14 +679,14 @@ impl OverlayInfoOps {
 }
 
 impl OverlayInfoOps {
-    pub(crate) fn apply_overlay_placement(window: &tauri::WebviewWindow) -> Result<(), String> {
+    pub fn apply_overlay_placement(window: &tauri::WebviewWindow) -> Result<(), String> {
         let state = window.state::<BackendState>();
         OverlayInfoOps::apply_overlay_placement_from_settings(window, &state.read_settings_memory())
     }
 }
 
 impl OverlayInfoOps {
-    pub(crate) fn apply_overlay_placement_from_settings(
+    pub fn apply_overlay_placement_from_settings(
         window: &tauri::WebviewWindow,
         settings_value: &AppSettings,
     ) -> Result<(), String> {
@@ -725,7 +724,7 @@ impl OverlayInfoOps {
 }
 
 impl OverlayInfoOps {
-    pub(crate) fn stabilize_overlay_bounds(window: &tauri::WebviewWindow) -> Result<(), String> {
+    pub fn stabilize_overlay_bounds(window: &tauri::WebviewWindow) -> Result<(), String> {
         let state = window.state::<BackendState>();
         OverlayInfoOps::stabilize_overlay_bounds_from_settings(
             window,
@@ -959,7 +958,7 @@ impl OverlayInfoOps {
 }
 
 impl OverlayInfoOps {
-    pub(crate) fn register_overlay_hotkeys(app: &tauri::AppHandle<Wry>) -> Result<(), String> {
+    pub fn register_overlay_hotkeys(app: &tauri::AppHandle<Wry>) -> Result<(), String> {
         let _ = app.global_shortcut().unregister_all();
         let state = app.state::<BackendState>();
 
@@ -1011,10 +1010,7 @@ impl OverlayInfoOps {
 }
 
 impl OverlayInfoOps {
-    pub(crate) fn begin_hotkey_reassign(
-        app: &tauri::AppHandle<Wry>,
-        path: &str,
-    ) -> Result<(), String> {
+    pub fn begin_hotkey_reassign(app: &tauri::AppHandle<Wry>, path: &str) -> Result<(), String> {
         let state = app.state::<BackendState>();
         if let Some(previous_path) = state.active_hotkey_reassign_path()
             && previous_path != path
@@ -1042,10 +1038,7 @@ impl OverlayInfoOps {
 }
 
 impl OverlayInfoOps {
-    pub(crate) fn end_hotkey_reassign(
-        app: &tauri::AppHandle<Wry>,
-        path: &str,
-    ) -> Result<(), String> {
+    pub fn end_hotkey_reassign(app: &tauri::AppHandle<Wry>, path: &str) -> Result<(), String> {
         let state = app.state::<BackendState>();
         if state.active_hotkey_reassign_path().as_deref() == Some(path) {
             state.set_active_hotkey_reassign_path(None);
@@ -1127,7 +1120,7 @@ impl OverlayInfoOps {
 }
 
 impl OverlayInfoOps {
-    pub(crate) fn emit_replay_to_overlay_from_replay(
+    pub fn emit_replay_to_overlay_from_replay(
         app: &tauri::AppHandle<Wry>,
         replay: &crate::ReplayInfo,
         mark_new_replay: bool,
@@ -1314,7 +1307,7 @@ impl OverlayInfoOps {
         }
     }
 
-    pub(crate) fn replay_show_for_window(
+    pub fn replay_show_for_window(
         app: &tauri::AppHandle<Wry>,
         state: &BackendState,
         requested: Option<&str>,
@@ -1352,7 +1345,7 @@ impl OverlayInfoOps {
 }
 
 impl OverlayInfoOps {
-    pub(crate) fn replay_move_window(
+    pub fn replay_move_window(
         app: &tauri::AppHandle<Wry>,
         state: &BackendState,
         delta: i64,
@@ -1377,7 +1370,7 @@ impl OverlayInfoOps {
 }
 
 impl OverlayInfoOps {
-    pub(crate) fn perform_overlay_action(
+    pub fn perform_overlay_action(
         app: &tauri::AppHandle<Wry>,
         state: &BackendState,
         action: &str,
@@ -1547,7 +1540,7 @@ impl OverlayInfoOps {
 }
 
 impl OverlayInfoOps {
-    pub(crate) fn show_player_stats_for_name(
+    pub fn show_player_stats_for_name(
         app: &tauri::AppHandle<Wry>,
         state: &BackendState,
         player_handle: &str,
@@ -1621,7 +1614,7 @@ impl OverlayInfoOps {
 }
 
 impl OverlayInfoOps {
-    pub(crate) fn reveal_file_in_explorer(file: &str) -> Result<(), String> {
+    pub fn reveal_file_in_explorer(file: &str) -> Result<(), String> {
         let original_path = Path::new(file);
         if !original_path.exists() {
             return Err("Replay file does not exist".to_string());
@@ -1744,7 +1737,7 @@ impl OverlayInfoOps {
 }
 
 impl OverlayInfoOps {
-    pub(crate) fn sync_overlay_runtime_settings<R: Runtime>(app: &tauri::AppHandle<R>) {
+    pub fn sync_overlay_runtime_settings<R: Runtime>(app: &tauri::AppHandle<R>) {
         let state = app.state::<crate::BackendState>();
         let settings = state.read_settings_memory();
         let (session_victories, session_defeats) = state.session_counts();
@@ -1766,7 +1759,7 @@ impl OverlayInfoOps {
 }
 
 impl OverlayInfoOps {
-    pub(crate) fn apply_sc2_overlay_window_bounds<R: Runtime>(
+    pub fn apply_sc2_overlay_window_bounds<R: Runtime>(
         window: &tauri::WebviewWindow<R>,
         rect: crate::ScreenRect,
     ) -> Result<(), String> {
@@ -1793,7 +1786,7 @@ impl OverlayInfoOps {
         Ok(())
     }
 
-    pub(crate) fn sync_sc2_overlay_window_to_sc2<R: Runtime>(
+    pub fn sync_sc2_overlay_window_to_sc2<R: Runtime>(
         app: &tauri::AppHandle<R>,
     ) -> Result<bool, String> {
         let Some(window) = app.get_webview_window(SC2_OVERLAY_WINDOW_LABEL) else {
@@ -1822,7 +1815,7 @@ impl OverlayInfoOps {
         Ok(true)
     }
 
-    pub(crate) fn emit_first_win_bonus_timer<R: Runtime>(
+    pub fn emit_first_win_bonus_timer<R: Runtime>(
         app: &tauri::AppHandle<R>,
         payload: FirstWinBonusTimerPayload,
     ) {
@@ -1834,7 +1827,7 @@ impl OverlayInfoOps {
 }
 
 impl OverlayInfoOps {
-    pub(crate) fn show_sc2_overlay_window<R: Runtime>(app: &tauri::AppHandle<R>) {
+    pub fn show_sc2_overlay_window<R: Runtime>(app: &tauri::AppHandle<R>) {
         OverlayInfoOps::sync_overlay_runtime_settings(app);
         if let Err(error) = OverlayInfoOps::sync_sc2_overlay_window_to_sc2(app) {
             crate::sco_log!("[SCO/sc2-overlay] Failed to show SC2 overlay: {error}");
@@ -1843,7 +1836,7 @@ impl OverlayInfoOps {
 }
 
 impl OverlayInfoOps {
-    pub(crate) fn hide_sc2_overlay_window<R: Runtime>(app: &tauri::AppHandle<R>) {
+    pub fn hide_sc2_overlay_window<R: Runtime>(app: &tauri::AppHandle<R>) {
         if let Some(window) = app.get_webview_window(SC2_OVERLAY_WINDOW_LABEL) {
             let _ = window.hide();
         }
@@ -1851,7 +1844,7 @@ impl OverlayInfoOps {
 }
 
 impl OverlayInfoOps {
-    pub(crate) fn spawn_sc2_overlay_window_tracker(app: tauri::AppHandle<Wry>) {
+    pub fn spawn_sc2_overlay_window_tracker(app: tauri::AppHandle<Wry>) {
         thread::spawn(move || {
             let mut last_error: Option<String> = None;
             loop {
@@ -1875,7 +1868,7 @@ impl OverlayInfoOps {
 }
 
 impl OverlayInfoOps {
-    pub(crate) fn show_overlay_window<R: Runtime>(app: &tauri::AppHandle<R>) {
+    pub fn show_overlay_window<R: Runtime>(app: &tauri::AppHandle<R>) {
         OverlayInfoOps::sync_overlay_runtime_settings(app);
         OverlayInfoOps::hide_sc2_overlay_window(app);
         if let Some(overlay_window) = app.get_webview_window(OVERLAY_WINDOW_LABEL) {
@@ -1886,7 +1879,7 @@ impl OverlayInfoOps {
 }
 
 impl OverlayInfoOps {
-    pub(crate) fn hide_overlay_window<R: Runtime>(app: &tauri::AppHandle<R>) {
+    pub fn hide_overlay_window<R: Runtime>(app: &tauri::AppHandle<R>) {
         if let Some(overlay_window) = app.get_webview_window(OVERLAY_WINDOW_LABEL) {
             let _ = overlay_window.hide();
         }
@@ -1894,7 +1887,7 @@ impl OverlayInfoOps {
 }
 
 impl OverlayInfoOps {
-    pub(crate) fn show_config_window<R: Runtime>(app: &tauri::AppHandle<R>) {
+    pub fn show_config_window<R: Runtime>(app: &tauri::AppHandle<R>) {
         if let Some(config_window) = app.get_webview_window("config") {
             let _ = config_window.show();
             let _ = config_window.set_focus();
@@ -1903,9 +1896,7 @@ impl OverlayInfoOps {
 }
 
 impl OverlayInfoOps {
-    pub(crate) fn build_tray_menu<R: Runtime>(
-        app: &tauri::AppHandle<R>,
-    ) -> Option<tauri::menu::Menu<R>> {
+    pub fn build_tray_menu<R: Runtime>(app: &tauri::AppHandle<R>) -> Option<tauri::menu::Menu<R>> {
         let show_item = MenuItem::with_id(
             app,
             MENU_ITEM_SHOW_CONFIG,

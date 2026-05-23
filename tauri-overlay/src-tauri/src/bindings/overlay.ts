@@ -94,7 +94,29 @@ export type ReplayVisualUnitGroup = "buildings" | "attack_units" | "defense_buil
 
 export type StatsActionPayload = { status: string, result: OverlayActionResult, message: string, stats: StatsStatePayload | null, };
 
-export type StatsStatePayload = { ready: boolean, games: number, detailed_parsed_count: number, total_valid_files: number, analysis?: Record<string, any> | null, main_players: Array<string>, main_handles: Array<string>, analysis_running: boolean, analysis_running_mode?: string, simple_analysis_status: string, detailed_analysis_status: string, detailed_analysis_atstart: boolean, prestige_names: { [key in string]: LocalizedLabels }, message: string, scan_progress: ReplayScanProgressPayload, };
+export type StatsAmonUnitRow = { created: number, lost: number, kills: number, KD: number | string, };
+
+export type StatsAnalysisPayload = { MapData: { [key in string]: StatsMapDataRow }, CommanderData: { [key in string]: StatsCommanderDataRow }, AllyCommanderData: { [key in string]: StatsCommanderDataRow }, DifficultyData: { [key in string]: StatsDifficultyDataRow }, RegionData: { [key in string]: StatsRegionDataRow }, PlayerData: { [key in string]: StatsPlayerDataRow }, AmonData: { [key in string]: StatsAmonUnitRow }, UnitData: StatsUnitDataPayload | null, MapDataReady?: boolean, };
+
+export type StatsCommanderDataRow = { Frequency: number, Victory: number, Defeat: number, Winrate: number, MedianAPM: number, KillFraction: number, Mastery: Record<string, number>, MasteryDistribution: Record<string, Record<string, number>>, MasteryDistributionByPrestige: Record<string, Record<string, Record<string, number>>>, Prestige: Record<string, number>, MasteryByPrestige: Record<string, Record<string, number>>, detailedCount: number, };
+
+export type StatsCommanderUnitRow = { created: number | string, made: number, lost: number | string, lost_percent: number | null, kills: number, KD: number | null, kill_percentage: number, };
+
+export type StatsDifficultyDataRow = { Victory: number, Defeat: number, Winrate: number, };
+
+export type StatsFastestMapDetails = { length: number, file: string, date: number, difficulty: string, players: Array<StatsFastestMapPlayer>, enemy_race: string, };
+
+export type StatsFastestMapPlayer = { name: string, handle: string, commander: string, apm: number, mastery_level: number, masteries: Array<number>, prestige: number, prestige_name: string, };
+
+export type StatsMapDataRow = { id: string, average_victory_time: number, frequency: number, Victory: number, Defeat: number, Winrate: number, bonus: number, detailedCount: number, Fastest: StatsFastestMapDetails, };
+
+export type StatsPlayerDataRow = { wins: number, losses: number, winrate: number, kills: number, apm: number, frequency: number, last_seen: number, commander: string, };
+
+export type StatsRegionDataRow = { frequency: number, Victory: number, Defeat: number, winrate: number, max_asc: number, prestiges: Record<string, number>, max_com: Array<string>, };
+
+export type StatsStatePayload = { ready: boolean, games: number, detailed_parsed_count: number, total_valid_files: number, analysis?: StatsAnalysisPayload, main_players: Array<string>, main_handles: Array<string>, analysis_running: boolean, analysis_running_mode?: string, simple_analysis_status: string, detailed_analysis_status: string, detailed_analysis_atstart: boolean, prestige_names: { [key in string]: LocalizedLabels }, message: string, scan_progress: ReplayScanProgressPayload, };
+
+export type StatsUnitDataPayload = { main: Record<string, ({ count: number } & Record<string, StatsCommanderUnitRow | number>) | null>, ally: Record<string, ({ count: number } & Record<string, StatsCommanderUnitRow | number>) | null>, amon: { [key in string]: StatsAmonUnitRow }, };
 
 export type UiMutatorRow = { id: string, name: LocalizedText, iconName: string, description: LocalizedText, };
 

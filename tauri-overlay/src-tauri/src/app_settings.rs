@@ -609,7 +609,7 @@ impl AppSettingsOps {
 }
 
 impl AppSettings {
-    pub(crate) fn sync_start_with_windows_registration(&self) -> Result<(), String> {
+    pub fn sync_start_with_windows_registration(&self) -> Result<(), String> {
         AppSettingsOps::sync_windows_startup_registration(self.start_with_windows)
     }
 
@@ -712,7 +712,7 @@ impl AppSettings {
         AppSettingsOps::extract_account_handles_from_folder(account_root)
     }
 
-    pub(crate) fn resolve_replay_root(&self) -> Option<PathBuf> {
+    pub fn resolve_replay_root(&self) -> Option<PathBuf> {
         let account_folder = self.account_folder.trim();
         if !account_folder.is_empty() {
             let candidates = AppSettingsOps::build_replay_root_candidates(account_folder);
@@ -724,7 +724,7 @@ impl AppSettings {
         None
     }
 
-    pub(crate) fn replay_watch_root(&self) -> Option<PathBuf> {
+    pub fn replay_watch_root(&self) -> Option<PathBuf> {
         let account_folder = self.account_folder.trim();
         if account_folder.is_empty() {
             return None;
@@ -735,7 +735,7 @@ impl AppSettings {
             .find(|candidate| candidate.is_dir())
     }
 
-    pub(crate) fn current_replay_files_snapshot(&self, limit: usize) -> HashSet<String> {
+    pub fn current_replay_files_snapshot(&self, limit: usize) -> HashSet<String> {
         let Some(root) = self.resolve_replay_root() else {
             return HashSet::new();
         };
@@ -746,11 +746,11 @@ impl AppSettings {
             .collect()
     }
 
-    pub(crate) fn overlay_placement(&self) -> OverlayPlacement {
+    pub fn overlay_placement(&self) -> OverlayPlacement {
         OverlayPlacement::new(self.monitor.max(1), 0.7, 1.0, 0, 0, 1)
     }
 
-    pub(crate) fn runtime_flags(&self) -> RuntimeFlags {
+    pub fn runtime_flags(&self) -> RuntimeFlags {
         let minimize_to_tray = self.minimize_to_tray;
         let start_minimized = if minimize_to_tray {
             self.start_minimized
@@ -761,7 +761,7 @@ impl AppSettings {
         RuntimeFlags::new(start_minimized, minimize_to_tray, self.auto_update)
     }
 
-    pub(crate) fn resolved_overlay_hotkey_bindings(&self) -> Vec<ResolvedHotkeyBinding> {
+    pub fn resolved_overlay_hotkey_bindings(&self) -> Vec<ResolvedHotkeyBinding> {
         let mut bindings = Vec::new();
 
         for (path, action) in OVERLAY_HOTKEY_BINDINGS {
@@ -914,7 +914,7 @@ impl AppSettings {
         self.hide_nicknames_in_overlay
     }
 
-    pub(crate) fn overlay_language(&self) -> &'static str {
+    pub fn overlay_language(&self) -> &'static str {
         match self.language.as_str() {
             "ko" => "ko",
             _ => "en",
@@ -944,11 +944,11 @@ impl AppSettings {
         .unwrap_or_else(|_| Value::Object(Default::default()))
     }
 
-    pub(crate) fn performance_show_enabled(&self) -> bool {
+    pub fn performance_show_enabled(&self) -> bool {
         self.performance_show
     }
 
-    pub(crate) fn performance_process_names(&self) -> Vec<String> {
+    pub fn performance_process_names(&self) -> Vec<String> {
         let names = self
             .performance_processes
             .iter()
@@ -962,7 +962,7 @@ impl AppSettings {
         }
     }
 
-    pub(crate) fn saved_performance_geometry(&self) -> Option<PerformanceGeometry> {
+    pub fn saved_performance_geometry(&self) -> Option<PerformanceGeometry> {
         let geometry = self.performance_geometry?;
         let x = geometry[0];
         let y = geometry[1];

@@ -124,7 +124,7 @@ impl ReplayCacheDatabase {
         Ok(ReplayCachePageResult::new(entries, total_rows))
     }
 
-    pub(super) fn summary_entries_from_records(
+    pub fn summary_entries_from_records(
         &self,
         records: Vec<ReplayCacheEntryRecord>,
     ) -> Result<Vec<CacheReplayEntry>, ReplayCacheDbError> {
@@ -618,7 +618,7 @@ impl ReplayCacheDatabase {
         Self::collect_replay_ids(rows, self)
     }
 
-    pub(super) fn entry_from_record(
+    pub fn entry_from_record(
         &self,
         record: ReplayCacheEntryRecord,
     ) -> Result<CacheReplayEntry, ReplayCacheDbError> {

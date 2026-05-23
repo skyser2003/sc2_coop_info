@@ -126,7 +126,7 @@ impl LoggingOps {
 }
 
 impl LoggingOps {
-    pub(crate) fn append_line(message: &str) -> Result<(), String> {
+    pub fn append_line(message: &str) -> Result<(), String> {
         let path = LoggingOps::logs_file_path();
         LoggingOps::append_line_to_path(&path, message)
     }
@@ -158,7 +158,7 @@ impl LoggingOps {
 }
 
 impl LoggingOps {
-    pub(crate) fn append_line_if_enabled(message: &str) {
+    pub fn append_line_if_enabled(message: &str) {
         if !LoggingOps::file_logging_enabled() {
             return;
         }
@@ -170,7 +170,7 @@ impl LoggingOps {
 }
 
 impl LoggingOps {
-    pub(crate) fn log_line(message: &str) {
+    pub fn log_line(message: &str) {
         eprintln!("{message}");
         LoggingOps::append_line_if_enabled(message);
     }

@@ -36,13 +36,7 @@ fn prepare_startup_analysis_request_marks_once_and_preserves_existing_status() {
         StartupAnalysisTrigger::Setup,
     );
 
-    assert_eq!(
-        first,
-        StartupAnalysisRequestOutcome {
-            include_detailed: true,
-            started: true,
-        }
-    );
+    assert_eq!(first, StartupAnalysisRequestOutcome::new(true, true));
     assert!(stats.startup_analysis_requested());
     assert_eq!(
         stats.message(),
@@ -56,13 +50,7 @@ fn prepare_startup_analysis_request_marks_once_and_preserves_existing_status() {
         StartupAnalysisTrigger::FrontendReady,
     );
 
-    assert_eq!(
-        second,
-        StartupAnalysisRequestOutcome {
-            include_detailed: true,
-            started: false,
-        }
-    );
+    assert_eq!(second, StartupAnalysisRequestOutcome::new(true, false));
     assert_eq!(stats.message(), "Detailed analysis: generating cache.");
 }
 

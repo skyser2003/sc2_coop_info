@@ -45,10 +45,10 @@ impl LiveGamePlayer {
     }
 }
 
-pub(crate) struct LiveGameOps;
+pub struct LiveGameOps;
 
 impl LiveGameOps {
-    pub(crate) fn value_as_u64_lossy(value: Option<&Value>) -> Option<u64> {
+    pub fn value_as_u64_lossy(value: Option<&Value>) -> Option<u64> {
         value
             .and_then(Value::as_u64)
             .or_else(|| {
@@ -64,7 +64,7 @@ impl LiveGameOps {
             })
     }
 
-    pub(crate) fn fetch_sc2_live_game_payload() -> Option<Value> {
+    pub fn fetch_sc2_live_game_payload() -> Option<Value> {
         let mut stream = TcpStream::connect("127.0.0.1:6119").ok()?;
         let _ = stream.set_read_timeout(Some(Duration::from_millis(800)));
         let _ = stream.set_write_timeout(Some(Duration::from_millis(800)));
@@ -80,11 +80,11 @@ impl LiveGameOps {
         serde_json::from_slice::<Value>(body).ok()
     }
 
-    pub(crate) fn extract_live_game_players(payload: &Value) -> usize {
+    pub fn extract_live_game_players(payload: &Value) -> usize {
         Self::parse_live_game_players(payload).len()
     }
 
-    pub(crate) fn choose_other_coop_player_stats(
+    pub fn choose_other_coop_player_stats(
         payload: &Value,
         main_names: &HashSet<String>,
         main_handles: &HashSet<String>,
@@ -182,7 +182,7 @@ impl LiveGameOps {
         None
     }
 
-    pub(crate) fn all_players_are_users(payload: &Value) -> bool {
+    pub fn all_players_are_users(payload: &Value) -> bool {
         let players = Self::parse_live_game_players(payload);
         players
             .iter()

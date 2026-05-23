@@ -12,709 +12,142 @@ use std::path::Path;
 
 use crate::replay_analysis::{ReplayAnalysis, ReplayAnalysisOps};
 use crate::shared_types::LocalizedLabels;
-use crate::{CommanderUnitRollup, TauriOverlayOps, UnitStatsRollup};
+use crate::stats_aggregation::{
+    StatsAggregateAnalysisPayload, StatsAggregateDifficultyDataRow,
+    StatsAggregateFastestMapDetails, StatsAggregateMapDataRow, StatsAggregatePlayerDataRow,
+    StatsAggregateRegionDataRow, StatsAggregationOps, StatsAmonUnitSnapshot,
+    StatsCommanderAggregate, StatsCommanderDataInput, StatsCommanderPlayerRecord,
+    StatsCommanderTotals, StatsMapAggregate, StatsPlayerAggregate, StatsPlayerRecord,
+    StatsPlayerSnapshot, StatsPlayerUnitSnapshot, StatsRegionAggregate, StatsReplaySnapshot,
+    StatsResultSummary, StatsWinLossAggregate,
+};
 
-const PRESTIGE_TRACKING_START_YMD: u32 = 20200726;
-const MASTERY_DISTRIBUTION_RATIO_SCALE: u64 = 100_000;
+struct ReplayCacheStatisticsLoadOps;
 
-#[derive(Clone, Debug, Default)]
-struct StatsPlayerSnapshot {
-    pid: u8,
-    name: String,
-    handle: String,
-    commander: String,
-    apm: u64,
-    kills: u64,
-    commander_level: u64,
-    mastery_level: u64,
-    prestige: u64,
-    masteries: Vec<u64>,
-}
-
-#[derive(Clone, Debug)]
-struct StatsPlayerUnitSnapshot {
-    pid: u8,
-    unit_name: String,
-    created_hidden: bool,
-    created_count: i64,
-    lost_hidden: bool,
-    lost_count: i64,
-    kills: u64,
-}
-
-#[derive(Clone, Debug)]
-struct StatsAmonUnitSnapshot {
-    unit_name: String,
-    created_hidden: bool,
-    created_count: i64,
-    lost_hidden: bool,
-    lost_count: i64,
-    kills: i64,
-}
-
-#[derive(Clone, Debug)]
-struct StatsReplaySnapshot {
-    file: String,
-    map_name: String,
-    result: String,
-    difficulty: String,
-    enemy_race: String,
-    date_seconds: u64,
-    detailed_analysis: bool,
-    brutal_plus: u64,
-    extension: bool,
-    length_realtime: f64,
-    bonus_completed: u64,
-    main: StatsPlayerSnapshot,
-    ally: StatsPlayerSnapshot,
-    player_units: Vec<StatsPlayerUnitSnapshot>,
-    amon_units: Vec<StatsAmonUnitSnapshot>,
-}
-
-#[derive(Default)]
-struct StatsWinLossAggregate {
-    wins: u64,
-    losses: u64,
-}
-
-#[derive(Default)]
-struct StatsMapAggregate {
-    wins: u64,
-    losses: u64,
-    victory_length_sum: f64,
-    victory_games: u64,
-    bonus_fraction_sum: f64,
-    bonus_games: u64,
-    detailed_count: u64,
-    fastest: Option<StatsReplaySnapshot>,
-}
-
-type StatsMasteryDistributionCounts = [BTreeMap<u64, u64>; 3];
-type StatsMasteryDistributionByPrestigeCounts = [StatsMasteryDistributionCounts; 4];
-
-#[derive(Default)]
-struct StatsCommanderAggregate {
-    wins: u64,
-    losses: u64,
-    apm_values: Vec<u64>,
-    kill_fractions: Vec<f64>,
-    mastery_counts: [f64; 6],
-    mastery_distribution_counts: StatsMasteryDistributionCounts,
-    mastery_distribution_by_prestige_counts: StatsMasteryDistributionByPrestigeCounts,
-    mastery_by_prestige_counts: [[f64; 6]; 4],
-    prestige_counts: [u64; 4],
-    detailed_count: u64,
-}
-
-#[derive(Default)]
-struct StatsCommanderTotals {
-    wins: u64,
-    losses: u64,
-    apm_values: Vec<u64>,
-    kill_fractions: Vec<f64>,
-    mastery_counts: [f64; 6],
-    mastery_distribution_counts: StatsMasteryDistributionCounts,
-    mastery_distribution_by_prestige_counts: StatsMasteryDistributionByPrestigeCounts,
-    mastery_by_prestige_counts: [[f64; 6]; 4],
-    prestige_counts: [u64; 4],
-}
-
-impl StatsCommanderTotals {
-    fn record_result(&mut self, replay_is_victory: bool) {
-        if replay_is_victory {
-            self.wins = self.wins.saturating_add(1);
-        } else {
-            self.losses = self.losses.saturating_add(1);
-        }
+impl ReplayCacheStatisticsLoadOps {
+    fn to_value<T: Serialize>(value: &T) -> Value {
+        serde_json::to_value(value).unwrap_or_else(|_| Value::Object(Default::default()))
     }
 
-    fn record_player(
-        &mut self,
-        player: &StatsPlayerSnapshot,
-        detailed_analysis: bool,
-        kill_fraction: f64,
-        include_prestige: bool,
-    ) {
-        self.apm_values.push(player.apm);
-        if detailed_analysis {
-            self.kill_fractions.push(kill_fraction);
-        }
-        let normalized_masteries = normalize_mastery_vector(&player.masteries);
-        record_mastery_counts(&mut self.mastery_counts, &normalized_masteries);
-        record_mastery_distribution(&mut self.mastery_distribution_counts, &player.masteries);
-        record_mastery_distribution_by_prestige(
-            &mut self.mastery_distribution_by_prestige_counts,
-            player.prestige,
-            &player.masteries,
-        );
-        record_mastery_by_prestige(
-            &mut self.mastery_by_prestige_counts,
-            player.prestige,
-            &normalized_masteries,
-        );
-        if include_prestige {
-            record_prestige_count(&mut self.prestige_counts, player.prestige);
-        }
-    }
-
-    fn games(&self) -> u64 {
-        self.wins.saturating_add(self.losses)
-    }
-}
-
-struct StatsCommanderDataInput<'a> {
-    aggregates: &'a BTreeMap<String, StatsCommanderAggregate>,
-    total_games: u64,
-    totals: &'a StatsCommanderTotals,
-    main_frequency: Option<&'a HashMap<String, f64>>,
-}
-
-struct StatsUnitRollupInput<'a> {
-    commander: &'a str,
-    unit_name: &'a str,
-    created_hidden: bool,
-    created_count: i64,
-    lost_hidden: bool,
-    lost_count: i64,
-    kills: u64,
-    player_kills: u64,
-}
-
-#[derive(Default)]
-struct StatsRegionAggregate {
-    wins: u64,
-    losses: u64,
-    max_asc: u64,
-    max_com: BTreeSet<String>,
-    prestiges: HashMap<String, u64>,
-}
-
-#[derive(Default)]
-struct StatsPlayerAggregate {
-    wins: u64,
-    losses: u64,
-    apm_values: Vec<u64>,
-    kill_fractions: Vec<f64>,
-    last_seen: u64,
-    commander_counts: HashMap<String, u64>,
-    latest_commander: String,
-}
-
-impl StatsPlayerAggregate {
-    fn record(
-        &mut self,
-        player: &StatsPlayerSnapshot,
-        replay_is_victory: bool,
-        kill_fraction: f64,
-        date_seconds: u64,
-    ) {
-        if replay_is_victory {
-            self.wins = self.wins.saturating_add(1);
-        } else {
-            self.losses = self.losses.saturating_add(1);
-        }
-        self.apm_values.push(player.apm);
-        self.kill_fractions.push(kill_fraction);
-        if !player.commander.is_empty() {
-            self.latest_commander = player.commander.clone();
-            self.commander_counts
-                .entry(player.commander.clone())
-                .and_modify(|count| *count = count.saturating_add(1))
-                .or_insert(1);
-        }
-        self.last_seen = self.last_seen.max(date_seconds);
-    }
-
-    fn dominant_commander(&self) -> (String, f64) {
-        let games = self.wins.saturating_add(self.losses);
-        let Some((commander, count)) = self
-            .commander_counts
-            .iter()
-            .max_by(|left, right| left.1.cmp(right.1).then_with(|| right.0.cmp(left.0)))
-        else {
-            return (Self::sanitize(&self.latest_commander), 0.0);
-        };
-        (Self::sanitize(commander), ratio(*count, games))
-    }
-
-    fn sanitize(value: &str) -> String {
-        sanitize_replay_text(value)
-    }
-}
-
-#[derive(Serialize)]
-struct SqlStatsFastestMapDetails {
-    length: f64,
-    file: String,
-    date: u64,
-    difficulty: String,
-    players: Vec<Value>,
-    enemy_race: String,
-}
-
-#[derive(Serialize)]
-struct SqlStatsMapDataRow {
-    id: String,
-    average_victory_time: f64,
-    frequency: f64,
-    #[serde(rename = "Victory")]
-    victory: u64,
-    #[serde(rename = "Defeat")]
-    defeat: u64,
-    #[serde(rename = "Winrate")]
-    winrate: f64,
-    bonus: f64,
-    #[serde(rename = "detailedCount")]
-    detailed_count: u64,
-    #[serde(rename = "Fastest")]
-    fastest: SqlStatsFastestMapDetails,
-}
-
-#[derive(Serialize)]
-struct SqlStatsCommanderDataRow {
-    #[serde(rename = "Frequency")]
-    frequency: f64,
-    #[serde(rename = "Victory")]
-    victory: u64,
-    #[serde(rename = "Defeat")]
-    defeat: u64,
-    #[serde(rename = "Winrate")]
-    winrate: f64,
-    #[serde(rename = "MedianAPM")]
-    median_apm: f64,
-    #[serde(rename = "KillFraction")]
-    kill_fraction: f64,
-    #[serde(rename = "Mastery")]
-    mastery: Map<String, Value>,
-    #[serde(rename = "MasteryDistribution")]
-    mastery_distribution: Map<String, Value>,
-    #[serde(rename = "MasteryDistributionByPrestige")]
-    mastery_distribution_by_prestige: Map<String, Value>,
-    #[serde(rename = "Prestige")]
-    prestige: Map<String, Value>,
-    #[serde(rename = "MasteryByPrestige")]
-    mastery_by_prestige: Map<String, Value>,
-    #[serde(rename = "detailedCount")]
-    detailed_count: u64,
-}
-
-#[derive(Serialize)]
-struct SqlStatsDifficultyDataRow {
-    #[serde(rename = "Victory")]
-    victory: u64,
-    #[serde(rename = "Defeat")]
-    defeat: u64,
-    #[serde(rename = "Winrate")]
-    winrate: f64,
-}
-
-#[derive(Serialize)]
-struct SqlStatsRegionDataRow {
-    frequency: f64,
-    #[serde(rename = "Victory")]
-    victory: u64,
-    #[serde(rename = "Defeat")]
-    defeat: u64,
-    winrate: f64,
-    max_asc: u64,
-    prestiges: Map<String, Value>,
-    max_com: Vec<String>,
-}
-
-#[derive(Serialize)]
-struct SqlStatsPlayerDataRow {
-    wins: u64,
-    losses: u64,
-    winrate: f64,
-    kills: f64,
-    apm: f64,
-    frequency: f64,
-    last_seen: u64,
-    commander: String,
-}
-
-#[derive(Serialize)]
-struct SqlStatsUnitDataPayload {
-    main: Value,
-    ally: Value,
-    amon: Value,
-}
-
-#[derive(Serialize)]
-struct SqlStatsAnalysisPayload {
-    #[serde(rename = "MapData")]
-    map_data: Map<String, Value>,
-    #[serde(rename = "CommanderData")]
-    commander_data: Map<String, Value>,
-    #[serde(rename = "AllyCommanderData")]
-    ally_commander_data: Map<String, Value>,
-    #[serde(rename = "DifficultyData")]
-    difficulty_data: Map<String, Value>,
-    #[serde(rename = "RegionData")]
-    region_data: Map<String, Value>,
-    #[serde(rename = "PlayerData")]
-    player_data: Map<String, Value>,
-    #[serde(rename = "AmonData")]
-    amon_data: Map<String, Value>,
-    #[serde(rename = "UnitData")]
-    unit_data: Value,
-    #[serde(rename = "MapDataReady")]
-    map_data_ready: bool,
-}
-
-fn to_value<T: Serialize>(value: &T) -> Value {
-    serde_json::to_value(value).unwrap_or_else(|_| Value::Object(Default::default()))
-}
-
-fn ratio(numerator: u64, denominator: u64) -> f64 {
-    if denominator == 0 {
-        0.0
-    } else {
-        numerator as f64 / denominator as f64
-    }
-}
-
-fn ratio_f64(numerator: f64, denominator: f64) -> f64 {
-    if denominator <= f64::EPSILON {
-        0.0
-    } else {
-        numerator / denominator
-    }
-}
-
-fn median_u64(values: &[u64]) -> f64 {
-    if values.is_empty() {
-        return 0.0;
-    }
-    let mut sorted = values.to_vec();
-    sorted.sort_unstable();
-    let mid = sorted.len() / 2;
-    if sorted.len() % 2 == 1 {
-        sorted[mid] as f64
-    } else {
-        (sorted[mid - 1] + sorted[mid]) as f64 / 2.0
-    }
-}
-
-fn median_f64(values: &[f64]) -> f64 {
-    if values.is_empty() {
-        return 0.0;
-    }
-    let mut sorted = values.to_vec();
-    sorted.sort_by(|left, right| left.total_cmp(right));
-    let mid = sorted.len() / 2;
-    if sorted.len() % 2 == 1 {
-        sorted[mid]
-    } else {
-        (sorted[mid - 1] + sorted[mid]) / 2.0
-    }
-}
-
-fn sanitize_replay_text(value: &str) -> String {
-    let mut output = String::with_capacity(value.len());
-    let mut in_tag = false;
-    let mut last_space = false;
-    for ch in value.chars() {
-        match ch {
-            '<' => {
-                in_tag = true;
-                if !last_space {
-                    output.push(' ');
-                    last_space = true;
+    fn sanitize_replay_text(value: &str) -> String {
+        let mut output = String::with_capacity(value.len());
+        let mut in_tag = false;
+        let mut last_space = false;
+        for ch in value.chars() {
+            match ch {
+                '<' => {
+                    in_tag = true;
+                    if !last_space {
+                        output.push(' ');
+                        last_space = true;
+                    }
+                }
+                '>' if in_tag => {
+                    in_tag = false;
+                    if !last_space {
+                        output.push(' ');
+                        last_space = true;
+                    }
+                }
+                _ if in_tag => {}
+                _ if ch.is_control() => {}
+                _ if ch.is_whitespace() => {
+                    if !last_space {
+                        output.push(' ');
+                        last_space = true;
+                    }
+                }
+                _ => {
+                    output.push(ch);
+                    last_space = false;
                 }
             }
-            '>' if in_tag => {
-                in_tag = false;
-                if !last_space {
-                    output.push(' ');
-                    last_space = true;
-                }
-            }
-            _ if in_tag => {}
-            _ if ch.is_control() => {}
-            _ if ch.is_whitespace() => {
-                if !last_space {
-                    output.push(' ');
-                    last_space = true;
-                }
-            }
-            _ => {
-                output.push(ch);
-                last_space = false;
-            }
         }
+        output
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&amp;", "&")
+            .replace("&quot;", "\"")
+            .replace("&#39;", "'")
+            .replace("&apos;", "'")
+            .trim()
+            .to_string()
     }
-    output
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&amp;", "&")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&apos;", "'")
-        .trim()
+
+    fn normalized_commander_name(commander: &str) -> String {
+        let trimmed = commander.trim();
+        if trimmed.is_empty() {
+            return String::new();
+        }
+        match trimmed.to_ascii_lowercase().as_str() {
+            "abathur" => "Abathur",
+            "alarak" => "Alarak",
+            "artanis" => "Artanis",
+            "dehaka" => "Dehaka",
+            "fenix" => "Fenix",
+            "han & horner" | "han and horner" | "hanhorner" => "Han & Horner",
+            "karax" => "Karax",
+            "kerrigan" => "Kerrigan",
+            "mengsk" | "arcturus mengsk" => "Mengsk",
+            "nova" => "Nova",
+            "raynor" => "Raynor",
+            "stukov" => "Stukov",
+            "swann" => "Swann",
+            "tychus" => "Tychus",
+            "vorazun" => "Vorazun",
+            "zagara" => "Zagara",
+            "zeratul" => "Zeratul",
+            "stetmann" => "Stetmann",
+            _ => trimmed,
+        }
         .to_string()
-}
-
-fn normalized_commander_name(commander: &str) -> String {
-    let trimmed = commander.trim();
-    if trimmed.is_empty() {
-        return String::new();
     }
-    match trimmed.to_ascii_lowercase().as_str() {
-        "abathur" => "Abathur",
-        "alarak" => "Alarak",
-        "artanis" => "Artanis",
-        "dehaka" => "Dehaka",
-        "fenix" => "Fenix",
-        "han & horner" | "han and horner" | "hanhorner" => "Han & Horner",
-        "karax" => "Karax",
-        "kerrigan" => "Kerrigan",
-        "mengsk" | "arcturus mengsk" => "Mengsk",
-        "nova" => "Nova",
-        "raynor" => "Raynor",
-        "stukov" => "Stukov",
-        "swann" => "Swann",
-        "tychus" => "Tychus",
-        "vorazun" => "Vorazun",
-        "zagara" => "Zagara",
-        "zeratul" => "Zeratul",
-        "stetmann" => "Stetmann",
-        _ => trimmed,
-    }
-    .to_string()
-}
 
-fn result_is_victory(result: &str) -> Option<bool> {
-    match result.trim().to_ascii_lowercase().as_str() {
-        "victory" | "win" | "1" | "true" => Some(true),
-        "defeat" | "loss" | "lose" | "0" | "false" => Some(false),
-        _ => None,
-    }
-}
-
-fn kill_fraction(main_kills: u64, ally_kills: u64) -> f64 {
-    let total = main_kills.saturating_add(ally_kills);
-    if total == 0 {
-        0.0
-    } else {
-        main_kills as f64 / total as f64
-    }
-}
-
-fn normalized_handle_key(handle: &str) -> String {
-    handle.trim().to_ascii_lowercase()
-}
-
-fn infer_region_from_handle(handle: &str) -> Option<String> {
-    let region_code = handle.split('-').next().map(str::trim)?;
-    match region_code {
-        "1" => Some("NA"),
-        "2" => Some("EU"),
-        "3" | "8" => Some("KR"),
-        "5" | "6" => Some("CN"),
-        "98" => Some("PTR"),
-        _ => None,
-    }
-    .map(str::to_string)
-}
-
-fn infer_owner_handle_from_replay_path(path: &str) -> Option<String> {
-    let replay_path = Path::new(path);
-    for component in replay_path.components() {
-        let raw = component.as_os_str().to_str()?;
-        let normalized = ReplayAnalysis::normalized_handle_key(raw);
-        if !normalized.is_empty() {
-            return Some(normalized);
+    fn result_is_victory(result: &str) -> Option<bool> {
+        match result.trim().to_ascii_lowercase().as_str() {
+            "victory" | "win" | "1" | "true" => Some(true),
+            "defeat" | "loss" | "lose" | "0" | "false" => Some(false),
+            _ => None,
         }
     }
-    None
-}
 
-fn ymd_from_unix_seconds(seconds: u64) -> Option<u32> {
-    let days = i64::try_from(seconds / 86_400).ok()?;
-    let z = days + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = mp + if mp < 10 { 3 } else { -9 };
-    let year = y + if m <= 2 { 1 } else { 0 };
-    if year < 0 {
-        return None;
-    }
-    let year_u32 = u32::try_from(year).ok()?;
-    let month_u32 = u32::try_from(m).ok()?;
-    let day_u32 = u32::try_from(d).ok()?;
-    year_u32
-        .checked_mul(10_000)
-        .and_then(|value| {
-            month_u32
-                .checked_mul(100)
-                .and_then(|month| value.checked_add(month))
-        })
-        .and_then(|value| value.checked_add(day_u32))
-}
-
-fn should_count_prestige(date_seconds: u64) -> bool {
-    ymd_from_unix_seconds(date_seconds).is_some_and(|value| value > PRESTIGE_TRACKING_START_YMD)
-}
-
-fn mastery_points_invested(raw_values: &[u64]) -> u64 {
-    raw_values.iter().take(6).copied().sum::<u64>()
-}
-
-fn normalize_mastery_vector(raw_values: &[u64]) -> [f64; 6] {
-    let mut normalized = [0f64; 6];
-    let total = mastery_points_invested(raw_values) as f64;
-    if total <= f64::EPSILON {
-        return normalized;
-    }
-    for (idx, raw) in raw_values.iter().take(6).enumerate() {
-        normalized[idx] = *raw as f64 / total;
-    }
-    normalized
-}
-
-fn normalize_mastery_values(raw: &[u64]) -> Vec<u64> {
-    let mut values = vec![0u64; 6];
-    for (index, value) in raw.iter().take(6).enumerate() {
-        values[index] = *value;
-    }
-    values
-}
-
-fn record_mastery_counts(target: &mut [f64; 6], values: &[f64; 6]) {
-    for (idx, value) in values.iter().enumerate() {
-        target[idx] += *value;
-    }
-}
-
-fn record_prestige_count(target: &mut [u64; 4], prestige: u64) {
-    let prestige = usize::try_from(prestige.min(3)).unwrap_or(3);
-    target[prestige] = target[prestige].saturating_add(1);
-}
-
-fn record_mastery_by_prestige(target: &mut [[f64; 6]; 4], prestige: u64, values: &[f64; 6]) {
-    let prestige = usize::try_from(prestige.min(3)).unwrap_or(3);
-    for (idx, value) in values.iter().enumerate() {
-        target[prestige][idx] += *value;
-    }
-}
-
-fn record_mastery_distribution(target: &mut StatsMasteryDistributionCounts, raw_values: &[u64]) {
-    for (pair_index, counts) in target.iter_mut().enumerate().take(3) {
-        let left = raw_values.get(pair_index * 2).copied().unwrap_or(0);
-        let right = raw_values.get(pair_index * 2 + 1).copied().unwrap_or(0);
-        let pair_total = left.saturating_add(right);
-        if pair_total == 0 {
-            continue;
+    fn kill_fraction(main_kills: u64, ally_kills: u64) -> f64 {
+        let total = main_kills.saturating_add(ally_kills);
+        if total == 0 {
+            0.0
+        } else {
+            main_kills as f64 / total as f64
         }
-        let bucket = left
-            .saturating_mul(MASTERY_DISTRIBUTION_RATIO_SCALE)
-            .saturating_add(pair_total / 2)
-            .checked_div(pair_total)
-            .unwrap_or(0)
-            .min(MASTERY_DISTRIBUTION_RATIO_SCALE);
-        counts
-            .entry(bucket)
-            .and_modify(|count| *count = count.saturating_add(1))
-            .or_insert(1);
     }
-}
 
-fn record_mastery_distribution_by_prestige(
-    target: &mut StatsMasteryDistributionByPrestigeCounts,
-    prestige: u64,
-    raw_values: &[u64],
-) {
-    let prestige = usize::try_from(prestige.min(3)).unwrap_or(3);
-    record_mastery_distribution(&mut target[prestige], raw_values);
-}
-
-fn build_ratio_map(values: &[u64], total_games: u64) -> Map<String, Value> {
-    values
-        .iter()
-        .enumerate()
-        .map(|(index, value)| (index.to_string(), Value::from(ratio(*value, total_games))))
-        .collect()
-}
-
-fn build_mastery_ratio_map(values: &[f64; 6]) -> Map<String, Value> {
-    let mut result = Map::new();
-    for pair_index in 0..3 {
-        let left_idx = pair_index * 2;
-        let right_idx = left_idx + 1;
-        let pair_total = values[left_idx] + values[right_idx];
-        result.insert(
-            left_idx.to_string(),
-            Value::from(ratio_f64(values[left_idx], pair_total)),
-        );
-        result.insert(
-            right_idx.to_string(),
-            Value::from(ratio_f64(values[right_idx], pair_total)),
-        );
+    fn normalized_handle_key(handle: &str) -> String {
+        handle.trim().to_ascii_lowercase()
     }
-    result
-}
 
-fn mastery_distribution_ratio_key(bucket: u64) -> String {
-    let integer = bucket / 1_000;
-    let fractional = bucket % 1_000;
-    if fractional == 0 {
-        return integer.to_string();
+    fn infer_region_from_handle(handle: &str) -> Option<String> {
+        let region_code = handle.split('-').next().map(str::trim)?;
+        match region_code {
+            "1" => Some("NA"),
+            "2" => Some("EU"),
+            "3" | "8" => Some("KR"),
+            "5" | "6" => Some("CN"),
+            "98" => Some("PTR"),
+            _ => None,
+        }
+        .map(str::to_string)
     }
-    format!("{integer}.{fractional:03}")
-        .trim_end_matches('0')
-        .to_string()
-}
 
-fn build_mastery_distribution_map(values: &StatsMasteryDistributionCounts) -> Map<String, Value> {
-    let mut result = Map::new();
-    for (pair_index, pair_counts) in values.iter().enumerate() {
-        let pair_total = pair_counts.values().sum::<u64>();
-        let buckets = pair_counts
-            .iter()
-            .map(|(bucket, count)| {
-                (
-                    mastery_distribution_ratio_key(*bucket),
-                    Value::from(ratio(*count, pair_total)),
-                )
-            })
-            .collect::<Map<String, Value>>();
-        result.insert(pair_index.to_string(), Value::Object(buckets));
+    fn infer_owner_handle_from_replay_path(path: &str) -> Option<String> {
+        let replay_path = Path::new(path);
+        for component in replay_path.components() {
+            let raw = component.as_os_str().to_str()?;
+            let normalized = ReplayAnalysis::normalized_handle_key(raw);
+            if !normalized.is_empty() {
+                return Some(normalized);
+            }
+        }
+        None
     }
-    result
-}
-
-fn build_mastery_distribution_by_prestige_map(
-    values: &StatsMasteryDistributionByPrestigeCounts,
-) -> Map<String, Value> {
-    values
-        .iter()
-        .enumerate()
-        .map(|(prestige, distribution)| {
-            (
-                prestige.to_string(),
-                Value::Object(build_mastery_distribution_map(distribution)),
-            )
-        })
-        .collect()
-}
-
-fn build_mastery_by_prestige_ratio_map(values: &[[f64; 6]; 4]) -> Map<String, Value> {
-    values
-        .iter()
-        .enumerate()
-        .map(|(prestige, mastery_values)| {
-            (
-                prestige.to_string(),
-                Value::Object(build_mastery_ratio_map(mastery_values)),
-            )
-        })
-        .collect()
 }
 
 impl ReplayCacheDatabase {
@@ -1060,7 +493,9 @@ impl ReplayCacheDatabase {
             }
         }
 
-        if let Some(owner_handle) = infer_owner_handle_from_replay_path(file) {
+        if let Some(owner_handle) =
+            ReplayCacheStatisticsLoadOps::infer_owner_handle_from_replay_path(file)
+        {
             let p1_owner = !p1_handle.is_empty() && p1_handle == owner_handle;
             let p2_owner = !p2_handle.is_empty() && p2_handle == owner_handle;
             if p1_owner != p2_owner {
@@ -1094,7 +529,8 @@ impl ReplayCacheDatabase {
         if !query.include_normal_games() && !snapshot.extension {
             return false;
         }
-        let Some(is_victory) = result_is_victory(&snapshot.result) else {
+        let Some(is_victory) = ReplayCacheStatisticsLoadOps::result_is_victory(&snapshot.result)
+        else {
             return false;
         };
         if !query.include_wins() && is_victory {
@@ -1135,8 +571,10 @@ impl ReplayCacheDatabase {
         if !query.include_ally_over_15() && snapshot.ally.commander_level >= 15 {
             return false;
         }
-        let main_mastery_points = mastery_points_invested(&snapshot.main.masteries);
-        let ally_mastery_points = mastery_points_invested(&snapshot.ally.masteries);
+        let main_mastery_points =
+            StatsAggregationOps::mastery_points_invested(&snapshot.main.masteries);
+        let ally_mastery_points =
+            StatsAggregationOps::mastery_points_invested(&snapshot.ally.masteries);
         if !query.include_main_normal_mastery() && main_mastery_points <= 90 {
             return false;
         }
@@ -1186,10 +624,15 @@ impl ReplayCacheDatabase {
             }
         }
         if !query.region_exclusions().is_empty() {
-            let region = infer_region_from_handle(&snapshot.main.handle)
-                .or_else(|| infer_region_from_handle(&snapshot.ally.handle))
-                .unwrap_or_else(|| "Unknown".to_string())
-                .to_ascii_uppercase();
+            let region =
+                ReplayCacheStatisticsLoadOps::infer_region_from_handle(&snapshot.main.handle)
+                    .or_else(|| {
+                        ReplayCacheStatisticsLoadOps::infer_region_from_handle(
+                            &snapshot.ally.handle,
+                        )
+                    })
+                    .unwrap_or_else(|| "Unknown".to_string())
+                    .to_ascii_uppercase();
             if !matches!(region.as_str(), "NA" | "EU" | "KR" | "CN" | "PTR") {
                 return false;
             }
@@ -1233,15 +676,21 @@ impl ReplayCacheDatabase {
             let Some(map_id) = dictionary.canonicalize_coop_map_id(&snapshot.map_name) else {
                 continue;
             };
-            let Some(replay_is_victory) = result_is_victory(&snapshot.result) else {
+            let Some(replay_is_victory) =
+                ReplayCacheStatisticsLoadOps::result_is_victory(&snapshot.result)
+            else {
                 continue;
             };
-            let main_name = sanitize_replay_text(&snapshot.main.name);
-            let ally_name = sanitize_replay_text(&snapshot.ally.name);
-            let main_commander_text = sanitize_replay_text(&snapshot.main.commander);
-            let ally_commander_text = sanitize_replay_text(&snapshot.ally.commander);
-            let main_commander_name = normalized_commander_name(&main_commander_text);
-            let ally_commander_name = normalized_commander_name(&ally_commander_text);
+            let main_name = ReplayCacheStatisticsLoadOps::sanitize_replay_text(&snapshot.main.name);
+            let ally_name = ReplayCacheStatisticsLoadOps::sanitize_replay_text(&snapshot.ally.name);
+            let main_commander_text =
+                ReplayCacheStatisticsLoadOps::sanitize_replay_text(&snapshot.main.commander);
+            let ally_commander_text =
+                ReplayCacheStatisticsLoadOps::sanitize_replay_text(&snapshot.ally.commander);
+            let main_commander_name =
+                ReplayCacheStatisticsLoadOps::normalized_commander_name(&main_commander_text);
+            let ally_commander_name =
+                ReplayCacheStatisticsLoadOps::normalized_commander_name(&ally_commander_text);
             if main_commander_name.is_empty() || ally_commander_name.is_empty() {
                 continue;
             }
@@ -1277,46 +726,28 @@ impl ReplayCacheDatabase {
                 }
             }
 
-            let main_kill_fraction = kill_fraction(snapshot.main.kills, snapshot.ally.kills);
+            let main_kill_fraction = ReplayCacheStatisticsLoadOps::kill_fraction(
+                snapshot.main.kills,
+                snapshot.ally.kills,
+            );
             let ally_kill_fraction = 1.0 - main_kill_fraction;
-            let include_prestige = should_count_prestige(snapshot.date_seconds);
+            let include_prestige =
+                StatsAggregationOps::should_count_prestige(snapshot.date_seconds);
 
-            let map_entry = map_values.entry(map_id.clone()).or_default();
-            if snapshot.detailed_analysis {
-                map_entry.detailed_count = map_entry.detailed_count.saturating_add(1);
-            }
-            if replay_is_victory {
-                map_entry.victory_games = map_entry.victory_games.saturating_add(1);
-                map_entry.victory_length_sum += snapshot.length_realtime;
-                if snapshot.detailed_analysis {
-                    let bonus_total = dictionary
-                        .coop_map_id_to_english(&map_id)
-                        .as_deref()
-                        .and_then(|name| {
-                            crate::replay_analysis::ReplayAnalysisOps::bonus_objective_total_for_canonical_map_with_dictionary(name, dictionary)
-                        })
-                        .unwrap_or(0);
-                    if bonus_total > 0 {
-                        let completed = snapshot.bonus_completed.min(bonus_total);
-                        map_entry.bonus_fraction_sum += completed as f64 / bonus_total as f64;
-                        map_entry.bonus_games = map_entry.bonus_games.saturating_add(1);
-                    }
-                }
-                let should_replace_fastest = map_entry.fastest.as_ref().is_none_or(|fastest| {
-                    snapshot.length_realtime < fastest.length_realtime
-                        || ((snapshot.length_realtime - fastest.length_realtime).abs()
-                            < f64::EPSILON
-                            && snapshot.date_seconds < fastest.date_seconds)
-                });
-                if should_replace_fastest {
-                    map_entry.fastest = Some(snapshot.clone());
-                }
-            }
-            if replay_is_victory {
-                map_entry.wins = map_entry.wins.saturating_add(1);
+            let map_bonus_total = if replay_is_victory && snapshot.detailed_analysis {
+                dictionary
+                    .coop_map_id_to_english(&map_id)
+                    .as_deref()
+                    .and_then(|name| {
+                        crate::replay_analysis::ReplayAnalysisOps::bonus_objective_total_for_canonical_map_with_dictionary(name, dictionary)
+                    })
             } else {
-                map_entry.losses = map_entry.losses.saturating_add(1);
-            }
+                None
+            };
+            map_values
+                .entry(map_id.clone())
+                .or_default()
+                .record_snapshot(&snapshot, replay_is_victory, map_bonus_total, true);
 
             let (main_is_region_main, ally_is_region_main) =
                 Self::stats_region_main_flags(&snapshot, has_known_main_handles, main_handles);
@@ -1327,89 +758,94 @@ impl ReplayCacheDatabase {
                 ally_is_region_main,
             );
             let region_entry = region_values.entry(region).or_default();
-            if replay_is_victory {
-                region_entry.wins = region_entry.wins.saturating_add(1);
-            } else {
-                region_entry.losses = region_entry.losses.saturating_add(1);
-            }
+            region_entry.record_result(replay_is_victory);
             if main_is_region_main {
-                Self::record_region_player(
-                    region_entry,
-                    &snapshot.main,
+                region_entry.record_player(
+                    snapshot.main.mastery_level,
+                    snapshot.main.commander_level,
                     &main_commander_text,
                     &main_commander_name,
+                    snapshot.main.prestige,
                 );
             }
             if ally_is_region_main {
-                Self::record_region_player(
-                    region_entry,
-                    &snapshot.ally,
+                region_entry.record_player(
+                    snapshot.ally.mastery_level,
+                    snapshot.ally.commander_level,
                     &ally_commander_text,
                     &ally_commander_name,
+                    snapshot.ally.prestige,
                 );
             }
 
             let difficulty = Self::stats_difficulty_label(&snapshot);
             if !difficulty.contains('/') {
-                let diff_entry = difficulty_values.entry(difficulty).or_default();
-                if replay_is_victory {
-                    diff_entry.wins = diff_entry.wins.saturating_add(1);
-                } else {
-                    diff_entry.losses = diff_entry.losses.saturating_add(1);
-                }
+                difficulty_values
+                    .entry(difficulty)
+                    .or_default()
+                    .record_result(replay_is_victory);
             }
 
-            sum_main.record_result(replay_is_victory);
-            sum_ally.record_result(replay_is_victory);
-
-            Self::record_commander(
-                main_commander
-                    .entry(main_commander_name.clone())
-                    .or_default(),
-                &snapshot.main,
+            let main_commander_record = StatsCommanderPlayerRecord::new(
                 replay_is_victory,
                 snapshot.detailed_analysis,
+                snapshot.main.apm,
                 main_kill_fraction,
+                snapshot.main.prestige,
+                &snapshot.main.masteries,
                 include_prestige,
             );
-            Self::record_commander(
-                ally_commander
-                    .entry(ally_commander_name.clone())
-                    .or_default(),
-                &snapshot.ally,
+            let ally_commander_record = StatsCommanderPlayerRecord::new(
                 replay_is_victory,
                 snapshot.detailed_analysis,
+                snapshot.ally.apm,
                 ally_kill_fraction,
+                snapshot.ally.prestige,
+                &snapshot.ally.masteries,
                 include_prestige,
             );
-            sum_main.record_player(
-                &snapshot.main,
-                snapshot.detailed_analysis,
-                main_kill_fraction,
-                include_prestige,
-            );
-            sum_ally.record_player(
-                &snapshot.ally,
-                snapshot.detailed_analysis,
-                ally_kill_fraction,
-                include_prestige,
-            );
+            main_commander
+                .entry(main_commander_name.clone())
+                .or_default()
+                .record_player(main_commander_record);
+            ally_commander
+                .entry(ally_commander_name.clone())
+                .or_default()
+                .record_player(ally_commander_record);
+            sum_main.record_player(main_commander_record);
+            sum_ally.record_player(ally_commander_record);
 
             if !main_name.is_empty() {
-                player_values.entry(main_name).or_default().record(
-                    &snapshot.main,
-                    replay_is_victory,
-                    main_kill_fraction,
-                    snapshot.date_seconds,
-                );
+                let main_handle =
+                    ReplayCacheStatisticsLoadOps::sanitize_replay_text(&snapshot.main.handle);
+                player_values
+                    .entry(main_name)
+                    .or_default()
+                    .record_replay(StatsPlayerRecord::new(
+                        &snapshot.main.name,
+                        &main_handle,
+                        &snapshot.main.commander,
+                        replay_is_victory,
+                        snapshot.main.apm,
+                        main_kill_fraction,
+                        snapshot.date_seconds,
+                    ));
             }
             if !ally_name.is_empty() {
-                player_values.entry(ally_name).or_default().record(
-                    &snapshot.ally,
-                    replay_is_victory,
-                    ally_kill_fraction,
-                    snapshot.date_seconds,
-                );
+                let ally_handle =
+                    ReplayCacheStatisticsLoadOps::sanitize_replay_text(&snapshot.ally.handle);
+                player_values
+                    .entry(ally_name)
+                    .or_default()
+                    .record_replay(StatsPlayerRecord::new(
+                        &snapshot.ally.name,
+                        &ally_handle,
+                        &snapshot.ally.commander,
+                        replay_is_victory,
+                        snapshot.ally.apm,
+                        ally_kill_fraction,
+                        snapshot.date_seconds,
+                    ));
             }
 
             valid_snapshots.push(snapshot);
@@ -1425,89 +861,69 @@ impl ReplayCacheDatabase {
             let map_name = dictionary
                 .coop_map_id_to_english(&map_id)
                 .unwrap_or_else(|| map_id.clone());
-            let games = aggregate.wins.saturating_add(aggregate.losses);
-            let bonus = if aggregate.bonus_games == 0 {
-                0.0
-            } else {
-                aggregate.bonus_fraction_sum / aggregate.bonus_games as f64
-            };
-            let fastest = aggregate.fastest.unwrap_or_else(|| StatsReplaySnapshot {
-                file: String::new(),
-                map_name: String::new(),
-                result: String::new(),
-                difficulty: String::new(),
-                enemy_race: String::new(),
-                date_seconds: 0,
-                detailed_analysis: false,
-                brutal_plus: 0,
-                extension: false,
-                length_realtime: 999_999.0,
-                bonus_completed: 0,
-                main: StatsPlayerSnapshot::default(),
-                ally: StatsPlayerSnapshot::default(),
-                player_units: Vec::new(),
-                amon_units: Vec::new(),
-            });
+            let games = aggregate.games();
+            let fastest = aggregate.fastest_or_default();
             let fastest_players =
                 Self::fastest_players_value(&fastest, main_names, main_handles, dictionary);
             map_data.insert(
                 map_name,
-                to_value(&SqlStatsMapDataRow {
-                    id: map_id,
-                    average_victory_time: if aggregate.victory_games == 0 {
-                        999_999.0
-                    } else {
-                        aggregate.victory_length_sum / aggregate.victory_games as f64
-                    },
-                    frequency: ratio(games, total_games),
-                    victory: aggregate.wins,
-                    defeat: aggregate.losses,
-                    winrate: ratio(aggregate.wins, games),
-                    bonus,
-                    detailed_count: aggregate.detailed_count,
-                    fastest: SqlStatsFastestMapDetails {
-                        length: fastest.length_realtime,
-                        file: fastest.file,
-                        date: fastest.date_seconds,
-                        difficulty: sanitize_replay_text(&fastest.difficulty),
-                        players: fastest_players,
-                        enemy_race: sanitize_replay_text(&fastest.enemy_race),
-                    },
-                }),
+                ReplayCacheStatisticsLoadOps::to_value(&StatsAggregateMapDataRow::new(
+                    map_id,
+                    aggregate.average_victory_time(),
+                    StatsAggregationOps::ratio(games, total_games),
+                    StatsResultSummary::new(
+                        aggregate.wins(),
+                        aggregate.losses(),
+                        StatsAggregationOps::ratio(aggregate.wins(), games),
+                    ),
+                    aggregate.bonus_rate(),
+                    aggregate.detailed_count(),
+                    StatsAggregateFastestMapDetails::new(
+                        fastest.length_realtime,
+                        fastest.file,
+                        fastest.date_seconds,
+                        ReplayCacheStatisticsLoadOps::sanitize_replay_text(&fastest.difficulty),
+                        fastest_players,
+                        ReplayCacheStatisticsLoadOps::sanitize_replay_text(&fastest.enemy_race),
+                    ),
+                )),
             );
         }
 
-        let commander_data = Self::build_commander_data(StatsCommanderDataInput {
-            aggregates: &main_commander,
-            total_games,
-            totals: &sum_main,
-            main_frequency: None,
-        });
+        let commander_data = StatsAggregationOps::build_commander_data(
+            StatsCommanderDataInput::new(&main_commander, total_games, &sum_main, None),
+        );
         let main_frequency = main_commander
             .iter()
             .map(|(commander, aggregate)| {
-                let games = aggregate.wins.saturating_add(aggregate.losses);
-                (commander.clone(), ratio(games, sum_main.games()))
+                let games = aggregate.games();
+                (
+                    commander.clone(),
+                    StatsAggregationOps::ratio(games, sum_main.games()),
+                )
             })
             .collect::<HashMap<_, _>>();
-        let ally_commander_data = Self::build_commander_data(StatsCommanderDataInput {
-            aggregates: &ally_commander,
-            total_games,
-            totals: &sum_ally,
-            main_frequency: Some(&main_frequency),
-        });
+        let ally_commander_data =
+            StatsAggregationOps::build_commander_data(StatsCommanderDataInput::new(
+                &ally_commander,
+                total_games,
+                &sum_ally,
+                Some(&main_frequency),
+            ));
 
         let difficulty_data = difficulty_values
             .into_iter()
             .map(|(difficulty, aggregate)| {
-                let games = aggregate.wins.saturating_add(aggregate.losses);
+                let games = aggregate.games();
                 (
                     difficulty,
-                    to_value(&SqlStatsDifficultyDataRow {
-                        victory: aggregate.wins,
-                        defeat: aggregate.losses,
-                        winrate: ratio(aggregate.wins, games),
-                    }),
+                    ReplayCacheStatisticsLoadOps::to_value(&StatsAggregateDifficultyDataRow::new(
+                        StatsResultSummary::new(
+                            aggregate.wins(),
+                            aggregate.losses(),
+                            StatsAggregationOps::ratio(aggregate.wins(), games),
+                        ),
+                    )),
                 )
             })
             .collect::<Map<String, Value>>();
@@ -1515,23 +931,25 @@ impl ReplayCacheDatabase {
         let region_data = region_values
             .into_iter()
             .map(|(region, aggregate)| {
-                let games = aggregate.wins.saturating_add(aggregate.losses);
+                let games = aggregate.games();
                 let prestiges = aggregate
-                    .prestiges
-                    .into_iter()
-                    .map(|(commander, prestige)| (commander, Value::from(prestige)))
+                    .prestiges()
+                    .iter()
+                    .map(|(commander, prestige)| (commander.clone(), Value::from(*prestige)))
                     .collect::<Map<String, Value>>();
                 (
                     region,
-                    to_value(&SqlStatsRegionDataRow {
-                        frequency: ratio(games, total_games),
-                        victory: aggregate.wins,
-                        defeat: aggregate.losses,
-                        winrate: ratio(aggregate.wins, games),
-                        max_asc: aggregate.max_asc,
+                    ReplayCacheStatisticsLoadOps::to_value(&StatsAggregateRegionDataRow::new(
+                        StatsAggregationOps::ratio(games, total_games),
+                        StatsResultSummary::new(
+                            aggregate.wins(),
+                            aggregate.losses(),
+                            StatsAggregationOps::ratio(aggregate.wins(), games),
+                        ),
+                        aggregate.max_asc(),
                         prestiges,
-                        max_com: aggregate.max_com.into_iter().collect(),
-                    }),
+                        aggregate.max_com().iter().cloned().collect(),
+                    )),
                 )
             })
             .collect::<Map<String, Value>>();
@@ -1539,20 +957,22 @@ impl ReplayCacheDatabase {
         let player_data = player_values
             .into_iter()
             .map(|(name, aggregate)| {
-                let games = aggregate.wins.saturating_add(aggregate.losses);
+                let games = aggregate.games();
                 let (commander, frequency) = aggregate.dominant_commander();
                 (
-                    sanitize_replay_text(&name),
-                    to_value(&SqlStatsPlayerDataRow {
-                        wins: aggregate.wins,
-                        losses: aggregate.losses,
-                        winrate: ratio(aggregate.wins, games),
-                        kills: median_f64(&aggregate.kill_fractions),
-                        apm: median_u64(&aggregate.apm_values),
+                    ReplayCacheStatisticsLoadOps::sanitize_replay_text(&name),
+                    ReplayCacheStatisticsLoadOps::to_value(&StatsAggregatePlayerDataRow::new(
+                        StatsResultSummary::new(
+                            aggregate.wins(),
+                            aggregate.losses(),
+                            StatsAggregationOps::ratio(aggregate.wins(), games),
+                        ),
+                        StatsAggregationOps::median_f64(aggregate.kill_fractions()),
+                        StatsAggregationOps::median_u64(aggregate.apm_values()),
                         frequency,
-                        last_seen: aggregate.last_seen,
-                        commander,
-                    }),
+                        aggregate.last_seen(),
+                        ReplayCacheStatisticsLoadOps::sanitize_replay_text(&commander),
+                    )),
                 )
             })
             .collect::<Map<String, Value>>();
@@ -1563,17 +983,17 @@ impl ReplayCacheDatabase {
             Value::Null
         };
 
-        let analysis = to_value(&SqlStatsAnalysisPayload {
-            map_data,
-            commander_data,
-            ally_commander_data,
-            difficulty_data,
-            region_data,
-            player_data,
-            amon_data: Map::new(),
-            unit_data,
-            map_data_ready: true,
-        });
+        let analysis = ReplayCacheStatisticsLoadOps::to_value(
+            &StatsAggregateAnalysisPayload::new_ready_map_data(
+                map_data,
+                commander_data,
+                ally_commander_data,
+                difficulty_data,
+                region_data,
+                player_data,
+                unit_data,
+            ),
+        );
         let prestige_names = dictionary
             .prestige_names_json
             .iter()
@@ -1607,7 +1027,9 @@ impl ReplayCacheDatabase {
         fallback_main: bool,
     ) -> bool {
         let handle_match = !main_handles.is_empty()
-            && main_handles.contains(&normalized_handle_key(&player.handle));
+            && main_handles.contains(&ReplayCacheStatisticsLoadOps::normalized_handle_key(
+                &player.handle,
+            ));
         let name_match =
             !main_names.is_empty() && main_names.contains(&player.name.trim().to_ascii_lowercase());
         handle_match || name_match || (!has_known_identity && fallback_main)
@@ -1620,12 +1042,13 @@ impl ReplayCacheDatabase {
         p2_is_main: bool,
     ) -> String {
         if has_known_main_handles && p1_is_main {
-            infer_region_from_handle(&snapshot.main.handle)
+            ReplayCacheStatisticsLoadOps::infer_region_from_handle(&snapshot.main.handle)
         } else if has_known_main_handles && p2_is_main {
-            infer_region_from_handle(&snapshot.ally.handle)
+            ReplayCacheStatisticsLoadOps::infer_region_from_handle(&snapshot.ally.handle)
         } else {
-            infer_region_from_handle(&snapshot.main.handle)
-                .or_else(|| infer_region_from_handle(&snapshot.ally.handle))
+            ReplayCacheStatisticsLoadOps::infer_region_from_handle(&snapshot.main.handle).or_else(
+                || ReplayCacheStatisticsLoadOps::infer_region_from_handle(&snapshot.ally.handle),
+            )
         }
         .unwrap_or_else(|| "Unknown".to_string())
     }
@@ -1648,25 +1071,6 @@ impl ReplayCacheDatabase {
         (main_is_main, ally_is_main)
     }
 
-    fn record_region_player(
-        aggregate: &mut StatsRegionAggregate,
-        player: &StatsPlayerSnapshot,
-        commander_text: &str,
-        commander_name: &str,
-    ) {
-        aggregate.max_asc = aggregate.max_asc.max(player.mastery_level);
-        if player.commander_level == 15 && !commander_text.is_empty() {
-            aggregate.max_com.insert(commander_text.to_string());
-        }
-        if !commander_name.is_empty() {
-            aggregate
-                .prestiges
-                .entry(commander_name.to_string())
-                .and_modify(|current| *current = (*current).max(player.prestige.min(3)))
-                .or_insert(player.prestige.min(3));
-        }
-    }
-
     fn stats_difficulty_label(snapshot: &StatsReplaySnapshot) -> String {
         if snapshot.brutal_plus > 0 {
             return format!("B+{}", snapshot.brutal_plus.min(6));
@@ -1678,45 +1082,6 @@ impl ReplayCacheDatabase {
             "Unknown".to_string()
         } else {
             difficulty.to_string()
-        }
-    }
-
-    fn record_commander(
-        aggregate: &mut StatsCommanderAggregate,
-        player: &StatsPlayerSnapshot,
-        replay_is_victory: bool,
-        detailed_analysis: bool,
-        kill_fraction: f64,
-        include_prestige: bool,
-    ) {
-        if replay_is_victory {
-            aggregate.wins = aggregate.wins.saturating_add(1);
-        } else {
-            aggregate.losses = aggregate.losses.saturating_add(1);
-        }
-        if detailed_analysis {
-            aggregate.detailed_count = aggregate.detailed_count.saturating_add(1);
-            aggregate.kill_fractions.push(kill_fraction);
-        }
-        aggregate.apm_values.push(player.apm);
-        let normalized_masteries = normalize_mastery_vector(&player.masteries);
-        record_mastery_counts(&mut aggregate.mastery_counts, &normalized_masteries);
-        record_mastery_distribution(
-            &mut aggregate.mastery_distribution_counts,
-            &player.masteries,
-        );
-        record_mastery_distribution_by_prestige(
-            &mut aggregate.mastery_distribution_by_prestige_counts,
-            player.prestige,
-            &player.masteries,
-        );
-        record_mastery_by_prestige(
-            &mut aggregate.mastery_by_prestige_counts,
-            player.prestige,
-            &normalized_masteries,
-        );
-        if include_prestige {
-            record_prestige_count(&mut aggregate.prestige_counts, player.prestige);
         }
     }
 
@@ -1733,18 +1098,20 @@ impl ReplayCacheDatabase {
             prestige_name: String,
         }
 
-        let commander = sanitize_replay_text(&normalized_commander_name(&player.commander));
+        let commander = ReplayCacheStatisticsLoadOps::sanitize_replay_text(
+            &ReplayCacheStatisticsLoadOps::normalized_commander_name(&player.commander),
+        );
         let prestige_name = dictionary
             .prestige_name(&commander, player.prestige)
             .map(str::to_string)
             .unwrap_or_else(|| format!("P{}", player.prestige));
-        to_value(&FastestPlayer {
-            name: sanitize_replay_text(&player.name),
+        ReplayCacheStatisticsLoadOps::to_value(&FastestPlayer {
+            name: ReplayCacheStatisticsLoadOps::sanitize_replay_text(&player.name),
             handle: player.handle.clone(),
             commander,
             apm: player.apm,
             mastery_level: player.mastery_level,
-            masteries: normalize_mastery_values(&player.masteries),
+            masteries: StatsAggregationOps::normalize_mastery_values(&player.masteries),
             prestige: player.prestige,
             prestige_name,
         })
@@ -1777,289 +1144,20 @@ impl ReplayCacheDatabase {
         }
     }
 
-    fn build_commander_data(input: StatsCommanderDataInput<'_>) -> Map<String, Value> {
-        let corrected_frequency = input
-            .aggregates
-            .iter()
-            .map(|(name, aggregate)| {
-                let games = aggregate.wins.saturating_add(aggregate.losses) as f64;
-                let corrected = if let Some(main_frequency) = input.main_frequency {
-                    let divisor = 1.0 - main_frequency.get(name).copied().unwrap_or(0.0);
-                    if divisor <= f64::EPSILON {
-                        0.0
-                    } else {
-                        games / divisor
-                    }
-                } else {
-                    games
-                };
-                (name.clone(), corrected)
-            })
-            .collect::<HashMap<_, _>>();
-        let corrected_total = corrected_frequency.values().sum::<f64>();
-
-        let mut rows = Map::new();
-        for (commander, aggregate) in input.aggregates {
-            let games = aggregate.wins.saturating_add(aggregate.losses);
-            let prestige_games = aggregate.prestige_counts.iter().sum::<u64>();
-            let frequency = if input.main_frequency.is_some() {
-                ratio_f64(
-                    corrected_frequency.get(commander).copied().unwrap_or(0.0),
-                    corrected_total,
-                )
-            } else {
-                ratio(games, input.total_games)
-            };
-            rows.insert(
-                commander.clone(),
-                to_value(&SqlStatsCommanderDataRow {
-                    frequency,
-                    victory: aggregate.wins,
-                    defeat: aggregate.losses,
-                    winrate: ratio(aggregate.wins, games),
-                    median_apm: median_u64(&aggregate.apm_values),
-                    kill_fraction: median_f64(&aggregate.kill_fractions),
-                    mastery: build_mastery_ratio_map(&aggregate.mastery_counts),
-                    mastery_distribution: build_mastery_distribution_map(
-                        &aggregate.mastery_distribution_counts,
-                    ),
-                    mastery_distribution_by_prestige: build_mastery_distribution_by_prestige_map(
-                        &aggregate.mastery_distribution_by_prestige_counts,
-                    ),
-                    prestige: build_ratio_map(&aggregate.prestige_counts, prestige_games),
-                    mastery_by_prestige: build_mastery_by_prestige_ratio_map(
-                        &aggregate.mastery_by_prestige_counts,
-                    ),
-                    detailed_count: aggregate.detailed_count,
-                }),
-            );
-        }
-
-        let total_commander_games = input.totals.games();
-        let detailed_count = input
-            .aggregates
-            .values()
-            .map(|value| value.detailed_count)
-            .sum();
-        rows.insert(
-            "any".to_string(),
-            to_value(&SqlStatsCommanderDataRow {
-                frequency: if total_commander_games == 0 { 0.0 } else { 1.0 },
-                victory: input.totals.wins,
-                defeat: input.totals.losses,
-                winrate: ratio(input.totals.wins, total_commander_games),
-                median_apm: median_u64(&input.totals.apm_values),
-                kill_fraction: median_f64(&input.totals.kill_fractions),
-                mastery: build_mastery_ratio_map(&input.totals.mastery_counts),
-                mastery_distribution: build_mastery_distribution_map(
-                    &input.totals.mastery_distribution_counts,
-                ),
-                mastery_distribution_by_prestige: build_mastery_distribution_by_prestige_map(
-                    &input.totals.mastery_distribution_by_prestige_counts,
-                ),
-                prestige: build_ratio_map(
-                    &input.totals.prestige_counts,
-                    input.totals.prestige_counts.iter().sum::<u64>(),
-                ),
-                mastery_by_prestige: build_mastery_by_prestige_ratio_map(
-                    &input.totals.mastery_by_prestige_counts,
-                ),
-                detailed_count,
-            }),
-        );
-        rows
-    }
-
     fn load_statistics_unit_data(
         snapshots: &[StatsReplaySnapshot],
         main_handles: &HashSet<String>,
         dictionary: &Sc2DictionaryData,
     ) -> Value {
-        let mut main_rollup = BTreeMap::<String, CommanderUnitRollup>::new();
-        let mut ally_rollup = BTreeMap::<String, CommanderUnitRollup>::new();
-        let mut amon_rollup = BTreeMap::<String, UnitStatsRollup>::new();
-
-        for snapshot in snapshots {
-            for unit in &snapshot.player_units {
-                let Some(player) = Self::stats_player_for_pid(snapshot, unit.pid) else {
-                    continue;
-                };
-                let commander = normalized_commander_name(&player.commander);
-                let target_rollup =
-                    if ReplayAnalysis::is_main_player_by_handle(&player.handle, main_handles) {
-                        &mut main_rollup
-                    } else {
-                        &mut ally_rollup
-                    };
-                Self::append_unit_rollup(
-                    target_rollup,
-                    StatsUnitRollupInput {
-                        commander: &commander,
-                        unit_name: &unit.unit_name,
-                        created_hidden: unit.created_hidden,
-                        created_count: unit.created_count,
-                        lost_hidden: unit.lost_hidden,
-                        lost_count: unit.lost_count,
-                        kills: unit.kills,
-                        player_kills: player.kills,
-                    },
-                );
-            }
-            for unit in &snapshot.amon_units {
-                let entry = amon_rollup
-                    .entry(sanitize_replay_text(&unit.unit_name))
-                    .or_default();
-                if !unit.created_hidden {
-                    entry.created = entry.created.saturating_add(unit.created_count);
-                }
-                if !unit.lost_hidden {
-                    entry.lost = entry.lost.saturating_add(unit.lost_count);
-                }
-                entry.kills = entry.kills.saturating_add(unit.kills);
-            }
-        }
-
-        to_value(&SqlStatsUnitDataPayload {
-            main: TauriOverlayOps::build_commander_unit_data_with_dictionary(
-                main_rollup,
-                dictionary,
-            ),
-            ally: TauriOverlayOps::build_commander_unit_data_with_dictionary(
-                ally_rollup,
-                dictionary,
-            ),
-            amon: Self::build_amon_unit_data(amon_rollup),
-        })
-    }
-
-    fn stats_player_for_pid(
-        snapshot: &StatsReplaySnapshot,
-        pid: u8,
-    ) -> Option<&StatsPlayerSnapshot> {
-        if pid == snapshot.main.pid {
-            Some(&snapshot.main)
-        } else if pid == snapshot.ally.pid {
-            Some(&snapshot.ally)
-        } else {
-            None
-        }
-    }
-
-    fn append_unit_rollup(
-        rollup: &mut BTreeMap<String, CommanderUnitRollup>,
-        input: StatsUnitRollupInput<'_>,
-    ) {
-        let commander = sanitize_replay_text(input.commander);
-        if commander.is_empty() {
-            return;
-        }
-        let unit_name = sanitize_replay_text(input.unit_name);
-        if unit_name.is_empty() {
-            return;
-        }
-        let commander_entry = rollup.entry(commander.clone()).or_default();
-        commander_entry.count = commander_entry.count.saturating_add(1);
-        let unit_entry = commander_entry.units.entry(unit_name).or_default();
-        if input.created_hidden {
-            unit_entry.created_hidden = true;
-        } else {
-            unit_entry.created = unit_entry.created.saturating_add(input.created_count);
-        }
-        if input.lost_hidden {
-            unit_entry.lost_hidden = true;
-        } else {
-            unit_entry.lost = unit_entry.lost.saturating_add(input.lost_count);
-        }
-        unit_entry.kills = unit_entry
-            .kills
-            .saturating_add(i64::try_from(input.kills).unwrap_or(i64::MAX));
-        if !input.created_hidden || commander == "Tychus" {
-            unit_entry.made = unit_entry.made.saturating_add(1);
-        }
-        if input.player_kills > 0 {
-            unit_entry
-                .kill_percentages
-                .push(input.kills as f64 / input.player_kills as f64);
-        }
-    }
-
-    fn build_amon_unit_data(amon_rollup: BTreeMap<String, UnitStatsRollup>) -> Value {
-        #[derive(Serialize)]
-        struct AmonUnitRow {
-            created: i64,
-            lost: i64,
-            kills: i64,
-            #[serde(rename = "KD")]
-            kd: Value,
-        }
-
-        const AMON_KD_MUTATORS: [&str; 4] = [
-            "Twister",
-            "Purifier Beam",
-            "Moebius Corps Laser Drill",
-            "Blizzard",
-        ];
-        const AMON_REMOVED_UNITS: [&str; 3] = [
-            "AdeptPhaseShift",
-            "Drakken Pulse Cannon",
-            "James 'Sirius' Sykes",
-        ];
-
-        let mut rows = amon_rollup.into_iter().collect::<Vec<_>>();
-        rows.sort_by(|(left_name, left), (right_name, right)| {
-            right
-                .created
-                .cmp(&left.created)
-                .then_with(|| left_name.cmp(right_name))
-        });
-
-        let mut output = Map::new();
-        let mut total = UnitStatsRollup::default();
-        for (unit, mut row) in rows {
-            if AMON_REMOVED_UNITS
-                .iter()
-                .any(|removed| removed == &unit.as_str())
-            {
-                continue;
-            }
-            let kd = if AMON_KD_MUTATORS
-                .iter()
-                .any(|mutator| mutator == &unit.as_str())
-            {
-                row.lost = 0;
-                Value::String("-".to_string())
-            } else if row.lost <= 0 {
-                Value::from(0.0)
-            } else {
-                Value::from(row.kills as f64 / row.lost as f64)
-            };
-            output.insert(
-                unit,
-                to_value(&AmonUnitRow {
-                    created: row.created,
-                    lost: row.lost,
-                    kills: row.kills,
-                    kd,
-                }),
-            );
-            total.created = total.created.saturating_add(row.created);
-            total.lost = total.lost.saturating_add(row.lost);
-            total.kills = total.kills.saturating_add(row.kills);
-        }
-        output.insert(
-            "sum".to_string(),
-            to_value(&AmonUnitRow {
-                created: total.created,
-                lost: total.lost,
-                kills: total.kills,
-                kd: if total.lost <= 0 {
-                    Value::from(0.0)
-                } else {
-                    Value::from(total.kills as f64 / total.lost as f64)
-                },
-            }),
-        );
-        Value::Object(output)
+        let replays = snapshots
+            .iter()
+            .map(StatsReplaySnapshot::to_replay_info)
+            .collect::<Vec<_>>();
+        ReplayAnalysisOps::build_unit_data_from_replays_with_dictionary(
+            &replays,
+            main_handles,
+            dictionary,
+        )
     }
 
     fn stats_where_clause(query: &ReplayCacheStatsQuery) -> (String, Vec<SqlValue>) {
@@ -2413,10 +1511,7 @@ impl ReplayCacheDatabase {
         Some(pattern)
     }
 
-    pub(super) fn load_messages(
-        &self,
-        replay_id: i64,
-    ) -> Result<Vec<ReplayMessage>, ReplayCacheDbError> {
+    pub fn load_messages(&self, replay_id: i64) -> Result<Vec<ReplayMessage>, ReplayCacheDbError> {
         let mut statement = self
             .connection
             .prepare(
@@ -2444,7 +1539,7 @@ impl ReplayCacheDatabase {
         Ok(messages)
     }
 
-    pub(super) fn load_amon_units(
+    pub fn load_amon_units(
         &self,
         replay_id: i64,
     ) -> Result<BTreeMap<String, CacheUnitStats>, ReplayCacheDbError> {
@@ -2501,7 +1596,7 @@ impl ReplayCacheDatabase {
         Ok(units)
     }
 
-    pub(super) fn load_player_stats(
+    pub fn load_player_stats(
         &self,
         replay_id: i64,
     ) -> Result<BTreeMap<u8, CachePlayerStatsSeries>, ReplayCacheDbError> {

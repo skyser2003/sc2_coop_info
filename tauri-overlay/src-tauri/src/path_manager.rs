@@ -46,7 +46,7 @@ impl PathManagerOps {
 }
 
 impl PathManagerOps {
-    pub(crate) fn get_json_data_dir() -> PathBuf {
+    pub fn get_json_data_dir() -> PathBuf {
         let default = "./".to_string();
 
         let manifest_dir = env::var("CARGO_MANIFEST_DIR");
@@ -72,7 +72,7 @@ impl PathManagerOps {
 }
 
 impl PathManagerOps {
-    pub(crate) fn get_settings_path() -> PathBuf {
+    pub fn get_settings_path() -> PathBuf {
         let filename = "settings.json";
         PathManagerOps::write_data_dir().join(filename)
     }
@@ -96,7 +96,7 @@ impl PathManagerOps {
 }
 
 impl PathManagerOps {
-    pub(crate) fn get_log_path() -> PathBuf {
+    pub fn get_log_path() -> PathBuf {
         let filename = "logs.txt";
         PathManagerOps::write_data_dir().join(filename)
     }

@@ -179,7 +179,7 @@ impl RandomizerOps {
 }
 
 impl RandomizerOps {
-    pub(crate) fn generate_from_body_with_dictionary(
+    pub fn generate_from_body_with_dictionary(
         body: Option<&Value>,
         dictionary: &Sc2DictionaryData,
     ) -> Result<RandomizerResult, String> {
