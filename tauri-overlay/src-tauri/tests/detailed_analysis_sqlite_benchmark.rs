@@ -592,6 +592,8 @@ fn run_warm_benchmark(
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CandidatePruningFlow {
+    CurrentHead,
+    NoPruningBaseline,
     OfficialPartialOnly,
     Md5SqliteOnly,
     OfficialThenMd5Sqlite,
@@ -600,9 +602,22 @@ enum CandidatePruningFlow {
 impl CandidatePruningFlow {
     fn label(self) -> &'static str {
         match self {
+            Self::CurrentHead => "current_head",
+            Self::NoPruningBaseline => "no_pruning_baseline",
             Self::OfficialPartialOnly => "official_partial_only",
             Self::Md5SqliteOnly => "md5_sqlite_only",
             Self::OfficialThenMd5Sqlite => "official_then_md5_sqlite",
+        }
+    }
+
+    fn from_label(label: &str) -> Option<Self> {
+        match label {
+            "current_head" => Some(Self::CurrentHead),
+            "no_pruning_baseline" | "head_baseline" => Some(Self::NoPruningBaseline),
+            "official_partial_only" => Some(Self::OfficialPartialOnly),
+            "md5_sqlite_only" => Some(Self::Md5SqliteOnly),
+            "official_then_md5_sqlite" => Some(Self::OfficialThenMd5Sqlite),
+            _ => None,
         }
     }
 
@@ -615,6 +630,10 @@ impl CandidatePruningFlow {
 
     fn uses_md5_sqlite_filter(self) -> bool {
         matches!(self, Self::Md5SqliteOnly | Self::OfficialThenMd5Sqlite)
+    }
+
+    fn uses_runtime_sqlite_filter(self) -> bool {
+        self == Self::CurrentHead
     }
 }
 
@@ -822,6 +841,13 @@ impl<'a> CandidateFlowBenchmarkContext<'a> {
             } else {
                 (Duration::ZERO, Duration::ZERO, 0, official_files)
             };
+        let (sqlite_lookup_wall, sqlite_known_identities, runtime_existing_identities_by_hash) =
+            if flow.uses_runtime_sqlite_filter() {
+                let (wall, existing_identities) = load_existing_flow_identities(cache_path);
+                (wall, existing_identities.len(), existing_identities)
+            } else {
+                (sqlite_lookup_wall, sqlite_known_identities, HashMap::new())
+            };
         let hash_checked_files = if flow.uses_md5_sqlite_filter() {
             official_file_count
         } else {
@@ -830,9 +856,14 @@ impl<'a> CandidateFlowBenchmarkContext<'a> {
         let detailed_input_file_count = detailed_input_files.len();
 
         let writer = ReplayCacheWriteQueue::start_detailed_analysis(cache_path.to_path_buf());
-        let runtime = benchmark_runtime(self.worker_count, self.batch_size)
+        let mut runtime = benchmark_runtime(self.worker_count, self.batch_size)
             .with_replay_files(detailed_input_files)
             .with_cache_entry_sink(Arc::new(QueuedReplayCacheEntrySink::new(writer.sender())));
+        if flow.uses_runtime_sqlite_filter() {
+            runtime = runtime.with_existing_detailed_cache_identities_by_hash(
+                runtime_existing_identities_by_hash,
+            );
+        }
         let config = GenerateCacheConfig::new(self.account_dir, cache_path);
 
         let analyze_start = Instant::now();
@@ -1197,11 +1228,23 @@ fn benchmark_candidate_pruning_flows_cold_warm() {
         batch_size,
     );
 
-    let flows = [
+    let default_flows = [
+        CandidatePruningFlow::CurrentHead,
+        CandidatePruningFlow::NoPruningBaseline,
         CandidatePruningFlow::OfficialPartialOnly,
         CandidatePruningFlow::Md5SqliteOnly,
         CandidatePruningFlow::OfficialThenMd5Sqlite,
     ];
+    let flows = std::env::var("SCO_DETAILED_FLOW_BENCH_FLOWS")
+        .ok()
+        .map(|value| {
+            value
+                .split(',')
+                .filter_map(|label| CandidatePruningFlow::from_label(label.trim()))
+                .collect::<Vec<_>>()
+        })
+        .filter(|flows| !flows.is_empty())
+        .unwrap_or_else(|| default_flows.to_vec());
     for flow in flows {
         let environment = CandidateFlowBenchmarkEnvironment::new(&benchmark_root, flow);
         context.prepare_warm_database(&environment);
