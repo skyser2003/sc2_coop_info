@@ -5,28 +5,65 @@ use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ReplayCacheWriteResult {
     persisted_entries: usize,
+    attempted_entries: usize,
+    processed_batches: usize,
     failed_batches: usize,
+    database_open: Duration,
+    sqlite_write: Duration,
 }
 
 impl ReplayCacheWriteResult {
+    fn add_attempted_entries(&mut self, value: usize) {
+        self.attempted_entries = self.attempted_entries.saturating_add(value);
+    }
+
     fn add_persisted_entries(&mut self, value: usize) {
         self.persisted_entries = self.persisted_entries.saturating_add(value);
+    }
+
+    fn increment_processed_batches(&mut self) {
+        self.processed_batches = self.processed_batches.saturating_add(1);
     }
 
     fn increment_failed_batches(&mut self) {
         self.failed_batches = self.failed_batches.saturating_add(1);
     }
 
+    fn set_database_open(&mut self, value: Duration) {
+        self.database_open = value;
+    }
+
+    fn add_sqlite_write(&mut self, value: Duration) {
+        self.sqlite_write += value;
+    }
+
     pub fn persisted_entries(&self) -> usize {
         self.persisted_entries
     }
 
+    pub fn attempted_entries(&self) -> usize {
+        self.attempted_entries
+    }
+
+    pub fn processed_batches(&self) -> usize {
+        self.processed_batches
+    }
+
     pub fn failed_batches(&self) -> usize {
         self.failed_batches
+    }
+
+    pub fn database_open(&self) -> Duration {
+        self.database_open
+    }
+
+    pub fn sqlite_write(&self) -> Duration {
+        self.sqlite_write
     }
 }
 
@@ -203,12 +240,16 @@ impl ReplayCacheWriteQueue {
         receiver: Receiver<ReplayCacheWriteCommand>,
     ) -> ReplayCacheWriteResult {
         let mut result = ReplayCacheWriteResult::default();
+        let database_open_start = Instant::now();
         let mut database = match ReplayCacheDatabase::open_for_cache_path(&cache_path) {
             Ok(database) => database,
             Err(error) => {
+                result.set_database_open(database_open_start.elapsed());
                 crate::sco_log!("[SCO/cache] failed to open cache writer: {error}");
                 for command in receiver {
                     if !command.entries().is_empty() {
+                        result.add_attempted_entries(command.entries().len());
+                        result.increment_processed_batches();
                         result.increment_failed_batches();
                     }
                     if let Some(result_sender) = command.result_sender() {
@@ -218,9 +259,18 @@ impl ReplayCacheWriteQueue {
                 return result;
             }
         };
+        result.set_database_open(database_open_start.elapsed());
 
         for command in receiver {
-            match database.upsert_entries_preserving_detailed(command.entries()) {
+            let entry_count = command.entries().len();
+            result.add_attempted_entries(entry_count);
+            if entry_count > 0 {
+                result.increment_processed_batches();
+            }
+            let sqlite_write_start = Instant::now();
+            let write_result = database.upsert_entries_preserving_detailed(command.entries());
+            result.add_sqlite_write(sqlite_write_start.elapsed());
+            match write_result {
                 Ok(changed) => {
                     result.add_persisted_entries(changed);
                     if let Some(result_sender) = command.result_sender() {
