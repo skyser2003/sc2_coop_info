@@ -1801,18 +1801,40 @@ impl ReplayCacheDatabase {
     }
 
     pub fn import_legacy_cache_file(&mut self) -> Result<usize, ReplayCacheDbError> {
+        crate::sco_log!(
+            "[SCO/cache-db] starting legacy JSON cache import from '{}'",
+            self.legacy_cache_path.display()
+        );
         let mut entries = self.read_legacy_cache_entries()?;
+        let entry_count = entries.len();
         Self::normalize_legacy_cache_dates_to_utc(&mut entries);
         let changed = self.upsert_entries_preserving_detailed(&entries)?;
         Self::remove_imported_legacy_file(&self.legacy_cache_path)?;
+        crate::sco_log!(
+            "[SCO/cache-db] completed legacy JSON cache import from '{}' (entries={}, changed={})",
+            self.legacy_cache_path.display(),
+            entry_count,
+            changed
+        );
         Ok(changed)
     }
 
     fn import_temp_cache_file(&mut self, temp_path: &Path) -> Result<usize, ReplayCacheDbError> {
+        crate::sco_log!(
+            "[SCO/cache-db] starting legacy JSONL temp cache import from '{}'",
+            temp_path.display()
+        );
         let mut entries = Self::read_temp_cache_entries(temp_path)?;
+        let entry_count = entries.len();
         Self::normalize_legacy_cache_dates_to_utc(&mut entries);
         let changed = self.upsert_entries_preserving_detailed(&entries)?;
         Self::remove_imported_legacy_file(temp_path)?;
+        crate::sco_log!(
+            "[SCO/cache-db] completed legacy JSONL temp cache import from '{}' (entries={}, changed={})",
+            temp_path.display(),
+            entry_count,
+            changed
+        );
         Ok(changed)
     }
 
