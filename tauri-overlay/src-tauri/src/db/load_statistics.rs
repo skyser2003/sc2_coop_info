@@ -1088,11 +1088,6 @@ impl ReplayCacheDatabase {
         if query.scope() == ReplayCacheReadScope::DetailedOnly && !snapshot.detailed_analysis {
             return false;
         }
-        if query.restrict_to_current_replay_files()
-            && !query.current_replay_files().contains(&snapshot.file)
-        {
-            return false;
-        }
         if !query.include_mutations() && snapshot.extension {
             return false;
         }

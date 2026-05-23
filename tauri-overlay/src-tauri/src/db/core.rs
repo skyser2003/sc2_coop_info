@@ -1478,6 +1478,12 @@ impl ReplayCacheDatabase {
                 source,
             })?;
         connection
+            .pragma_update(None, "synchronous", "NORMAL")
+            .map_err(|source| ReplayCacheDbError::Sqlite {
+                path: db_path.clone(),
+                source,
+            })?;
+        connection
             .pragma_update(None, "foreign_keys", "ON")
             .map_err(|source| ReplayCacheDbError::Sqlite {
                 path: db_path.clone(),
