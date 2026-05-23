@@ -4,7 +4,7 @@ use s2coop_analyzer::cache_overall_stats_generator::CacheReplayEntry;
 use s2coop_analyzer::detailed_replay_analysis::{
     DEFAULT_CACHE_ENTRY_SINK_BATCH_SIZE, DetailedReplayAnalyzer, GenerateCacheConfig,
     GenerateCacheRuntimeOptions, GenerateCacheStopController, GenerateCacheSummary,
-    ReplayAnalysisResources, ReplayFileIdentity,
+    ReplayAnalysisResources, ReplayCacheFileIdentity, ReplayFileIdentity,
 };
 use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use serde::{Deserialize, Serialize};
@@ -1878,7 +1878,7 @@ impl TauriOverlayOps {
         stats: &Arc<Mutex<StatsState>>,
         worker_count: usize,
         stop_controller: Arc<GenerateCacheStopController>,
-        existing_detailed_cache_entries: HashMap<String, CacheReplayEntry>,
+        existing_detailed_cache_identities_by_hash: HashMap<String, ReplayCacheFileIdentity>,
     ) -> Result<GenerateCacheSummary, String> {
         let state = app.state::<BackendState>();
         let settings = state.read_settings_memory();
@@ -1915,7 +1915,7 @@ impl TauriOverlayOps {
             .map_err(|error| format!("Failed to access replay analysis resources: {error}"))?;
 
         let config = GenerateCacheConfig::new(account_dir, output_file.clone());
-        let cache_writer = ReplayCacheWriteQueue::start(output_file.clone());
+        let cache_writer = ReplayCacheWriteQueue::start_detailed_analysis(output_file.clone());
         let runtime = GenerateCacheRuntimeOptions::default()
             .with_worker_count(worker_count)
             .with_stop_controller(stop_controller)
@@ -1923,7 +1923,9 @@ impl TauriOverlayOps {
                 cache_writer.sender(),
             )))
             .with_cache_entry_sink_batch_size(DEFAULT_CACHE_ENTRY_SINK_BATCH_SIZE)
-            .with_existing_detailed_cache_entries(existing_detailed_cache_entries);
+            .with_existing_detailed_cache_identities_by_hash(
+                existing_detailed_cache_identities_by_hash,
+            );
         let analysis_start = Instant::now();
         let analysis_result = DetailedReplayAnalyzer::analyze_full_detailed(
             &config,
@@ -2286,27 +2288,24 @@ impl TauriOverlayOps {
 }
 
 impl TauriOverlayOps {
-    fn load_existing_detailed_cache_by_hash() -> HashMap<String, CacheReplayEntry> {
+    fn load_existing_detailed_cache_identities_by_hash() -> HashMap<String, ReplayCacheFileIdentity>
+    {
         let cache_path = PathManagerOps::get_cache_path();
         let database = match ReplayCacheDatabase::open_for_cache_path(&cache_path) {
             Ok(database) => database,
             Err(error) => {
                 crate::sco_log!(
-                    "[SCO/cache-db] failed to open existing detailed cache database: {error}"
+                    "[SCO/cache-db] failed to open existing detailed cache identity database: {error}"
                 );
                 return HashMap::new();
             }
         };
 
-        match database.load_entries(ReplayCacheEntryQuery::detailed_only(0)) {
-            Ok(entries) => entries
-                .into_iter()
-                .filter(|entry| entry.detailed_analysis && !entry.hash.is_empty())
-                .map(|entry| (entry.hash.clone(), entry))
-                .collect(),
+        match database.load_detailed_cache_identities_by_hash() {
+            Ok(identities_by_hash) => identities_by_hash,
             Err(error) => {
                 crate::sco_log!(
-                    "[SCO/cache-db] failed to load existing detailed cache for reuse: {error}"
+                    "[SCO/cache-db] failed to load existing detailed cache identities for reuse: {error}"
                 );
                 HashMap::new()
             }
@@ -2383,11 +2382,11 @@ impl TauriOverlayOps {
         let state = app.state::<BackendState>();
         if include_detailed {
             let load_existing_start = Instant::now();
-            let existing_detailed_cache_entries =
-                TauriOverlayOps::load_existing_detailed_cache_by_hash();
+            let existing_detailed_cache_identities_by_hash =
+                TauriOverlayOps::load_existing_detailed_cache_identities_by_hash();
             crate::sco_log!(
-                "[SCO/stats] detailed existing-cache load entries={} elapsed={}ms",
-                existing_detailed_cache_entries.len(),
+                "[SCO/stats] detailed existing-cache identity load entries={} elapsed={}ms",
+                existing_detailed_cache_identities_by_hash.len(),
                 load_existing_start.elapsed().as_millis()
             );
             let worker_count = state
@@ -2404,7 +2403,7 @@ impl TauriOverlayOps {
                 analysis_state,
                 worker_count,
                 stop_controller,
-                existing_detailed_cache_entries,
+                existing_detailed_cache_identities_by_hash,
             );
 
             if let Ok(mut slot) = detailed_stop_controller_slot.lock() {
@@ -2412,15 +2411,20 @@ impl TauriOverlayOps {
             }
 
             let generation_summary = generation_result?;
-            let scanned_replays = generation_summary.scanned_replays();
             let completed = generation_summary.completed();
             crate::sco_log!(
                 concat!(
-                    "[SCO/stats] detailed scan generated '{}' with {} replay(s) ",
+                    "[SCO/stats] detailed scan generated '{}' with {} new replay entr{} ",
                     "completed={} elapsed={}ms"
                 ),
-                PathManagerOps::get_cache_path().display(),
-                scanned_replays,
+                ReplayCacheDatabase::db_path_for_cache_path(&PathManagerOps::get_cache_path())
+                    .display(),
+                generation_summary.scanned_replays(),
+                if generation_summary.scanned_replays() == 1 {
+                    "y"
+                } else {
+                    "ies"
+                },
                 completed,
                 generation_start.elapsed().as_millis()
             );
@@ -2433,27 +2437,48 @@ impl TauriOverlayOps {
                 "[SCO/stats] detailed dictionary access elapsed={}ms",
                 dictionary_start.elapsed().as_millis()
             );
-            let new_cache_entries = generation_summary.into_cache_entries();
-            let replay_summary_start = Instant::now();
-            let replays =
-                ReplayAnalysis::detailed_analysis_replays_snapshot_from_entries_with_dictionary(
-                    &new_cache_entries,
-                    limit,
-                    &main_names,
-                    &main_handles,
-                    dictionary.as_ref(),
-                );
+            let snapshot_start = Instant::now();
+            let cache_path = PathManagerOps::get_cache_path();
+            let stats_query = ReplayCacheStatsQuery::new(ReplayCacheReadScope::DetailedOnly, limit);
+            let payload = ReplayCacheDatabase::open_for_cache_path(&cache_path)
+                .and_then(|database| {
+                    database.load_statistics_payload(
+                        &stats_query,
+                        &main_names,
+                        &main_handles,
+                        dictionary.as_ref(),
+                    )
+                })
+                .map_err(|error| {
+                    format!(
+                        "Failed to build detailed statistics from '{}': {error}",
+                        ReplayCacheDatabase::db_path_for_cache_path(&cache_path).display()
+                    )
+                })?;
             crate::sco_log!(
-                concat!(
-                    "[SCO/stats] detailed replay summary conversion entries={} ",
-                    "replays={} elapsed={}ms"
-                ),
-                new_cache_entries.len(),
-                replays.len(),
-                replay_summary_start.elapsed().as_millis()
+                "[SCO/stats] detailed sqlite statistics snapshot games={} elapsed={}ms",
+                payload.games(),
+                snapshot_start.elapsed().as_millis()
+            );
+            let snapshot = StatsSnapshot::new(
+                true,
+                payload.games(),
+                payload.main_players().to_vec(),
+                payload.main_handles().to_vec(),
+                payload.analysis().clone(),
+                payload.prestige_names().clone(),
+                if payload.games() == 0 {
+                    "No replay files found.".to_string()
+                } else {
+                    format!("Scanned {} replay file(s).", payload.games())
+                },
             );
 
-            Ok(AnalysisOutcome::new(scanned_replays, replays, completed))
+            Ok(AnalysisOutcome::with_snapshot(
+                usize::try_from(payload.games()).unwrap_or(usize::MAX),
+                snapshot,
+                completed,
+            ))
         } else {
             let main_names = state.configured_main_names();
             let main_handles = state.configured_main_handles();
@@ -2631,7 +2656,10 @@ impl TauriOverlayOps {
                     guard.set_analysis_running_status(mode, "refreshing replay summaries");
                     guard.set_message(format!(
                         "Generated '{}' with {} replay entr{}.",
-                        PathManagerOps::get_cache_path().display(),
+                        ReplayCacheDatabase::db_path_for_cache_path(
+                            &PathManagerOps::get_cache_path()
+                        )
+                        .display(),
                         replay_count,
                         if replay_count == 1 { "y" } else { "ies" }
                     ));
@@ -2648,32 +2676,37 @@ impl TauriOverlayOps {
                 }
             }
 
-            let (_reported_replay_count, all_replays, detailed_completed) =
+            let (reported_replay_count, all_replays, detailed_completed, analysis_snapshot) =
                 analysis_outcome.into_parts();
 
-            let dedupe_start = Instant::now();
-            let mut hashes = HashMap::new();
+            let all_replays = if analysis_snapshot.is_some() {
+                all_replays
+            } else {
+                let dedupe_start = Instant::now();
+                let mut hashes = HashMap::new();
 
-            let all_replays = all_replays
-                .into_iter()
-                .filter(|replay| {
-                    let file_key = replay.file().to_string();
-                    let is_detailed = hashes.get(&file_key);
+                let all_replays = all_replays
+                    .into_iter()
+                    .filter(|replay| {
+                        let file_key = replay.file().to_string();
+                        let is_detailed = hashes.get(&file_key);
 
-                    if is_detailed.is_some() && (*is_detailed.unwrap() || !replay.is_detailed) {
-                        false
-                    } else {
-                        hashes.insert(file_key, replay.is_detailed);
-                        true
-                    }
-                })
-                .collect::<Vec<_>>();
-            crate::sco_log!(
-                "[SCO/stats] {} dedupe replay summaries replays={} elapsed={}ms",
-                mode.display(),
-                all_replays.len(),
-                dedupe_start.elapsed().as_millis()
-            );
+                        if is_detailed.is_some() && (*is_detailed.unwrap() || !replay.is_detailed) {
+                            false
+                        } else {
+                            hashes.insert(file_key, replay.is_detailed);
+                            true
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                crate::sco_log!(
+                    "[SCO/stats] {} dedupe replay summaries replays={} elapsed={}ms",
+                    mode.display(),
+                    all_replays.len(),
+                    dedupe_start.elapsed().as_millis()
+                );
+                all_replays
+            };
 
             let current_files_start = Instant::now();
             let current_replay_files =
@@ -2699,45 +2732,50 @@ impl TauriOverlayOps {
             }
 
             replay_scan_progress_for_thread.set_stage("building_statistics");
-            let dictionary_start = Instant::now();
-            let dictionary = app_for_analysis
-                .state::<BackendState>()
-                .dictionary_data()
-                .ok();
-            crate::sco_log!(
-                "[SCO/stats] {} rebuild dictionary access elapsed={}ms available={}",
-                mode.display(),
-                dictionary_start.elapsed().as_millis(),
-                dictionary.is_some()
-            );
-            let snapshot_start = Instant::now();
-            let snapshot = dictionary
-                .as_deref()
-                .map(|dictionary| {
-                    ReplayAnalysis::build_rebuild_snapshot_with_dictionary(
-                        &all_replays,
-                        include_detailed,
-                        &main_names_for_thread,
-                        &main_handles_for_thread,
-                        dictionary,
-                    )
-                })
-                .unwrap_or_else(|| {
-                    StatsSnapshot::new(
-                        true,
-                        all_replays.len() as u64,
-                        Vec::new(),
-                        Vec::new(),
-                        Value::Null,
-                        Default::default(),
-                        "Dictionary data is unavailable.",
-                    )
-                });
-            crate::sco_log!(
-                "[SCO/stats] {} build rebuild snapshot elapsed={}ms",
-                mode.display(),
-                snapshot_start.elapsed().as_millis()
-            );
+            let snapshot = if let Some(snapshot) = analysis_snapshot {
+                snapshot
+            } else {
+                let dictionary_start = Instant::now();
+                let dictionary = app_for_analysis
+                    .state::<BackendState>()
+                    .dictionary_data()
+                    .ok();
+                crate::sco_log!(
+                    "[SCO/stats] {} rebuild dictionary access elapsed={}ms available={}",
+                    mode.display(),
+                    dictionary_start.elapsed().as_millis(),
+                    dictionary.is_some()
+                );
+                let snapshot_start = Instant::now();
+                let snapshot = dictionary
+                    .as_deref()
+                    .map(|dictionary| {
+                        ReplayAnalysis::build_rebuild_snapshot_with_dictionary(
+                            &all_replays,
+                            include_detailed,
+                            &main_names_for_thread,
+                            &main_handles_for_thread,
+                            dictionary,
+                        )
+                    })
+                    .unwrap_or_else(|| {
+                        StatsSnapshot::new(
+                            true,
+                            all_replays.len() as u64,
+                            Vec::new(),
+                            Vec::new(),
+                            Value::Null,
+                            Default::default(),
+                            "Dictionary data is unavailable.",
+                        )
+                    });
+                crate::sco_log!(
+                    "[SCO/stats] {} build rebuild snapshot elapsed={}ms",
+                    mode.display(),
+                    snapshot_start.elapsed().as_millis()
+                );
+                snapshot
+            };
 
             let mut guard = match analysis_state.lock() {
                 Ok(guard) => guard,
@@ -2794,6 +2832,10 @@ impl TauriOverlayOps {
                 ));
             }
             if !include_detailed {
+                let dictionary = app_for_analysis
+                    .state::<BackendState>()
+                    .dictionary_data()
+                    .ok();
                 if let Some(dictionary) = dictionary.as_deref() {
                     guard.sync_detailed_analysis_status_from_replays_with_dictionary(
                         &all_replays,
@@ -2811,7 +2853,7 @@ impl TauriOverlayOps {
                 "[SCO/stats] {} finished in {}ms for {} replay(s) completed={}",
                 mode.display(),
                 started_at.elapsed().as_millis(),
-                all_replays.len(),
+                reported_replay_count,
                 if include_detailed {
                     detailed_completed
                 } else {

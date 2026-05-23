@@ -2,12 +2,13 @@ use s2coop_analyzer::cache_overall_stats_detailed_analysis::CacheAnalysisPaths;
 use s2coop_analyzer::detailed_replay_analysis::{
     DEFAULT_CACHE_ENTRY_SINK_BATCH_SIZE, DetailedReplayAnalyzer, GenerateCacheConfig,
     GenerateCacheRuntimeOptions, GenerateCacheTimingReport, ReplayAnalysisResources,
-    ReplayFileIdentity,
+    ReplayCacheFileIdentity, ReplayFileIdentity,
 };
 use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use sco_tauri_overlay::{
     QueuedReplayCacheEntrySink, ReplayAnalysis, ReplayAnalysisOps, ReplayCacheDatabase,
-    ReplayCacheEntryQuery, ReplayCacheWriteQueue, ReplayCacheWriteResult, ReplayInfo,
+    ReplayCacheReadScope, ReplayCacheStatsQuery, ReplayCacheWriteQueue, ReplayCacheWriteResult,
+    ReplayInfo,
 };
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -400,7 +401,7 @@ fn run_benchmark_once(
     let mut cache_writer = None;
 
     if mode == BenchmarkMode::AnalyzerWithSqlite {
-        let writer = ReplayCacheWriteQueue::start(output_file.to_path_buf());
+        let writer = ReplayCacheWriteQueue::start_detailed_analysis(output_file.to_path_buf());
         runtime = runtime
             .with_cache_entry_sink(Arc::new(QueuedReplayCacheEntrySink::new(writer.sender())));
         cache_writer = Some(writer);
@@ -472,7 +473,7 @@ fn populate_sqlite_cache_for_warm_benchmark(
     remove_sqlite_files(output_file);
 
     let config = GenerateCacheConfig::new(account_dir, output_file);
-    let writer = ReplayCacheWriteQueue::start(output_file.to_path_buf());
+    let writer = ReplayCacheWriteQueue::start_detailed_analysis(output_file.to_path_buf());
     let runtime = benchmark_runtime(worker_count, batch_size)
         .with_cache_entry_sink(Arc::new(QueuedReplayCacheEntrySink::new(writer.sender())));
 
@@ -488,32 +489,23 @@ fn populate_sqlite_cache_for_warm_benchmark(
     (cold_populate_start.elapsed(), write_result)
 }
 
-fn load_existing_detailed_entries_for_warm_benchmark(
+fn load_existing_detailed_identities_for_warm_benchmark(
     output_file: &Path,
-) -> (
-    Duration,
-    Duration,
-    HashMap<String, s2coop_analyzer::cache_overall_stats_generator::CacheReplayEntry>,
-) {
+) -> (Duration, Duration, HashMap<String, ReplayCacheFileIdentity>) {
     let existing_cache_open_start = Instant::now();
     let database = ReplayCacheDatabase::open_for_cache_path(output_file)
         .expect("warm benchmark database should open");
     let existing_cache_open_wall = existing_cache_open_start.elapsed();
 
     let existing_cache_load_start = Instant::now();
-    let entries = database
-        .load_entries(ReplayCacheEntryQuery::detailed_only(0))
-        .expect("warm benchmark detailed entries should load");
+    let identities_by_hash = database
+        .load_detailed_cache_identities_by_hash()
+        .expect("warm benchmark detailed identities should load");
     let existing_cache_load_wall = existing_cache_load_start.elapsed();
-    let entries_by_hash = entries
-        .into_iter()
-        .filter(|entry| entry.detailed_analysis && !entry.hash.is_empty())
-        .map(|entry| (entry.hash.clone(), entry))
-        .collect::<HashMap<_, _>>();
     (
         existing_cache_open_wall,
         existing_cache_load_wall,
-        entries_by_hash,
+        identities_by_hash,
     )
 }
 
@@ -531,14 +523,14 @@ fn run_warm_benchmark(
         worker_count,
         batch_size,
     );
-    let (existing_cache_open_wall, existing_cache_load_wall, existing_entries_by_hash) =
-        load_existing_detailed_entries_for_warm_benchmark(output_file);
-    let existing_entries = existing_entries_by_hash.len();
+    let (existing_cache_open_wall, existing_cache_load_wall, existing_identities_by_hash) =
+        load_existing_detailed_identities_for_warm_benchmark(output_file);
+    let existing_entries = existing_identities_by_hash.len();
 
     let config = GenerateCacheConfig::new(account_dir, output_file);
-    let writer = ReplayCacheWriteQueue::start(output_file.to_path_buf());
+    let writer = ReplayCacheWriteQueue::start_detailed_analysis(output_file.to_path_buf());
     let runtime = benchmark_runtime(worker_count, batch_size)
-        .with_existing_detailed_cache_entries(existing_entries_by_hash)
+        .with_existing_detailed_cache_identities_by_hash(existing_identities_by_hash)
         .with_cache_entry_sink(Arc::new(QueuedReplayCacheEntrySink::new(writer.sender())));
 
     let warm_total_start = Instant::now();
@@ -552,25 +544,23 @@ fn run_warm_benchmark(
     let warm_write_result = writer.finish();
     let warm_writer_finish_wall = warm_writer_finish_start.elapsed();
 
-    let replay_summary_start = Instant::now();
-    let replays = replay_summary_from_entries(summary.cache_entries(), resources);
-    let replay_summary_wall = replay_summary_start.elapsed();
-    let replay_summary_count = replays.len();
-
-    let dedupe_start = Instant::now();
-    let deduped_replays = dedupe_replays_like_frontend(replays);
-    let dedupe_wall = dedupe_start.elapsed();
-    let deduped_replay_count = deduped_replays.len();
+    let replay_summary_wall = Duration::ZERO;
+    let replay_summary_count = summary.cache_entries().len();
+    let dedupe_wall = Duration::ZERO;
 
     let stats_rebuild_start = Instant::now();
-    let _snapshot = ReplayAnalysis::build_rebuild_snapshot_with_dictionary(
-        &deduped_replays,
-        true,
-        &HashSet::new(),
-        &HashSet::new(),
-        resources.dictionary_data(),
-    );
+    let stats_payload = ReplayCacheDatabase::open_for_cache_path(output_file)
+        .and_then(|database| {
+            database.load_statistics_payload(
+                &ReplayCacheStatsQuery::new(ReplayCacheReadScope::DetailedOnly, 0),
+                &HashSet::new(),
+                &HashSet::new(),
+                resources.dictionary_data(),
+            )
+        })
+        .expect("warm benchmark statistics should load from sqlite");
     let stats_rebuild_wall = stats_rebuild_start.elapsed();
+    let deduped_replay_count = usize::try_from(stats_payload.games()).unwrap_or(usize::MAX);
     let warm_total_wall = warm_total_start.elapsed();
 
     let run = WarmDetailedAnalysisBenchmarkRun {

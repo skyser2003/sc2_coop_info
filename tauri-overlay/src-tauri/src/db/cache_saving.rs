@@ -5,6 +5,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     CacheIconValue, CachePlayer, CachePlayerStatsSeries, CacheReplayEntry, CacheUnitStats,
     ReplayMessage,
 };
+use s2coop_analyzer::detailed_replay_analysis::CacheReplayCheck;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 
@@ -229,6 +230,71 @@ impl ReplayCacheDatabase {
         Ok(changed)
     }
 
+    pub(crate) fn upsert_unsaved_replay_checks(
+        &mut self,
+        checks: &[CacheReplayCheck],
+    ) -> Result<usize, ReplayCacheDbError> {
+        Self::retry_sqlite_lock(|| self.upsert_unsaved_replay_checks_once(checks))
+    }
+
+    fn upsert_unsaved_replay_checks_once(
+        &mut self,
+        checks: &[CacheReplayCheck],
+    ) -> Result<usize, ReplayCacheDbError> {
+        let db_path = self.db_path.clone();
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|source| ReplayCacheDbError::Sqlite {
+                path: db_path.clone(),
+                source,
+            })?;
+        let mut changed = 0usize;
+        for check in checks {
+            if check.hash().trim().is_empty() || check.file().trim().is_empty() {
+                continue;
+            }
+            changed =
+                changed.saturating_add(Self::upsert_unsaved_replay_check(&tx, check, &db_path)?);
+        }
+        tx.commit().map_err(|source| ReplayCacheDbError::Sqlite {
+            path: db_path,
+            source,
+        })?;
+        Ok(changed)
+    }
+
+    fn upsert_unsaved_replay_check(
+        tx: &Transaction<'_>,
+        check: &CacheReplayCheck,
+        db_path: &Path,
+    ) -> Result<usize, ReplayCacheDbError> {
+        let file_name = ReplayCacheFileName::from_replay_file(check.file()).into_string();
+        tx.execute(
+            "
+            INSERT INTO replay_cache_unsaved_replay_checks (
+                hash, file, file_name, file_modified_seconds, updated_at_seconds
+            ) VALUES (?1, ?2, ?3, ?4, ?5)
+            ON CONFLICT(hash) DO UPDATE SET
+                file = excluded.file,
+                file_name = excluded.file_name,
+                file_modified_seconds = excluded.file_modified_seconds,
+                updated_at_seconds = excluded.updated_at_seconds
+            ",
+            params![
+                check.hash(),
+                check.file(),
+                &file_name,
+                ReplayCacheEntryRecord::u64_to_i64(check.modified_seconds()),
+                ReplayCacheEntryRecord::u64_to_i64(ReplayCacheDatabase::now_seconds()),
+            ],
+        )
+        .map_err(|source| ReplayCacheDbError::Sqlite {
+            path: db_path.to_path_buf(),
+            source,
+        })
+    }
+
     pub fn replace_entries(
         &mut self,
         entries: &[CacheReplayEntry],
@@ -249,6 +315,11 @@ impl ReplayCacheDatabase {
                 source,
             })?;
         tx.execute(ReplayCacheEntrySql::DELETE_ALL, [])
+            .map_err(|source| ReplayCacheDbError::Sqlite {
+                path: db_path.clone(),
+                source,
+            })?;
+        tx.execute("DELETE FROM replay_cache_unsaved_replay_checks", [])
             .map_err(|source| ReplayCacheDbError::Sqlite {
                 path: db_path.clone(),
                 source,
@@ -294,6 +365,16 @@ impl ReplayCacheDatabase {
             path: db_path.to_path_buf(),
             source,
         })?;
+        if record.detailed_analysis {
+            tx.execute(
+                "DELETE FROM replay_cache_unsaved_replay_checks WHERE hash = ?1",
+                params![&record.hash],
+            )
+            .map_err(|source| ReplayCacheDbError::Sqlite {
+                path: db_path.to_path_buf(),
+                source,
+            })?;
+        }
 
         let existing = tx
             .query_row(

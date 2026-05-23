@@ -1,6 +1,8 @@
 use super::core::ReplayCacheDatabase;
 use s2coop_analyzer::cache_overall_stats_generator::CacheReplayEntry;
-use s2coop_analyzer::detailed_replay_analysis::{CacheEntrySink, CacheEntrySinkError};
+use s2coop_analyzer::detailed_replay_analysis::{
+    CacheEntrySink, CacheEntrySinkError, CacheReplayCheck,
+};
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -85,7 +87,19 @@ impl ReplayCacheWriteSender {
             return Ok(());
         }
         self.sender
-            .send(ReplayCacheWriteCommand::new_async(entries))
+            .send(ReplayCacheWriteCommand::new_async_entries(entries))
+            .map_err(|_| ReplayCacheWriteSendError::Closed)
+    }
+
+    pub fn write_checks(
+        &self,
+        checks: Vec<CacheReplayCheck>,
+    ) -> Result<(), ReplayCacheWriteSendError> {
+        if checks.is_empty() {
+            return Ok(());
+        }
+        self.sender
+            .send(ReplayCacheWriteCommand::new_async_checks(checks))
             .map_err(|_| ReplayCacheWriteSendError::Closed)
     }
 
@@ -99,7 +113,7 @@ impl ReplayCacheWriteSender {
 
         let (result_sender, result_receiver) = mpsc::channel::<Result<usize, String>>();
         self.sender
-            .send(ReplayCacheWriteCommand::new_blocking(
+            .send(ReplayCacheWriteCommand::new_blocking_entries(
                 entries,
                 result_sender,
             ))
@@ -131,29 +145,44 @@ impl Display for ReplayCacheWriteSendError {
 #[derive(Debug)]
 struct ReplayCacheWriteCommand {
     entries: Vec<CacheReplayEntry>,
+    checks: Vec<CacheReplayCheck>,
     result_sender: Option<Sender<Result<usize, String>>>,
 }
 
 impl ReplayCacheWriteCommand {
-    fn new_async(entries: Vec<CacheReplayEntry>) -> Self {
+    fn new_async_entries(entries: Vec<CacheReplayEntry>) -> Self {
         Self {
             entries,
+            checks: Vec::new(),
             result_sender: None,
         }
     }
 
-    fn new_blocking(
+    fn new_async_checks(checks: Vec<CacheReplayCheck>) -> Self {
+        Self {
+            entries: Vec::new(),
+            checks,
+            result_sender: None,
+        }
+    }
+
+    fn new_blocking_entries(
         entries: Vec<CacheReplayEntry>,
         result_sender: Sender<Result<usize, String>>,
     ) -> Self {
         Self {
             entries,
+            checks: Vec::new(),
             result_sender: Some(result_sender),
         }
     }
 
     fn entries(&self) -> &[CacheReplayEntry] {
         &self.entries
+    }
+
+    fn checks(&self) -> &[CacheReplayCheck] {
+        &self.checks
     }
 
     fn result_sender(self) -> Option<Sender<Result<usize, String>>> {
@@ -182,6 +211,16 @@ impl CacheEntrySink for QueuedReplayCacheEntrySink {
             .map_err(|error| CacheEntrySinkError::new(error.to_string()))?;
         Ok(entries.len())
     }
+
+    fn write_checks(&self, checks: &[CacheReplayCheck]) -> Result<usize, CacheEntrySinkError> {
+        if checks.is_empty() {
+            return Ok(0);
+        }
+        self.sender
+            .write_checks(checks.to_vec())
+            .map_err(|error| CacheEntrySinkError::new(error.to_string()))?;
+        Ok(checks.len())
+    }
 }
 
 pub struct ReplayCacheWriteQueue {
@@ -191,6 +230,14 @@ pub struct ReplayCacheWriteQueue {
 
 impl ReplayCacheWriteQueue {
     pub fn start(cache_path: impl Into<PathBuf>) -> Self {
+        Self::start_writer(cache_path)
+    }
+
+    pub fn start_detailed_analysis(cache_path: impl Into<PathBuf>) -> Self {
+        Self::start_writer(cache_path)
+    }
+
+    fn start_writer(cache_path: impl Into<PathBuf>) -> Self {
         let cache_path = cache_path.into();
         let (sender, receiver) = mpsc::channel::<ReplayCacheWriteCommand>();
         let handle = thread::spawn(move || Self::run(cache_path, receiver));
@@ -263,12 +310,17 @@ impl ReplayCacheWriteQueue {
 
         for command in receiver {
             let entry_count = command.entries().len();
-            result.add_attempted_entries(entry_count);
-            if entry_count > 0 {
+            let check_count = command.checks().len();
+            result.add_attempted_entries(entry_count.saturating_add(check_count));
+            if entry_count > 0 || check_count > 0 {
                 result.increment_processed_batches();
             }
             let sqlite_write_start = Instant::now();
-            let write_result = database.upsert_entries_preserving_detailed(command.entries());
+            let write_result = if entry_count > 0 {
+                database.upsert_entries_preserving_detailed(command.entries())
+            } else {
+                database.upsert_unsaved_replay_checks(command.checks())
+            };
             result.add_sqlite_write(sqlite_write_start.elapsed());
             match write_result {
                 Ok(changed) => {

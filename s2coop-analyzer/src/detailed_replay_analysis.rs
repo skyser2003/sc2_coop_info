@@ -8,7 +8,7 @@ use crate::tauri_replay_analysis_impl::{
     ParsedReplayInput, ParsedReplayMessage, ParsedReplayPlayer, PlayerPositions, ReplayReport,
     ReplayReportDetailData, ReplayReportDetailedInput,
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use indexmap::IndexMap;
 use s2protocol_port::{
     ProtocolStore, ProtocolStoreBuilder, ReplayDetails, ReplayEvent, ReplayInitData,
@@ -397,6 +397,33 @@ impl ReplayFileIdentity {
     pub fn calculate_hash(path: &Path) -> String {
         DetailedReplayAnalyzer::calculate_replay_hash(path)
     }
+
+    pub fn modified_seconds(path: &Path) -> Option<u64> {
+        DetailedReplayAnalyzer::file_modified_seconds(path)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplayCacheFileIdentity {
+    hash: String,
+    modified_seconds: u64,
+}
+
+impl ReplayCacheFileIdentity {
+    pub fn new(hash: impl Into<String>, modified_seconds: u64) -> Self {
+        Self {
+            hash: hash.into(),
+            modified_seconds,
+        }
+    }
+
+    pub fn hash(&self) -> &str {
+        &self.hash
+    }
+
+    pub fn modified_seconds(&self) -> u64 {
+        self.modified_seconds
+    }
 }
 
 impl ReplayBuildInfo {
@@ -694,6 +721,7 @@ struct ReplayCacheEntrySinkBuffer {
     sink: Option<Arc<dyn CacheEntrySink>>,
     batch_size: usize,
     pending_entries: std::sync::Mutex<Vec<CacheReplayEntry>>,
+    pending_checks: std::sync::Mutex<Vec<CacheReplayCheck>>,
     persisted_entries: AtomicUsize,
 }
 
@@ -735,6 +763,7 @@ impl ReplayCacheEntrySinkBuffer {
             sink,
             batch_size: batch_size.max(1),
             pending_entries: std::sync::Mutex::new(Vec::new()),
+            pending_checks: std::sync::Mutex::new(Vec::new()),
             persisted_entries: AtomicUsize::new(0),
         }
     }
@@ -759,23 +788,48 @@ impl ReplayCacheEntrySinkBuffer {
         self.write_entries(pending)
     }
 
-    fn flush(&self) -> Result<(), CacheEntrySinkError> {
+    fn add_check(&self, check: CacheReplayCheck) -> Result<(), CacheEntrySinkError> {
         if self.sink.is_none() {
             return Ok(());
         }
 
         let pending = {
+            let mut pending_checks = self
+                .pending_checks
+                .lock()
+                .map_err(|_| CacheEntrySinkError::new("cache check buffer lock poisoned"))?;
+            pending_checks.push(check);
+            if pending_checks.len() < self.batch_size {
+                return Ok(());
+            }
+            std::mem::take(&mut *pending_checks)
+        };
+
+        self.write_checks(pending)
+    }
+
+    fn flush(&self) -> Result<(), CacheEntrySinkError> {
+        if self.sink.is_none() {
+            return Ok(());
+        }
+
+        let pending_entries = {
             let mut pending_entries = self
                 .pending_entries
                 .lock()
                 .map_err(|_| CacheEntrySinkError::new("cache entry buffer lock poisoned"))?;
-            if pending_entries.is_empty() {
-                return Ok(());
-            }
             std::mem::take(&mut *pending_entries)
         };
+        self.write_entries(pending_entries)?;
 
-        self.write_entries(pending)
+        let pending_checks = {
+            let mut pending_checks = self
+                .pending_checks
+                .lock()
+                .map_err(|_| CacheEntrySinkError::new("cache check buffer lock poisoned"))?;
+            std::mem::take(&mut *pending_checks)
+        };
+        self.write_checks(pending_checks)
     }
 
     fn write_entries(&self, entries: Vec<CacheReplayEntry>) -> Result<(), CacheEntrySinkError> {
@@ -786,6 +840,19 @@ impl ReplayCacheEntrySinkBuffer {
             return Ok(());
         };
         let changed = sink.write_entries(&entries)?;
+        self.persisted_entries
+            .fetch_add(changed, AtomicOrdering::Relaxed);
+        Ok(())
+    }
+
+    fn write_checks(&self, checks: Vec<CacheReplayCheck>) -> Result<(), CacheEntrySinkError> {
+        if checks.is_empty() {
+            return Ok(());
+        }
+        let Some(sink) = self.sink.as_ref() else {
+            return Ok(());
+        };
+        let changed = sink.write_checks(&checks)?;
         self.persisted_entries
             .fetch_add(changed, AtomicOrdering::Relaxed);
         Ok(())
@@ -1343,6 +1410,14 @@ impl DetailedReplayAnalyzer {
         let modified = fs::metadata(file)?.modified()?;
         let datetime: DateTime<Utc> = DateTime::from(modified);
         Ok(datetime.format("%Y:%m:%d:%H:%M:%S").to_string())
+    }
+
+    fn file_modified_seconds(file: &Path) -> Option<u64> {
+        fs::metadata(file)
+            .ok()
+            .and_then(|metadata| metadata.modified().ok())
+            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_secs())
     }
 
     fn calculate_replay_hash(path: &Path) -> String {
@@ -1952,6 +2027,39 @@ impl std::error::Error for CacheEntrySinkError {}
 
 pub trait CacheEntrySink: Send + Sync {
     fn write_entries(&self, entries: &[CacheReplayEntry]) -> Result<usize, CacheEntrySinkError>;
+
+    fn write_checks(&self, checks: &[CacheReplayCheck]) -> Result<usize, CacheEntrySinkError> {
+        Ok(checks.len())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CacheReplayCheck {
+    hash: String,
+    file: String,
+    modified_seconds: u64,
+}
+
+impl CacheReplayCheck {
+    pub fn new(hash: impl Into<String>, file: impl Into<String>, modified_seconds: u64) -> Self {
+        Self {
+            hash: hash.into(),
+            file: file.into(),
+            modified_seconds,
+        }
+    }
+
+    pub fn hash(&self) -> &str {
+        &self.hash
+    }
+
+    pub fn file(&self) -> &str {
+        &self.file
+    }
+
+    pub fn modified_seconds(&self) -> u64 {
+        self.modified_seconds
+    }
 }
 
 #[derive(Clone, Default)]
@@ -1962,6 +2070,7 @@ pub struct GenerateCacheRuntimeOptions {
     cache_entry_sink: Option<Arc<dyn CacheEntrySink>>,
     cache_entry_sink_batch_size: Option<usize>,
     existing_detailed_cache_entries: Option<HashMap<String, CacheReplayEntry>>,
+    existing_detailed_cache_identities_by_hash: Option<HashMap<String, ReplayCacheFileIdentity>>,
 }
 
 impl std::fmt::Debug for GenerateCacheRuntimeOptions {
@@ -1980,6 +2089,13 @@ impl std::fmt::Debug for GenerateCacheRuntimeOptions {
                 "existing_detailed_cache_entries",
                 &self
                     .existing_detailed_cache_entries
+                    .as_ref()
+                    .map(HashMap::len),
+            )
+            .field(
+                "existing_detailed_cache_identities_by_hash",
+                &self
+                    .existing_detailed_cache_identities_by_hash
                     .as_ref()
                     .map(HashMap::len),
             )
@@ -2029,6 +2145,14 @@ impl GenerateCacheRuntimeOptions {
         self
     }
 
+    pub fn with_existing_detailed_cache_identities_by_hash(
+        mut self,
+        identities_by_hash: HashMap<String, ReplayCacheFileIdentity>,
+    ) -> Self {
+        self.existing_detailed_cache_identities_by_hash = Some(identities_by_hash);
+        self
+    }
+
     fn timings_enabled(&self) -> bool {
         self.timings_enabled
             .unwrap_or_else(AnalyzerTimingConfig::enabled_from_env)
@@ -2067,6 +2191,12 @@ impl GenerateCacheRuntimeOptions {
 
     fn existing_detailed_cache_entries(&self) -> Option<HashMap<String, CacheReplayEntry>> {
         self.existing_detailed_cache_entries.clone()
+    }
+
+    fn existing_detailed_cache_identities_by_hash(
+        &self,
+    ) -> Option<HashMap<String, ReplayCacheFileIdentity>> {
+        self.existing_detailed_cache_identities_by_hash.clone()
     }
 }
 
@@ -2588,6 +2718,10 @@ impl<'a> GenerateCacheProgressReporter<'a> {
         self.cache_entry_sink_buffer.add_entry(entry)
     }
 
+    fn add_cache_check(&self, check: CacheReplayCheck) -> Result<(), CacheEntrySinkError> {
+        self.cache_entry_sink_buffer.add_check(check)
+    }
+
     fn flush_cache_entries(&self) -> Result<(), CacheEntrySinkError> {
         self.cache_entry_sink_buffer.flush()
     }
@@ -2676,6 +2810,7 @@ impl<'a> GenerateCacheProgressReporter<'a> {
 struct CandidateReplay {
     path: PathBuf,
     hash: String,
+    modified_seconds: u64,
     analysis_priority: ReplayAnalysisFilePriority,
 }
 
@@ -2705,6 +2840,14 @@ struct CandidateReplayAnalysisResult {
     timing: CandidateReplayAnalysisTiming,
 }
 
+fn cache_entry_modified_seconds(entry: &CacheReplayEntry) -> u64 {
+    ["%Y:%m:%d:%H:%M:%S", "%Y-%m-%d %H:%M:%S"]
+        .iter()
+        .find_map(|format| NaiveDateTime::parse_from_str(&entry.date, format).ok())
+        .and_then(|datetime| u64::try_from(datetime.and_utc().timestamp()).ok())
+        .unwrap_or_default()
+}
+
 impl CandidateReplayAnalysisResult {
     fn new(entry: Option<CacheReplayEntry>, timing: CandidateReplayAnalysisTiming) -> Self {
         Self { entry, timing }
@@ -2731,6 +2874,13 @@ impl CandidateReplay {
     fn collect_for_cache_lookup_timed(replay_path: &Path) -> CandidateReplayCollectionResult {
         let total_start = Instant::now();
         let hash_lookup_start = Instant::now();
+        let metadata = fs::metadata(replay_path).ok();
+        let modified_seconds = metadata
+            .as_ref()
+            .and_then(|value| value.modified().ok())
+            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_secs())
+            .unwrap_or_default();
         let digest = DetailedReplayAnalyzer::calculate_replay_file_digest(replay_path);
         let hash_lookup = hash_lookup_start.elapsed();
         let priority_start = Instant::now();
@@ -2740,6 +2890,7 @@ impl CandidateReplay {
         let candidate = Self {
             path: replay_path.to_path_buf(),
             hash: digest.hash,
+            modified_seconds,
             analysis_priority,
         };
         CandidateReplayCollectionResult::new(
@@ -2756,6 +2907,8 @@ impl CandidateReplay {
         let candidate = Self {
             path: replay_path.to_path_buf(),
             hash: String::new(),
+            modified_seconds: DetailedReplayAnalyzer::file_modified_seconds(replay_path)
+                .unwrap_or_default(),
             analysis_priority,
         };
         CandidateReplayCollectionResult::new(
@@ -2852,8 +3005,14 @@ impl CandidateReplay {
     fn partition_cached(
         candidates: Vec<Self>,
         existing_entries: &HashMap<String, CacheReplayEntry>,
-    ) -> (HashMap<String, CacheReplayEntry>, Vec<(String, Self)>) {
+        existing_identities_by_hash: &HashMap<String, ReplayCacheFileIdentity>,
+    ) -> (
+        HashMap<String, CacheReplayEntry>,
+        usize,
+        Vec<(String, Self)>,
+    ) {
         let mut reused_entries = HashMap::new();
+        let mut reused_identity_count = 0usize;
         let mut pending_candidates = Vec::new();
 
         for candidate in candidates {
@@ -2864,16 +3023,51 @@ impl CandidateReplay {
             }
 
             if let Some(existing_entry) = existing_entries.get(&hash) {
-                reused_entries.insert(
-                    hash.clone(),
-                    existing_entry.refreshed_for_candidate(candidate.path.as_path(), hash.as_str()),
-                );
+                let cached_time_matches = existing_identities_by_hash
+                    .get(&hash)
+                    .map(|identity| identity.modified_seconds() == candidate.modified_seconds)
+                    .unwrap_or(true);
+                if cached_time_matches {
+                    reused_entries.insert(
+                        hash.clone(),
+                        existing_entry
+                            .refreshed_for_candidate(candidate.path.as_path(), hash.as_str()),
+                    );
+                } else {
+                    pending_candidates.push((hash, candidate));
+                }
+            } else if existing_identities_by_hash
+                .get(&hash)
+                .is_some_and(|identity| identity.modified_seconds() == candidate.modified_seconds)
+            {
+                reused_identity_count = reused_identity_count.saturating_add(1);
             } else {
                 pending_candidates.push((hash, candidate));
             }
         }
 
-        (reused_entries, pending_candidates)
+        (reused_entries, reused_identity_count, pending_candidates)
+    }
+
+    fn cache_check(&self) -> Option<CacheReplayCheck> {
+        let hash = if self.hash.is_empty() {
+            DetailedReplayAnalyzer::calculate_replay_hash(self.path.as_path())
+        } else {
+            self.hash.clone()
+        };
+        if hash.is_empty() {
+            return None;
+        };
+        Some(CacheReplayCheck::new(
+            hash,
+            CacheOverallStatsFile::normalized_path_string(self.path.as_path()),
+            if self.modified_seconds == 0 {
+                DetailedReplayAnalyzer::file_modified_seconds(self.path.as_path())
+                    .unwrap_or_default()
+            } else {
+                self.modified_seconds
+            },
+        ))
     }
 
     fn sort_pending_by_analysis_priority(pending_candidates: &mut [(String, Self)]) {
@@ -3010,6 +3204,20 @@ impl DetailedReplayAnalyzer {
         } else {
             HashMap::new()
         };
+        let mut existing_detailed_cache_identities_by_hash = if mode.is_detailed() {
+            runtime
+                .existing_detailed_cache_identities_by_hash()
+                .unwrap_or_default()
+        } else {
+            HashMap::new()
+        };
+        for (hash, entry) in &existing_detailed_cache_entries {
+            existing_detailed_cache_identities_by_hash
+                .entry(hash.clone())
+                .or_insert_with(|| {
+                    ReplayCacheFileIdentity::new(hash.clone(), cache_entry_modified_seconds(entry))
+                });
+        }
         timing_report.load_existing_cache = load_existing_cache_start.elapsed();
         let cache_entry_sink = if mode.is_detailed() {
             runtime.cache_entry_sink()
@@ -3036,7 +3244,7 @@ impl DetailedReplayAnalyzer {
             let worker_count = runtime.resolved_worker_count(replay_files.len());
             timing_report.worker_count = worker_count;
             let should_collect_cache_lookup_hashes =
-                mode.is_detailed() && !existing_detailed_cache_entries.is_empty();
+                mode.is_detailed() && !existing_detailed_cache_identities_by_hash.is_empty();
             let collect_candidates_start = Instant::now();
             let candidate_replay_results = Self::run_parallel_map(
                 replay_files,
@@ -3065,13 +3273,16 @@ impl DetailedReplayAnalyzer {
             let total_candidates = candidate_replays.len();
 
             let partition_candidates_start = Instant::now();
-            let (mut reused_entries, mut pending_candidates) = CandidateReplay::partition_cached(
-                candidate_replays,
-                &existing_detailed_cache_entries,
-            );
+            let (mut reused_entries, reused_identity_count, mut pending_candidates) =
+                CandidateReplay::partition_cached(
+                    candidate_replays,
+                    &existing_detailed_cache_entries,
+                    &existing_detailed_cache_identities_by_hash,
+                );
             timing_report.partition_candidates = partition_candidates_start.elapsed();
             timing_report.candidate_count = total_candidates;
-            timing_report.reused_candidate_count = reused_entries.len();
+            let reused_candidate_count = reused_entries.len().saturating_add(reused_identity_count);
+            timing_report.reused_candidate_count = reused_candidate_count;
             timing_report.pending_candidate_count = pending_candidates.len();
 
             let sort_pending_candidates_start = Instant::now();
@@ -3080,7 +3291,7 @@ impl DetailedReplayAnalyzer {
             let progress = Arc::new(GenerateCacheProgressReporter::new(
                 mode,
                 total_candidates,
-                reused_entries.len(),
+                reused_candidate_count,
                 logger,
                 cache_entry_sink,
                 cache_entry_sink_batch_size,
@@ -3114,12 +3325,23 @@ impl DetailedReplayAnalyzer {
                             );
                             if mode.is_detailed()
                                 && let Some(entry) = result.entry()
-                                && entry.detailed_analysis
                             {
                                 let cache_entry_write_start = Instant::now();
                                 if let Err(error) = progress_for_workers.add_cache_entry(entry) {
                                     progress_for_workers.emit(format!(
                                         "Warning: failed to write cache entries: {error}"
+                                    ));
+                                }
+                                result
+                                    .timing_mut()
+                                    .add_temp_entry_write(cache_entry_write_start.elapsed());
+                            } else if mode.is_detailed()
+                                && let Some(check) = candidate.cache_check()
+                            {
+                                let cache_entry_write_start = Instant::now();
+                                if let Err(error) = progress_for_workers.add_cache_check(check) {
+                                    progress_for_workers.emit(format!(
+                                        "Warning: failed to write cache checks: {error}"
                                     ));
                                 }
                                 result

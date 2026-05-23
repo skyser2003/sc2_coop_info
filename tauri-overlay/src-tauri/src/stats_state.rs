@@ -34,6 +34,7 @@ pub(crate) struct AnalysisOutcome {
     reported_replay_count: usize,
     replays: Vec<ReplayInfo>,
     analysis_completed: bool,
+    snapshot: Option<StatsSnapshot>,
 }
 
 impl AnalysisOutcome {
@@ -46,14 +47,29 @@ impl AnalysisOutcome {
             reported_replay_count,
             replays,
             analysis_completed,
+            snapshot: None,
         }
     }
 
-    pub(crate) fn into_parts(self) -> (usize, Vec<ReplayInfo>, bool) {
+    pub(crate) fn with_snapshot(
+        reported_replay_count: usize,
+        snapshot: StatsSnapshot,
+        analysis_completed: bool,
+    ) -> Self {
+        Self {
+            reported_replay_count,
+            replays: Vec::new(),
+            analysis_completed,
+            snapshot: Some(snapshot),
+        }
+    }
+
+    pub(crate) fn into_parts(self) -> (usize, Vec<ReplayInfo>, bool, Option<StatsSnapshot>) {
         (
             self.reported_replay_count,
             self.replays,
             self.analysis_completed,
+            self.snapshot,
         )
     }
 

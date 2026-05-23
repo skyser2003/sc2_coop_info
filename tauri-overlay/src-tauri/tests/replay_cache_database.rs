@@ -5,7 +5,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     CacheReplayEntry, CacheStatValue, CacheUnitStats, ProtocolBuildValue, ReplayBuildInfo,
     ReplayMessage,
 };
-use s2coop_analyzer::detailed_replay_analysis::CacheEntrySink;
+use s2coop_analyzer::detailed_replay_analysis::{CacheEntrySink, CacheReplayCheck};
 use sco_tauri_overlay::{
     PathManagerOps, QueuedReplayCacheEntrySink, ReplayCacheDatabase, ReplayCacheDbError,
     ReplayCacheDifficultyFilter, ReplayCacheEntryQuery, ReplayCacheGameSortKey,
@@ -247,6 +247,7 @@ fn sqlite_cache_schema_stores_typed_columns_without_payload_json() {
     assert!(columns.contains(&"hash".to_string()));
     assert!(columns.contains(&"difficulty_p1".to_string()));
     assert!(columns.contains(&"difficulty_p2".to_string()));
+    assert!(!columns.contains(&"detailed_analysis_attempted".to_string()));
     assert!(columns.contains(&"length_ingame_seconds".to_string()));
     assert!(columns.contains(&"length_realtime_kind".to_string()));
     assert!(columns.contains(&"length_realtime_int".to_string()));
@@ -283,6 +284,10 @@ fn sqlite_cache_schema_stores_typed_columns_without_payload_json() {
     assert!(!sqlite_table_exists(&db_path, "replay_cache_bonus"));
     assert!(!sqlite_table_exists(&db_path, "replay_cache_metadata"));
     assert!(!sqlite_table_exists(&db_path, "replay_cache_mutators"));
+    assert!(sqlite_table_exists(
+        &db_path,
+        "replay_cache_unsaved_replay_checks"
+    ));
     assert!(!sqlite_table_exists(
         &db_path,
         "replay_cache_player_masteries"
@@ -1704,6 +1709,79 @@ fn queued_cache_entry_sink_uses_writer_queue_for_detailed_batches() {
     assert_eq!(write_result.persisted_entries(), 2);
     assert_eq!(write_result.failed_batches(), 0);
     assert_eq!(database.count_entries().expect("entries should count"), 2);
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn queued_detailed_cache_sink_persists_checked_replay_identities() {
+    let root = unique_temp_path("replay_cache_db_queued_checks");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
+    let db_path = ReplayCacheDatabase::db_path_for_cache_path(&cache_path);
+    let write_queue = ReplayCacheWriteQueue::start_detailed_analysis(cache_path.clone());
+    let sink = QueuedReplayCacheEntrySink::new(write_queue.sender());
+    let mut basic = sample_cache_entry(
+        "queued-check-basic.SC2Replay",
+        "queued-check-basic-hash",
+        "2026:01:01:00:04:00",
+        false,
+        "Victory",
+    );
+    basic.players = vec![sample_player(1, "Queued Check Basic")];
+    let queued_entries = sink
+        .write_entries(std::slice::from_ref(&basic))
+        .expect("basic checked replay entry should queue");
+    let queued_checks = sink
+        .write_checks(&[CacheReplayCheck::new(
+            "queued-check-invalid-hash",
+            "queued-check-invalid.SC2Replay",
+            1_766_643_840,
+        )])
+        .expect("unsaved replay identity should queue");
+    drop(sink);
+    let write_result = write_queue.finish();
+    let database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should reopen");
+    let files_by_hash = database
+        .load_detailed_cache_files_by_hash()
+        .expect("detailed cache identities should load");
+
+    assert_eq!(queued_entries, 1);
+    assert_eq!(queued_checks, 1);
+    assert_eq!(write_result.failed_batches(), 0);
+    assert_eq!(files_by_hash.get("queued-check-basic-hash"), None);
+    assert_eq!(
+        files_by_hash.get("queued-check-invalid-hash"),
+        Some(&"queued-check-invalid.SC2Replay".to_string())
+    );
+    let identities_by_hash = database
+        .load_detailed_cache_identities_by_hash()
+        .expect("detailed cache file identities should load");
+    assert_eq!(
+        identities_by_hash
+            .get("queued-check-invalid-hash")
+            .map(|identity| identity.modified_seconds()),
+        Some(1_766_643_840)
+    );
+
+    let connection = Connection::open(&db_path).expect("sqlite database should open");
+    let detailed_analysis = connection
+        .query_row(
+            "
+            SELECT detailed_analysis
+            FROM replay_cache_entries
+            WHERE hash = ?1
+            ",
+            params!["queued-check-basic-hash"],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("basic row should load");
+    assert_eq!(detailed_analysis, 0);
+    assert_eq!(
+        sqlite_table_row_count(&db_path, "replay_cache_unsaved_replay_checks"),
+        1
+    );
 
     let _ = std::fs::remove_dir_all(&root);
 }

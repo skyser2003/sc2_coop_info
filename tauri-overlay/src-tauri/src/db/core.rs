@@ -3,7 +3,9 @@ use rusqlite::{Connection, ErrorCode, Row};
 use s2coop_analyzer::cache_overall_stats_generator::{
     CacheCountValue, CacheNumericValue, CacheReplayEntry, ProtocolBuildValue,
 };
-use s2coop_analyzer::detailed_replay_analysis::{CacheEntrySink, CacheEntrySinkError};
+use s2coop_analyzer::detailed_replay_analysis::{
+    CacheEntrySink, CacheEntrySinkError, CacheReplayCheck,
+};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -1360,6 +1362,12 @@ impl CacheEntrySink for SqliteReplayCacheEntrySink {
             .and_then(|mut database| database.upsert_entries_preserving_detailed(entries))
             .map_err(|error| CacheEntrySinkError::new(error.to_string()))
     }
+
+    fn write_checks(&self, checks: &[CacheReplayCheck]) -> Result<usize, CacheEntrySinkError> {
+        ReplayCacheDatabase::open_for_cache_path(&self.cache_path)
+            .and_then(|mut database| database.upsert_unsaved_replay_checks(checks))
+            .map_err(|error| CacheEntrySinkError::new(error.to_string()))
+    }
 }
 
 impl ReplayCacheDatabase {
@@ -1574,6 +1582,14 @@ impl ReplayCacheDatabase {
                     updated_at_seconds INTEGER NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS replay_cache_unsaved_replay_checks (
+                    hash TEXT PRIMARY KEY NOT NULL,
+                    file TEXT NOT NULL,
+                    file_name TEXT NOT NULL,
+                    file_modified_seconds INTEGER NOT NULL,
+                    updated_at_seconds INTEGER NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS replay_player_infos (
                     handle TEXT PRIMARY KEY NOT NULL,
                     wins INTEGER NOT NULL,
@@ -1735,6 +1751,8 @@ impl ReplayCacheDatabase {
                     ON replay_cache_player_units(unit_name, replay_id);
                 CREATE INDEX IF NOT EXISTS idx_replay_cache_amon_units_unit
                     ON replay_cache_amon_units(unit_name, replay_id);
+                CREATE INDEX IF NOT EXISTS idx_replay_cache_unsaved_replay_checks_hash_time
+                    ON replay_cache_unsaved_replay_checks(hash, file_modified_seconds);
                 ",
             )
             .map_err(|source| ReplayCacheDbError::Sqlite {

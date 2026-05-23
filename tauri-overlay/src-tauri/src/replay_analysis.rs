@@ -1382,12 +1382,13 @@ impl ReplayAnalysisOps {
         log_label: &str,
         query: ReplayCacheEntryQuery,
     ) -> Vec<CacheReplayEntry> {
+        let db_path = ReplayCacheDatabase::db_path_for_cache_path(cache_path);
         let database = match ReplayCacheDatabase::open_for_cache_path(cache_path) {
             Ok(database) => database,
             Err(error) => {
                 crate::sco_log!(
                     "[SCO/cache] failed to open {log_label} database for '{}': {error}",
-                    cache_path.display()
+                    db_path.display()
                 );
                 return Vec::new();
             }
@@ -1398,7 +1399,7 @@ impl ReplayAnalysisOps {
             Err(error) => {
                 crate::sco_log!(
                     "[SCO/cache] failed to read {log_label} database for '{}': {error}",
-                    cache_path.display()
+                    db_path.display()
                 );
                 Vec::new()
             }
@@ -1410,12 +1411,13 @@ impl ReplayAnalysisOps {
         log_label: &str,
         query: ReplayCacheEntryQuery,
     ) -> Vec<CacheReplayEntry> {
+        let db_path = ReplayCacheDatabase::db_path_for_cache_path(cache_path);
         let database = match ReplayCacheDatabase::open_for_cache_path(cache_path) {
             Ok(database) => database,
             Err(error) => {
                 crate::sco_log!(
                     "[SCO/cache] failed to open {log_label} database for '{}': {error}",
-                    cache_path.display()
+                    db_path.display()
                 );
                 return Vec::new();
             }
@@ -1426,7 +1428,7 @@ impl ReplayAnalysisOps {
             Err(error) => {
                 crate::sco_log!(
                     "[SCO/cache] failed to read {log_label} database for '{}': {error}",
-                    cache_path.display()
+                    db_path.display()
                 );
                 Vec::new()
             }
@@ -3959,7 +3961,7 @@ impl ReplayAnalysis {
         crate::sco_log!(
             "[SCO/cache] loaded {} replay(s) from detailed-analysis cache '{}'",
             replays.len(),
-            cache_path.display()
+            ReplayCacheDatabase::db_path_for_cache_path(cache_path).display()
         );
         replays
     }
@@ -4057,7 +4059,7 @@ impl ReplayAnalysis {
         crate::sco_log!(
             "[SCO/cache] loaded {} replay(s) from unified cache '{}' (includes both simple and detailed)",
             replays.len(),
-            cache_path.display()
+            ReplayCacheDatabase::db_path_for_cache_path(cache_path).display()
         );
 
         replays
@@ -4635,7 +4637,7 @@ impl ReplayAnalysis {
                         Err(error) => {
                             crate::sco_log!(
                                 "[SCO/cache] failed to build filtered statistics from database '{}': {error}",
-                                cache_path.display()
+                                ReplayCacheDatabase::db_path_for_cache_path(&cache_path).display()
                             );
                         }
                     }
