@@ -3,8 +3,8 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     CacheIconValue, CacheNumericValue, CachePlayer, CacheReplayEntry, CacheUnitStats, ReplayMessage,
 };
 use s2coop_analyzer::detailed_replay_analysis::{
-    DetailedReplayAnalyzer, ReplayAnalysisResources, ReplayCacheParallelParseOptions,
-    ReplayFileIdentity,
+    DEFAULT_CACHE_ENTRY_SINK_BATCH_SIZE, DetailedReplayAnalyzer, ReplayAnalysisResources,
+    ReplayCacheParallelParseOptions, ReplayFileIdentity,
 };
 use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use s2coop_analyzer::tauri_replay_analysis_impl::{
@@ -35,7 +35,6 @@ use crate::{
 
 const PRESTIGE_TRACKING_START_YMD: u32 = 20200726;
 const MASTERY_DISTRIBUTION_RATIO_SCALE: u64 = 100_000;
-const SIMPLE_CACHE_FLUSH_BATCH_SIZE: usize = 10;
 
 type MasteryDistributionCounts = [BTreeMap<u64, u64>; 3];
 type MasteryDistributionByPrestigeCounts = [MasteryDistributionCounts; 4];
@@ -4319,7 +4318,7 @@ impl ReplayAnalysis {
             .with_cache_entry_sink(Arc::new(QueuedReplayCacheEntrySink::new(
                 cache_writer.sender(),
             )))
-            .with_cache_entry_sink_batch_size(SIMPLE_CACHE_FLUSH_BATCH_SIZE);
+            .with_cache_entry_sink_batch_size(DEFAULT_CACHE_ENTRY_SINK_BATCH_SIZE);
         let parsed_results = match DetailedReplayAnalyzer::parse_saved_cache_entries_parallel_map(
             paths_to_parse,
             resources,
@@ -4447,7 +4446,7 @@ impl ReplayAnalysis {
         crate::sco_log!(
             "[SCO/cache] persisted {} simple-analysis cache entr(y/ies) with writer batches of {}",
             persisted_cache_entries,
-            SIMPLE_CACHE_FLUSH_BATCH_SIZE
+            DEFAULT_CACHE_ENTRY_SINK_BATCH_SIZE
         );
         if cache_writer_result.failed_batches() > 0 {
             crate::sco_log!(

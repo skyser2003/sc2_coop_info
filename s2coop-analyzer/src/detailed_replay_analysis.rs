@@ -49,6 +49,8 @@ use timing::{
 };
 pub use timing::{DetailedReplayReportTiming, GenerateCacheTimingReport, ReplayTiming};
 
+pub const DEFAULT_CACHE_ENTRY_SINK_BATCH_SIZE: usize = 10;
+
 const LOCUST_SOURCE_UNITS: [&str; 5] = [
     "AbathurLocust",
     "Locust",
@@ -569,7 +571,7 @@ impl ReplayCacheParallelParseOptions {
             worker_count: worker_count.max(1),
             stop_controller: None,
             cache_entry_sink: None,
-            cache_entry_sink_batch_size: 10,
+            cache_entry_sink_batch_size: DEFAULT_CACHE_ENTRY_SINK_BATCH_SIZE,
         }
     }
 
@@ -2058,7 +2060,9 @@ impl GenerateCacheRuntimeOptions {
     }
 
     fn cache_entry_sink_batch_size(&self) -> usize {
-        self.cache_entry_sink_batch_size.unwrap_or(10).max(1)
+        self.cache_entry_sink_batch_size
+            .unwrap_or(DEFAULT_CACHE_ENTRY_SINK_BATCH_SIZE)
+            .max(1)
     }
 
     fn existing_detailed_cache_entries(&self) -> Option<HashMap<String, CacheReplayEntry>> {

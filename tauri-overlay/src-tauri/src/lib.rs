@@ -2,8 +2,9 @@ use notify::{Config as NotifyConfig, EventKind, RecommendedWatcher, RecursiveMod
 use rfd::FileDialog;
 use s2coop_analyzer::cache_overall_stats_generator::CacheReplayEntry;
 use s2coop_analyzer::detailed_replay_analysis::{
-    DetailedReplayAnalyzer, GenerateCacheConfig, GenerateCacheRuntimeOptions,
-    GenerateCacheStopController, GenerateCacheSummary, ReplayAnalysisResources, ReplayFileIdentity,
+    DEFAULT_CACHE_ENTRY_SINK_BATCH_SIZE, DetailedReplayAnalyzer, GenerateCacheConfig,
+    GenerateCacheRuntimeOptions, GenerateCacheStopController, GenerateCacheSummary,
+    ReplayAnalysisResources, ReplayFileIdentity,
 };
 use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use serde::{Deserialize, Serialize};
@@ -1921,7 +1922,7 @@ impl TauriOverlayOps {
             .with_cache_entry_sink(Arc::new(QueuedReplayCacheEntrySink::new(
                 cache_writer.sender(),
             )))
-            .with_cache_entry_sink_batch_size(10)
+            .with_cache_entry_sink_batch_size(DEFAULT_CACHE_ENTRY_SINK_BATCH_SIZE)
             .with_existing_detailed_cache_entries(existing_detailed_cache_entries);
         let analysis_result = DetailedReplayAnalyzer::analyze_full_detailed(
             &config,
