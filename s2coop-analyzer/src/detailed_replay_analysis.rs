@@ -2071,6 +2071,7 @@ pub struct GenerateCacheRuntimeOptions {
     cache_entry_sink_batch_size: Option<usize>,
     existing_detailed_cache_entries: Option<HashMap<String, CacheReplayEntry>>,
     existing_detailed_cache_identities_by_hash: Option<HashMap<String, ReplayCacheFileIdentity>>,
+    replay_files: Option<Vec<PathBuf>>,
 }
 
 impl std::fmt::Debug for GenerateCacheRuntimeOptions {
@@ -2098,6 +2099,10 @@ impl std::fmt::Debug for GenerateCacheRuntimeOptions {
                     .existing_detailed_cache_identities_by_hash
                     .as_ref()
                     .map(HashMap::len),
+            )
+            .field(
+                "replay_files",
+                &self.replay_files.as_ref().map(std::vec::Vec::len),
             )
             .finish()
     }
@@ -2153,6 +2158,11 @@ impl GenerateCacheRuntimeOptions {
         self
     }
 
+    pub fn with_replay_files(mut self, replay_files: Vec<PathBuf>) -> Self {
+        self.replay_files = Some(replay_files);
+        self
+    }
+
     fn timings_enabled(&self) -> bool {
         self.timings_enabled
             .unwrap_or_else(AnalyzerTimingConfig::enabled_from_env)
@@ -2197,6 +2207,10 @@ impl GenerateCacheRuntimeOptions {
         &self,
     ) -> Option<HashMap<String, ReplayCacheFileIdentity>> {
         self.existing_detailed_cache_identities_by_hash.clone()
+    }
+
+    fn replay_files(&self) -> Option<Vec<PathBuf>> {
+        self.replay_files.clone()
     }
 }
 
@@ -3180,10 +3194,12 @@ impl DetailedReplayAnalyzer {
     ) -> Result<GeneratedCacheOutput, GenerateCacheError> {
         let mut timing_report = GenerateCacheTimingReport::new(runtime.timings_enabled());
         let collect_replay_files_start = Instant::now();
-        let replay_files = DetailedReplayAnalyzer::collect_cache_replay_files(
-            &config.account_dir,
-            config.recent_replay_count,
-        );
+        let replay_files = runtime.replay_files().unwrap_or_else(|| {
+            DetailedReplayAnalyzer::collect_cache_replay_files(
+                &config.account_dir,
+                config.recent_replay_count,
+            )
+        });
         timing_report.collect_replay_files = collect_replay_files_start.elapsed();
         timing_report.total_replay_files = replay_files.len();
 
