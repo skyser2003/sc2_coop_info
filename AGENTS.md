@@ -10,7 +10,9 @@
 - Always use strict typing.  Do not use any/unknown sort of type bypassing hack.
 - Even if you are using languages like python/typescript, make everything strictly typed.  Do not use types like object, any, unknown, etc vague types if possible.  Write structs and types as you would do in rust.
 - Put implementation of a single struct in one place unless really required to put in other places.
-- Keep struct fields private, and use constructor/getter/setter to access them.
+- DO NOT use top level functions unless strictly required.  Try to use class/struct and member/static functions.
+- DO NOT use visibility values like pub(crate) or pub(super) unless strictly required.
+- ALWAYS keep struct fields private, and use constructor/getter/setter to access them.
 - Follow the 5 concepts of OOP - encapsulation, abstraction, inheritance, polymorphism, and composition.
 - When running comparison test for performance, always run a few times, alternating the order of the test.
 - DO NOT copy & paste duplicate codes everywhere.  Make then into one shared function.
