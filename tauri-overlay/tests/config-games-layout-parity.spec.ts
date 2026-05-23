@@ -46,12 +46,24 @@ async function installLayoutMock(
                 randomizer_catalog: {},
                 monitor_catalog: [],
             });
-            const playersPayload = () => ({
-                status: "ok",
-                players: initialPlayers,
-                total_players: initialPlayers.length,
-                loading: false,
-            });
+            const playersPayload = (request?: {
+                request?: {
+                    page?: number;
+                    rowsPerPage?: number;
+                };
+            }) => {
+                const pageRequest = request?.request;
+                const rowsPerPage =
+                    Number(pageRequest?.rowsPerPage) || initialPlayers.length;
+                const page = Math.max(1, Number(pageRequest?.page) || 1);
+                const start = (page - 1) * rowsPerPage;
+                return {
+                    status: "ok",
+                    players: initialPlayers.slice(start, start + rowsPerPage),
+                    total_players: initialPlayers.length,
+                    loading: false,
+                };
+            };
             const weekliesPayload = () => ({
                 status: "ok",
                 weeklies: initialWeeklies,
@@ -74,6 +86,10 @@ async function installLayoutMock(
                         body?: Record<string, unknown>;
                         method?: string;
                         path?: string;
+                        request?: {
+                            page?: number;
+                            rowsPerPage?: number;
+                        };
                     },
                 ) => {
                     if (command === "plugin:app|version") {
@@ -100,7 +116,7 @@ async function installLayoutMock(
                         return configPayload();
                     }
                     if (command === "config_players_get") {
-                        return playersPayload();
+                        return playersPayload(request);
                     }
                     if (command === "config_weeklies_get") {
                         return weekliesPayload();

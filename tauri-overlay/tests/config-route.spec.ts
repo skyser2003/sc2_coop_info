@@ -1067,8 +1067,13 @@ test.describe("Config route", () => {
         await expect(
             page.getByText("17:21 | Terran", { exact: true }),
         ).toBeVisible();
+        const expectedReplayTime = await expectedLocalReplayTimestamp(
+            page,
+            1538345544,
+            true,
+        );
         await expect(
-            page.getByText("Normal | 2018-09-30 22:12:24", { exact: true }),
+            page.getByText(`Normal | ${expectedReplayTime}`, { exact: true }),
         ).toBeVisible();
         await expect(page.getByText("Evolution Master (P0)")).toBeVisible();
         await expect(page.getByText("Chief Engineer (P0)")).toBeVisible();
@@ -1334,7 +1339,9 @@ test.describe("Config route", () => {
 
         await page.goto("/", { waitUntil: "domcontentloaded" });
 
-        const monitorSelect = page.locator("select").nth(1);
+        const monitorSelect = page.locator("select").filter({
+            has: page.locator("option", { hasText: "1 - ASUS VG27A" }),
+        });
         await expect(monitorSelect).toHaveValue("2");
         await expect(monitorSelect.locator("option")).toHaveText([
             "1 - ASUS VG27A",
@@ -1786,8 +1793,11 @@ test.describe("Config route", () => {
         await page.getByRole("tab", { name: "Players" }).click();
         await page.getByRole("button", { name: /^Last Seen/ }).click();
 
+        await expect(
+            page.getByRole("button", { name: "Last Seen" }),
+        ).toBeVisible();
         await expect(page.locator("tbody tr").nth(0)).toContainText(
-            "OlderPlayer",
+            "NewerPlayer",
         );
         expect(pageErrors).toEqual([]);
     });

@@ -1,287 +1,12 @@
-import { expect, test, type Page } from "@playwright/test";
-
-type GamesMutator = {
-    name: {
-        en: string;
-        ko: string;
-    };
-    iconName: string;
-    description: {
-        en: string;
-        ko: string;
-    };
-};
-
-type GamesRow = {
-    map: string;
-    result: string;
-    p1: string;
-    p2: string;
-    main_commander: string;
-    ally_commander: string;
-    difficulty: string;
-    enemy: string;
-    file: string;
-    length: number;
-    date: number;
-    brutal_plus?: number;
-    weekly?: boolean;
-    is_mutation?: boolean;
-    mutators?: readonly GamesMutator[];
-};
-
-async function installGamesMock(page: Page, rows: readonly GamesRow[]) {
-    await page.addInitScript(
-        ({ initialRows }) => {
-            const settings = {
-                account_folder: "fixtures/accounts",
-                main_names: [],
-                detailed_analysis_atstart: false,
-                rng_choices: {},
-            };
-            const configPayload = () => ({
-                status: "ok",
-                settings,
-                active_settings: settings,
-                randomizer_catalog: {},
-                monitor_catalog: [],
-            });
-            const statsPayload = () => ({
-                status: "ok",
-                ready: true,
-                games: 0,
-                analysis_running: false,
-                analysis_running_mode: null,
-                message: "",
-                query: "",
-                analysis: {
-                    MapData: {},
-                    CommanderData: {},
-                    AllyCommanderData: {},
-                    DifficultyData: {},
-                    RegionData: {},
-                    PlayerData: {},
-                    AmonData: {},
-                    MapDataReady: true,
-                    UnitData: {
-                        main: {},
-                        ally: {},
-                        amon: {},
-                    },
-                },
-            });
-            type ReplaysPageRequest = {
-                page?: number;
-                rowsPerPage?: number;
-                difficultyFilters?: string[];
-                includeNormalGames?: boolean;
-                includeMutationGames?: boolean;
-            };
-            const difficultyKey = (row: GamesRow): string => {
-                const brutalPlus = Number(row.brutal_plus || 0);
-                if (brutalPlus > 0) return `BrutalPlus${brutalPlus}`;
-                const difficulty = String(row.difficulty || "").toLowerCase();
-                if (difficulty === "casual") return "Casual";
-                if (difficulty === "normal") return "Normal";
-                if (difficulty === "hard") return "Hard";
-                return "Brutal";
-            };
-            const replaysPayload = (pageRequest?: ReplaysPageRequest) => {
-                const enabledDifficulties = new Set(
-                    pageRequest?.difficultyFilters || [
-                        "Casual",
-                        "Normal",
-                        "Hard",
-                        "Brutal",
-                        "BrutalPlus1",
-                        "BrutalPlus2",
-                        "BrutalPlus3",
-                        "BrutalPlus4",
-                        "BrutalPlus5",
-                        "BrutalPlus6",
-                    ],
-                );
-                const includeNormalGames =
-                    pageRequest?.includeNormalGames !== false;
-                const includeMutationGames =
-                    pageRequest?.includeMutationGames !== false;
-                const filteredRows = initialRows
-                    .filter((row) => {
-                        const isMutation =
-                            row.is_mutation === true ||
-                            row.weekly === true ||
-                            Number(row.mutators?.length || 0) > 0;
-                        if (!includeNormalGames && !isMutation) return false;
-                        if (!includeMutationGames && isMutation) return false;
-                        return enabledDifficulties.has(difficultyKey(row));
-                    })
-                    .sort((left, right) => right.date - left.date);
-                const page = Math.max(1, Number(pageRequest?.page) || 1);
-                const rowsPerPage = Math.max(
-                    1,
-                    Number(pageRequest?.rowsPerPage) || 20,
-                );
-                const start = (page - 1) * rowsPerPage;
-                return {
-                    status: "ok",
-                    replays: filteredRows.slice(start, start + rowsPerPage),
-                    total_replays: filteredRows.length,
-                    selected_replay_file: "",
-                };
-            };
-
-            window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
-                unregisterListener: () => {},
-            };
-
-            window.__TAURI_INTERNALS__ = {
-                invoke: async (
-                    command: string,
-                    request?: {
-                        body?: Record<string, unknown>;
-                        limit?: number;
-                        method?: string;
-                        path?: string;
-                        request?: ReplaysPageRequest;
-                    },
-                ) => {
-                    if (command === "plugin:app|version") {
-                        return "0.1.0";
-                    }
-                    if (command === "plugin:event|listen") {
-                        return 1;
-                    }
-                    if (command === "plugin:event|unlisten") {
-                        return null;
-                    }
-                    if (command === "is_dev") {
-                        return true;
-                    }
-                    if (command === "config_get") {
-                        return configPayload();
-                    }
-                    if (command === "config_update") {
-                        return configPayload();
-                    }
-                    if (command === "config_replays_get") {
-                        return replaysPayload(
-                            request?.request as ReplaysPageRequest | undefined,
-                        );
-                    }
-                    if (command === "config_players_get") {
-                        return {
-                            status: "ok",
-                            players: [],
-                            total_players: 0,
-                            loading: false,
-                        };
-                    }
-                    if (command === "config_weeklies_get") {
-                        return {
-                            status: "ok",
-                            weeklies: [],
-                        };
-                    }
-                    if (command === "config_stats_get") {
-                        return statsPayload();
-                    }
-                    if (command === "config_action") {
-                        return {
-                            status: "ok",
-                            result: { ok: true },
-                            message: "ok",
-                        };
-                    }
-                    if (command === "config_stats_action") {
-                        return { status: "ok", message: "ok" };
-                    }
-                    if (command !== "config_request") {
-                        throw new Error(`Unexpected command: ${command}`);
-                    }
-
-                    const method = request?.method;
-                    const path = request?.path;
-
-                    if (method === "GET" && path === "/config") {
-                        return configPayload();
-                    }
-
-                    if (
-                        method === "GET" &&
-                        typeof path === "string" &&
-                        path.startsWith("/config/replays?")
-                    ) {
-                        return replaysPayload();
-                    }
-
-                    if (
-                        method === "GET" &&
-                        typeof path === "string" &&
-                        path.startsWith("/config/players?")
-                    ) {
-                        return {
-                            status: "ok",
-                            players: [],
-                        };
-                    }
-
-                    if (method === "GET" && path === "/config/weeklies") {
-                        return {
-                            status: "ok",
-                            weeklies: [],
-                        };
-                    }
-
-                    if (
-                        method === "POST" &&
-                        (path === "/config" ||
-                            path === "/config/action" ||
-                            path === "/config/stats/action")
-                    ) {
-                        return {
-                            status: "ok",
-                            result: { ok: true },
-                            message: "ok",
-                            settings,
-                            active_settings: settings,
-                            randomizer_catalog: {},
-                            monitor_catalog: [],
-                        };
-                    }
-
-                    if (
-                        method === "GET" &&
-                        typeof path === "string" &&
-                        path.startsWith("/config/stats?")
-                    ) {
-                        return { status: "ok", stats: statsPayload() };
-                    }
-
-                    throw new Error(
-                        `Unexpected request: ${String(method)} ${String(path)}`,
-                    );
-                },
-                event: {
-                    listen: async () => () => {},
-                },
-                transformCallback: (callback: () => void) => {
-                    const id = Math.floor(Math.random() * 1000000);
-                    window[`_${id}`] = callback;
-                    return id;
-                },
-            };
-        },
-        { initialRows: rows },
-    );
-}
+import { expect, test } from "@playwright/test";
+import { installConfigMock } from "./helpers/config-mock";
 
 test.describe("Games filters and mutators", () => {
     test("filters include older games beyond the initially loaded 300 rows", async ({
         page,
     }) => {
-        await installGamesMock(
-            page,
-            Array.from({ length: 305 }, (_, index) => ({
+        await installConfigMock(page, {
+            games: Array.from({ length: 305 }, (_, index) => ({
                 map: `Map ${index + 1}`,
                 result: "Victory",
                 p1: `Player ${index + 1}`,
@@ -297,7 +22,7 @@ test.describe("Games filters and mutators", () => {
                 is_mutation: false,
                 mutators: [],
             })),
-        );
+        });
 
         await page.goto("/", { waitUntil: "domcontentloaded" });
         await page.getByRole("tab", { name: "Games" }).click();
@@ -315,9 +40,8 @@ test.describe("Games filters and mutators", () => {
     test("loads beyond the initial 300 rows when paging forward", async ({
         page,
     }) => {
-        await installGamesMock(
-            page,
-            Array.from({ length: 305 }, (_, index) => ({
+        await installConfigMock(page, {
+            games: Array.from({ length: 305 }, (_, index) => ({
                 map: `Map ${index + 1}`,
                 result: "Victory",
                 p1: `Player ${index + 1}`,
@@ -333,7 +57,7 @@ test.describe("Games filters and mutators", () => {
                 is_mutation: false,
                 mutators: [],
             })),
-        );
+        });
 
         await page.goto("/", { waitUntil: "domcontentloaded" });
         await page.getByRole("tab", { name: "Games" }).click();
@@ -355,52 +79,54 @@ test.describe("Games filters and mutators", () => {
     test("filters normal and mutation games and shows weekly difficulty notation", async ({
         page,
     }) => {
-        await installGamesMock(page, [
-            {
-                map: "Void Launch",
-                result: "Victory",
-                p1: "Main",
-                p2: "Ally",
-                main_commander: "Abathur",
-                ally_commander: "Swann",
-                difficulty: "Normal",
-                enemy: "Terran",
-                file: "normal.SC2Replay",
-                length: 900,
-                date: 1735689600,
-                weekly: false,
-                is_mutation: false,
-                mutators: [],
-            },
-            {
-                map: "Malwarfare",
-                result: "Victory",
-                p1: "Main",
-                p2: "Ally",
-                main_commander: "Abathur",
-                ally_commander: "Stukov",
-                difficulty: "Brutal",
-                enemy: "Zerg",
-                file: "weekly.SC2Replay",
-                length: 1200,
-                date: 1735776000,
-                weekly: true,
-                is_mutation: true,
-                mutators: [
-                    {
-                        name: {
-                            en: "Barrier",
-                            ko: "방벽",
+        await installConfigMock(page, {
+            games: [
+                {
+                    map: "Void Launch",
+                    result: "Victory",
+                    p1: "Main",
+                    p2: "Ally",
+                    main_commander: "Abathur",
+                    ally_commander: "Swann",
+                    difficulty: "Normal",
+                    enemy: "Terran",
+                    file: "normal.SC2Replay",
+                    length: 900,
+                    date: 1735689600,
+                    weekly: false,
+                    is_mutation: false,
+                    mutators: [],
+                },
+                {
+                    map: "Malwarfare",
+                    result: "Victory",
+                    p1: "Main",
+                    p2: "Ally",
+                    main_commander: "Abathur",
+                    ally_commander: "Stukov",
+                    difficulty: "Brutal",
+                    enemy: "Zerg",
+                    file: "weekly.SC2Replay",
+                    length: 1200,
+                    date: 1735776000,
+                    weekly: true,
+                    is_mutation: true,
+                    mutators: [
+                        {
+                            name: {
+                                en: "Barrier",
+                                ko: "방벽",
+                            },
+                            iconName: "Barrier",
+                            description: {
+                                en: "Enemy units gain a temporary shield when damaged.",
+                                ko: "적 유닛이 피해를 받으면 일시적인 보호막을 얻습니다.",
+                            },
                         },
-                        iconName: "Barrier",
-                        description: {
-                            en: "Enemy units gain a temporary shield when damaged.",
-                            ko: "적 유닛이 피해를 받으면 일시적인 보호막을 얻습니다.",
-                        },
-                    },
-                ],
-            },
-        ]);
+                    ],
+                },
+            ],
+        });
 
         await page.goto("/", { waitUntil: "domcontentloaded" });
         await page.getByRole("tab", { name: "Games" }).click();

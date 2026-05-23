@@ -1,53 +1,50 @@
 import * as React from "react";
 import { Tab, Tabs } from "@mui/material";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, emit } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
 import type {
-    AnalysisCompletedPayload,
     AppSettings,
-    ConfigChatPayload,
-    ConfigPayload,
-    ConfigPlayersPayload,
-    ConfigReplayVisualPayload,
-    ConfigReplaysPayload,
-    ConfigWeekliesPayload,
-    GamesRowPayload,
     MonitorOption,
     OverlayActionResponse,
-    OverlayColorPreviewPayload,
-    OverlayLanguagePreviewPayload,
     OverlayRandomizerCatalog,
     OverlayScreenshotResultPayload,
     PerformanceVisibilityPayload,
-    PlayerRowPayload,
-    StatsActionPayload,
-    StatsStatePayload,
     ReplayChatPayload,
     ReplayVisualPayload,
-    WeeklyRowPayload,
 } from "../../bindings/overlay";
 
 import { createLanguageManager } from "../i18n/languageManager";
+import {
+    loadConfigRequest,
+    loadReplayChatRequest,
+    loadReplayVisualRequest,
+    moveReplayRequest,
+    postConfigActionRequest,
+    postStatsActionRequest,
+    showReplayRequest,
+} from "./configApi";
+import { getAtPath, setAtPath } from "./configValueUtils";
+import {
+    useConfigTabData,
+    type GamesPayload,
+    type PlayersPayload,
+    type TabDataState,
+} from "./hooks/useConfigTabData";
+import { useConfigStats } from "./hooks/useConfigStats";
+import { useConfigSettings } from "./hooks/useConfigSettings";
+import { useHotkeyCapture } from "./hooks/useHotkeyCapture";
 import type {
     DisplayValue,
     JsonArray,
     JsonObject,
     JsonValue,
-    StatisticsBoolFilterKey,
-    StatisticsDifficultyKey,
-    StatisticsFilters,
-    StatisticsNumberFilterKey,
     StatisticsPayload,
-    StatisticsRegionKey,
-    StatisticsState,
-    StatisticsTextFilterKey,
-    StatsHelpers,
 } from "./types";
-import GamesTab, { type GamesPageRequest } from "./tabs/GamesTab";
+import GamesTab from "./tabs/GamesTab";
 import GenericTab from "./tabs/GenericTab";
 import PerformanceTab from "./tabs/PerformanceTab";
-import PlayersTab, { type PlayersPageRequest } from "./tabs/PlayersTab";
+import PlayersTab from "./tabs/PlayersTab";
 import RandomizerTab from "./tabs/RandomizerTab";
 import SettingsTab from "./tabs/SettingsTab";
 import StatisticsTab from "./tabs/StatisticsTab";
@@ -56,30 +53,9 @@ import styles from "./page.module.css";
 
 const { useEffect, useMemo, useRef, useState } = React;
 
-type GamesRows = readonly GamesRowPayload[];
-type PlayerRows = readonly PlayerRowPayload[];
-type WeekliesRows = readonly WeeklyRowPayload[];
 type GamesChatPayload = ReplayChatPayload | null;
 type GamesVisualPayload = ReplayVisualPayload | null;
-type GamesPayload = {
-    rows: GamesRows;
-    totalRows: number;
-};
-type PlayersPayload = {
-    rows: PlayerRows;
-    totalRows: number;
-};
-type TabDataState = {
-    games: GamesPayload | null;
-    players: PlayersPayload | null;
-    weeklies: WeekliesRows | null;
-    statistics: StatisticsPayload | null;
-};
 type PathValueUpdater = (path: string[], value: JsonValue) => void;
-type LoadTabOptions = {
-    gamesRequest?: GamesPageRequest;
-    playersRequest?: PlayersPageRequest;
-};
 type SettingsEditorProps = {
     onThemeModeChange: (darkThemeEnabled: boolean) => void;
     appVersion: string;
@@ -114,12 +90,7 @@ type PerformanceTabActions = React.ComponentProps<
 >["actions"];
 type GamesTabState = React.ComponentProps<typeof GamesTab>["state"];
 type PlayersTabState = React.ComponentProps<typeof PlayersTab>["state"];
-type GenericTabValue =
-    | GamesPayload
-    | PlayersPayload
-    | WeekliesRows
-    | StatisticsPayload
-    | null;
+type ConfigStatsResult = ReturnType<typeof useConfigStats>;
 type ExtraState = {
     tabData: TabDataState;
     isDev: boolean;
@@ -136,61 +107,13 @@ type ExtraState = {
     performanceActions: PerformanceTabActions;
     performanceDisplayVisible: boolean;
     languageManager: LanguageManagerInstance;
-    statsState: StatisticsState;
-    statsActions: StatsHelpers & {
-        runDetailedAnalysis: () => Promise<void>;
-        stopDetailedAnalysis: () => Promise<void>;
-        setDetailedAnalysisAtStart: (enabled: boolean) => Promise<void>;
-    };
+    statsState: ConfigStatsResult["statsState"];
+    statsActions: ConfigStatsResult["statsActions"];
     gamesState: GamesTabState & {
         showSelected: () => void;
         moveReplay: (delta: number) => Promise<void>;
     };
 };
-type QueuedLiveApply = {
-    settings: AppSettings;
-    requestSeq: number;
-    successMessage: string;
-};
-
-function defaultGameDifficultyFilters(): GamesPageRequest["difficultyFilters"] {
-    return {
-        Casual: true,
-        Normal: true,
-        Hard: true,
-        Brutal: true,
-        BrutalPlus1: true,
-        BrutalPlus2: true,
-        BrutalPlus3: true,
-        BrutalPlus4: true,
-        BrutalPlus5: true,
-        BrutalPlus6: true,
-    };
-}
-
-function defaultGamesPageRequest(): GamesPageRequest {
-    return {
-        page: 1,
-        rowsPerPage: 20,
-        search: "",
-        sortKey: "time",
-        sortDirection: "desc",
-        difficultyFilters: defaultGameDifficultyFilters(),
-        includeNormalGames: true,
-        includeMutationGames: true,
-    };
-}
-
-function defaultPlayersPageRequest(): PlayersPageRequest {
-    return {
-        page: 1,
-        rowsPerPage: 20,
-        search: "",
-        sortKey: "last_seen",
-        sortDirection: "desc",
-    };
-}
-
 declare global {
     interface Window {
         __scoSetPerformanceVisibility?: (visible: boolean) => void;
@@ -309,65 +232,9 @@ const TABS: ConfigTabDefinition[] = [
     },
 ];
 
-const SCO_REPLAY_SCAN_PROGRESS_EVENT = "sco://replay-scan-progress";
-const SCO_ANALYSIS_COMPLETED_EVENT = "sco://analysis-completed";
 const SCO_PERFORMANCE_VISIBILITY_EVENT = "sco://performance-visibility";
-const SCO_OVERLAY_COLOR_PREVIEW_EVENT = "sco://overlay-color-preview";
-const SCO_OVERLAY_LANGUAGE_PREVIEW_EVENT = "sco://overlay-language-preview";
 const SCO_OVERLAY_SCREENSHOT_RESULT_EVENT = "sco://overlay-screenshot-result";
 const DEFAULT_TAB_ID: TabId = "settings";
-type StatsRefreshMode = "debounced" | "immediate";
-type StatsQueryState = {
-    activeQuery: string;
-    desiredQuery: string;
-    requestSeq: number;
-    inFlight: boolean;
-    completedAt: number;
-};
-
-const STATS_DEFAULT_FILTERS: StatisticsFilters = {
-    difficulties: {
-        Casual: true,
-        Normal: true,
-        Hard: true,
-        Brutal: true,
-        BrutalPlus1: true,
-        BrutalPlus2: true,
-        BrutalPlus3: true,
-        BrutalPlus4: true,
-        BrutalPlus5: true,
-        BrutalPlus6: true,
-    },
-    regions: {
-        NA: true,
-        EU: true,
-        KR: true,
-        CN: true,
-    },
-    includeNormalGames: true,
-    includeMutations: true,
-    overrideFolderSelection: true,
-    includeMultiBox: false,
-    includeWins: true,
-    includeLosses: true,
-    includeMainSub15: true,
-    includeMainOver15: true,
-    includeAllySub15: true,
-    includeAllyOver15: true,
-    includeMainNormalMastery: true,
-    includeMainAbnormalMastery: true,
-    includeAllyNormalMastery: true,
-    includeAllyAbnormalMastery: true,
-    minLength: 0,
-    maxLength: 0,
-    fromDate: "2015-11-10",
-    toDate: "2030-12-30",
-    player: "",
-};
-
-function cloneJson<T>(value: T): T {
-    return JSON.parse(JSON.stringify(value)) as T;
-}
 
 function getTabRoute(tabId: TabId): string {
     return `/config/${tabId}`;
@@ -384,41 +251,6 @@ function getTabIdFromPathname(pathname: string): TabId | null {
     }
     const candidate = parts[1];
     return isTabId(candidate) ? candidate : null;
-}
-
-function getAtPath(
-    source: object | null,
-    path: Array<string>,
-): JsonValue | undefined {
-    return path.reduce(
-        (acc: JsonValue | undefined, key) =>
-            acc != null && typeof acc === "object"
-                ? (acc as Record<string, JsonValue>)[key]
-                : undefined,
-        source as JsonValue | undefined,
-    );
-}
-
-function setAtPath<T extends object>(
-    source: T,
-    path: Array<string>,
-    value: JsonValue,
-): T {
-    const clone = cloneJson(source);
-    let cursor = clone as Record<string, JsonValue>;
-    for (let i = 0; i < path.length - 1; i += 1) {
-        const key = path[i];
-        if (
-            cursor[key] === undefined ||
-            cursor[key] === null ||
-            typeof cursor[key] !== "object"
-        ) {
-            cursor[key] = {};
-        }
-        cursor = cursor[key] as Record<string, JsonValue>;
-    }
-    cursor[path[path.length - 1]] = value;
-    return clone;
 }
 
 function performanceVisibilityFromPayload(
@@ -699,80 +531,6 @@ function formatDurationSeconds(value: DisplayValue): string {
     return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
 }
 
-function statsFiltersToQuery(filters: StatisticsFilters): string {
-    const difficultyFilter = [];
-    if (!filters.difficulties.Casual) difficultyFilter.push("Casual");
-    if (!filters.difficulties.Normal) difficultyFilter.push("Normal");
-    if (!filters.difficulties.Hard) difficultyFilter.push("Hard");
-    if (!filters.difficulties.Brutal) difficultyFilter.push("Brutal");
-    if (!filters.difficulties.BrutalPlus1) {
-        difficultyFilter.push("1");
-    }
-    if (!filters.difficulties.BrutalPlus2) {
-        difficultyFilter.push("2");
-    }
-    if (!filters.difficulties.BrutalPlus3) {
-        difficultyFilter.push("3");
-    }
-    if (!filters.difficulties.BrutalPlus4) {
-        difficultyFilter.push("4");
-    }
-    if (!filters.difficulties.BrutalPlus5) {
-        difficultyFilter.push("5");
-    }
-    if (!filters.difficulties.BrutalPlus6) {
-        difficultyFilter.push("6");
-    }
-
-    const regionFilter = [];
-    if (!filters.regions.NA) regionFilter.push("NA");
-    if (!filters.regions.EU) regionFilter.push("EU");
-    if (!filters.regions.KR) regionFilter.push("KR");
-    if (!filters.regions.CN) regionFilter.push("CN");
-
-    const params = new URLSearchParams();
-    params.set("include_mutations", filters.includeMutations ? "1" : "0");
-    params.set("include_normal_games", filters.includeNormalGames ? "1" : "0");
-    params.set("show_all", filters.overrideFolderSelection ? "1" : "0");
-    params.set("include_wins", filters.includeWins ? "1" : "0");
-    params.set("include_losses", filters.includeLosses ? "1" : "0");
-    params.set("include_both_main", filters.includeMultiBox ? "1" : "0");
-    params.set("sub_15", filters.includeMainSub15 ? "1" : "0");
-    params.set("over_15", filters.includeMainOver15 ? "1" : "0");
-    params.set("ally_sub_15", filters.includeAllySub15 ? "1" : "0");
-    params.set("ally_over_15", filters.includeAllyOver15 ? "1" : "0");
-    params.set(
-        "main_normal_mastery",
-        filters.includeMainNormalMastery ? "1" : "0",
-    );
-    params.set(
-        "main_abnormal_mastery",
-        filters.includeMainAbnormalMastery ? "1" : "0",
-    );
-    params.set(
-        "ally_normal_mastery",
-        filters.includeAllyNormalMastery ? "1" : "0",
-    );
-    params.set(
-        "ally_abnormal_mastery",
-        filters.includeAllyAbnormalMastery ? "1" : "0",
-    );
-    params.set(
-        "minlength",
-        String(Math.max(0, Number(filters.minLength) || 0)),
-    );
-    params.set(
-        "maxlength",
-        String(Math.max(0, Number(filters.maxLength) || 0)),
-    );
-    params.set("mindate", filters.fromDate || "2015-11-10");
-    params.set("maxdate", filters.toDate || "2030-12-30");
-    params.set("player", (filters.player || "").trim());
-    params.set("difficulty_filter", difficultyFilter.join(","));
-    params.set("region_filter", regionFilter.join(","));
-    return params.toString();
-}
-
 function hotkeyStringFromEvent(
     event: React.KeyboardEvent<HTMLInputElement>,
 ): string {
@@ -867,178 +625,6 @@ function isHotkeyModifierKey(key: string): boolean {
     );
 }
 
-async function invokeConfigCommand<
-    T extends { status?: string; message?: string },
->(command: string, args: JsonObject = {}): Promise<T> {
-    const payload = await invoke<T>(command, args);
-    if (!payload) {
-        throw new Error(`Request failed (${command})`);
-    }
-    if (typeof payload.status === "string" && payload.status !== "ok") {
-        throw new Error(payload?.message || `Request failed (${command})`);
-    }
-    return payload;
-}
-
-async function loadConfigRequest(): Promise<ConfigPayload> {
-    return invokeConfigCommand<ConfigPayload>("config_get");
-}
-
-async function updateConfigRequest(
-    settings: AppSettings,
-    persist: boolean,
-): Promise<ConfigPayload> {
-    return invokeConfigCommand<ConfigPayload>("config_update", {
-        settings,
-        persist,
-    });
-}
-
-function enabledDifficultyFilters(
-    filters: GamesPageRequest["difficultyFilters"],
-): string[] {
-    return Object.entries(filters)
-        .filter(([, enabled]) => enabled)
-        .map(([key]) => key);
-}
-
-async function loadReplaysRequest(
-    request: GamesPageRequest,
-): Promise<ConfigReplaysPayload> {
-    return invokeConfigCommand<ConfigReplaysPayload>("config_replays_get", {
-        request: {
-            page: request.page,
-            rowsPerPage: request.rowsPerPage,
-            search: request.search,
-            sortKey: request.sortKey,
-            sortDirection: request.sortDirection,
-            difficultyFilters: enabledDifficultyFilters(
-                request.difficultyFilters,
-            ),
-            includeNormalGames: request.includeNormalGames,
-            includeMutationGames: request.includeMutationGames,
-        },
-    });
-}
-
-async function loadPlayersRequest(
-    request: PlayersPageRequest,
-): Promise<ConfigPlayersPayload> {
-    return invokeConfigCommand<ConfigPlayersPayload>("config_players_get", {
-        request: {
-            page: request.page,
-            rowsPerPage: request.rowsPerPage,
-            search: request.search,
-            sortKey: request.sortKey,
-            sortDirection: request.sortDirection,
-        },
-    });
-}
-
-async function loadWeekliesRequest(): Promise<ConfigWeekliesPayload> {
-    return invokeConfigCommand<ConfigWeekliesPayload>("config_weeklies_get");
-}
-
-async function loadStatisticsRequest(
-    query: string,
-): Promise<StatsStatePayload> {
-    return invokeConfigCommand<StatsStatePayload>("config_stats_get", {
-        query,
-    });
-}
-
-async function postConfigActionRequest(
-    action: string,
-    payload: JsonObject = {},
-): Promise<OverlayActionResponse> {
-    return invokeConfigCommand<OverlayActionResponse>("config_action", {
-        action,
-        payload,
-    });
-}
-
-async function postStatsActionRequest(
-    action: string,
-    payload: JsonObject = {},
-): Promise<StatsActionPayload> {
-    return invokeConfigCommand<StatsActionPayload>("config_stats_action", {
-        action,
-        payload,
-    });
-}
-
-function applyStatsActionPayload(
-    payload: StatsActionPayload | null | undefined,
-    setTabData: React.Dispatch<React.SetStateAction<TabDataState>>,
-): void {
-    if (!payload || !payload.stats) {
-        console.log("[SCO/ui] stats action payload missing stats", payload);
-        return;
-    }
-    console.log("[SCO/ui] applying stats action payload", payload);
-    setTabData((current) => ({
-        ...current,
-        statistics: payload.stats as StatisticsPayload,
-    }));
-}
-
-async function showReplayRequest(
-    file: string | null,
-): Promise<OverlayActionResponse> {
-    return invokeConfigCommand<OverlayActionResponse>("config_replay_show", {
-        file,
-    });
-}
-
-async function loadReplayChatRequest(file: string): Promise<ConfigChatPayload> {
-    return invokeConfigCommand<ConfigChatPayload>("config_replay_chat", {
-        file,
-    });
-}
-
-async function loadReplayVisualRequest(
-    file: string,
-): Promise<ConfigReplayVisualPayload> {
-    return invokeConfigCommand<ConfigReplayVisualPayload>(
-        "config_replay_visual",
-        {
-            file,
-        },
-    );
-}
-
-async function moveReplayRequest(
-    delta: number,
-): Promise<OverlayActionResponse> {
-    return invokeConfigCommand<OverlayActionResponse>("config_replay_move", {
-        delta,
-    });
-}
-
-async function syncHotkeyReassign(
-    currentPath: string,
-    nextPath: string,
-): Promise<void> {
-    if (currentPath === nextPath) {
-        return;
-    }
-
-    try {
-        if (currentPath !== "") {
-            await postConfigActionRequest("hotkey_reassign_end", {
-                path: currentPath,
-            });
-        }
-        if (nextPath !== "") {
-            await postConfigActionRequest("hotkey_reassign_begin", {
-                path: nextPath,
-            });
-        }
-    } catch (error) {
-        console.warn("Failed to sync hotkey reassign state", error);
-    }
-}
-
 function renderGamesTab(
     rows: GamesPayload | React.ComponentProps<typeof GamesTab>["rows"],
     state: GamesTabState,
@@ -1109,8 +695,8 @@ function renderWeekliesTab(
 
 function renderStatisticsTab(
     statsPayload: StatisticsPayload | null,
-    statsState: StatisticsState,
-    actions: StatsHelpers,
+    statsState: ConfigStatsResult["statsState"],
+    actions: ConfigStatsResult["statsActions"],
     languageManager: LanguageManagerInstance,
 ): React.ReactNode {
     return (
@@ -1256,84 +842,56 @@ function SettingsEditor({
 }: SettingsEditorProps): React.ReactNode {
     const location = useLocation();
     const navigate = useNavigate();
-    const [settings, setSettings] = useState<AppSettings | null>(null);
-    const [draft, setDraft] = useState<AppSettings | null>(null);
-    const [status, setStatus] = useState("Loading settings...");
     const [isBusy, setIsBusy] = useState(false);
-    const [tabData, setTabData] = useState<TabDataState>({
-        games: null,
-        players: null,
-        weeklies: null,
-        statistics: null,
-    });
     const [selectedReplayFile, setSelectedReplayFile] = useState("");
     const [gamesSearch, setGamesSearch] = useState("");
-    const [activeHotkeyPath, setActiveHotkeyPath] = useState("");
     const [performanceEditModeEnabled, setPerformanceEditModeEnabled] =
         useState(false);
-    const activeHotkeyPathRef = useRef<string>("");
-    const hotkeyTransitionRef = useRef<Promise<void>>(Promise.resolve());
-    const [randomizerCatalog, setRandomizerCatalog] =
-        useState<OverlayRandomizerCatalog | null>(null);
-    const [monitorCatalog, setMonitorCatalog] = useState<Array<MonitorOption>>(
-        [],
-    );
-    const [statsState, setStatsState] = useState<StatisticsState>({
-        filters: cloneJson(STATS_DEFAULT_FILTERS),
-        activeSubtab: "maps",
-        selectedMap: "",
-        selectedMyCommander: "",
-        selectedAllyCommander: "",
-        selectedUnitMainCommander: "",
-        selectedUnitAllyCommander: "",
-        selectedUnitSide: "main",
-        selectedUnitSortBy: "Unit",
-        selectedUnitSortReverse: false,
-        amonSearch: "",
-    });
-    const statsFiltersRef = useRef<StatisticsFilters>(
-        cloneJson(STATS_DEFAULT_FILTERS),
-    );
-    const statsRefreshModeRef = useRef<StatsRefreshMode>("debounced");
-    const statsQueryRef = useRef<StatsQueryState>({
-        activeQuery: "",
-        desiredQuery: "",
-        requestSeq: 0,
-        inFlight: false,
-        completedAt: 0,
-    });
-    const startupAnalysisRequestedRef = useRef<boolean>(false);
-    const tabLoadInFlightRef = useRef<
-        Record<"games" | "players" | "weeklies", boolean>
-    >({
-        games: false,
-        players: false,
-        weeklies: false,
-    });
-    const gamesPageRequestRef = useRef<GamesPageRequest>(
-        defaultGamesPageRequest(),
-    );
-    const playersPageRequestRef = useRef<PlayersPageRequest>(
-        defaultPlayersPageRequest(),
-    );
-    const draftRef = useRef<AppSettings | null>(null);
-    const settingsMutationRef = useRef<Promise<void>>(Promise.resolve());
-    const latestLiveApplySeqRef = useRef<number>(0);
-    const liveApplyInFlightRef = useRef<boolean>(false);
-    const queuedLiveApplyRef = useRef<QueuedLiveApply | null>(null);
+    const {
+        applyRuntimeSettings,
+        cancelPendingLiveApply,
+        dirty,
+        draft,
+        draftRef,
+        loadSettings,
+        monitorCatalog,
+        randomizerCatalog,
+        replaceDraft,
+        resetSettings,
+        safeStatus,
+        saveSettings,
+        setDraft,
+        setSettings,
+        settings,
+        settingsMutationRef,
+        setStatus,
+        status,
+        updateField,
+    } = useConfigSettings({ onThemeModeChange, setIsBusy });
+    const {
+        gamesPageRequestRef,
+        loadTabData,
+        playersPageRequestRef,
+        setTabData,
+        tabData,
+    } = useConfigTabData({ setIsBusy, safeStatus });
+    const { activeHotkeyPath, beginHotkeyCapture, endHotkeyCapture } =
+        useHotkeyCapture({
+            settingsMutationRef,
+        });
     const activeTab = useMemo<TabId>(
         () => getTabIdFromPathname(location.pathname) ?? DEFAULT_TAB_ID,
         [location.pathname],
     );
-    draftRef.current = draft;
-    activeHotkeyPathRef.current = activeHotkeyPath;
-
-    const dirty = useMemo(() => {
-        if (settings === null || draft === null) {
-            return false;
-        }
-        return JSON.stringify(settings) !== JSON.stringify(draft);
-    }, [settings, draft]);
+    const { refreshStatistics, statsActions, statsState } = useConfigStats({
+        activeTab,
+        draft,
+        isBusy,
+        safeStatus,
+        setIsBusy,
+        setTabData,
+        tabData,
+    });
     const languageManager = useMemo(
         () =>
             createLanguageManager(
@@ -1343,32 +901,11 @@ function SettingsEditor({
     );
 
     useEffect(() => {
-        statsFiltersRef.current = statsState.filters;
-    }, [statsState.filters]);
-
-    useEffect(() => {
         if (getTabIdFromPathname(location.pathname) !== null) {
             return;
         }
         navigate(getTabRoute(DEFAULT_TAB_ID), { replace: true });
     }, [location.pathname, navigate]);
-
-    useEffect(() => {
-        return () => {
-            if (activeHotkeyPathRef.current !== "") {
-                hotkeyTransitionRef.current = hotkeyTransitionRef.current
-                    .then(() =>
-                        syncHotkeyReassign(activeHotkeyPathRef.current, ""),
-                    )
-                    .catch((error) => {
-                        console.warn(
-                            "Failed to clean up hotkey reassign state",
-                            error,
-                        );
-                    });
-            }
-        };
-    }, []);
 
     useEffect(() => {
         let disposed = false;
@@ -1396,35 +933,6 @@ function SettingsEditor({
         };
     }, []);
 
-    function transitionHotkeyCapture(nextPath: string): Promise<void> {
-        hotkeyTransitionRef.current = hotkeyTransitionRef.current
-            .then(async () => {
-                await settingsMutationRef.current;
-                const currentPath = activeHotkeyPathRef.current;
-                if (currentPath === nextPath) {
-                    return;
-                }
-                await syncHotkeyReassign(currentPath, nextPath);
-                activeHotkeyPathRef.current = nextPath;
-                setActiveHotkeyPath(nextPath);
-            })
-            .catch((error) => {
-                console.warn("Failed to transition hotkey capture", error);
-            });
-        return hotkeyTransitionRef.current;
-    }
-
-    function beginHotkeyCapture(path: string): Promise<void> {
-        return transitionHotkeyCapture(path);
-    }
-
-    function endHotkeyCapture(path: string): Promise<void> {
-        if (activeHotkeyPathRef.current !== path) {
-            return Promise.resolve();
-        }
-        return transitionHotkeyCapture("");
-    }
-
     function applyPerformanceVisibilityState(visible: boolean): void {
         setSettings((current) =>
             current === null
@@ -1441,301 +949,8 @@ function SettingsEditor({
         }
     }
 
-    function safeStatus(message: string): void {
-        console.log("[SCO/ui] status", message);
-        setStatus(message);
-    }
-
-    function replaceDraft(nextDraft: AppSettings | null): void {
-        if (
-            nextDraft &&
-            typeof nextDraft === "object" &&
-            "dark_theme" in nextDraft
-        ) {
-            onThemeModeChange(Boolean(nextDraft.dark_theme));
-        }
-        draftRef.current = nextDraft;
-        setDraft(nextDraft);
-    }
-
-    function queueSettingsMutation(task: () => Promise<void>): Promise<void> {
-        const run = settingsMutationRef.current.then(task, task);
-        settingsMutationRef.current = run.then(
-            () => undefined,
-            () => undefined,
-        );
-        return run;
-    }
-
-    function cancelPendingLiveApply(): void {
-        queuedLiveApplyRef.current = null;
-    }
-
-    function emitOverlayColorPreview(nextSettings: AppSettings): void {
-        void (async () => {
-            try {
-                await emit<OverlayColorPreviewPayload>(
-                    SCO_OVERLAY_COLOR_PREVIEW_EVENT,
-                    {
-                        color_player1:
-                            typeof getAtPath(nextSettings, [
-                                "color_player1",
-                            ]) === "string"
-                                ? String(
-                                      getAtPath(nextSettings, [
-                                          "color_player1",
-                                      ]),
-                                  )
-                                : undefined,
-                        color_player2:
-                            typeof getAtPath(nextSettings, [
-                                "color_player2",
-                            ]) === "string"
-                                ? String(
-                                      getAtPath(nextSettings, [
-                                          "color_player2",
-                                      ]),
-                                  )
-                                : undefined,
-                        color_amon:
-                            typeof getAtPath(nextSettings, ["color_amon"]) ===
-                            "string"
-                                ? String(
-                                      getAtPath(nextSettings, ["color_amon"]),
-                                  )
-                                : undefined,
-                        color_mastery:
-                            typeof getAtPath(nextSettings, [
-                                "color_mastery",
-                            ]) === "string"
-                                ? String(
-                                      getAtPath(nextSettings, [
-                                          "color_mastery",
-                                      ]),
-                                  )
-                                : undefined,
-                    },
-                );
-            } catch (error) {
-                console.warn("Failed to emit overlay color preview", error);
-            }
-        })();
-    }
-
-    function emitOverlayLanguagePreview(nextSettings: AppSettings): void {
-        void (async () => {
-            try {
-                await emit<OverlayLanguagePreviewPayload>(
-                    SCO_OVERLAY_LANGUAGE_PREVIEW_EVENT,
-                    {
-                        language: String(
-                            getAtPath(nextSettings, ["language"]) || "",
-                        ),
-                    },
-                );
-            } catch (error) {
-                console.warn("Failed to emit overlay language preview", error);
-            }
-        })();
-    }
-
-    function performRuntimeSettingsApply(
-        nextSettings: AppSettings,
-        requestSeq: number,
-        successMessage = "Changes applied immediately. Click Save to persist.",
-    ): Promise<ConfigPayload | null> {
-        liveApplyInFlightRef.current = true;
-        return updateConfigRequest(nextSettings, false)
-            .then((payload) => {
-                setRandomizerCatalog(
-                    (current) => payload.randomizer_catalog ?? current,
-                );
-                setMonitorCatalog(payload.monitor_catalog || []);
-                if (requestSeq === latestLiveApplySeqRef.current) {
-                    safeStatus(successMessage);
-                }
-                return payload;
-            })
-            .catch((error) => {
-                if (requestSeq === latestLiveApplySeqRef.current) {
-                    safeStatus(`Failed to apply changes: ${error.message}`);
-                }
-                return null;
-            })
-            .finally(() => {
-                liveApplyInFlightRef.current = false;
-                const queuedApply = queuedLiveApplyRef.current;
-                if (
-                    queuedApply !== null &&
-                    queuedApply.requestSeq > requestSeq
-                ) {
-                    queuedLiveApplyRef.current = null;
-                    void performRuntimeSettingsApply(
-                        queuedApply.settings,
-                        queuedApply.requestSeq,
-                        queuedApply.successMessage,
-                    );
-                }
-            });
-    }
-
-    function applyRuntimeSettings(
-        nextSettings: AppSettings,
-        successMessage = "Changes applied immediately. Click Save to persist.",
-    ): Promise<ConfigPayload | null> {
-        const requestSeq = latestLiveApplySeqRef.current + 1;
-        latestLiveApplySeqRef.current = requestSeq;
-        if (liveApplyInFlightRef.current) {
-            queuedLiveApplyRef.current = {
-                settings: nextSettings,
-                requestSeq,
-                successMessage,
-            };
-            return Promise.resolve(null);
-        }
-        return performRuntimeSettingsApply(
-            nextSettings,
-            requestSeq,
-            successMessage,
-        );
-    }
-
-    async function loadSettings() {
-        try {
-            cancelPendingLiveApply();
-            setIsBusy(true);
-            const payload = await loadConfigRequest();
-            if (!payload.settings) {
-                throw new Error("Invalid response from API");
-            }
-            const activeSettings = payload.active_settings || payload.settings;
-            setSettings(payload.settings);
-            replaceDraft(activeSettings);
-            setRandomizerCatalog(payload.randomizer_catalog ?? null);
-            setMonitorCatalog(payload.monitor_catalog || []);
-            setStatus("Settings loaded");
-        } catch (error) {
-            setStatus(`Failed to load settings: ${error.message}`);
-        } finally {
-            setIsBusy(false);
-        }
-    }
-
     useEffect(() => {
         loadSettings();
-    }, []);
-
-    useEffect(() => {
-        let isMounted = true;
-        let unlisten: null | (() => void) = null;
-        (async () => {
-            try {
-                console.log(
-                    "[SCO/ui] subscribing to analysis completed event",
-                    SCO_ANALYSIS_COMPLETED_EVENT,
-                );
-                unlisten = await listen<AnalysisCompletedPayload>(
-                    SCO_ANALYSIS_COMPLETED_EVENT,
-                    (event) => {
-                        if (!isMounted) {
-                            return;
-                        }
-                        console.log("[SCO/ui] analysis completed event", event);
-                        const payload = event?.payload;
-                        if (
-                            payload &&
-                            typeof payload === "object" &&
-                            typeof payload.message === "string"
-                        ) {
-                            safeStatus(payload.message);
-                        }
-                        void refreshStatistics(true, null, true);
-                    },
-                );
-            } catch (error) {
-                console.warn(
-                    "[SCO/ui] Failed to subscribe to analysis completed event",
-                    error,
-                );
-            }
-        })();
-
-        return () => {
-            isMounted = false;
-            if (typeof unlisten === "function") {
-                unlisten();
-            }
-        };
-    }, []);
-
-    useEffect(() => {
-        if (draft === null || startupAnalysisRequestedRef.current) {
-            return;
-        }
-        startupAnalysisRequestedRef.current = true;
-        console.log("[SCO/ui] frontend_ready request");
-        void postStatsActionRequest("frontend_ready")
-            .then((payload) => {
-                console.log("[SCO/ui] frontend_ready response", payload);
-                if (!payload || !payload.stats) {
-                    return;
-                }
-                setTabData((current) => ({
-                    ...current,
-                    statistics: payload.stats as StatisticsPayload,
-                }));
-            })
-            .catch((error) => {
-                console.warn("Failed to trigger startup analysis", error);
-            });
-    }, [draft]);
-
-    useEffect(() => {
-        let isMounted = true;
-        let unlisten = null;
-        (async () => {
-            if (!isMounted) {
-                return;
-            }
-
-            try {
-                unlisten = await listen(
-                    SCO_REPLAY_SCAN_PROGRESS_EVENT,
-                    (event) => {
-                        if (!isMounted) {
-                            return;
-                        }
-                        console.log(
-                            "[SCO/ui] replay scan progress event",
-                            event,
-                        );
-                        const progress = event?.payload;
-                        if (!progress || typeof progress !== "object") {
-                            return;
-                        }
-                        setTabData((current) => ({
-                            ...current,
-                            statistics: {
-                                ...(current.statistics || {}),
-                                scan_progress: progress as JsonObject,
-                            },
-                        }));
-                    },
-                );
-            } catch (error) {
-                console.warn(
-                    "Failed to subscribe to scan progress events",
-                    error,
-                );
-            }
-        })();
-
-        return () => {
-            isMounted = false;
-            if (typeof unlisten === "function") {
-                unlisten();
-            }
-        };
     }, []);
 
     useEffect(() => {
@@ -1808,79 +1023,6 @@ function SettingsEditor({
         };
     }, []);
 
-    function getPayloadForTab(
-        tabId: TabId,
-        payload:
-            | ConfigReplaysPayload
-            | ConfigPlayersPayload
-            | ConfigWeekliesPayload
-            | StatsStatePayload,
-    ): GenericTabValue {
-        if (tabId === "games") {
-            const gamesPayload = payload as ConfigReplaysPayload;
-            return {
-                rows: gamesPayload.replays || [],
-                totalRows:
-                    Number(gamesPayload.total_replays) ||
-                    (gamesPayload.replays || []).length,
-            };
-        }
-        if (tabId === "players") {
-            const playersPayload = payload as ConfigPlayersPayload;
-            return {
-                rows: playersPayload.players || [],
-                totalRows:
-                    Number(playersPayload.total_players) ||
-                    (playersPayload.players || []).length,
-            };
-        }
-        if (tabId === "weeklies") {
-            return (payload as ConfigWeekliesPayload).weeklies || [];
-        }
-        if (tabId === "statistics") return payload as StatisticsPayload;
-        return null;
-    }
-
-    async function loadTabData(
-        tabId: "games" | "players" | "weeklies",
-        force = false,
-        options: LoadTabOptions = {},
-    ): Promise<void> {
-        if (!force && tabLoadInFlightRef.current[tabId]) {
-            return;
-        }
-        tabLoadInFlightRef.current[tabId] = true;
-        try {
-            setIsBusy(true);
-            const gamesRequest =
-                options.gamesRequest || gamesPageRequestRef.current;
-            if (tabId === "games") {
-                gamesPageRequestRef.current = gamesRequest;
-            }
-            const playersRequest =
-                options.playersRequest || playersPageRequestRef.current;
-            if (tabId === "players") {
-                playersPageRequestRef.current = playersRequest;
-            }
-            const payload =
-                tabId === "games"
-                    ? await loadReplaysRequest(gamesRequest)
-                    : tabId === "players"
-                      ? await loadPlayersRequest(playersRequest)
-                      : await loadWeekliesRequest();
-            setTabData((current) => ({
-                ...current,
-                [tabId]: getPayloadForTab(tabId, payload),
-            }));
-            safeStatus(`${tabId} refreshed`);
-        } catch (error) {
-            safeStatus(`Failed to load ${tabId}: ${error.message}`);
-        } finally {
-            tabLoadInFlightRef.current[tabId] = false;
-            setIsBusy(false);
-        }
-    }
-
     useEffect(() => {
         if (activeTab === "games" && tabData.games === null) {
             loadTabData("games");
@@ -1919,28 +1061,6 @@ function SettingsEditor({
         } finally {
             setIsBusy(false);
         }
-    }
-
-    function updateField(path: string[], value: JsonValue): void {
-        if (draftRef.current === null) {
-            return;
-        }
-        const nextDraft = setAtPath(draftRef.current, path, value);
-        replaceDraft(nextDraft);
-        const isColorField =
-            path.length === 1 &&
-            (path[0] === "color_player1" ||
-                path[0] === "color_player2" ||
-                path[0] === "color_amon" ||
-                path[0] === "color_mastery");
-        if (isColorField) {
-            emitOverlayColorPreview(nextDraft);
-        }
-        if (path.length === 1 && path[0] === "language") {
-            emitOverlayLanguagePreview(nextDraft);
-        }
-        cancelPendingLiveApply();
-        void applyRuntimeSettings(nextDraft);
     }
 
     function normalizePlayerNoteKey(value: DisplayValue): string {
@@ -2058,48 +1178,6 @@ function SettingsEditor({
             safeStatus(`Failed to save first win bonus time: ${error.message}`);
         } finally {
             setIsBusy(false);
-        }
-    }
-
-    async function saveProvidedSettings(
-        nextSettings: AppSettings,
-    ): Promise<void> {
-        cancelPendingLiveApply();
-        await queueSettingsMutation(async () => {
-            try {
-                setIsBusy(true);
-                const payload = await updateConfigRequest(nextSettings, true);
-                const activeSettings =
-                    payload.active_settings || payload.settings;
-                setSettings(payload.settings);
-                replaceDraft(activeSettings);
-                setRandomizerCatalog(
-                    (current) => payload.randomizer_catalog ?? current,
-                );
-                setMonitorCatalog(payload.monitor_catalog || []);
-                setStatus("Saved to settings.json");
-            } catch (error) {
-                setStatus(`Failed to save: ${error.message}`);
-            } finally {
-                setIsBusy(false);
-            }
-        });
-    }
-
-    async function saveSettings() {
-        if (draftRef.current === null) {
-            return;
-        }
-        await saveProvidedSettings(draftRef.current);
-    }
-
-    function resetSettings() {
-        if (settings !== null) {
-            const nextDraft = cloneJson(settings);
-            replaceDraft(nextDraft);
-            cancelPendingLiveApply();
-            emitOverlayColorPreview(nextDraft);
-            void applyRuntimeSettings(nextDraft, "Reverted to saved settings.");
         }
     }
 
@@ -2260,321 +1338,6 @@ function SettingsEditor({
         resetSettings();
     }
 
-    async function refreshStatistics(
-        silent = false,
-        customFilters: StatisticsFilters | null = null,
-        force = false,
-    ): Promise<void> {
-        const filters = customFilters || statsState.filters;
-        const query = statsFiltersToQuery(filters);
-        const existingQuery = tabData.statistics && tabData.statistics.query;
-        const now = Date.now();
-        const completedQuery = statsQueryRef.current;
-        console.log("[SCO/ui] refreshStatistics request", {
-            silent,
-            force,
-            query,
-            existingQuery,
-            completedQuery,
-        });
-        statsQueryRef.current = {
-            ...completedQuery,
-            desiredQuery: query,
-        };
-
-        if (
-            !force &&
-            !customFilters &&
-            existingQuery &&
-            existingQuery === query &&
-            !completedQuery.inFlight &&
-            now - completedQuery.completedAt < 3000
-        ) {
-            return;
-        }
-        if (completedQuery.inFlight) {
-            return;
-        }
-
-        const requestSeq = completedQuery.requestSeq + 1;
-        statsQueryRef.current = {
-            ...statsQueryRef.current,
-            requestSeq,
-            activeQuery: query,
-            inFlight: true,
-        };
-
-        try {
-            setIsBusy(true);
-            const payload = await loadStatisticsRequest(query);
-            console.log("[SCO/ui] refreshStatistics response", payload);
-            if (
-                statsQueryRef.current.requestSeq !== requestSeq ||
-                statsQueryRef.current.activeQuery !== query
-            ) {
-                console.log(
-                    "[SCO/ui] refreshStatistics stale response ignored",
-                );
-                return;
-            }
-            setTabData((current) => ({
-                ...current,
-                statistics: getPayloadForTab(
-                    "statistics",
-                    payload,
-                ) as StatisticsPayload | null,
-            }));
-            statsQueryRef.current = {
-                ...statsQueryRef.current,
-                inFlight: false,
-                completedAt: Date.now(),
-            };
-            if (!silent) {
-                safeStatus("statistics refreshed");
-            }
-        } catch (error) {
-            console.warn("[SCO/ui] refreshStatistics failed", error);
-            if (statsQueryRef.current.requestSeq !== requestSeq) {
-                return;
-            }
-            statsQueryRef.current = {
-                ...statsQueryRef.current,
-                inFlight: false,
-                completedAt: Date.now(),
-            };
-            safeStatus(`Failed to load statistics: ${error.message}`);
-        } finally {
-            if (statsQueryRef.current.requestSeq === requestSeq) {
-                const desiredQuery = statsQueryRef.current.desiredQuery;
-                const needsFollowup =
-                    typeof desiredQuery === "string" &&
-                    desiredQuery.length > 0 &&
-                    desiredQuery !== query;
-                statsQueryRef.current = {
-                    ...statsQueryRef.current,
-                    inFlight: false,
-                    completedAt: Date.now(),
-                };
-                if (needsFollowup) {
-                    setTimeout(() => {
-                        refreshStatistics(true, statsFiltersRef.current, true);
-                    }, 0);
-                } else {
-                    setIsBusy(false);
-                }
-            }
-        }
-    }
-
-    async function startSimpleAnalysis() {
-        console.log("[SCO/ui] startSimpleAnalysis request");
-        const result = await postAction(() =>
-            postStatsActionRequest("start_simple_analysis"),
-        );
-        console.log("[SCO/ui] startSimpleAnalysis response", result);
-        applyStatsActionPayload(result, setTabData);
-    }
-
-    async function runDetailedAnalysis() {
-        console.log("[SCO/ui] runDetailedAnalysis request");
-        const result = await postAction(() =>
-            postStatsActionRequest("run_detailed_analysis"),
-        );
-        console.log("[SCO/ui] runDetailedAnalysis response", result);
-        applyStatsActionPayload(result, setTabData);
-    }
-
-    async function stopDetailedAnalysis() {
-        console.log("[SCO/ui] stopDetailedAnalysis request");
-        const result = await postAction(() =>
-            postStatsActionRequest("stop_detailed_analysis"),
-        );
-        console.log("[SCO/ui] stopDetailedAnalysis response", result);
-        applyStatsActionPayload(result, setTabData);
-    }
-
-    async function dumpData() {
-        await postAction(() => postStatsActionRequest("dump_data"));
-    }
-
-    async function deleteParsedData() {
-        console.log("[SCO/ui] deleteParsedData request");
-        const result = await postAction(() =>
-            postStatsActionRequest("delete_parsed_data"),
-        );
-        console.log("[SCO/ui] deleteParsedData response", result);
-        applyStatsActionPayload(result, setTabData);
-    }
-
-    async function setDetailedAnalysisAtStart(enabled: boolean): Promise<void> {
-        const result = await postAction(() =>
-            postStatsActionRequest("set_detailed_analysis_atstart", {
-                enabled: Boolean(enabled),
-            }),
-        );
-        if (result) {
-            setTabData((current) => ({
-                ...current,
-                statistics: current.statistics
-                    ? {
-                          ...current.statistics,
-                          detailed_analysis_atstart: Boolean(enabled),
-                      }
-                    : current.statistics,
-            }));
-        }
-    }
-
-    async function revealReplay(file: string): Promise<void> {
-        if (!file) {
-            return;
-        }
-        await postAction(() => postStatsActionRequest("reveal_file", { file }));
-    }
-
-    async function showReplay(file: string): Promise<void> {
-        if (!file) {
-            return;
-        }
-        await postAction(() => showReplayRequest(file));
-    }
-
-    function setStatsBool(key: StatisticsBoolFilterKey) {
-        const nextFilters = {
-            ...statsFiltersRef.current,
-            [key]: !statsFiltersRef.current[key],
-        };
-        statsRefreshModeRef.current = "immediate";
-        statsFiltersRef.current = nextFilters;
-        setStatsState((current) => ({
-            ...current,
-            filters: nextFilters,
-        }));
-    }
-
-    function setStatsText(key: StatisticsTextFilterKey, value: string) {
-        const nextFilters = {
-            ...statsFiltersRef.current,
-            [key]: value,
-        };
-        statsRefreshModeRef.current = "debounced";
-        statsFiltersRef.current = nextFilters;
-        setStatsState((current) => ({
-            ...current,
-            filters: nextFilters,
-        }));
-    }
-
-    function setStatsNumber(
-        key: StatisticsNumberFilterKey,
-        value: number | string,
-    ) {
-        const parsed = Number(value);
-        const nextFilters = {
-            ...statsFiltersRef.current,
-            [key]: Number.isFinite(parsed) ? Math.max(0, parsed) : 0,
-        };
-        statsRefreshModeRef.current = "debounced";
-        statsFiltersRef.current = nextFilters;
-        setStatsState((current) => ({
-            ...current,
-            filters: nextFilters,
-        }));
-    }
-
-    function toggleDifficulty(key: StatisticsDifficultyKey) {
-        const nextFilters = {
-            ...statsFiltersRef.current,
-            difficulties: {
-                ...statsFiltersRef.current.difficulties,
-                [key]: !statsFiltersRef.current.difficulties[key],
-            },
-        };
-        statsRefreshModeRef.current = "immediate";
-        statsFiltersRef.current = nextFilters;
-        setStatsState((current) => ({
-            ...current,
-            filters: nextFilters,
-        }));
-    }
-
-    function toggleRegion(key: StatisticsRegionKey) {
-        const nextFilters = {
-            ...statsFiltersRef.current,
-            regions: {
-                ...statsFiltersRef.current.regions,
-                [key]: !statsFiltersRef.current.regions[key],
-            },
-        };
-        statsRefreshModeRef.current = "immediate";
-        statsFiltersRef.current = nextFilters;
-        setStatsState((current) => ({
-            ...current,
-            filters: nextFilters,
-        }));
-    }
-
-    const observesStatistics =
-        activeTab === "statistics" || activeTab === "settings";
-
-    useEffect(() => {
-        if (!observesStatistics) {
-            return;
-        }
-
-        const mapData = (tabData.statistics?.analysis as JsonObject | undefined)
-            ?.MapData;
-        if (!mapData || typeof mapData !== "object") {
-            return;
-        }
-
-        const selectedMap = statsState.selectedMap;
-        if (!selectedMap) {
-            return;
-        }
-
-        if (Object.prototype.hasOwnProperty.call(mapData, selectedMap)) {
-            return;
-        }
-
-        setStatsState((current) => {
-            if (!current.selectedMap) {
-                return current;
-            }
-            return {
-                ...current,
-                selectedMap: "",
-            };
-        });
-    }, [observesStatistics, statsState.selectedMap, tabData.statistics]);
-
-    useEffect(() => {
-        if (!observesStatistics) {
-            return undefined;
-        }
-        if (tabData.statistics === null) {
-            refreshStatistics(true, null, true);
-            return undefined;
-        }
-        const currentQuery = statsFiltersToQuery(statsState.filters);
-        const hasCachedQuery =
-            tabData.statistics && typeof tabData.statistics.query === "string";
-        if (
-            hasCachedQuery &&
-            tabData.statistics.query === currentQuery &&
-            !tabData.statistics.analysis_running
-        ) {
-            return undefined;
-        }
-        const refreshDelayMs =
-            statsRefreshModeRef.current === "immediate" ? 0 : 250;
-        statsRefreshModeRef.current = "debounced";
-        const timer = setTimeout(() => {
-            refreshStatistics(true);
-        }, refreshDelayMs);
-        return () => clearTimeout(timer);
-    }, [observesStatistics, statsState.filters]);
-
     function refreshDataTabOnClick(tabId: TabId): void {
         if (tabId === "games") {
             loadTabData("games");
@@ -2627,12 +1390,10 @@ function SettingsEditor({
                     createDesktopShortcut,
                     parseReplayPrompt,
                     overlayScreenshot,
-                    runDetailedAnalysis,
-                    startSimpleAnalysis,
-                    stopDetailedAnalysis,
-                    deleteParsedData: async () => {
-                        await deleteParsedData();
-                    },
+                    runDetailedAnalysis: statsActions.runDetailedAnalysis,
+                    startSimpleAnalysis: statsActions.startSimpleAnalysis,
+                    stopDetailedAnalysis: statsActions.stopDetailedAnalysis,
+                    deleteParsedData: statsActions.deleteParsedData,
                     applyMainSettings,
                     resetMainSettings,
                     setLatestFirstWinBonusTime,
@@ -2780,24 +1541,7 @@ function SettingsEditor({
                     performanceEditModeEnabled,
                 languageManager,
                 statsState,
-                statsActions: {
-                    isBusy,
-                    setStatsState,
-                    refreshStats: () => refreshStatistics(false, null, true),
-                    startSimpleAnalysis,
-                    runDetailedAnalysis,
-                    stopDetailedAnalysis,
-                    dumpData,
-                    deleteParsedData,
-                    setDetailedAnalysisAtStart,
-                    showReplay,
-                    revealReplay,
-                    setStatsBool,
-                    setStatsText,
-                    setStatsNumber,
-                    toggleDifficulty,
-                    toggleRegion,
-                },
+                statsActions,
                 gamesState: {
                     isBusy,
                     selectedReplayFile,

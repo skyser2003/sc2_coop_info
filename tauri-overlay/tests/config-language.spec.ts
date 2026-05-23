@@ -220,7 +220,10 @@ test("language selector switches replay labels between english and korean", asyn
     ).toBeVisible();
 
     await page.getByRole("tab", { name: "Settings" }).click();
-    const languageSelect = page.locator("select").first();
+    const languageSelect = page
+        .locator("select")
+        .filter({ has: page.locator("option[value='ko']") })
+        .first();
     await expect(languageSelect.locator('option[value="en"]')).toHaveText(
         "English",
     );

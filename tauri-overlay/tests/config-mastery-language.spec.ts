@@ -318,7 +318,10 @@ test("localized commander mastery data drives statistics and randomizer labels",
     await expect(page.getByText("Chaotic Power Couple (P1)")).toBeVisible();
 
     await page.getByRole("tab", { name: "Settings" }).click();
-    const languageSelect = page.locator("select").first();
+    const languageSelect = page
+        .locator("select")
+        .filter({ has: page.locator("option[value='ko']") })
+        .first();
     await languageSelect.selectOption("ko");
 
     await page.getByRole("tab", { name: "통계" }).click();

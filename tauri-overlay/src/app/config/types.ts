@@ -1,5 +1,9 @@
 import type * as React from "react";
-import type { LocalizedLabels } from "../../bindings/overlay";
+import type {
+    LocalizedLabels,
+    StatsAnalysisPayload,
+    StatsStatePayload,
+} from "../../bindings/overlay";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonArray;
@@ -91,26 +95,16 @@ export type StatisticsState = {
     amonSearch: string;
 };
 
-export type StatisticsAnalysis = JsonObject & {
-    MapData?: JsonObject;
-    AllyCommanderData?: JsonObject;
-    CommanderData?: JsonObject;
-    RegionData?: JsonObject;
-    DifficultyData?: JsonObject;
-    UnitData?: JsonObject;
-};
+export type StatisticsAnalysis = StatsAnalysisPayload;
 
-export type StatisticsPayload = JsonObject & {
+export type StatisticsPayload = Omit<
+    StatsStatePayload,
+    "analysis" | "main_handles" | "prestige_names"
+> & {
     analysis?: StatisticsAnalysis | null;
-    ready?: boolean;
-    message?: string;
-    games?: number;
-    analysis_running?: boolean;
-    analysis_running_mode?: string | null;
-    detailed_parsed_count?: number;
-    total_valid_files?: number;
-    prestige_names?: PrestigeNameMap | JsonObject;
-    main_handles?: string[] | JsonArray;
+    prestige_names: PrestigeNameMap;
+    main_handles: string[];
+    query?: string;
 };
 
 export type LocalizedMasteryNames = {

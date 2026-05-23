@@ -190,7 +190,10 @@ test("statistics subtabs are localized", async ({ page }) => {
             name: "Perform detailed analysis at start",
         }),
     ).toBeVisible();
-    const languageSelect = page.locator("select").first();
+    const languageSelect = page
+        .locator("select")
+        .filter({ has: page.locator("option[value='ko']") })
+        .first();
     await languageSelect.selectOption("ko");
 
     await page.getByRole("tab", { name: "통계" }).click();

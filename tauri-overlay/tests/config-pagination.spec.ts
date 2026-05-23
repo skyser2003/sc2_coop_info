@@ -1,273 +1,11 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import {
+    installConfigMock,
+    type ConfigMockGameRow,
+    type ConfigMockPlayerRow,
+} from "./helpers/config-mock";
 
-type GameRow = {
-    map: string;
-    result: string;
-    p1: string;
-    p2: string;
-    main_commander: string;
-    ally_commander: string;
-    difficulty: string;
-    enemy_race: string;
-    file: string;
-    length: number;
-    date: number;
-};
-
-type PlayerRow = {
-    player: string;
-    wins: number;
-    losses: number;
-    winrate: number;
-    apm: number;
-    commander: string;
-    kills: number;
-    last_seen: number;
-};
-
-type TauriMockConfig = {
-    games?: readonly GameRow[];
-    players?: readonly PlayerRow[];
-};
-
-type PageRequest = {
-    page?: number;
-    rowsPerPage?: number;
-};
-
-async function installPaginationMock(
-    page: Page,
-    { games = [], players = [] }: TauriMockConfig = {},
-) {
-    await page.addInitScript(
-        ({ initialGames, initialPlayers }) => {
-            const settings = {
-                account_folder: "fixtures/accounts",
-                main_names: [],
-                detailed_analysis_atstart: false,
-                rng_choices: {},
-            };
-            const activeSettings = JSON.parse(JSON.stringify(settings));
-            const pageSlice = <T>(
-                rows: readonly T[],
-                pageRequest?: PageRequest,
-            ): readonly T[] => {
-                const page = Math.max(1, Number(pageRequest?.page) || 1);
-                const rowsPerPage = Math.max(
-                    1,
-                    Number(pageRequest?.rowsPerPage) || 20,
-                );
-                const start = (page - 1) * rowsPerPage;
-                return rows.slice(start, start + rowsPerPage);
-            };
-
-            window.__TAURI_INTERNALS__ = {
-                invoke: async (
-                    command: string,
-                    request?: {
-                        body?: Record<string, unknown>;
-                        limit?: number;
-                        method?: string;
-                        path?: string;
-                        request?: PageRequest;
-                    },
-                ) => {
-                    if (command === "plugin:app|version") {
-                        return "0.1.0";
-                    }
-                    if (command === "plugin:event|listen") {
-                        return 1;
-                    }
-                    if (command === "plugin:event|unlisten") {
-                        return null;
-                    }
-                    if (command === "is_dev") {
-                        return true;
-                    }
-                    if (command === "config_get") {
-                        return {
-                            status: "ok",
-                            settings,
-                            active_settings: activeSettings,
-                            randomizer_catalog: {},
-                            monitor_catalog: [],
-                        };
-                    }
-
-                    if (command === "config_stats_get") {
-                        return {
-                            status: "ok",
-                            ready: true,
-                            games: 0,
-                            analysis_running: false,
-                            analysis_running_mode: null,
-                            message: "",
-                            query: "",
-                            analysis: {
-                                MapData: {},
-                                CommanderData: {},
-                                AllyCommanderData: {},
-                                DifficultyData: {},
-                                RegionData: {},
-                                PlayerData: {},
-                                AmonData: {},
-                                MapDataReady: true,
-                                UnitData: {
-                                    main: {},
-                                    ally: {},
-                                    amon: {},
-                                },
-                            },
-                        };
-                    }
-
-                    if (command === "config_stats_action") {
-                        return { status: "ok", message: "ok" };
-                    }
-
-                    if (command === "config_replays_get") {
-                        const pageRequest = request?.request as
-                            | PageRequest
-                            | undefined;
-                        const sortedGames = [...initialGames].sort(
-                            (left, right) => right.date - left.date,
-                        );
-                        return {
-                            status: "ok",
-                            replays: pageSlice(sortedGames, pageRequest),
-                            total_replays: initialGames.length,
-                            selected_replay_file: "",
-                        };
-                    }
-
-                    if (command === "config_players_get") {
-                        const pageRequest = request?.request as
-                            | PageRequest
-                            | undefined;
-                        const sortedPlayers = [...initialPlayers].sort(
-                            (left, right) => right.last_seen - left.last_seen,
-                        );
-                        return {
-                            status: "ok",
-                            players: pageSlice(sortedPlayers, pageRequest),
-                            total_players: initialPlayers.length,
-                            loading: false,
-                        };
-                    }
-
-                    if (command === "config_weeklies_get") {
-                        return {
-                            status: "ok",
-                            weeklies: [],
-                        };
-                    }
-
-                    if (command !== "config_request") {
-                        throw new Error(`Unexpected command: ${command}`);
-                    }
-
-                    const method = request?.method;
-                    const path = request?.path;
-
-                    if (method === "GET" && path === "/config") {
-                        return {
-                            status: "ok",
-                            settings,
-                            active_settings: activeSettings,
-                            randomizer_catalog: {},
-                            monitor_catalog: [],
-                        };
-                    }
-
-                    if (method === "POST" && path === "/config/stats/action") {
-                        return { status: "ok", message: "ok" };
-                    }
-
-                    if (
-                        method === "GET" &&
-                        typeof path === "string" &&
-                        path.startsWith("/config/replays?")
-                    ) {
-                        const url = new URL(path, "http://127.0.0.1");
-                        const limit = Number(
-                            url.searchParams.get("limit") || "300",
-                        );
-                        return {
-                            status: "ok",
-                            replays: initialGames.slice(
-                                0,
-                                Number.isFinite(limit) && limit > 0
-                                    ? limit
-                                    : initialGames.length,
-                            ),
-                            total_replays: initialGames.length,
-                            selected_replay_file: "",
-                        };
-                    }
-
-                    if (
-                        method === "GET" &&
-                        typeof path === "string" &&
-                        path.startsWith("/config/players?")
-                    ) {
-                        const url = new URL(path, "http://127.0.0.1");
-                        const limit = Number(
-                            url.searchParams.get("limit") || "300",
-                        );
-                        return {
-                            status: "ok",
-                            players: initialPlayers.slice(
-                                0,
-                                Number.isFinite(limit) && limit > 0
-                                    ? limit
-                                    : initialPlayers.length,
-                            ),
-                            total_players: initialPlayers.length,
-                            loading: false,
-                        };
-                    }
-
-                    if (method === "POST" && path === "/config/replays/show") {
-                        return { status: "ok", message: "Replay sent" };
-                    }
-
-                    if (method === "POST" && path === "/config/stats/action") {
-                        return { status: "ok", message: "ok" };
-                    }
-
-                    if (method === "POST" && path === "/config/action") {
-                        return {
-                            status: "ok",
-                            result: { ok: true },
-                            message: "ok",
-                        };
-                    }
-
-                    throw new Error(
-                        `Unexpected request: ${String(method)} ${String(path)}`,
-                    );
-                },
-                event: {
-                    listen: async () => () => {},
-                },
-                transformCallback: (callback: () => void) => {
-                    const id = Math.floor(Math.random() * 1000000);
-                    window[`_${id}`] = callback;
-                    return id;
-                },
-            };
-            window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
-                unregisterListener: () => {},
-            };
-        },
-        {
-            initialGames: games,
-            initialPlayers: players,
-        },
-    );
-}
-
-function buildGameRows(): GameRow[] {
+function buildGameRows(): ConfigMockGameRow[] {
     return Array.from({ length: 22 }, (_, index) => {
         const gameNumber = index + 1;
         return {
@@ -286,7 +24,7 @@ function buildGameRows(): GameRow[] {
     });
 }
 
-function buildPlayerRows(): PlayerRow[] {
+function buildPlayerRows(): ConfigMockPlayerRow[] {
     return Array.from({ length: 22 }, (_, index) => {
         const playerNumber = index + 1;
         return {
@@ -308,7 +46,7 @@ test.describe("Config pagination", () => {
     test("games tab paginates after applying the default time sort", async ({
         page,
     }) => {
-        await installPaginationMock(page, {
+        await installConfigMock(page, {
             games: buildGameRows(),
         });
 
@@ -336,7 +74,7 @@ test.describe("Config pagination", () => {
     test("players tab paginates after applying the default last seen sort", async ({
         page,
     }) => {
-        await installPaginationMock(page, {
+        await installConfigMock(page, {
             players: buildPlayerRows(),
         });
 
@@ -364,7 +102,7 @@ test.describe("Config pagination", () => {
     test("players tab loads beyond the initial 300 rows when paging forward", async ({
         page,
     }) => {
-        await installPaginationMock(page, {
+        await installConfigMock(page, {
             players: Array.from({ length: 305 }, (_, index) => {
                 const playerNumber = index + 1;
                 return {
