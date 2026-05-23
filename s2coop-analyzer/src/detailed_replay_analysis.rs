@@ -49,7 +49,7 @@ use timing::{
 };
 pub use timing::{DetailedReplayReportTiming, GenerateCacheTimingReport, ReplayTiming};
 
-pub const DEFAULT_CACHE_ENTRY_SINK_BATCH_SIZE: usize = 10;
+pub const DEFAULT_CACHE_ENTRY_SINK_BATCH_SIZE: usize = 100;
 
 const LOCUST_SOURCE_UNITS: [&str; 5] = [
     "AbathurLocust",
