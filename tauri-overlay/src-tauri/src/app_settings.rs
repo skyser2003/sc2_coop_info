@@ -1012,7 +1012,7 @@ impl Default for AppSettings {
             detailed_analysis_atstart: false,
             analysis_worker_threads: Self::default_analysis_worker_threads(),
             latest_today_win_bonus_time: None,
-            first_win_bonus_display_mode: FirstWinBonusDisplayMode::Always,
+            first_win_bonus_display_mode: FirstWinBonusDisplayMode::AvailableOnly,
             present_keys: Default::default(),
         };
 

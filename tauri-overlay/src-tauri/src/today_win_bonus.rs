@@ -72,10 +72,10 @@ impl FirstWinBonusTimerStatus {
         now: DateTime<Utc>,
     ) -> Self {
         let Some(latest_acquired_time) = latest_acquired_time else {
-            return Self::new(true, 0, None);
+            return Self::new(false, 0, None);
         };
         let Ok(latest_acquired_time) = DateTime::parse_from_rfc3339(latest_acquired_time) else {
-            return Self::new(true, 0, None);
+            return Self::new(false, 0, None);
         };
 
         let next_available_time = latest_acquired_time.with_timezone(&Utc)

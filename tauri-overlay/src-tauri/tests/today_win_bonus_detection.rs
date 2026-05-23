@@ -365,7 +365,7 @@ fn first_win_bonus_timer_uses_twenty_two_hour_cooldown() {
 }
 
 #[test]
-fn first_win_bonus_timer_is_available_without_saved_time() {
+fn first_win_bonus_timer_is_unavailable_without_saved_time() {
     let now = Utc
         .with_ymd_and_hms(2026, 5, 19, 12, 0, 0)
         .single()
@@ -373,7 +373,20 @@ fn first_win_bonus_timer_is_available_without_saved_time() {
 
     let status = FirstWinBonusTimerStatus::from_latest_acquired_time(None, now);
 
-    assert!(status.available());
+    assert!(!status.available());
+    assert_eq!(status.seconds_until_available(), 0);
+}
+
+#[test]
+fn first_win_bonus_timer_is_unavailable_with_invalid_saved_time() {
+    let now = Utc
+        .with_ymd_and_hms(2026, 5, 19, 12, 0, 0)
+        .single()
+        .expect("valid test time");
+
+    let status = FirstWinBonusTimerStatus::from_latest_acquired_time(Some("not-a-time"), now);
+
+    assert!(!status.available());
     assert_eq!(status.seconds_until_available(), 0);
 }
 

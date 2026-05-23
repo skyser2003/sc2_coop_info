@@ -5243,14 +5243,14 @@ async fn config_action(
                 .unwrap_or("")
                 .trim();
 
-            if latest_time.is_empty() || chrono::DateTime::parse_from_rfc3339(latest_time).is_err()
-            {
-                return Err("Invalid latest first win bonus time".to_string());
-            }
+            let latest_time = chrono::DateTime::parse_from_rfc3339(latest_time)
+                .map_err(|_| "Invalid latest first win bonus time".to_string())?
+                .with_timezone(&chrono::Utc)
+                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
             state.persist_single_setting_value(
                 today_win_bonus::TODAY_WIN_BONUS_SETTINGS_KEY,
-                Value::String(latest_time.to_string()),
+                Value::String(latest_time),
             )?;
 
             Ok(OverlayActionResponse::success(

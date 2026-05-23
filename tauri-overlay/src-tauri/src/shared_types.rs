@@ -66,8 +66,8 @@ pub struct OverlayRandomizerBrutalPlus {
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
 #[ts(rename_all = "snake_case")]
 pub enum FirstWinBonusDisplayMode {
-    #[default]
     Hidden,
+    #[default]
     AvailableOnly,
     Always,
 }

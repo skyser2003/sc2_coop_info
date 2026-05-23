@@ -36,7 +36,7 @@ fn merge_settings_with_defaults_uses_requested_overlay_defaults() {
     assert_eq!(merged.latest_today_win_bonus_time(), None);
     assert_eq!(
         merged.first_win_bonus_display_mode(),
-        FirstWinBonusDisplayMode::Always
+        FirstWinBonusDisplayMode::AvailableOnly
     );
     assert_eq!(
         merged.analysis_worker_threads(),

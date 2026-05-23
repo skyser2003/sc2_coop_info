@@ -100,6 +100,23 @@ function formatManualFirstWinBonusTimeDefault(now: Date): string {
     );
 }
 
+function formatUtcIsoSeconds(value: Date): string {
+    return (
+        [
+            value.getUTCFullYear(),
+            padDatePart(value.getUTCMonth() + 1),
+            padDatePart(value.getUTCDate()),
+        ].join("-") +
+        "T" +
+        [
+            padDatePart(value.getUTCHours()),
+            padDatePart(value.getUTCMinutes()),
+            padDatePart(value.getUTCSeconds()),
+        ].join(":") +
+        "Z"
+    );
+}
+
 function parseManualFirstWinBonusTime(value: string): string | null {
     const trimmed = value.trim();
     const match = trimmed.match(
@@ -127,7 +144,7 @@ function parseManualFirstWinBonusTime(value: string): string | null {
         return null;
     }
 
-    return parsed.toISOString();
+    return formatUtcIsoSeconds(parsed);
 }
 
 function formatManualFirstWinBonusTimeDisplay(
@@ -885,13 +902,13 @@ export default function SettingsTab({
     };
     const firstWinBonusDisplayModeValue = read(
         ["first_win_bonus_display_mode"],
-        "always",
+        "available_only",
     );
     const firstWinBonusDisplayMode = isFirstWinBonusDisplayMode(
         firstWinBonusDisplayModeValue,
     )
         ? firstWinBonusDisplayModeValue
-        : "always";
+        : "available_only";
     const manualFirstWinBonusTimeText = formatManualFirstWinBonusTimeDisplay(
         read(["latest_today_win_bonus_time"], null),
         t("ui_settings_first_win_bonus_manual_never_set"),
