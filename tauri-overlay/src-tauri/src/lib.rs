@@ -5235,6 +5235,28 @@ async fn config_action(
                 },
             ))
         }
+        "set_latest_today_win_bonus_time" => {
+            let latest_time = body
+                .as_ref()
+                .and_then(|payload| payload.get("time"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim();
+
+            if latest_time.is_empty() || chrono::DateTime::parse_from_rfc3339(latest_time).is_err()
+            {
+                return Err("Invalid latest first win bonus time".to_string());
+            }
+
+            state.persist_single_setting_value(
+                today_win_bonus::TODAY_WIN_BONUS_SETTINGS_KEY,
+                Value::String(latest_time.to_string()),
+            )?;
+
+            Ok(OverlayActionResponse::success(
+                "Latest first win bonus time saved.",
+            ))
+        }
         _ => {
             if let Some(response) = overlay_info::OverlayInfoOps::perform_overlay_action(
                 &app,

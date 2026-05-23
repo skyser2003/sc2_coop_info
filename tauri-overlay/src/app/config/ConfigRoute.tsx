@@ -2024,6 +2024,43 @@ function SettingsEditor({
         }
     }
 
+    async function setLatestFirstWinBonusTime(value: string): Promise<void> {
+        try {
+            setIsBusy(true);
+            const payload = await postConfigActionRequest(
+                "set_latest_today_win_bonus_time",
+                { time: value },
+            );
+            setSettings((current) => {
+                if (current === null) {
+                    return current;
+                }
+                return setAtPath(
+                    current,
+                    ["latest_today_win_bonus_time"],
+                    value,
+                );
+            });
+            setDraft((current) => {
+                if (current === null) {
+                    return current;
+                }
+                const nextDraft = setAtPath(
+                    current,
+                    ["latest_today_win_bonus_time"],
+                    value,
+                );
+                draftRef.current = nextDraft;
+                return nextDraft;
+            });
+            safeStatus(payload.message || "Latest first win bonus time saved.");
+        } catch (error) {
+            safeStatus(`Failed to save first win bonus time: ${error.message}`);
+        } finally {
+            setIsBusy(false);
+        }
+    }
+
     async function saveProvidedSettings(
         nextSettings: AppSettings,
     ): Promise<void> {
@@ -2598,6 +2635,7 @@ function SettingsEditor({
                     },
                     applyMainSettings,
                     resetMainSettings,
+                    setLatestFirstWinBonusTime,
                     monitorOptions: monitorCatalog,
                     isHotkeyClearKey,
                     isHotkeyModifierKey,

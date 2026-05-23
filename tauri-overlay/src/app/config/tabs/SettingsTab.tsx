@@ -27,6 +27,7 @@ type SettingsActions = {
     startSimpleAnalysis: () => Promise<void> | void;
     stopDetailedAnalysis: () => Promise<void> | void;
     deleteParsedData: () => Promise<void> | void;
+    setLatestFirstWinBonusTime: (value: string) => Promise<void> | void;
     applyMainSettings: () => Promise<void> | void;
     resetMainSettings: () => void;
     isHotkeyClearKey: (key: string) => boolean;
@@ -910,7 +911,7 @@ export default function SettingsTab({
             return;
         }
 
-        onChange(["latest_today_win_bonus_time"], parsedTime);
+        void actions.setLatestFirstWinBonusTime(parsedTime);
     };
 
     const hotkeyEntry = (
