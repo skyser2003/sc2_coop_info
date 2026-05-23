@@ -51,7 +51,7 @@ jobs:
               with:
                   tagName: v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
                   releaseName: "SC2_Coop_Info v__VERSION__"
-                  releaseBody: "Bug fix: Fixed some settings not being applied immediately"
+                  releaseBody: "Feature: Added today's first win bonus timer\nMiscellaneous: Changed database to sqlite3 from json"
                   releaseDraft: false
                   prerelease: false
                   projectPath: "./tauri-overlay"
