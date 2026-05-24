@@ -5,7 +5,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     CachePlayerStatsSeries, CacheUnitStats, ReplayMessage,
 };
 use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path;
@@ -150,6 +150,41 @@ impl ReplayCacheStatisticsLoadOps {
     }
 }
 
+#[derive(Deserialize)]
+struct StatsPlayerUnitJsonRow(i64, String, String, Option<i64>, String, Option<i64>, i64);
+
+impl StatsPlayerUnitJsonRow {
+    fn into_snapshot(self) -> StatsPlayerUnitSnapshot {
+        let Self(pid, unit_name, created_kind, created_count, lost_kind, lost_count, kills) = self;
+        StatsPlayerUnitSnapshot {
+            pid: ReplayCacheEntryRecord::i64_to_u32(pid) as u8,
+            unit_name,
+            created_hidden: created_kind == "hidden",
+            created_count: created_count.unwrap_or_default(),
+            lost_hidden: lost_kind == "hidden",
+            lost_count: lost_count.unwrap_or_default(),
+            kills: ReplayCacheEntryRecord::i64_to_u64(kills),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct StatsAmonUnitJsonRow(String, String, Option<i64>, String, Option<i64>, i64);
+
+impl StatsAmonUnitJsonRow {
+    fn into_snapshot(self) -> StatsAmonUnitSnapshot {
+        let Self(unit_name, created_kind, created_count, lost_kind, lost_count, kills) = self;
+        StatsAmonUnitSnapshot {
+            unit_name,
+            created_hidden: created_kind == "hidden",
+            created_count: created_count.unwrap_or_default(),
+            lost_hidden: lost_kind == "hidden",
+            lost_count: lost_count.unwrap_or_default(),
+            kills,
+        }
+    }
+}
+
 impl ReplayCacheDatabase {
     fn sqlite_row<T>(&self, result: Result<T, rusqlite::Error>) -> Result<T, ReplayCacheDbError> {
         result.map_err(|source| self.sqlite_error(source))
@@ -250,13 +285,7 @@ impl ReplayCacheDatabase {
         let (where_sql, bind_values) = Self::stats_prefilter_where_clause(query);
         let sql = format!(
             "
-            WITH filtered_entry_ids AS (
-                SELECT e.id
-                FROM replay_cache_entries e
-                WHERE {where_sql}
-            )
             SELECT
-                0 AS row_kind,
                 e.id AS replay_id,
                 e.file,
                 e.map_name,
@@ -297,62 +326,40 @@ impl ReplayCacheDatabase {
                 COALESCE(p2.commander_mastery_level, 0) AS p2_mastery_level,
                 COALESCE(p2.prestige, 0) AS p2_prestige,
                 COALESCE(p2.mastery_values, '[]') AS p2_masteries,
-                NULL AS unit_pid,
-                NULL AS unit_name,
-                NULL AS unit_created_kind,
-                NULL AS unit_created_count,
-                NULL AS unit_lost_kind,
-                NULL AS unit_lost_count,
-                NULL AS unit_kills,
-                NULL AS amon_unit_name,
-                NULL AS amon_created_kind,
-                NULL AS amon_created_count,
-                NULL AS amon_lost_kind,
-                NULL AS amon_lost_count,
-                NULL AS amon_kills
-            FROM filtered_entry_ids ids
-            INNER JOIN replay_cache_entries e ON e.id = ids.id
+                COALESCE((
+                    SELECT json_group_array(
+                        json_array(
+                            u.pid,
+                            u.unit_name,
+                            u.created_kind,
+                            u.created_count,
+                            u.lost_kind,
+                            u.lost_count,
+                            u.kills
+                        )
+                    )
+                    FROM replay_cache_player_units u
+                    WHERE u.replay_id = e.id
+                ), '[]') AS player_unit_rows,
+                COALESCE((
+                    SELECT json_group_array(
+                        json_array(
+                            a.unit_name,
+                            a.created_kind,
+                            a.created_count,
+                            a.lost_kind,
+                            a.lost_count,
+                            a.kills
+                        )
+                    )
+                    FROM replay_cache_amon_units a
+                    WHERE a.replay_id = e.id
+                ), '[]') AS amon_unit_rows
+            FROM replay_cache_entries e
             LEFT JOIN replay_cache_players p1 ON p1.replay_id = e.id AND p1.pid = 1
             LEFT JOIN replay_cache_players p2 ON p2.replay_id = e.id AND p2.pid = 2
-
-            UNION ALL
-
-            SELECT
-                1 AS row_kind,
-                u.replay_id,
-                NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-                NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-                NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-                u.pid,
-                u.unit_name,
-                u.created_kind,
-                u.created_count,
-                u.lost_kind,
-                u.lost_count,
-                u.kills,
-                NULL, NULL, NULL, NULL, NULL, NULL
-            FROM filtered_entry_ids ids
-            INNER JOIN replay_cache_player_units u ON u.replay_id = ids.id
-
-            UNION ALL
-
-            SELECT
-                2 AS row_kind,
-                a.replay_id,
-                NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-                NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-                NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-                NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-                a.unit_name,
-                a.created_kind,
-                a.created_count,
-                a.lost_kind,
-                a.lost_count,
-                a.kills
-            FROM filtered_entry_ids ids
-            INNER JOIN replay_cache_amon_units a ON a.replay_id = ids.id
-
-            ORDER BY replay_id ASC, row_kind ASC, unit_pid ASC, unit_name ASC, amon_unit_name ASC
+            WHERE {where_sql}
+            ORDER BY e.id ASC
             "
         );
         let mut statement = self
@@ -362,85 +369,69 @@ impl ReplayCacheDatabase {
         let mut rows = statement
             .query(params_from_iter(bind_values.iter()))
             .map_err(|source| self.sqlite_error(source))?;
-        let mut snapshots_by_id = BTreeMap::<i64, StatsReplaySnapshot>::new();
+        let mut snapshots = Vec::<StatsReplaySnapshot>::new();
         while let Some(row) = rows.next().map_err(|source| self.sqlite_error(source))? {
-            let row_kind = self.sqlite_row(row.get::<_, i64>(0))?;
-            let replay_id = self.sqlite_row(row.get::<_, i64>(1))?;
-            match row_kind {
-                0 => {
-                    let p1 = self.sqlite_row(Self::stats_player_from_row(row, 13))?;
-                    let p2 = self.sqlite_row(Self::stats_player_from_row(row, 23))?;
-                    let file = self.sqlite_row(row.get::<_, String>(2))?;
-                    let (main, ally) =
-                        Self::orient_stats_players(&file, p1, p2, main_names, main_handles);
-                    snapshots_by_id.insert(
-                        replay_id,
-                        StatsReplaySnapshot {
-                            file,
-                            map_name: self.sqlite_row(row.get(3))?,
-                            result: self.sqlite_row(row.get(4))?,
-                            date_seconds: ReplayCacheEntryRecord::i64_to_u64(
-                                self.sqlite_row(row.get::<_, i64>(5))?,
-                            ),
-                            detailed_analysis: self.sqlite_row(row.get::<_, i64>(6))? != 0,
-                            brutal_plus: ReplayCacheEntryRecord::i64_to_u64(
-                                self.sqlite_row(row.get::<_, i64>(7))?,
-                            ),
-                            extension: self.sqlite_row(row.get::<_, i64>(8))? != 0,
-                            length_realtime: self.sqlite_row(row.get(9))?,
-                            difficulty: self.sqlite_row(row.get(10))?,
-                            enemy_race: self.sqlite_row(row.get(11))?,
-                            bonus_completed: ReplayCacheEntryRecord::i64_to_u64(
-                                self.sqlite_row(row.get::<_, i64>(12))?,
-                            ),
-                            main,
-                            ally,
-                            player_units: Vec::new(),
-                            amon_units: Vec::new(),
-                        },
-                    );
-                }
-                1 => {
-                    if let Some(snapshot) = snapshots_by_id.get_mut(&replay_id) {
-                        snapshot.player_units.push(StatsPlayerUnitSnapshot {
-                            pid: ReplayCacheEntryRecord::i64_to_u32(
-                                self.sqlite_row(row.get::<_, i64>(33))?,
-                            ) as u8,
-                            unit_name: self.sqlite_row(row.get(34))?,
-                            created_hidden: self.sqlite_row(row.get::<_, String>(35))? == "hidden",
-                            created_count: self
-                                .sqlite_row(row.get::<_, Option<i64>>(36))?
-                                .unwrap_or_default(),
-                            lost_hidden: self.sqlite_row(row.get::<_, String>(37))? == "hidden",
-                            lost_count: self
-                                .sqlite_row(row.get::<_, Option<i64>>(38))?
-                                .unwrap_or_default(),
-                            kills: ReplayCacheEntryRecord::i64_to_u64(
-                                self.sqlite_row(row.get::<_, i64>(39))?,
-                            ),
-                        });
-                    }
-                }
-                2 => {
-                    if let Some(snapshot) = snapshots_by_id.get_mut(&replay_id) {
-                        snapshot.amon_units.push(StatsAmonUnitSnapshot {
-                            unit_name: self.sqlite_row(row.get(40))?,
-                            created_hidden: self.sqlite_row(row.get::<_, String>(41))? == "hidden",
-                            created_count: self
-                                .sqlite_row(row.get::<_, Option<i64>>(42))?
-                                .unwrap_or_default(),
-                            lost_hidden: self.sqlite_row(row.get::<_, String>(43))? == "hidden",
-                            lost_count: self
-                                .sqlite_row(row.get::<_, Option<i64>>(44))?
-                                .unwrap_or_default(),
-                            kills: self.sqlite_row(row.get(45))?,
-                        });
-                    }
-                }
-                _ => {}
-            }
+            let p1 = self.sqlite_row(Self::stats_player_from_row(row, 12))?;
+            let p2 = self.sqlite_row(Self::stats_player_from_row(row, 22))?;
+            let file = self.sqlite_row(row.get::<_, String>(1))?;
+            let (main, ally) = Self::orient_stats_players(&file, p1, p2, main_names, main_handles);
+            let player_units = self.sqlite_row(row.get::<_, String>(32))?;
+            let amon_units = self.sqlite_row(row.get::<_, String>(33))?;
+            snapshots.push(StatsReplaySnapshot {
+                file,
+                map_name: self.sqlite_row(row.get(2))?,
+                result: self.sqlite_row(row.get(3))?,
+                date_seconds: ReplayCacheEntryRecord::i64_to_u64(
+                    self.sqlite_row(row.get::<_, i64>(4))?,
+                ),
+                detailed_analysis: self.sqlite_row(row.get::<_, i64>(5))? != 0,
+                brutal_plus: ReplayCacheEntryRecord::i64_to_u64(
+                    self.sqlite_row(row.get::<_, i64>(6))?,
+                ),
+                extension: self.sqlite_row(row.get::<_, i64>(7))? != 0,
+                length_realtime: self.sqlite_row(row.get(8))?,
+                difficulty: self.sqlite_row(row.get(9))?,
+                enemy_race: self.sqlite_row(row.get(10))?,
+                bonus_completed: ReplayCacheEntryRecord::i64_to_u64(
+                    self.sqlite_row(row.get::<_, i64>(11))?,
+                ),
+                main,
+                ally,
+                player_units: Self::stats_player_units_from_json(&player_units)?,
+                amon_units: Self::stats_amon_units_from_json(&amon_units)?,
+            });
         }
-        Ok(snapshots_by_id.into_values().collect())
+        Ok(snapshots)
+    }
+
+    fn stats_player_units_from_json(
+        text: &str,
+    ) -> Result<Vec<StatsPlayerUnitSnapshot>, ReplayCacheDbError> {
+        let rows = serde_json::from_str::<Vec<StatsPlayerUnitJsonRow>>(text).map_err(|source| {
+            ReplayCacheDbError::JsonArray {
+                context: "stats player unit rows",
+                source,
+            }
+        })?;
+        Ok(rows
+            .into_iter()
+            .map(StatsPlayerUnitJsonRow::into_snapshot)
+            .collect())
+    }
+
+    fn stats_amon_units_from_json(
+        text: &str,
+    ) -> Result<Vec<StatsAmonUnitSnapshot>, ReplayCacheDbError> {
+        let rows = serde_json::from_str::<Vec<StatsAmonUnitJsonRow>>(text).map_err(|source| {
+            ReplayCacheDbError::JsonArray {
+                context: "stats amon unit rows",
+                source,
+            }
+        })?;
+        Ok(rows
+            .into_iter()
+            .map(StatsAmonUnitJsonRow::into_snapshot)
+            .collect())
     }
 
     fn stats_player_from_row(
