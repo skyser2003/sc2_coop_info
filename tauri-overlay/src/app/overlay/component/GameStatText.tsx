@@ -528,21 +528,14 @@ export default function GameStatText({
     const statsPayload = payload;
 
     useEffect(() => {
-        if (replayModeVisible) {
-            if (statsPayload != null) {
-                cancelReplayDisplayClearTimer();
-            }
-            reportOverlayReplayDataState(true);
-            return;
-        }
+        reportOverlayReplayDataState(statsPayload != null);
+    }, [reportOverlayReplayDataState, statsPayload]);
 
-        reportOverlayReplayDataState(false);
-    }, [
-        cancelReplayDisplayClearTimer,
-        reportOverlayReplayDataState,
-        replayModeVisible,
-        statsPayload,
-    ]);
+    useEffect(() => {
+        if (replayModeVisible && statsPayload != null) {
+            cancelReplayDisplayClearTimer();
+        }
+    }, [cancelReplayDisplayClearTimer, replayModeVisible, statsPayload]);
 
     const totalKills = useMemo(
         () =>
