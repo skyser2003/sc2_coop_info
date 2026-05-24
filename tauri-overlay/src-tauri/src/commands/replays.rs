@@ -10,6 +10,8 @@ use crate::{
     ReplayCachePage, ReplayCacheSortDirection, TauriOverlayOps, overlay_info,
 };
 
+use super::DEFAULT_CONFIG_ROWS_PER_PAGE;
+
 pub struct ReplayCommands;
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -82,7 +84,7 @@ impl ReplayCommands {
         let rows_per_page = request
             .rows_per_page
             .or(request.limit)
-            .unwrap_or(300)
+            .unwrap_or(DEFAULT_CONFIG_ROWS_PER_PAGE)
             .max(1);
         let search = request.search.unwrap_or_default();
         let sort_key = ReplayCacheGameSortKey::from_query_value(request.sort_key.as_deref());

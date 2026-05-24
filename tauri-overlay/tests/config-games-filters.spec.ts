@@ -2,9 +2,7 @@ import { expect, test } from "@playwright/test";
 import { installConfigMock } from "./helpers/config-mock";
 
 test.describe("Games filters and mutators", () => {
-    test("filters include older games beyond the initially loaded 300 rows", async ({
-        page,
-    }) => {
+    test("filters include games beyond the first page", async ({ page }) => {
         await installConfigMock(page, {
             games: Array.from({ length: 305 }, (_, index) => ({
                 map: `Map ${index + 1}`,
@@ -37,9 +35,7 @@ test.describe("Games filters and mutators", () => {
         ).toBeVisible();
     });
 
-    test("loads beyond the initial 300 rows when paging forward", async ({
-        page,
-    }) => {
+    test("loads later pages from paginated game queries", async ({ page }) => {
         await installConfigMock(page, {
             games: Array.from({ length: 305 }, (_, index) => ({
                 map: `Map ${index + 1}`,

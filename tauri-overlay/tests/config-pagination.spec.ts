@@ -99,7 +99,7 @@ test.describe("Config pagination", () => {
         await expect(playerRows.nth(1)).toContainText("Player 1");
     });
 
-    test("players tab loads beyond the initial 300 rows when paging forward", async ({
+    test("players tab loads later pages from paginated queries", async ({
         page,
     }) => {
         await installConfigMock(page, {

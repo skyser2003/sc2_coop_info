@@ -10,6 +10,8 @@ use crate::{
     overlay_info, randomizer, today_win_bonus,
 };
 
+use super::DEFAULT_CONFIG_ROWS_PER_PAGE;
+
 const PERFORMANCE_RUNTIME_SETTING_KEYS: [&str; 4] = [
     "performance_show",
     "performance_geometry",
@@ -225,7 +227,7 @@ impl ConfigCommands {
             .rows_per_page
             .or(request.limit)
             .filter(|value| *value > 0)
-            .unwrap_or(300)
+            .unwrap_or(DEFAULT_CONFIG_ROWS_PER_PAGE)
             .max(1);
         let search = request.search.unwrap_or_default();
         let sort_key = ReplayCachePlayerSortKey::from_query_value(request.sort_key.as_deref());
