@@ -21,6 +21,7 @@ const CURRENT_SCHEMA_VERSION: i32 = 1;
 const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(60);
 const SQLITE_LOCK_RETRY_WINDOW: Duration = Duration::from_secs(120);
 const SQLITE_LOCK_RETRY_DELAY: Duration = Duration::from_millis(100);
+pub const REPLAY_CACHE_QUERY_BATCH_SIZE: usize = 900;
 
 #[derive(Debug)]
 pub enum ReplayCacheDbError {
@@ -1012,8 +1013,6 @@ impl ReplayCacheEntrySql {
     pub const DELETE_ALL: &'static str = "DELETE FROM replay_cache_entries";
     pub const DELETE_BY_FILE_EXCEPT_HASH: &'static str =
         "DELETE FROM replay_cache_entries WHERE file = ?1 AND hash <> ?2";
-    pub const SELECT_ID_BY_HASH: &'static str =
-        "SELECT id FROM replay_cache_entries WHERE hash = ?1";
     pub const SELECT_BY_HASH: &'static str = "
         SELECT
             id,
@@ -1051,82 +1050,6 @@ impl ReplayCacheEntrySql {
             updated_at_seconds
         FROM replay_cache_entries
         WHERE hash = ?1
-    ";
-    pub const SELECT_BY_ID: &'static str = "
-        SELECT
-            id,
-            hash,
-            file,
-            file_name,
-            date_text,
-            date_seconds,
-            detailed_analysis,
-            result,
-            map_name,
-            difficulty_p1,
-            difficulty_p2,
-            ext_difficulty,
-            brutal_plus,
-            extension,
-            weekly,
-            region,
-            length_ingame_seconds,
-            length_realtime_kind,
-            length_realtime_int,
-            length_realtime_float,
-            form_length_realtime,
-            replay_build,
-            protocol_build_kind,
-            protocol_build_int,
-            protocol_build_text,
-            comp,
-            enemy_race,
-            has_amon_units,
-            has_bonus,
-            has_player_stats,
-            mutator_values,
-            bonus_values,
-            updated_at_seconds
-        FROM replay_cache_entries
-        WHERE id = ?1
-    ";
-    pub const SELECT_IDS_PAGE: &'static str = "
-        SELECT id FROM replay_cache_entries
-        ORDER BY date_seconds DESC, date_text DESC, file DESC, hash DESC
-        LIMIT ?1 OFFSET ?2
-    ";
-    pub const SELECT_NEWER_IDS: &'static str = "
-        SELECT id FROM replay_cache_entries
-        WHERE
-            date_seconds > ?1 OR
-            (date_seconds = ?1 AND date_text > ?2) OR
-            (date_seconds = ?1 AND date_text = ?2 AND file > ?3) OR
-            (date_seconds = ?1 AND date_text = ?2 AND file = ?3 AND hash > ?4)
-        ORDER BY date_seconds ASC, date_text ASC, file ASC, hash ASC
-        LIMIT ?5 OFFSET ?6
-    ";
-    pub const SELECT_OLDER_IDS: &'static str = "
-        SELECT id FROM replay_cache_entries
-        WHERE
-            date_seconds < ?1 OR
-            (date_seconds = ?1 AND date_text < ?2) OR
-            (date_seconds = ?1 AND date_text = ?2 AND file < ?3) OR
-            (date_seconds = ?1 AND date_text = ?2 AND file = ?3 AND hash < ?4)
-        ORDER BY date_seconds DESC, date_text DESC, file DESC, hash DESC
-        LIMIT ?5 OFFSET ?6
-    ";
-    pub const SELECT_ID_BY_EXACT_FILE: &'static str =
-        "SELECT id FROM replay_cache_entries WHERE file = ?1";
-    pub const SELECT_ID_BY_FILE_NAME: &'static str = "
-        SELECT id FROM replay_cache_entries
-        WHERE file_name = ?1
-        ORDER BY date_seconds DESC, date_text DESC, file DESC, hash DESC
-        LIMIT 1
-    ";
-    pub const SELECT_LATEST_ID: &'static str = "
-        SELECT id FROM replay_cache_entries
-        ORDER BY date_seconds DESC, date_text DESC, file DESC, hash DESC
-        LIMIT 1
     ";
     pub const SELECT_FILES: &'static str = "SELECT file FROM replay_cache_entries";
 }

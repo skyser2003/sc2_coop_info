@@ -51,6 +51,24 @@ struct PlayerInfoSourceRow {
 }
 
 impl PlayerInfoSourceRow {
+    fn from_row_with_handle(row: &Row<'_>) -> rusqlite::Result<(String, Self)> {
+        Ok((
+            row.get::<_, String>(0)?,
+            Self {
+                result: row.get(1)?,
+                apm: row
+                    .get::<_, Option<i64>>(2)?
+                    .map(ReplayCacheEntryRecord::i64_to_u32),
+                commander: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                date_seconds: ReplayCacheEntryRecord::i64_to_u64(row.get::<_, i64>(4)?),
+                kills: row
+                    .get::<_, Option<i64>>(5)?
+                    .map(ReplayCacheEntryRecord::i64_to_u64),
+                replay_total_kills: ReplayCacheEntryRecord::i64_to_u64(row.get::<_, i64>(6)?),
+            },
+        ))
+    }
+
     fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
         Ok(Self {
             result: row.get(0)?,
@@ -440,8 +458,8 @@ impl ReplayCacheDatabase {
             ReplayCacheEntryRecord::cache_numeric_columns(&record.length_realtime);
         let (protocol_kind, protocol_int, protocol_text) =
             ReplayCacheEntryRecord::protocol_build_columns(&record.protocol_build);
-        let changed = tx
-            .execute(
+        let replay_id = tx
+            .query_row(
                 "
             INSERT INTO replay_cache_entries (
                 hash,
@@ -514,6 +532,7 @@ impl ReplayCacheDatabase {
                 mutator_values = excluded.mutator_values,
                 bonus_values = excluded.bonus_values,
                 updated_at_seconds = excluded.updated_at_seconds
+            RETURNING id
             ",
                 params![
                     &record.hash,
@@ -549,21 +568,13 @@ impl ReplayCacheDatabase {
                     &record.bonus_values,
                     ReplayCacheEntryRecord::u64_to_i64(record.updated_at_seconds),
                 ],
-            )
-            .map_err(|source| ReplayCacheDbError::Sqlite {
-                path: db_path.to_path_buf(),
-                source,
-            })?;
-        let replay_id = tx
-            .query_row(
-                ReplayCacheEntrySql::SELECT_ID_BY_HASH,
-                params![&record.hash],
                 |row| row.get::<_, i64>(0),
             )
             .map_err(|source| ReplayCacheDbError::Sqlite {
                 path: db_path.to_path_buf(),
                 source,
             })?;
+        let changed = usize::try_from(tx.changes()).unwrap_or(usize::MAX);
         Ok((changed, replay_id))
     }
 
@@ -731,9 +742,13 @@ impl ReplayCacheDatabase {
         tx: &Transaction<'_>,
         db_path: &Path,
     ) -> Result<(), ReplayCacheDbError> {
-        let handles = Self::load_all_player_handles(tx, db_path)?;
-        for handle in handles {
-            Self::refresh_player_info_full(tx, &handle, db_path)?;
+        let source_rows_by_handle = Self::load_all_player_info_source_rows(tx, db_path)?;
+        for (handle, source_rows) in source_rows_by_handle {
+            if let Some(aggregate) = PlayerInfoAggregateRecord::from_rows(&source_rows) {
+                Self::upsert_player_info_aggregate(tx, &handle, &aggregate, db_path)?;
+            } else {
+                Self::ensure_player_info(tx, &handle, db_path)?;
+            }
         }
         Ok(())
     }
@@ -750,25 +765,6 @@ impl ReplayCacheDatabase {
             Self::refresh_player_info_kill_ratio(tx, handle, db_path)?;
         }
         Ok(())
-    }
-
-    fn load_all_player_handles(
-        tx: &Transaction<'_>,
-        db_path: &Path,
-    ) -> Result<Vec<String>, ReplayCacheDbError> {
-        let mut statement = tx
-            .prepare("SELECT DISTINCT player_handle FROM replay_cache_players")
-            .map_err(|source| ReplayCacheDbError::Sqlite {
-                path: db_path.to_path_buf(),
-                source,
-            })?;
-        let rows = statement
-            .query_map([], |row| row.get::<_, String>(0))
-            .map_err(|source| ReplayCacheDbError::Sqlite {
-                path: db_path.to_path_buf(),
-                source,
-            })?;
-        Self::collect_player_handles(rows, db_path)
     }
 
     fn load_player_info_source_rows(
@@ -815,6 +811,62 @@ impl ReplayCacheDatabase {
             })?);
         }
         Ok(source_rows)
+    }
+
+    fn load_all_player_info_source_rows(
+        tx: &Transaction<'_>,
+        db_path: &Path,
+    ) -> Result<BTreeMap<String, Vec<PlayerInfoSourceRow>>, ReplayCacheDbError> {
+        let mut statement = tx
+            .prepare(
+                "
+                SELECT
+                    p.player_handle,
+                    e.result,
+                    p.apm,
+                    p.commander,
+                    e.date_seconds,
+                    p.kills,
+                    COALESCE(kills_by_replay.total_kills, 0) AS total_kills
+                FROM replay_cache_players p
+                INNER JOIN replay_cache_entries e ON e.id = p.replay_id
+                LEFT JOIN (
+                    SELECT replay_id, SUM(COALESCE(kills, 0)) AS total_kills
+                    FROM replay_cache_players
+                    GROUP BY replay_id
+                ) kills_by_replay ON kills_by_replay.replay_id = p.replay_id
+                WHERE TRIM(COALESCE(p.player_handle, '')) <> ''
+                ORDER BY p.player_handle ASC,
+                    e.date_seconds DESC,
+                    e.date_text DESC,
+                    e.file DESC,
+                    e.hash DESC
+                ",
+            )
+            .map_err(|source| ReplayCacheDbError::Sqlite {
+                path: db_path.to_path_buf(),
+                source,
+            })?;
+        let rows = statement
+            .query_map([], PlayerInfoSourceRow::from_row_with_handle)
+            .map_err(|source| ReplayCacheDbError::Sqlite {
+                path: db_path.to_path_buf(),
+                source,
+            })?;
+        let mut source_rows_by_handle = BTreeMap::<String, Vec<PlayerInfoSourceRow>>::new();
+        for row in rows {
+            let (handle, source_row) = row.map_err(|source| ReplayCacheDbError::Sqlite {
+                path: db_path.to_path_buf(),
+                source,
+            })?;
+            if !handle.trim().is_empty() {
+                source_rows_by_handle
+                    .entry(handle)
+                    .or_default()
+                    .push(source_row);
+            }
+        }
+        Ok(source_rows_by_handle)
     }
 
     fn refresh_player_info_full(
