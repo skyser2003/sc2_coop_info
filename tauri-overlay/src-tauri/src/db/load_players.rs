@@ -101,13 +101,8 @@ impl ReplayCacheDatabase {
         } else {
             None
         };
-        for replay_id_batch in replay_ids.chunks(REPLAY_CACHE_QUERY_BATCH_SIZE) {
-            if replay_id_batch.is_empty() {
-                continue;
-            }
-            let placeholders = std::iter::repeat_n("?", replay_id_batch.len())
-                .collect::<Vec<_>>()
-                .join(", ");
+        for replay_id_batch in ReplayCacheSqlBatch::chunks(replay_ids) {
+            let placeholders = ReplayCacheSqlBatch::in_placeholders(replay_id_batch.len());
             let sql = format!(
                 "
                 SELECT
@@ -585,13 +580,8 @@ impl ReplayCacheDatabase {
         replay_ids: &[i64],
     ) -> Result<PlayerUnitsByKey, ReplayCacheDbError> {
         let mut units_by_player = PlayerUnitsByKey::new();
-        for replay_id_batch in replay_ids.chunks(REPLAY_CACHE_QUERY_BATCH_SIZE) {
-            if replay_id_batch.is_empty() {
-                continue;
-            }
-            let placeholders = std::iter::repeat_n("?", replay_id_batch.len())
-                .collect::<Vec<_>>()
-                .join(", ");
+        for replay_id_batch in ReplayCacheSqlBatch::chunks(replay_ids) {
+            let placeholders = ReplayCacheSqlBatch::in_placeholders(replay_id_batch.len());
             let sql = format!(
                 "
                 SELECT replay_id, pid, unit_name, created_kind, created_count,
@@ -700,13 +690,8 @@ impl ReplayCacheDatabase {
         replay_ids: &[i64],
     ) -> Result<PlayerIconsByKey, ReplayCacheDbError> {
         let mut icons_by_player = PlayerIconsByKey::new();
-        for replay_id_batch in replay_ids.chunks(REPLAY_CACHE_QUERY_BATCH_SIZE) {
-            if replay_id_batch.is_empty() {
-                continue;
-            }
-            let placeholders = std::iter::repeat_n("?", replay_id_batch.len())
-                .collect::<Vec<_>>()
-                .join(", ");
+        for replay_id_batch in ReplayCacheSqlBatch::chunks(replay_ids) {
+            let placeholders = ReplayCacheSqlBatch::in_placeholders(replay_id_batch.len());
             let sql = format!(
                 "
                 SELECT icons.replay_id, icons.pid, icons.icon_name, icons.icon_kind,

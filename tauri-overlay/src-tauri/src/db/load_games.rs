@@ -726,13 +726,8 @@ impl ReplayCacheDatabase {
         replay_ids: &[i64],
     ) -> Result<HashMap<i64, Vec<ReplayMessage>>, ReplayCacheDbError> {
         let mut messages_by_replay_id: HashMap<i64, Vec<ReplayMessage>> = HashMap::new();
-        for replay_id_batch in replay_ids.chunks(REPLAY_CACHE_QUERY_BATCH_SIZE) {
-            if replay_id_batch.is_empty() {
-                continue;
-            }
-            let placeholders = std::iter::repeat_n("?", replay_id_batch.len())
-                .collect::<Vec<_>>()
-                .join(", ");
+        for replay_id_batch in ReplayCacheSqlBatch::chunks(replay_ids) {
+            let placeholders = ReplayCacheSqlBatch::in_placeholders(replay_id_batch.len());
             let sql = format!(
                 "
                 SELECT replay_id, text, player, time
@@ -773,13 +768,8 @@ impl ReplayCacheDatabase {
         replay_ids: &[i64],
     ) -> Result<HashMap<i64, BTreeMap<String, CacheUnitStats>>, ReplayCacheDbError> {
         let mut units_by_replay_id: HashMap<i64, BTreeMap<String, CacheUnitStats>> = HashMap::new();
-        for replay_id_batch in replay_ids.chunks(REPLAY_CACHE_QUERY_BATCH_SIZE) {
-            if replay_id_batch.is_empty() {
-                continue;
-            }
-            let placeholders = std::iter::repeat_n("?", replay_id_batch.len())
-                .collect::<Vec<_>>()
-                .join(", ");
+        for replay_id_batch in ReplayCacheSqlBatch::chunks(replay_ids) {
+            let placeholders = ReplayCacheSqlBatch::in_placeholders(replay_id_batch.len());
             let sql = format!(
                 "
                 SELECT replay_id, unit_name, created_kind, created_count,
@@ -838,13 +828,8 @@ impl ReplayCacheDatabase {
     ) -> Result<HashMap<i64, BTreeMap<u8, CachePlayerStatsSeries>>, ReplayCacheDbError> {
         let mut stats_by_replay_id: HashMap<i64, BTreeMap<u8, CachePlayerStatsSeries>> =
             HashMap::new();
-        for replay_id_batch in replay_ids.chunks(REPLAY_CACHE_QUERY_BATCH_SIZE) {
-            if replay_id_batch.is_empty() {
-                continue;
-            }
-            let placeholders = std::iter::repeat_n("?", replay_id_batch.len())
-                .collect::<Vec<_>>()
-                .join(", ");
+        for replay_id_batch in ReplayCacheSqlBatch::chunks(replay_ids) {
+            let placeholders = ReplayCacheSqlBatch::in_placeholders(replay_id_batch.len());
             let sql = format!(
                 "
                 SELECT stats.replay_id, stats.pid, COALESCE(player.player_name, ''),

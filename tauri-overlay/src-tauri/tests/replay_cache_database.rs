@@ -14,7 +14,7 @@ use sco_tauri_overlay::{
     ReplayCacheStatsDifficultyExclusion, ReplayCacheStatsQuery, ReplayCacheWriteQueue,
     SqliteReplayCacheEntrySink,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Barrier};
 use std::thread;
@@ -572,6 +572,110 @@ fn sqlite_cache_detailed_override_updates_player_kill_ratio_only() {
     assert_eq!(replay_player.2, Some(300));
     assert_eq!(replay_player.3, Some(30));
     drop(connection);
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn sqlite_cache_batches_player_info_and_stats_temp_table_inputs() {
+    const ENTRY_COUNT: usize = 925;
+
+    let root = unique_temp_path("replay_cache_db_batched_inputs");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
+    let mut entries = Vec::with_capacity(ENTRY_COUNT);
+    let mut main_handles = HashSet::with_capacity(ENTRY_COUNT);
+
+    for index in 0..ENTRY_COUNT {
+        let main_handle = format!("1-S2-1-{}", 10_000 + index);
+        let ally_handle = format!("1-S2-1-{}", 20_000 + index);
+        main_handles.insert(main_handle.to_ascii_lowercase());
+
+        let mut main_player = sample_player(1, &format!("Main Player {index}"));
+        main_player.handle = Some(main_handle.clone());
+        main_player.commander = Some("Raynor".to_string());
+        main_player.kills = Some(30);
+        main_player.units = Some(BTreeMap::from([(
+            "Marine".to_string(),
+            CacheUnitStats(
+                CacheCountValue::Count(1),
+                CacheCountValue::Count(0),
+                30,
+                0.75,
+            ),
+        )]));
+
+        let mut ally_player = sample_player(2, &format!("Ally Player {index}"));
+        ally_player.handle = Some(ally_handle);
+        ally_player.commander = Some("Karax".to_string());
+        ally_player.kills = Some(10);
+        ally_player.units = Some(BTreeMap::from([(
+            "Sentinel".to_string(),
+            CacheUnitStats(
+                CacheCountValue::Count(1),
+                CacheCountValue::Count(0),
+                10,
+                0.25,
+            ),
+        )]));
+
+        let mut entry = sample_cache_entry(
+            &format!("batch-{index}.SC2Replay"),
+            &format!("batch-hash-{index}"),
+            "2026-01-01 00:00:00",
+            true,
+            "Victory",
+        );
+        entry.players = vec![main_player, ally_player];
+        entries.push(entry);
+    }
+
+    let mut database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    database
+        .upsert_entries_preserving_detailed(&entries)
+        .expect("batched entries should write");
+
+    let player_info_count = database
+        .connection
+        .query_row("SELECT COUNT(*) FROM replay_player_infos", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .expect("player info count should load");
+    assert_eq!(player_info_count, (ENTRY_COUNT * 2) as i64);
+
+    let sample_info = database
+        .connection
+        .query_row(
+            "
+            SELECT wins, losses, kill_ratio
+            FROM replay_player_infos
+            WHERE handle = ?1
+            ",
+            params!["1-S2-1-10000"],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, f64>(2)?,
+                ))
+            },
+        )
+        .expect("sample player info should load");
+    assert_eq!(sample_info.0, 1);
+    assert_eq!(sample_info.1, 0);
+    assert!((sample_info.2 - 0.75).abs() < 1e-9);
+
+    let dictionary = sco_tauri_overlay::TestHelperOps::load_dictionary();
+    let payload = database
+        .load_statistics_payload(
+            &ReplayCacheStatsQuery::new(ReplayCacheReadScope::DetailedOnly, 0),
+            &HashSet::new(),
+            &main_handles,
+            &dictionary,
+        )
+        .expect("statistics payload should load through batched temp tables");
+    assert_eq!(payload.games(), ENTRY_COUNT as u64);
 
     let _ = std::fs::remove_dir_all(&root);
 }

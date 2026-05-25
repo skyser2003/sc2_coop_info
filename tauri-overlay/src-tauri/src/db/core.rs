@@ -22,6 +22,30 @@ const SQLITE_LOCK_RETRY_WINDOW: Duration = Duration::from_secs(120);
 const SQLITE_LOCK_RETRY_DELAY: Duration = Duration::from_millis(100);
 pub const REPLAY_CACHE_QUERY_BATCH_SIZE: usize = 900;
 
+pub struct ReplayCacheSqlBatch;
+
+impl ReplayCacheSqlBatch {
+    pub fn chunks<T>(values: &[T]) -> impl Iterator<Item = &[T]> {
+        values
+            .chunks(REPLAY_CACHE_QUERY_BATCH_SIZE)
+            .filter(|chunk| !chunk.is_empty())
+    }
+
+    pub fn in_placeholders(value_count: usize) -> String {
+        Self::repeat_placeholder("?", value_count)
+    }
+
+    pub fn values_placeholders(value_count: usize) -> String {
+        Self::repeat_placeholder("(?)", value_count)
+    }
+
+    fn repeat_placeholder(placeholder: &'static str, value_count: usize) -> String {
+        std::iter::repeat_n(placeholder, value_count)
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
 pub struct ReplayCacheStatsFactOps;
 
 impl ReplayCacheStatsFactOps {

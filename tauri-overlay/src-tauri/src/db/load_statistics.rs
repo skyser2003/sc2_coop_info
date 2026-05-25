@@ -1289,13 +1289,8 @@ impl ReplayCacheDatabase {
         &self,
         replay_ids: &[i64],
     ) -> Result<(), ReplayCacheDbError> {
-        for replay_id_batch in replay_ids.chunks(REPLAY_CACHE_QUERY_BATCH_SIZE) {
-            if replay_id_batch.is_empty() {
-                continue;
-            }
-            let placeholders = std::iter::repeat_n("(?)", replay_id_batch.len())
-                .collect::<Vec<_>>()
-                .join(", ");
+        for replay_id_batch in ReplayCacheSqlBatch::chunks(replay_ids) {
+            let placeholders = ReplayCacheSqlBatch::values_placeholders(replay_id_batch.len());
             let sql = format!(
                 "INSERT OR IGNORE INTO temp_stats_unit_replays (replay_id) VALUES {placeholders}"
             );
@@ -1317,13 +1312,8 @@ impl ReplayCacheDatabase {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
-        for handle_batch in handle_keys.chunks(REPLAY_CACHE_QUERY_BATCH_SIZE) {
-            if handle_batch.is_empty() {
-                continue;
-            }
-            let placeholders = std::iter::repeat_n("(?)", handle_batch.len())
-                .collect::<Vec<_>>()
-                .join(", ");
+        for handle_batch in ReplayCacheSqlBatch::chunks(&handle_keys) {
+            let placeholders = ReplayCacheSqlBatch::values_placeholders(handle_batch.len());
             let sql = format!(
                 "INSERT OR IGNORE INTO temp_stats_main_handles (handle_key) VALUES {placeholders}"
             );
@@ -1650,9 +1640,8 @@ impl ReplayCacheDatabase {
         if query.restrict_to_current_replay_files() && query.current_replay_files().is_empty() {
             clauses.push("0 = 1".to_string());
         } else if !query.current_replay_files().is_empty() {
-            let placeholders = std::iter::repeat_n("?", query.current_replay_files().len())
-                .collect::<Vec<_>>()
-                .join(", ");
+            let placeholders =
+                ReplayCacheSqlBatch::in_placeholders(query.current_replay_files().len());
             clauses.push(format!("e.file IN ({placeholders})"));
             bind_values.extend(
                 query
@@ -1781,9 +1770,7 @@ impl ReplayCacheDatabase {
             .to_string(),
         );
 
-        let placeholders = std::iter::repeat_n("?", query.region_exclusions().len())
-            .collect::<Vec<_>>()
-            .join(", ");
+        let placeholders = ReplayCacheSqlBatch::in_placeholders(query.region_exclusions().len());
         clauses.push(format!(
             "UPPER(TRIM(COALESCE(e.region, ''))) NOT IN ({placeholders})"
         ));
@@ -1899,9 +1886,7 @@ impl ReplayCacheDatabase {
             return;
         }
 
-        let placeholders = std::iter::repeat_n("?", query.main_handle_keys().len())
-            .collect::<Vec<_>>()
-            .join(", ");
+        let placeholders = ReplayCacheSqlBatch::in_placeholders(query.main_handle_keys().len());
         clauses.push(format!(
             "
             NOT EXISTS (

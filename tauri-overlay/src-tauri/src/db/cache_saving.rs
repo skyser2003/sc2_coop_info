@@ -11,6 +11,12 @@ use s2coop_analyzer::detailed_replay_analysis::CacheReplayCheck;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PlayerInfoRefreshMode {
+    Full,
+    KillRatio,
+}
+
 #[derive(Debug, Default)]
 struct PlayerInfoRefreshPlan {
     full_handles: BTreeSet<String>,
@@ -31,14 +37,15 @@ impl PlayerInfoRefreshPlan {
         self.kill_ratio_handles.extend(other.kill_ratio_handles);
     }
 
-    fn full_handles(&self) -> &BTreeSet<String> {
-        &self.full_handles
-    }
-
-    fn kill_ratio_only_handles(&self) -> impl Iterator<Item = &String> {
-        self.kill_ratio_handles
-            .iter()
-            .filter(|handle| !self.full_handles.contains(*handle))
+    fn modes_by_handle(&self) -> BTreeMap<String, PlayerInfoRefreshMode> {
+        let mut modes_by_handle = BTreeMap::new();
+        for handle in &self.kill_ratio_handles {
+            modes_by_handle.insert(handle.clone(), PlayerInfoRefreshMode::KillRatio);
+        }
+        for handle in &self.full_handles {
+            modes_by_handle.insert(handle.clone(), PlayerInfoRefreshMode::Full);
+        }
+        modes_by_handle
     }
 }
 
@@ -793,28 +800,28 @@ impl ReplayCacheDatabase {
         plan: &PlayerInfoRefreshPlan,
         db_path: &Path,
     ) -> Result<(), ReplayCacheDbError> {
-        let full_source_rows_by_handle =
-            Self::load_player_info_source_rows_by_handles(tx, plan.full_handles(), db_path)?;
-        for handle in plan.full_handles() {
-            let source_rows = full_source_rows_by_handle
-                .get(handle)
+        let modes_by_handle = plan.modes_by_handle();
+        let handles = modes_by_handle.keys().cloned().collect::<BTreeSet<_>>();
+        let source_rows_by_handle =
+            Self::load_player_info_source_rows_by_handles(tx, &handles, db_path)?;
+        for (handle, mode) in modes_by_handle {
+            let source_rows = source_rows_by_handle
+                .get(&handle)
                 .map(Vec::as_slice)
                 .unwrap_or(&[]);
-            Self::refresh_player_info_full_from_rows(tx, handle, source_rows, db_path)?;
-        }
-
-        let kill_ratio_handles = plan
-            .kill_ratio_only_handles()
-            .cloned()
-            .collect::<BTreeSet<_>>();
-        let kill_ratio_source_rows_by_handle =
-            Self::load_player_info_source_rows_by_handles(tx, &kill_ratio_handles, db_path)?;
-        for handle in &kill_ratio_handles {
-            let source_rows = kill_ratio_source_rows_by_handle
-                .get(handle)
-                .map(Vec::as_slice)
-                .unwrap_or(&[]);
-            Self::refresh_player_info_kill_ratio_from_rows(tx, handle, source_rows, db_path)?;
+            match mode {
+                PlayerInfoRefreshMode::Full => {
+                    Self::refresh_player_info_full_from_rows(tx, &handle, source_rows, db_path)?;
+                }
+                PlayerInfoRefreshMode::KillRatio => {
+                    Self::refresh_player_info_kill_ratio_from_rows(
+                        tx,
+                        &handle,
+                        source_rows,
+                        db_path,
+                    )?;
+                }
+            }
         }
         Ok(())
     }
@@ -829,14 +836,9 @@ impl ReplayCacheDatabase {
             return Ok(source_rows_by_handle);
         }
 
-        let handle_values = handles.iter().collect::<Vec<_>>();
-        for handle_batch in handle_values.chunks(REPLAY_CACHE_QUERY_BATCH_SIZE) {
-            if handle_batch.is_empty() {
-                continue;
-            }
-            let placeholders = std::iter::repeat_n("?", handle_batch.len())
-                .collect::<Vec<_>>()
-                .join(", ");
+        let handle_values = handles.iter().map(String::as_str).collect::<Vec<_>>();
+        for handle_batch in ReplayCacheSqlBatch::chunks(&handle_values) {
+            let placeholders = ReplayCacheSqlBatch::in_placeholders(handle_batch.len());
             let sql = format!(
                 "
                 WITH selected_players AS (
@@ -892,7 +894,7 @@ impl ReplayCacheDatabase {
                 })?;
             let rows = statement
                 .query_map(
-                    params_from_iter(handle_batch.iter().map(|handle| handle.as_str())),
+                    params_from_iter(handle_batch.iter().copied()),
                     PlayerInfoSourceRow::from_row_with_handle,
                 )
                 .map_err(|source| ReplayCacheDbError::Sqlite {
