@@ -112,6 +112,32 @@ fn sqlite_table_columns(db_path: &Path, table_name: &str) -> Vec<String> {
         .collect()
 }
 
+fn sqlite_index_names(db_path: &Path, table_name: &str) -> Vec<String> {
+    let connection = Connection::open(db_path).expect("sqlite database should open");
+    let sql = format!("PRAGMA index_list({table_name})");
+    let mut statement = connection
+        .prepare(&sql)
+        .expect("index list statement should prepare");
+    statement
+        .query_map([], |row| row.get::<_, String>(1))
+        .expect("index list should query")
+        .map(|row| row.expect("index name should load"))
+        .collect()
+}
+
+fn sqlite_index_columns(db_path: &Path, index_name: &str) -> Vec<String> {
+    let connection = Connection::open(db_path).expect("sqlite database should open");
+    let sql = format!("PRAGMA index_info({index_name})");
+    let mut statement = connection
+        .prepare(&sql)
+        .expect("index info statement should prepare");
+    statement
+        .query_map([], |row| row.get::<_, String>(2))
+        .expect("index info should query")
+        .map(|row| row.expect("index column should load"))
+        .collect()
+}
+
 fn sqlite_table_exists(db_path: &Path, table_name: &str) -> bool {
     let connection = Connection::open(db_path).expect("sqlite database should open");
     connection
@@ -280,6 +306,38 @@ fn sqlite_cache_schema_stores_typed_columns_without_payload_json() {
     assert!(!icon_columns.contains(&"order_values".to_string()));
     let icon_order_columns = sqlite_table_columns(&db_path, "replay_cache_player_icon_orders");
     assert!(icon_order_columns.contains(&"order_values".to_string()));
+    let stats_player_columns = sqlite_table_columns(&db_path, "replay_cache_stats_players");
+    assert!(stats_player_columns.contains(&"player_handle_key".to_string()));
+    assert!(stats_player_columns.contains(&"commander".to_string()));
+    assert!(!stats_player_columns.contains(&"player_handle".to_string()));
+    assert!(!stats_player_columns.contains(&"player_kills".to_string()));
+    let stats_unit_columns = sqlite_table_columns(&db_path, "replay_cache_stats_player_units");
+    assert!(stats_unit_columns.contains(&"player_handle_key".to_string()));
+    assert!(stats_unit_columns.contains(&"player_kills".to_string()));
+    assert!(!stats_unit_columns.contains(&"player_handle".to_string()));
+    let amon_unit_index_names = sqlite_index_names(&db_path, "replay_cache_amon_units");
+    assert!(amon_unit_index_names.contains(&"idx_replay_cache_amon_units_rollup".to_string()));
+    assert!(!amon_unit_index_names.contains(&"idx_replay_cache_amon_units_unit".to_string()));
+    assert!(
+        !sqlite_index_names(&db_path, "replay_cache_stats_players")
+            .contains(&"idx_replay_cache_stats_players_handle".to_string())
+    );
+    assert!(
+        !sqlite_index_names(&db_path, "replay_cache_stats_player_units")
+            .contains(&"idx_replay_cache_stats_player_units_unit".to_string())
+    );
+    assert_eq!(
+        sqlite_index_columns(&db_path, "idx_replay_cache_amon_units_rollup"),
+        vec![
+            "unit_name".to_string(),
+            "replay_id".to_string(),
+            "created_kind".to_string(),
+            "created_count".to_string(),
+            "lost_kind".to_string(),
+            "lost_count".to_string(),
+            "kills".to_string(),
+        ]
+    );
     assert!(columns.contains(&"bonus_values".to_string()));
     assert!(!sqlite_table_exists(&db_path, "replay_cache_bonus"));
     assert!(!sqlite_table_exists(&db_path, "replay_cache_metadata"));
@@ -292,7 +350,7 @@ fn sqlite_cache_schema_stores_typed_columns_without_payload_json() {
         &db_path,
         "replay_cache_player_masteries"
     ));
-    assert_eq!(sqlite_user_version(&db_path), 1);
+    assert_eq!(sqlite_user_version(&db_path), 2);
 
     let connection = Connection::open(&db_path).expect("sqlite database should open");
     let stored = connection
@@ -668,7 +726,7 @@ fn sqlite_cache_stores_bonus_as_json_array() {
 }
 
 #[test]
-fn sqlite_cache_reconstructs_hidden_player_unit_counts_without_hidden_text_columns() {
+fn sqlite_cache_reconstructs_hidden_unit_counts_without_hidden_text_columns() {
     let root = unique_temp_path("replay_cache_db_unit_hidden_schema");
     std::fs::create_dir_all(&root).expect("temp root should be created");
     let cache_path = root.join("cache_overall_stats.sqlite3");
@@ -691,6 +749,15 @@ fn sqlite_cache_reconstructs_hidden_player_unit_counts_without_hidden_text_colum
         ),
     )]));
     entry.players = vec![player];
+    entry.amon_units = Some(BTreeMap::from([(
+        "Amon's Top Bar".to_string(),
+        CacheUnitStats(
+            CacheCountValue::Hidden("-".to_string()),
+            CacheCountValue::Hidden("-".to_string()),
+            20,
+            0.75,
+        ),
+    )]));
 
     let mut database =
         ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
@@ -704,6 +771,12 @@ fn sqlite_cache_reconstructs_hidden_player_unit_counts_without_hidden_text_colum
     assert!(columns.contains(&"lost_kind".to_string()));
     assert!(!columns.contains(&"created_hidden".to_string()));
     assert!(!columns.contains(&"lost_hidden".to_string()));
+
+    let amon_columns = sqlite_table_columns(&db_path, "replay_cache_amon_units");
+    assert!(amon_columns.contains(&"created_kind".to_string()));
+    assert!(amon_columns.contains(&"lost_kind".to_string()));
+    assert!(!amon_columns.contains(&"created_hidden".to_string()));
+    assert!(!amon_columns.contains(&"lost_hidden".to_string()));
 
     let database =
         ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should reopen");
@@ -722,6 +795,209 @@ fn sqlite_cache_reconstructs_hidden_player_unit_counts_without_hidden_text_colum
     assert_eq!(
         loaded_units["Karax's Top Bar"].1,
         CacheCountValue::Hidden("-".to_string())
+    );
+    let loaded_amon_units = loaded.amon_units.as_ref().expect("Amon units should load");
+    assert_eq!(
+        loaded_amon_units["Amon's Top Bar"].0,
+        CacheCountValue::Hidden("-".to_string())
+    );
+    assert_eq!(
+        loaded_amon_units["Amon's Top Bar"].1,
+        CacheCountValue::Hidden("-".to_string())
+    );
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn sqlite_cache_cleans_obsolete_statistics_schema_parts() {
+    let root = unique_temp_path("replay_cache_db_stats_schema_cleanup");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
+    let db_path = ReplayCacheDatabase::db_path_for_cache_path(&cache_path);
+
+    let connection = Connection::open(&db_path).expect("sqlite database should open");
+    connection
+        .execute_batch(
+            "
+            PRAGMA user_version = 1;
+
+            CREATE TABLE replay_cache_stats_players (
+                replay_id INTEGER NOT NULL,
+                pid INTEGER NOT NULL CHECK(pid > 0),
+                player_handle TEXT NOT NULL,
+                player_handle_key TEXT NOT NULL,
+                commander TEXT NOT NULL,
+                player_kills INTEGER NOT NULL,
+                PRIMARY KEY (replay_id, pid)
+            );
+            CREATE TABLE replay_cache_stats_player_units (
+                replay_id INTEGER NOT NULL,
+                pid INTEGER NOT NULL CHECK(pid > 0),
+                player_handle TEXT NOT NULL,
+                player_handle_key TEXT NOT NULL,
+                commander TEXT NOT NULL,
+                player_kills INTEGER NOT NULL,
+                unit_name TEXT NOT NULL,
+                created_hidden INTEGER NOT NULL,
+                created_count INTEGER NOT NULL,
+                lost_hidden INTEGER NOT NULL,
+                lost_count INTEGER NOT NULL,
+                kills INTEGER NOT NULL,
+                PRIMARY KEY (replay_id, pid, unit_name)
+            );
+            CREATE TABLE replay_cache_amon_units (
+                replay_id INTEGER NOT NULL,
+                unit_name TEXT NOT NULL,
+                created_kind TEXT NOT NULL CHECK(created_kind IN ('count', 'hidden')),
+                created_count INTEGER,
+                created_hidden TEXT,
+                lost_kind TEXT NOT NULL CHECK(lost_kind IN ('count', 'hidden')),
+                lost_count INTEGER,
+                lost_hidden TEXT,
+                kills INTEGER NOT NULL,
+                fraction REAL NOT NULL,
+                PRIMARY KEY (replay_id, unit_name)
+            );
+
+            CREATE INDEX idx_replay_cache_stats_players_handle
+                ON replay_cache_stats_players(player_handle_key, replay_id);
+            CREATE INDEX idx_replay_cache_stats_player_units_unit
+                ON replay_cache_stats_player_units(unit_name, replay_id);
+            CREATE INDEX idx_replay_cache_amon_units_unit
+                ON replay_cache_amon_units(unit_name, replay_id);
+
+            INSERT INTO replay_cache_stats_players (
+                replay_id, pid, player_handle, player_handle_key, commander, player_kills
+            ) VALUES (1, 1, '1-S2-1-1', '1-s2-1-1', 'Raynor', 42);
+            INSERT INTO replay_cache_stats_player_units (
+                replay_id, pid, player_handle, player_handle_key, commander, player_kills,
+                unit_name, created_hidden, created_count, lost_hidden, lost_count, kills
+            ) VALUES (1, 1, '1-S2-1-1', '1-s2-1-1', 'Raynor', 42,
+                'Marine', 0, 12, 0, 3, 30);
+            INSERT INTO replay_cache_amon_units (
+                replay_id, unit_name, created_kind, created_count, created_hidden,
+                lost_kind, lost_count, lost_hidden, kills, fraction
+            ) VALUES (1, 'Zergling', 'count', 20, NULL, 'hidden', NULL, '-', 15, 0.5);
+            ",
+        )
+        .expect("old sqlite schema should be created");
+    drop(connection);
+
+    let database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should migrate");
+    drop(database);
+
+    let stats_player_columns = sqlite_table_columns(&db_path, "replay_cache_stats_players");
+    assert!(!stats_player_columns.contains(&"player_handle".to_string()));
+    assert!(!stats_player_columns.contains(&"player_kills".to_string()));
+    assert!(stats_player_columns.contains(&"player_handle_key".to_string()));
+    assert!(stats_player_columns.contains(&"commander".to_string()));
+
+    let stats_unit_columns = sqlite_table_columns(&db_path, "replay_cache_stats_player_units");
+    assert!(!stats_unit_columns.contains(&"player_handle".to_string()));
+    assert!(stats_unit_columns.contains(&"player_kills".to_string()));
+
+    let amon_columns = sqlite_table_columns(&db_path, "replay_cache_amon_units");
+    assert!(!amon_columns.contains(&"created_hidden".to_string()));
+    assert!(!amon_columns.contains(&"lost_hidden".to_string()));
+
+    assert!(
+        !sqlite_index_names(&db_path, "replay_cache_stats_players")
+            .contains(&"idx_replay_cache_stats_players_handle".to_string())
+    );
+    assert!(
+        !sqlite_index_names(&db_path, "replay_cache_stats_player_units")
+            .contains(&"idx_replay_cache_stats_player_units_unit".to_string())
+    );
+    let amon_index_names = sqlite_index_names(&db_path, "replay_cache_amon_units");
+    assert!(!amon_index_names.contains(&"idx_replay_cache_amon_units_unit".to_string()));
+    assert!(amon_index_names.contains(&"idx_replay_cache_amon_units_rollup".to_string()));
+    assert_eq!(sqlite_user_version(&db_path), 2);
+
+    let connection = Connection::open(&db_path).expect("sqlite database should reopen");
+    let stored_commander: String = connection
+        .query_row(
+            "SELECT commander FROM replay_cache_stats_players WHERE replay_id = 1 AND pid = 1",
+            [],
+            |row| row.get(0),
+        )
+        .expect("migrated stats player row should exist");
+    assert_eq!(stored_commander, "Raynor");
+    let stored_kills: i64 = connection
+        .query_row(
+            "
+            SELECT player_kills
+            FROM replay_cache_stats_player_units
+            WHERE replay_id = 1 AND pid = 1 AND unit_name = 'Marine'
+            ",
+            [],
+            |row| row.get(0),
+        )
+        .expect("migrated stats unit row should exist");
+    assert_eq!(stored_kills, 42);
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn sqlite_cache_backfills_missing_statistics_unit_facts_when_player_facts_exist() {
+    let root = unique_temp_path("replay_cache_db_stats_unit_backfill");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
+    let db_path = ReplayCacheDatabase::db_path_for_cache_path(&cache_path);
+    let mut entry = sample_cache_entry(
+        "stats-unit-backfill.SC2Replay",
+        "stats-unit-backfill-hash",
+        "2026-01-01 00:00:00",
+        true,
+        "Victory",
+    );
+    let mut player = sample_player(1, "Player One");
+    player.units = Some(BTreeMap::from([(
+        "Marine".to_string(),
+        CacheUnitStats(
+            CacheCountValue::Count(12),
+            CacheCountValue::Count(3),
+            30,
+            0.5,
+        ),
+    )]));
+    entry.players = vec![player];
+
+    let mut database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    database
+        .upsert_entries_preserving_detailed(std::slice::from_ref(&entry))
+        .expect("entry should write");
+    drop(database);
+
+    assert_eq!(
+        sqlite_table_row_count(&db_path, "replay_cache_stats_players"),
+        1
+    );
+    assert_eq!(
+        sqlite_table_row_count(&db_path, "replay_cache_stats_player_units"),
+        1
+    );
+
+    let connection = Connection::open(&db_path).expect("sqlite database should open");
+    connection
+        .execute("DELETE FROM replay_cache_stats_player_units", [])
+        .expect("statistics unit facts should delete");
+    drop(connection);
+
+    let database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should reopen");
+    drop(database);
+
+    assert_eq!(
+        sqlite_table_row_count(&db_path, "replay_cache_stats_players"),
+        1
+    );
+    assert_eq!(
+        sqlite_table_row_count(&db_path, "replay_cache_stats_player_units"),
+        1
     );
 
     let _ = std::fs::remove_dir_all(&root);
@@ -1987,7 +2263,7 @@ fn opening_future_schema_version_returns_typed_error() {
             version, supported, ..
         }) => {
             assert_eq!(version, 99);
-            assert_eq!(supported, 1);
+            assert_eq!(supported, 2);
         }
         Err(error) => panic!("unexpected error: {error}"),
         Ok(_) => panic!("future schema should not open"),

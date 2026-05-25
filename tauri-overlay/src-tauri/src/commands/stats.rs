@@ -38,12 +38,14 @@ impl StatsCommands {
         query: Option<String>,
         state: State<'_, BackendState>,
     ) -> Result<StatsStatePayload, String> {
+        let total_started_at = Instant::now();
         let path = if let Some(query) = query.filter(|value| !value.trim().is_empty()) {
             format!("/config/stats?{query}")
         } else {
             "/config/stats".to_string()
         };
         state.log_request("get", &path, &None);
+        let snapshot_started_at = Instant::now();
         let stats = state.stats_handle();
         let stats_current_replay_files = state.stats_current_replay_files_handle();
         let state_snapshot = (
@@ -52,9 +54,18 @@ impl StatsCommands {
             state.replay_scan_progress().as_payload(),
             state.dictionary_data().ok(),
         );
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=config_stats_get_snapshot path_len={} elapsed_ms={:.3}",
+            path.len(),
+            snapshot_started_at.elapsed().as_secs_f64() * 1000.0
+        );
+
         let path_for_worker = path.clone();
-        tauri::async_runtime::spawn_blocking(move || {
+        let worker_wait_started_at = Instant::now();
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            let worker_started_at = Instant::now();
             let (main_names, main_handles, scan_progress, dictionary) = state_snapshot;
+            let payload_started_at = Instant::now();
             let payload = match dictionary.as_deref() {
                 Some(dictionary) => ReplayAnalysis::build_stats_response_with_dictionary(
                     StatsResponseBuildInput::new(
@@ -80,11 +91,40 @@ impl StatsCommands {
                     }
                 },
             };
+            crate::sco_log!(
+                "[SCO/stats/e2e/backend] stage=config_stats_get_build_payload path_len={} elapsed_ms={:.3}",
+                path_for_worker.len(),
+                payload_started_at.elapsed().as_secs_f64() * 1000.0
+            );
+            let typed_started_at = Instant::now();
             serde_json::from_value(payload)
                 .map_err(|error| format!("Invalid stats payload: {error}"))
+                .inspect(|payload: &StatsStatePayload| {
+                    crate::sco_log!(
+                        "[SCO/stats/e2e/backend] stage=config_stats_get_typed_payload games={} elapsed_ms={:.3}",
+                        payload.games,
+                        typed_started_at.elapsed().as_secs_f64() * 1000.0
+                    );
+                    crate::sco_log!(
+                        "[SCO/stats/e2e/backend] stage=config_stats_get_worker_total elapsed_ms={:.3}",
+                        worker_started_at.elapsed().as_secs_f64() * 1000.0
+                    );
+                })
         })
         .await
-        .map_err(|error| format!("Failed to read /config/stats: {error}"))?
+        .map_err(|error| format!("Failed to read /config/stats: {error}"))?;
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=config_stats_get_blocking_await elapsed_ms={:.3}",
+            worker_wait_started_at.elapsed().as_secs_f64() * 1000.0
+        );
+        if let Ok(payload) = result.as_ref() {
+            crate::sco_log!(
+                "[SCO/stats/e2e/backend] stage=config_stats_get_total games={} elapsed_ms={:.3}",
+                payload.games,
+                total_started_at.elapsed().as_secs_f64() * 1000.0
+            );
+        }
+        result
     }
 
     pub async fn config_stats_action(

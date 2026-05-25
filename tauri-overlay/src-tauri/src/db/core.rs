@@ -1,5 +1,5 @@
 use chrono::{Local, LocalResult, TimeZone, Utc};
-use rusqlite::{Connection, ErrorCode, Row};
+use rusqlite::{Connection, ErrorCode, OptionalExtension, Row};
 use s2coop_analyzer::cache_overall_stats_generator::{
     CacheCountValue, CacheNumericValue, CacheReplayEntry, ProtocolBuildValue,
 };
@@ -15,13 +15,100 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::array_json::ReplayCacheArrayJson;
-use crate::replay_analysis::ReplayAnalysisOps;
+use crate::replay_analysis::{ReplayAnalysis, ReplayAnalysisOps};
 
-const CURRENT_SCHEMA_VERSION: i32 = 1;
+const CURRENT_SCHEMA_VERSION: i32 = 2;
 const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(60);
 const SQLITE_LOCK_RETRY_WINDOW: Duration = Duration::from_secs(120);
 const SQLITE_LOCK_RETRY_DELAY: Duration = Duration::from_millis(100);
 pub const REPLAY_CACHE_QUERY_BATCH_SIZE: usize = 900;
+
+pub struct ReplayCacheStatsFactOps;
+
+impl ReplayCacheStatsFactOps {
+    pub fn normalized_commander_name(commander: &str) -> String {
+        let trimmed = commander.trim();
+        if trimmed.is_empty() {
+            return String::new();
+        }
+        match trimmed.to_ascii_lowercase().as_str() {
+            "abathur" => "Abathur",
+            "alarak" => "Alarak",
+            "artanis" => "Artanis",
+            "dehaka" => "Dehaka",
+            "fenix" => "Fenix",
+            "han & horner" | "han and horner" | "hanhorner" => "Han & Horner",
+            "karax" => "Karax",
+            "kerrigan" => "Kerrigan",
+            "mengsk" | "arcturus mengsk" => "Mengsk",
+            "nova" => "Nova",
+            "raynor" => "Raynor",
+            "stukov" => "Stukov",
+            "swann" => "Swann",
+            "tychus" => "Tychus",
+            "vorazun" => "Vorazun",
+            "zagara" => "Zagara",
+            "zeratul" => "Zeratul",
+            "stetmann" => "Stetmann",
+            _ => trimmed,
+        }
+        .to_string()
+    }
+
+    pub fn normalized_handle_key(handle: &str) -> String {
+        ReplayAnalysis::normalized_handle_key(handle)
+    }
+
+    pub fn normalized_handle_key_sql(column: &str) -> String {
+        format!(
+            "
+            CASE
+                WHEN INSTR(LOWER(TRIM(COALESCE({column}, ''))), '-s2-') > 0
+                THEN LOWER(TRIM(COALESCE({column}, '')))
+                ELSE ''
+            END
+            "
+        )
+    }
+
+    pub fn normalized_commander_sql(column: &str) -> String {
+        format!(
+            "
+            CASE LOWER(TRIM(COALESCE({column}, '')))
+                WHEN 'abathur' THEN 'Abathur'
+                WHEN 'alarak' THEN 'Alarak'
+                WHEN 'artanis' THEN 'Artanis'
+                WHEN 'dehaka' THEN 'Dehaka'
+                WHEN 'fenix' THEN 'Fenix'
+                WHEN 'han & horner' THEN 'Han & Horner'
+                WHEN 'han and horner' THEN 'Han & Horner'
+                WHEN 'hanhorner' THEN 'Han & Horner'
+                WHEN 'karax' THEN 'Karax'
+                WHEN 'kerrigan' THEN 'Kerrigan'
+                WHEN 'mengsk' THEN 'Mengsk'
+                WHEN 'arcturus mengsk' THEN 'Mengsk'
+                WHEN 'nova' THEN 'Nova'
+                WHEN 'raynor' THEN 'Raynor'
+                WHEN 'stukov' THEN 'Stukov'
+                WHEN 'swann' THEN 'Swann'
+                WHEN 'tychus' THEN 'Tychus'
+                WHEN 'vorazun' THEN 'Vorazun'
+                WHEN 'zagara' THEN 'Zagara'
+                WHEN 'zeratul' THEN 'Zeratul'
+                WHEN 'stetmann' THEN 'Stetmann'
+                ELSE TRIM(COALESCE({column}, ''))
+            END
+            "
+        )
+    }
+
+    pub fn unit_count_fact_columns(value: &CacheCountValue) -> (i64, i64) {
+        match value {
+            CacheCountValue::Count(value) => (0, *value),
+            CacheCountValue::Hidden(_) => (1, 0),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum ReplayCacheDbError {
@@ -886,6 +973,8 @@ pub enum ReplayCacheTable {
     Weekly,
     Players,
     PlayerUnits,
+    StatisticsPlayers,
+    StatisticsPlayerUnits,
     PlayerIcons,
     PlayerIconOrders,
     Messages,
@@ -893,8 +982,10 @@ pub enum ReplayCacheTable {
     PlayerStatSeries,
 }
 
-pub const REPLAY_CACHE_CHILD_TABLES: [ReplayCacheTable; 8] = [
+pub const REPLAY_CACHE_CHILD_TABLES: [ReplayCacheTable; 10] = [
     ReplayCacheTable::Weekly,
+    ReplayCacheTable::StatisticsPlayerUnits,
+    ReplayCacheTable::StatisticsPlayers,
     ReplayCacheTable::PlayerUnits,
     ReplayCacheTable::PlayerIconOrders,
     ReplayCacheTable::PlayerIcons,
@@ -910,6 +1001,12 @@ impl ReplayCacheTable {
             Self::Players => "DELETE FROM replay_cache_players WHERE replay_id = ?1",
             Self::Weekly => "DELETE FROM replay_cache_weeklies WHERE replay_id = ?1",
             Self::PlayerUnits => "DELETE FROM replay_cache_player_units WHERE replay_id = ?1",
+            Self::StatisticsPlayers => {
+                "DELETE FROM replay_cache_stats_players WHERE replay_id = ?1"
+            }
+            Self::StatisticsPlayerUnits => {
+                "DELETE FROM replay_cache_stats_player_units WHERE replay_id = ?1"
+            }
             Self::PlayerIcons => "DELETE FROM replay_cache_player_icons WHERE replay_id = ?1",
             Self::PlayerIconOrders => {
                 "DELETE FROM replay_cache_player_icon_orders WHERE replay_id = ?1"
@@ -1421,7 +1518,7 @@ impl ReplayCacheDatabase {
                 source,
             })?;
 
-        Self::initialize_schema(&mut connection, &db_path)?;
+        Self::initialize_schema(&mut connection, &db_path, db_existed)?;
         let mut database = Self {
             cache_path: cache_path.to_path_buf(),
             legacy_cache_path,
@@ -1431,12 +1528,14 @@ impl ReplayCacheDatabase {
         if let Err(error) = database.import_legacy_cache_if_needed(db_existed) {
             crate::sco_log!("[SCO/cache-db] legacy cache import skipped: {error}");
         }
+        database.backfill_statistics_fact_tables_if_needed()?;
         Ok(database)
     }
 
     fn initialize_schema(
         connection: &mut Connection,
         db_path: &Path,
+        db_existed: bool,
     ) -> Result<(), ReplayCacheDbError> {
         let schema_version = connection
             .pragma_query_value(None, "user_version", |row| row.get::<_, i32>(0))
@@ -1453,13 +1552,78 @@ impl ReplayCacheDatabase {
             });
         }
 
-        if schema_version == CURRENT_SCHEMA_VERSION {
-            return Ok(());
+        let should_log_version_update = db_existed && schema_version < CURRENT_SCHEMA_VERSION;
+        let version_update_started_at = Instant::now();
+        let result = Self::apply_current_schema(connection, db_path, schema_version);
+        if should_log_version_update {
+            Self::log_schema_version_update(
+                schema_version,
+                result.as_ref(),
+                version_update_started_at.elapsed(),
+                db_path,
+            );
         }
+        result
+    }
 
+    fn apply_current_schema(
+        connection: &mut Connection,
+        db_path: &Path,
+        schema_version: i32,
+    ) -> Result<(), ReplayCacheDbError> {
         Self::create_current_schema(connection, db_path)?;
+        Self::drop_obsolete_indexes(connection, db_path)?;
+        Self::migrate_schema(connection, db_path, schema_version)?;
         Self::create_current_indexes(connection, db_path)?;
+        Self::set_current_schema_version(connection, db_path)?;
         Ok(())
+    }
+
+    fn log_schema_version_update(
+        from_version: i32,
+        result: Result<&(), &ReplayCacheDbError>,
+        elapsed: Duration,
+        db_path: &Path,
+    ) {
+        match result {
+            Ok(_) => {
+                crate::sco_log!(
+                    "[SCO/cache-db] schema version update completed from={} to={} path='{}' elapsed={}ms",
+                    from_version,
+                    CURRENT_SCHEMA_VERSION,
+                    db_path.display(),
+                    elapsed.as_millis()
+                );
+            }
+            Err(error) => {
+                crate::sco_log!(
+                    "[SCO/cache-db] schema version update failed from={} to={} path='{}' elapsed={}ms error={}",
+                    from_version,
+                    CURRENT_SCHEMA_VERSION,
+                    db_path.display(),
+                    elapsed.as_millis(),
+                    error
+                );
+            }
+        }
+    }
+
+    fn migrate_schema(
+        connection: &mut Connection,
+        db_path: &Path,
+        schema_version: i32,
+    ) -> Result<(), ReplayCacheDbError> {
+        if schema_version < 2 {
+            Self::migrate_schema_to_v2(connection, db_path)?;
+        }
+        Ok(())
+    }
+
+    fn migrate_schema_to_v2(
+        connection: &mut Connection,
+        db_path: &Path,
+    ) -> Result<(), ReplayCacheDbError> {
+        Self::remove_obsolete_schema_parts(connection, db_path)
     }
 
     fn create_current_schema(
@@ -1569,6 +1733,29 @@ impl ReplayCacheDatabase {
                     PRIMARY KEY (replay_id, pid, unit_name)
                 );
 
+                CREATE TABLE IF NOT EXISTS replay_cache_stats_players (
+                    replay_id INTEGER NOT NULL REFERENCES replay_cache_entries(id) ON DELETE CASCADE,
+                    pid INTEGER NOT NULL CHECK(pid > 0),
+                    player_handle_key TEXT NOT NULL,
+                    commander TEXT NOT NULL,
+                    PRIMARY KEY (replay_id, pid)
+                );
+
+                CREATE TABLE IF NOT EXISTS replay_cache_stats_player_units (
+                    replay_id INTEGER NOT NULL REFERENCES replay_cache_entries(id) ON DELETE CASCADE,
+                    pid INTEGER NOT NULL CHECK(pid > 0),
+                    player_handle_key TEXT NOT NULL,
+                    commander TEXT NOT NULL,
+                    player_kills INTEGER NOT NULL,
+                    unit_name TEXT NOT NULL,
+                    created_hidden INTEGER NOT NULL,
+                    created_count INTEGER NOT NULL,
+                    lost_hidden INTEGER NOT NULL,
+                    lost_count INTEGER NOT NULL,
+                    kills INTEGER NOT NULL,
+                    PRIMARY KEY (replay_id, pid, unit_name)
+                );
+
                 CREATE TABLE IF NOT EXISTS replay_cache_player_icons (
                     replay_id INTEGER NOT NULL REFERENCES replay_cache_entries(id) ON DELETE CASCADE,
                     pid INTEGER NOT NULL CHECK(pid > 0),
@@ -1600,10 +1787,8 @@ impl ReplayCacheDatabase {
                     unit_name TEXT NOT NULL,
                     created_kind TEXT NOT NULL CHECK(created_kind IN ('count', 'hidden')),
                     created_count INTEGER,
-                    created_hidden TEXT,
                     lost_kind TEXT NOT NULL CHECK(lost_kind IN ('count', 'hidden')),
                     lost_count INTEGER,
-                    lost_hidden TEXT,
                     kills INTEGER NOT NULL,
                     fraction REAL NOT NULL,
                     PRIMARY KEY (replay_id, unit_name)
@@ -1619,8 +1804,105 @@ impl ReplayCacheDatabase {
                     killed_values TEXT NOT NULL CHECK(json_valid(killed_values)),
                     PRIMARY KEY (replay_id, pid)
                 );
+                ",
+            )
+            .map_err(|source| ReplayCacheDbError::Sqlite {
+                path: db_path.to_path_buf(),
+                source,
+            })
+    }
 
-                PRAGMA user_version = 1;
+    fn set_current_schema_version(
+        connection: &mut Connection,
+        db_path: &Path,
+    ) -> Result<(), ReplayCacheDbError> {
+        connection
+            .pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
+            .map_err(|source| ReplayCacheDbError::Sqlite {
+                path: db_path.to_path_buf(),
+                source,
+            })
+    }
+
+    fn remove_obsolete_schema_parts(
+        connection: &mut Connection,
+        db_path: &Path,
+    ) -> Result<(), ReplayCacheDbError> {
+        Self::drop_column_if_present(
+            connection,
+            db_path,
+            "replay_cache_amon_units",
+            "created_hidden",
+        )?;
+        Self::drop_column_if_present(
+            connection,
+            db_path,
+            "replay_cache_amon_units",
+            "lost_hidden",
+        )?;
+        Self::drop_column_if_present(
+            connection,
+            db_path,
+            "replay_cache_stats_players",
+            "player_handle",
+        )?;
+        Self::drop_column_if_present(
+            connection,
+            db_path,
+            "replay_cache_stats_players",
+            "player_kills",
+        )?;
+        Self::drop_column_if_present(
+            connection,
+            db_path,
+            "replay_cache_stats_player_units",
+            "player_handle",
+        )?;
+        Ok(())
+    }
+
+    fn drop_column_if_present(
+        connection: &mut Connection,
+        db_path: &Path,
+        table_name: &'static str,
+        column_name: &'static str,
+    ) -> Result<(), ReplayCacheDbError> {
+        let column_exists = connection
+            .query_row(
+                "SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2 LIMIT 1",
+                [table_name, column_name],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(|source| ReplayCacheDbError::Sqlite {
+                path: db_path.to_path_buf(),
+                source,
+            })?
+            .is_some();
+        if !column_exists {
+            return Ok(());
+        }
+
+        let sql = format!("ALTER TABLE {table_name} DROP COLUMN {column_name};");
+        connection
+            .execute_batch(&sql)
+            .map_err(|source| ReplayCacheDbError::Sqlite {
+                path: db_path.to_path_buf(),
+                source,
+            })?;
+        Ok(())
+    }
+
+    fn drop_obsolete_indexes(
+        connection: &mut Connection,
+        db_path: &Path,
+    ) -> Result<(), ReplayCacheDbError> {
+        connection
+            .execute_batch(
+                "
+                DROP INDEX IF EXISTS idx_replay_cache_stats_players_handle;
+                DROP INDEX IF EXISTS idx_replay_cache_stats_player_units_unit;
+                DROP INDEX IF EXISTS idx_replay_cache_amon_units_unit;
                 ",
             )
             .map_err(|source| ReplayCacheDbError::Sqlite {
@@ -1672,8 +1954,16 @@ impl ReplayCacheDatabase {
                     ON replay_cache_weeklies(map_name, brutal_plus);
                 CREATE INDEX IF NOT EXISTS idx_replay_cache_player_units_unit
                     ON replay_cache_player_units(unit_name, replay_id);
-                CREATE INDEX IF NOT EXISTS idx_replay_cache_amon_units_unit
-                    ON replay_cache_amon_units(unit_name, replay_id);
+                CREATE INDEX IF NOT EXISTS idx_replay_cache_amon_units_rollup
+                    ON replay_cache_amon_units(
+                        unit_name,
+                        replay_id,
+                        created_kind,
+                        created_count,
+                        lost_kind,
+                        lost_count,
+                        kills
+                    );
                 CREATE INDEX IF NOT EXISTS idx_replay_cache_unsaved_replay_checks_hash_time
                     ON replay_cache_unsaved_replay_checks(hash, file_modified_seconds);
                 ",
@@ -1682,6 +1972,112 @@ impl ReplayCacheDatabase {
                 path: db_path.to_path_buf(),
                 source,
             })?;
+        Ok(())
+    }
+
+    fn backfill_statistics_fact_tables_if_needed(&self) -> Result<(), ReplayCacheDbError> {
+        let should_backfill = self
+            .connection
+            .query_row(
+                "
+                SELECT
+                    EXISTS(SELECT 1 FROM replay_cache_entries LIMIT 1)
+                    AND (
+                        NOT EXISTS(SELECT 1 FROM replay_cache_stats_players LIMIT 1)
+                        OR NOT EXISTS(SELECT 1 FROM replay_cache_stats_player_units LIMIT 1)
+                    )
+                ",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|source| self.sqlite_error(source))?;
+        if should_backfill == 0 {
+            return Ok(());
+        }
+
+        let started_at = Instant::now();
+        let commander_sql = ReplayCacheStatsFactOps::normalized_commander_sql("p.commander");
+        let handle_key_sql = ReplayCacheStatsFactOps::normalized_handle_key_sql("p.player_handle");
+        let sql = format!(
+            "
+            INSERT OR IGNORE INTO replay_cache_stats_players (
+                replay_id,
+                pid,
+                player_handle_key,
+                commander
+            )
+            SELECT
+                replay_id,
+                pid,
+                player_handle_key,
+                commander
+            FROM (
+                SELECT
+                    p.replay_id,
+                    p.pid,
+                    {handle_key_sql} AS player_handle_key,
+                    {commander_sql} AS commander
+                FROM replay_cache_players p
+                WHERE p.pid IN (1, 2)
+                    AND TRIM(COALESCE(p.commander, '')) <> ''
+            ) players
+            WHERE commander <> '';
+
+            INSERT OR IGNORE INTO replay_cache_stats_player_units (
+                replay_id,
+                pid,
+                player_handle_key,
+                commander,
+                player_kills,
+                unit_name,
+                created_hidden,
+                created_count,
+                lost_hidden,
+                lost_count,
+                kills
+            )
+            SELECT
+                units.replay_id,
+                units.pid,
+                players.player_handle_key,
+                players.commander,
+                players.player_kills,
+                units.unit_name,
+                CASE WHEN units.created_kind = 'hidden' THEN 1 ELSE 0 END AS created_hidden,
+                CASE
+                    WHEN units.created_kind = 'hidden' THEN 0
+                    ELSE COALESCE(units.created_count, 0)
+                END AS created_count,
+                CASE WHEN units.lost_kind = 'hidden' THEN 1 ELSE 0 END AS lost_hidden,
+                CASE
+                    WHEN units.lost_kind = 'hidden' THEN 0
+                    ELSE COALESCE(units.lost_count, 0)
+                END AS lost_count,
+                COALESCE(units.kills, 0) AS kills
+            FROM replay_cache_player_units units
+            INNER JOIN (
+                SELECT
+                    p.replay_id,
+                    p.pid,
+                    {handle_key_sql} AS player_handle_key,
+                    {commander_sql} AS commander,
+                    COALESCE(p.kills, 0) AS player_kills
+                FROM replay_cache_players p
+                WHERE p.pid IN (1, 2)
+                    AND TRIM(COALESCE(p.commander, '')) <> ''
+            ) players
+                ON players.replay_id = units.replay_id
+                AND players.pid = units.pid
+            WHERE players.commander <> '';
+            "
+        );
+        self.connection
+            .execute_batch(&sql)
+            .map_err(|source| self.sqlite_error(source))?;
+        crate::sco_log!(
+            "[SCO/cache-db] statistics fact table backfill elapsed={}ms",
+            started_at.elapsed().as_millis()
+        );
         Ok(())
     }
 
@@ -1867,30 +2263,9 @@ impl ReplayCacheDatabase {
         }
     }
 
-    pub fn count_value_columns_with_hidden(
-        value: &CacheCountValue,
-    ) -> (&'static str, Option<i64>, Option<String>) {
-        match value {
-            CacheCountValue::Count(value) => ("count", Some(*value), None),
-            CacheCountValue::Hidden(value) => ("hidden", None, Some(value.clone())),
-        }
-    }
-
     pub fn count_value_from_kind_and_count(kind: String, count: Option<i64>) -> CacheCountValue {
         if kind == "hidden" {
             CacheCountValue::Hidden("-".to_string())
-        } else {
-            CacheCountValue::Count(count.unwrap_or_default())
-        }
-    }
-
-    pub fn count_value_from_columns(
-        kind: String,
-        count: Option<i64>,
-        hidden: Option<String>,
-    ) -> CacheCountValue {
-        if kind == "hidden" {
-            CacheCountValue::Hidden(hidden.unwrap_or_default())
         } else {
             CacheCountValue::Count(count.unwrap_or_default())
         }

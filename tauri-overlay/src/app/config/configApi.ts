@@ -15,10 +15,35 @@ import type { JsonObject } from "./types";
 import type { GamesPageRequest } from "./tabs/GamesTab";
 import type { PlayersPageRequest } from "./tabs/PlayersTab";
 
+type ConfigInvokeTimingValue = string | number | boolean | null;
+
+function nowMs(): number {
+    return performance.now();
+}
+
+function timingContext(
+    args: JsonObject,
+): Record<string, ConfigInvokeTimingValue> {
+    const query = typeof args.query === "string" ? args.query : "";
+    const action = typeof args.action === "string" ? args.action : "";
+    return {
+        queryLength: query.length,
+        hasQuery: query.length > 0,
+        action: action || null,
+    };
+}
+
 async function invokeConfigCommand<
     T extends { status?: string; message?: string },
 >(command: string, args: JsonObject = {}): Promise<T> {
+    const startedAt = nowMs();
     const payload = await invoke<T>(command, args);
+    console.log("[SCO/ui/e2e/invoke]", {
+        stage: "tauri_invoke",
+        command,
+        elapsedMs: nowMs() - startedAt,
+        ...timingContext(args),
+    });
     if (!payload) {
         throw new Error(`Request failed (${command})`);
     }

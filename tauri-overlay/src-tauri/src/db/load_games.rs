@@ -782,8 +782,8 @@ impl ReplayCacheDatabase {
                 .join(", ");
             let sql = format!(
                 "
-                SELECT replay_id, unit_name, created_kind, created_count, created_hidden,
-                    lost_kind, lost_count, lost_hidden, kills, fraction
+                SELECT replay_id, unit_name, created_kind, created_count,
+                    lost_kind, lost_count, kills, fraction
                 FROM replay_cache_amon_units
                 WHERE replay_id IN ({placeholders})
                 ORDER BY replay_id ASC, unit_name ASC
@@ -800,12 +800,10 @@ impl ReplayCacheDatabase {
                         row.get::<_, String>(1)?,
                         row.get::<_, String>(2)?,
                         row.get::<_, Option<i64>>(3)?,
-                        row.get::<_, Option<String>>(4)?,
-                        row.get::<_, String>(5)?,
-                        row.get::<_, Option<i64>>(6)?,
-                        row.get::<_, Option<String>>(7)?,
-                        row.get::<_, i64>(8)?,
-                        row.get::<_, f64>(9)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, Option<i64>>(5)?,
+                        row.get::<_, i64>(6)?,
+                        row.get::<_, f64>(7)?,
                     ))
                 })
                 .map_err(|source| self.sqlite_error(source))?;
@@ -815,18 +813,16 @@ impl ReplayCacheDatabase {
                     unit_name,
                     created_kind,
                     created_count,
-                    created_hidden,
                     lost_kind,
                     lost_count,
-                    lost_hidden,
                     kills,
                     fraction,
                 ) = row.map_err(|source| self.sqlite_error(source))?;
                 units_by_replay_id.entry(replay_id).or_default().insert(
                     unit_name,
                     CacheUnitStats(
-                        Self::count_value_from_columns(created_kind, created_count, created_hidden),
-                        Self::count_value_from_columns(lost_kind, lost_count, lost_hidden),
+                        Self::count_value_from_kind_and_count(created_kind, created_count),
+                        Self::count_value_from_kind_and_count(lost_kind, lost_count),
                         kills,
                         fraction,
                     ),

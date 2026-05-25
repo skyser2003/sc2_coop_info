@@ -5,26 +5,99 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     CachePlayerStatsSeries, CacheUnitStats, ReplayMessage,
 };
 use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path;
+use std::time::Instant;
 
 use crate::replay_analysis::{ReplayAnalysis, ReplayAnalysisOps};
 use crate::shared_types::LocalizedLabels;
 use crate::stats_aggregation::{
     StatsAggregateAnalysisPayload, StatsAggregateDifficultyDataRow,
     StatsAggregateFastestMapDetails, StatsAggregateMapDataRow, StatsAggregatePlayerDataRow,
-    StatsAggregateRegionDataRow, StatsAggregationOps, StatsAmonUnitSnapshot,
+    StatsAggregateRegionDataRow, StatsAggregateUnitDataPayload, StatsAggregationOps,
     StatsCommanderAggregate, StatsCommanderDataInput, StatsCommanderPlayerRecord,
     StatsCommanderTotals, StatsMapAggregate, StatsPlayerAggregate, StatsPlayerRecord,
-    StatsPlayerSnapshot, StatsPlayerUnitSnapshot, StatsRegionAggregate, StatsReplaySnapshot,
-    StatsResultSummary, StatsWinLossAggregate,
+    StatsPlayerSnapshot, StatsRegionAggregate, StatsReplaySnapshot, StatsResultSummary,
+    StatsWinLossAggregate,
 };
+use crate::stats_units::StatsUnitDataOps;
+use crate::{CommanderUnitRollup, UnitStatsRollup};
 
 struct ReplayCacheStatisticsLoadOps;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StatisticsUnitSide {
+    Main,
+    Ally,
+}
+
+impl StatisticsUnitSide {
+    fn from_is_main(value: i64) -> Self {
+        if value != 0 { Self::Main } else { Self::Ally }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct StatisticsPlayerUnitFactRow {
+    unit_name: String,
+    created_hidden: bool,
+    created_count: i64,
+    lost_hidden: bool,
+    lost_count: i64,
+    kills: i64,
+}
+
+impl StatisticsPlayerUnitFactRow {
+    fn new(
+        unit_name: String,
+        created_hidden: bool,
+        created_count: i64,
+        lost_hidden: bool,
+        lost_count: i64,
+        kills: i64,
+    ) -> Self {
+        Self {
+            unit_name,
+            created_hidden,
+            created_count,
+            lost_hidden,
+            lost_count,
+            kills,
+        }
+    }
+
+    fn unit_name(&self) -> &str {
+        &self.unit_name
+    }
+
+    fn created_hidden(&self) -> bool {
+        self.created_hidden
+    }
+
+    fn created_count(&self) -> i64 {
+        self.created_count
+    }
+
+    fn lost_hidden(&self) -> bool {
+        self.lost_hidden
+    }
+
+    fn lost_count(&self) -> i64 {
+        self.lost_count
+    }
+
+    fn kills(&self) -> i64 {
+        self.kills
+    }
+}
+
 impl ReplayCacheStatisticsLoadOps {
+    fn elapsed_ms(started_at: Instant) -> f64 {
+        started_at.elapsed().as_secs_f64() * 1000.0
+    }
+
     fn to_value<T: Serialize>(value: &T) -> Value {
         serde_json::to_value(value).unwrap_or_else(|_| Value::Object(Default::default()))
     }
@@ -75,32 +148,7 @@ impl ReplayCacheStatisticsLoadOps {
     }
 
     fn normalized_commander_name(commander: &str) -> String {
-        let trimmed = commander.trim();
-        if trimmed.is_empty() {
-            return String::new();
-        }
-        match trimmed.to_ascii_lowercase().as_str() {
-            "abathur" => "Abathur",
-            "alarak" => "Alarak",
-            "artanis" => "Artanis",
-            "dehaka" => "Dehaka",
-            "fenix" => "Fenix",
-            "han & horner" | "han and horner" | "hanhorner" => "Han & Horner",
-            "karax" => "Karax",
-            "kerrigan" => "Kerrigan",
-            "mengsk" | "arcturus mengsk" => "Mengsk",
-            "nova" => "Nova",
-            "raynor" => "Raynor",
-            "stukov" => "Stukov",
-            "swann" => "Swann",
-            "tychus" => "Tychus",
-            "vorazun" => "Vorazun",
-            "zagara" => "Zagara",
-            "zeratul" => "Zeratul",
-            "stetmann" => "Stetmann",
-            _ => trimmed,
-        }
-        .to_string()
+        ReplayCacheStatsFactOps::normalized_commander_name(commander)
     }
 
     fn result_is_victory(result: &str) -> Option<bool> {
@@ -150,41 +198,6 @@ impl ReplayCacheStatisticsLoadOps {
     }
 }
 
-#[derive(Deserialize)]
-struct StatsPlayerUnitJsonRow(i64, String, String, Option<i64>, String, Option<i64>, i64);
-
-impl StatsPlayerUnitJsonRow {
-    fn into_snapshot(self) -> StatsPlayerUnitSnapshot {
-        let Self(pid, unit_name, created_kind, created_count, lost_kind, lost_count, kills) = self;
-        StatsPlayerUnitSnapshot {
-            pid: ReplayCacheEntryRecord::i64_to_u32(pid) as u8,
-            unit_name,
-            created_hidden: created_kind == "hidden",
-            created_count: created_count.unwrap_or_default(),
-            lost_hidden: lost_kind == "hidden",
-            lost_count: lost_count.unwrap_or_default(),
-            kills: ReplayCacheEntryRecord::i64_to_u64(kills),
-        }
-    }
-}
-
-#[derive(Deserialize)]
-struct StatsAmonUnitJsonRow(String, String, Option<i64>, String, Option<i64>, i64);
-
-impl StatsAmonUnitJsonRow {
-    fn into_snapshot(self) -> StatsAmonUnitSnapshot {
-        let Self(unit_name, created_kind, created_count, lost_kind, lost_count, kills) = self;
-        StatsAmonUnitSnapshot {
-            unit_name,
-            created_hidden: created_kind == "hidden",
-            created_count: created_count.unwrap_or_default(),
-            lost_hidden: lost_kind == "hidden",
-            lost_count: lost_count.unwrap_or_default(),
-            kills,
-        }
-    }
-}
-
 impl ReplayCacheDatabase {
     fn sqlite_row<T>(&self, result: Result<T, rusqlite::Error>) -> Result<T, ReplayCacheDbError> {
         result.map_err(|source| self.sqlite_error(source))
@@ -197,10 +210,30 @@ impl ReplayCacheDatabase {
         main_handles: &HashSet<String>,
         dictionary: &Sc2DictionaryData,
     ) -> Result<ReplayCacheStatisticsPayload, ReplayCacheDbError> {
+        let total_started_at = Instant::now();
+        let snapshots_started_at = Instant::now();
         let mut snapshots = self.load_stats_replay_snapshots(query, main_names, main_handles)?;
+        let snapshot_count = snapshots.len();
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=snapshot_query scope={:?} rows={} elapsed_ms={:.3}",
+            query.scope(),
+            snapshot_count,
+            ReplayCacheStatisticsLoadOps::elapsed_ms(snapshots_started_at)
+        );
+
+        let query_filter_started_at = Instant::now();
         snapshots.retain(|snapshot| {
             Self::stats_snapshot_matches_query(snapshot, query, main_handles, dictionary)
         });
+        let matched_count = snapshots.len();
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=rust_filter rows_in={} rows_out={} elapsed_ms={:.3}",
+            snapshot_count,
+            matched_count,
+            ReplayCacheStatisticsLoadOps::elapsed_ms(query_filter_started_at)
+        );
+
+        let detail_filter_started_at = Instant::now();
         let include_detailed = if query.scope() == ReplayCacheReadScope::DetailedOnly {
             true
         } else {
@@ -209,6 +242,15 @@ impl ReplayCacheDatabase {
         if include_detailed {
             snapshots.retain(|snapshot| snapshot.detailed_analysis);
         }
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=detailed_filter include_detailed={} rows_in={} rows_out={} elapsed_ms={:.3}",
+            include_detailed,
+            matched_count,
+            snapshots.len(),
+            ReplayCacheStatisticsLoadOps::elapsed_ms(detail_filter_started_at)
+        );
+
+        let aggregate_started_at = Instant::now();
         let payload = self.statistics_payload_from_snapshots(
             snapshots,
             include_detailed,
@@ -216,6 +258,16 @@ impl ReplayCacheDatabase {
             main_handles,
             dictionary,
         )?;
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=payload_aggregate games={} elapsed_ms={:.3}",
+            payload.games(),
+            ReplayCacheStatisticsLoadOps::elapsed_ms(aggregate_started_at)
+        );
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=load_statistics_payload_total games={} elapsed_ms={:.3}",
+            payload.games(),
+            ReplayCacheStatisticsLoadOps::elapsed_ms(total_started_at)
+        );
         Ok(payload)
     }
 
@@ -325,36 +377,7 @@ impl ReplayCacheDatabase {
                 COALESCE(p2.commander_level, 0) AS p2_commander_level,
                 COALESCE(p2.commander_mastery_level, 0) AS p2_mastery_level,
                 COALESCE(p2.prestige, 0) AS p2_prestige,
-                COALESCE(p2.mastery_values, '[]') AS p2_masteries,
-                COALESCE((
-                    SELECT json_group_array(
-                        json_array(
-                            u.pid,
-                            u.unit_name,
-                            u.created_kind,
-                            u.created_count,
-                            u.lost_kind,
-                            u.lost_count,
-                            u.kills
-                        )
-                    )
-                    FROM replay_cache_player_units u
-                    WHERE u.replay_id = e.id
-                ), '[]') AS player_unit_rows,
-                COALESCE((
-                    SELECT json_group_array(
-                        json_array(
-                            a.unit_name,
-                            a.created_kind,
-                            a.created_count,
-                            a.lost_kind,
-                            a.lost_count,
-                            a.kills
-                        )
-                    )
-                    FROM replay_cache_amon_units a
-                    WHERE a.replay_id = e.id
-                ), '[]') AS amon_unit_rows
+                COALESCE(p2.mastery_values, '[]') AS p2_masteries
             FROM replay_cache_entries e
             LEFT JOIN replay_cache_players p1 ON p1.replay_id = e.id AND p1.pid = 1
             LEFT JOIN replay_cache_players p2 ON p2.replay_id = e.id AND p2.pid = 2
@@ -375,9 +398,8 @@ impl ReplayCacheDatabase {
             let p2 = self.sqlite_row(Self::stats_player_from_row(row, 22))?;
             let file = self.sqlite_row(row.get::<_, String>(1))?;
             let (main, ally) = Self::orient_stats_players(&file, p1, p2, main_names, main_handles);
-            let player_units = self.sqlite_row(row.get::<_, String>(32))?;
-            let amon_units = self.sqlite_row(row.get::<_, String>(33))?;
             snapshots.push(StatsReplaySnapshot {
+                replay_id: self.sqlite_row(row.get(0))?,
                 file,
                 map_name: self.sqlite_row(row.get(2))?,
                 result: self.sqlite_row(row.get(3))?,
@@ -397,41 +419,9 @@ impl ReplayCacheDatabase {
                 ),
                 main,
                 ally,
-                player_units: Self::stats_player_units_from_json(&player_units)?,
-                amon_units: Self::stats_amon_units_from_json(&amon_units)?,
             });
         }
         Ok(snapshots)
-    }
-
-    fn stats_player_units_from_json(
-        text: &str,
-    ) -> Result<Vec<StatsPlayerUnitSnapshot>, ReplayCacheDbError> {
-        let rows = serde_json::from_str::<Vec<StatsPlayerUnitJsonRow>>(text).map_err(|source| {
-            ReplayCacheDbError::JsonArray {
-                context: "stats player unit rows",
-                source,
-            }
-        })?;
-        Ok(rows
-            .into_iter()
-            .map(StatsPlayerUnitJsonRow::into_snapshot)
-            .collect())
-    }
-
-    fn stats_amon_units_from_json(
-        text: &str,
-    ) -> Result<Vec<StatsAmonUnitSnapshot>, ReplayCacheDbError> {
-        let rows = serde_json::from_str::<Vec<StatsAmonUnitJsonRow>>(text).map_err(|source| {
-            ReplayCacheDbError::JsonArray {
-                context: "stats amon unit rows",
-                source,
-            }
-        })?;
-        Ok(rows
-            .into_iter()
-            .map(StatsAmonUnitJsonRow::into_snapshot)
-            .collect())
     }
 
     fn stats_player_from_row(
@@ -440,7 +430,6 @@ impl ReplayCacheDatabase {
     ) -> Result<StatsPlayerSnapshot, rusqlite::Error> {
         let mastery_values = row.get::<_, String>(offset + 9)?;
         Ok(StatsPlayerSnapshot {
-            pid: ReplayCacheEntryRecord::i64_to_u32(row.get::<_, i64>(offset)?) as u8,
             name: row.get(offset + 1)?,
             handle: row.get(offset + 2)?,
             commander: row.get(offset + 3)?,
@@ -648,6 +637,9 @@ impl ReplayCacheDatabase {
         main_handles: &HashSet<String>,
         dictionary: &Sc2DictionaryData,
     ) -> Result<ReplayCacheStatisticsPayload, ReplayCacheDbError> {
+        let total_started_at = Instant::now();
+        let aggregate_started_at = Instant::now();
+        let snapshot_count = snapshots.len();
         let mut map_values = BTreeMap::<String, StatsMapAggregate>::new();
         let mut main_commander = BTreeMap::<String, StatsCommanderAggregate>::new();
         let mut ally_commander = BTreeMap::<String, StatsCommanderAggregate>::new();
@@ -847,6 +839,15 @@ impl ReplayCacheDatabase {
             .iter()
             .filter(|snapshot| snapshot.detailed_analysis)
             .count() as u64;
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=aggregate_snapshots rows_in={} valid={} detailed={} elapsed_ms={:.3}",
+            snapshot_count,
+            total_games,
+            detailed_parsed_count,
+            ReplayCacheStatisticsLoadOps::elapsed_ms(aggregate_started_at)
+        );
+
+        let map_started_at = Instant::now();
         let mut map_data = Map::new();
         for (map_id, aggregate) in map_values {
             let map_name = dictionary
@@ -880,9 +881,20 @@ impl ReplayCacheDatabase {
                 )),
             );
         }
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=map_data rows={} elapsed_ms={:.3}",
+            map_data.len(),
+            ReplayCacheStatisticsLoadOps::elapsed_ms(map_started_at)
+        );
 
+        let commander_started_at = Instant::now();
         let commander_data = StatsAggregationOps::build_commander_data(
             StatsCommanderDataInput::new(&main_commander, total_games, &sum_main, None),
+        );
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=commander_data rows={} elapsed_ms={:.3}",
+            commander_data.len(),
+            ReplayCacheStatisticsLoadOps::elapsed_ms(commander_started_at)
         );
         let main_frequency = main_commander
             .iter()
@@ -894,6 +906,7 @@ impl ReplayCacheDatabase {
                 )
             })
             .collect::<HashMap<_, _>>();
+        let ally_commander_started_at = Instant::now();
         let ally_commander_data =
             StatsAggregationOps::build_commander_data(StatsCommanderDataInput::new(
                 &ally_commander,
@@ -901,7 +914,13 @@ impl ReplayCacheDatabase {
                 &sum_ally,
                 Some(&main_frequency),
             ));
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=ally_commander_data rows={} elapsed_ms={:.3}",
+            ally_commander_data.len(),
+            ReplayCacheStatisticsLoadOps::elapsed_ms(ally_commander_started_at)
+        );
 
+        let difficulty_started_at = Instant::now();
         let difficulty_data = difficulty_values
             .into_iter()
             .map(|(difficulty, aggregate)| {
@@ -918,7 +937,13 @@ impl ReplayCacheDatabase {
                 )
             })
             .collect::<Map<String, Value>>();
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=difficulty_data rows={} elapsed_ms={:.3}",
+            difficulty_data.len(),
+            ReplayCacheStatisticsLoadOps::elapsed_ms(difficulty_started_at)
+        );
 
+        let region_started_at = Instant::now();
         let region_data = region_values
             .into_iter()
             .map(|(region, aggregate)| {
@@ -944,7 +969,13 @@ impl ReplayCacheDatabase {
                 )
             })
             .collect::<Map<String, Value>>();
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=region_data rows={} elapsed_ms={:.3}",
+            region_data.len(),
+            ReplayCacheStatisticsLoadOps::elapsed_ms(region_started_at)
+        );
 
+        let player_started_at = Instant::now();
         let player_data = player_values
             .into_iter()
             .map(|(name, aggregate)| {
@@ -967,13 +998,29 @@ impl ReplayCacheDatabase {
                 )
             })
             .collect::<Map<String, Value>>();
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=player_data rows={} elapsed_ms={:.3}",
+            player_data.len(),
+            ReplayCacheStatisticsLoadOps::elapsed_ms(player_started_at)
+        );
 
+        let unit_started_at = Instant::now();
         let unit_data = if include_detailed {
-            Self::load_statistics_unit_data(&valid_snapshots, main_handles, dictionary)
+            let replay_ids = valid_snapshots
+                .iter()
+                .map(|snapshot| snapshot.replay_id)
+                .collect::<Vec<_>>();
+            self.load_statistics_unit_data_from_facts(&replay_ids, main_handles, dictionary)?
         } else {
             Value::Null
         };
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=unit_data include_detailed={} elapsed_ms={:.3}",
+            include_detailed,
+            ReplayCacheStatisticsLoadOps::elapsed_ms(unit_started_at)
+        );
 
+        let serialize_started_at = Instant::now();
         let analysis = ReplayCacheStatisticsLoadOps::to_value(
             &StatsAggregateAnalysisPayload::new_ready_map_data(
                 map_data,
@@ -998,8 +1045,12 @@ impl ReplayCacheDatabase {
                 )
             })
             .collect::<BTreeMap<_, _>>();
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=payload_serialize elapsed_ms={:.3}",
+            ReplayCacheStatisticsLoadOps::elapsed_ms(serialize_started_at)
+        );
 
-        Ok(ReplayCacheStatisticsPayload::new(
+        let payload = ReplayCacheStatisticsPayload::new(
             analysis,
             prestige_names,
             total_games,
@@ -1007,7 +1058,13 @@ impl ReplayCacheDatabase {
             total_games,
             main_players.into_iter().collect(),
             main_player_handles.into_iter().collect(),
-        ))
+        );
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=statistics_payload_from_snapshots_total games={} elapsed_ms={:.3}",
+            payload.games(),
+            ReplayCacheStatisticsLoadOps::elapsed_ms(total_started_at)
+        );
+        Ok(payload)
     }
 
     fn stats_player_is_main(
@@ -1135,20 +1192,413 @@ impl ReplayCacheDatabase {
         }
     }
 
-    fn load_statistics_unit_data(
-        snapshots: &[StatsReplaySnapshot],
+    fn load_statistics_unit_data_from_facts(
+        &self,
+        replay_ids: &[i64],
         main_handles: &HashSet<String>,
         dictionary: &Sc2DictionaryData,
-    ) -> Value {
-        let replays = snapshots
-            .iter()
-            .map(StatsReplaySnapshot::to_replay_info)
-            .collect::<Vec<_>>();
-        ReplayAnalysisOps::build_unit_data_from_replays_with_dictionary(
-            &replays,
-            main_handles,
-            dictionary,
-        )
+    ) -> Result<Value, ReplayCacheDbError> {
+        let total_started_at = Instant::now();
+        let temp_started_at = Instant::now();
+        self.prepare_statistics_unit_temp_tables(replay_ids, main_handles)?;
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=unit_temp_tables replay_ids={} main_handles={} elapsed_ms={:.3}",
+            replay_ids.len(),
+            main_handles.len(),
+            ReplayCacheStatisticsLoadOps::elapsed_ms(temp_started_at)
+        );
+
+        let mut main_rollup = BTreeMap::<String, CommanderUnitRollup>::new();
+        let mut ally_rollup = BTreeMap::<String, CommanderUnitRollup>::new();
+        let player_count_started_at = Instant::now();
+        self.load_statistics_unit_player_counts(&mut main_rollup, &mut ally_rollup)?;
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=unit_player_counts main_commanders={} ally_commanders={} elapsed_ms={:.3}",
+            main_rollup.len(),
+            ally_rollup.len(),
+            ReplayCacheStatisticsLoadOps::elapsed_ms(player_count_started_at)
+        );
+
+        let player_units_started_at = Instant::now();
+        self.load_statistics_player_unit_rollup(&mut main_rollup, &mut ally_rollup, dictionary)?;
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=unit_player_rollup main_commanders={} ally_commanders={} elapsed_ms={:.3}",
+            main_rollup.len(),
+            ally_rollup.len(),
+            ReplayCacheStatisticsLoadOps::elapsed_ms(player_units_started_at)
+        );
+
+        let amon_started_at = Instant::now();
+        let amon_rollup = self.load_statistics_amon_unit_rollup()?;
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=unit_amon_rollup rows={} elapsed_ms={:.3}",
+            amon_rollup.len(),
+            ReplayCacheStatisticsLoadOps::elapsed_ms(amon_started_at)
+        );
+
+        let build_started_at = Instant::now();
+        let unit_payload =
+            ReplayCacheStatisticsLoadOps::to_value(&StatsAggregateUnitDataPayload::new(
+                StatsUnitDataOps::build_commander_unit_data_with_dictionary(
+                    main_rollup,
+                    dictionary,
+                ),
+                StatsUnitDataOps::build_commander_unit_data_with_dictionary(
+                    ally_rollup,
+                    dictionary,
+                ),
+                StatsUnitDataOps::build_amon_unit_data(amon_rollup),
+            ));
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=unit_payload_build elapsed_ms={:.3}",
+            ReplayCacheStatisticsLoadOps::elapsed_ms(build_started_at)
+        );
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=unit_data_from_facts_total elapsed_ms={:.3}",
+            ReplayCacheStatisticsLoadOps::elapsed_ms(total_started_at)
+        );
+        Ok(unit_payload)
+    }
+
+    fn prepare_statistics_unit_temp_tables(
+        &self,
+        replay_ids: &[i64],
+        main_handles: &HashSet<String>,
+    ) -> Result<(), ReplayCacheDbError> {
+        self.connection
+            .execute_batch(
+                "
+                DROP TABLE IF EXISTS temp_stats_unit_replays;
+                DROP TABLE IF EXISTS temp_stats_main_handles;
+                CREATE TEMP TABLE temp_stats_unit_replays (
+                    replay_id INTEGER PRIMARY KEY
+                );
+                CREATE TEMP TABLE temp_stats_main_handles (
+                    handle_key TEXT PRIMARY KEY
+                );
+                ",
+            )
+            .map_err(|source| self.sqlite_error(source))?;
+
+        {
+            let mut statement = self
+                .connection
+                .prepare("INSERT OR IGNORE INTO temp_stats_unit_replays (replay_id) VALUES (?1)")
+                .map_err(|source| self.sqlite_error(source))?;
+            for replay_id in replay_ids {
+                statement
+                    .execute(params![replay_id])
+                    .map_err(|source| self.sqlite_error(source))?;
+            }
+        }
+
+        let mut statement = self
+            .connection
+            .prepare("INSERT OR IGNORE INTO temp_stats_main_handles (handle_key) VALUES (?1)")
+            .map_err(|source| self.sqlite_error(source))?;
+        for handle in main_handles {
+            let handle_key = ReplayCacheStatsFactOps::normalized_handle_key(handle);
+            if !handle_key.is_empty() {
+                statement
+                    .execute(params![handle_key])
+                    .map_err(|source| self.sqlite_error(source))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn load_statistics_unit_player_counts(
+        &self,
+        main_rollup: &mut BTreeMap<String, CommanderUnitRollup>,
+        ally_rollup: &mut BTreeMap<String, CommanderUnitRollup>,
+    ) -> Result<(), ReplayCacheDbError> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "
+                SELECT
+                    CASE
+                        WHEN EXISTS (
+                            SELECT 1
+                            FROM temp_stats_main_handles main_handles
+                            WHERE main_handles.handle_key = players.player_handle_key
+                        )
+                        THEN 1
+                        ELSE 0
+                    END AS is_main,
+                    players.commander
+                FROM replay_cache_stats_players players
+                INNER JOIN temp_stats_unit_replays selected
+                    ON selected.replay_id = players.replay_id
+                ORDER BY players.replay_id ASC, players.pid ASC
+                ",
+            )
+            .map_err(|source| self.sqlite_error(source))?;
+        let mut rows = statement
+            .query([])
+            .map_err(|source| self.sqlite_error(source))?;
+        while let Some(row) = rows.next().map_err(|source| self.sqlite_error(source))? {
+            let side = StatisticsUnitSide::from_is_main(self.sqlite_row(row.get::<_, i64>(0))?);
+            let commander = self.sqlite_row(row.get::<_, String>(1))?;
+            let rollup = Self::statistics_unit_rollup_for_side(main_rollup, ally_rollup, side);
+            let entry = rollup.entry(commander).or_default();
+            entry.count = entry.count.saturating_add(1);
+        }
+        Ok(())
+    }
+
+    fn load_statistics_player_unit_rollup(
+        &self,
+        main_rollup: &mut BTreeMap<String, CommanderUnitRollup>,
+        ally_rollup: &mut BTreeMap<String, CommanderUnitRollup>,
+        dictionary: &Sc2DictionaryData,
+    ) -> Result<(), ReplayCacheDbError> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "
+                SELECT
+                    units.replay_id,
+                    units.pid,
+                    CASE
+                        WHEN EXISTS (
+                            SELECT 1
+                            FROM temp_stats_main_handles main_handles
+                            WHERE main_handles.handle_key = units.player_handle_key
+                        )
+                        THEN 1
+                        ELSE 0
+                    END AS is_main,
+                    units.commander,
+                    units.player_kills,
+                    units.unit_name,
+                    units.created_hidden,
+                    units.created_count,
+                    units.lost_hidden,
+                    units.lost_count,
+                    units.kills
+                FROM replay_cache_stats_player_units units
+                INNER JOIN temp_stats_unit_replays selected
+                    ON selected.replay_id = units.replay_id
+                ORDER BY units.replay_id ASC, units.pid ASC, units.unit_name ASC
+                ",
+            )
+            .map_err(|source| self.sqlite_error(source))?;
+        let mut rows = statement
+            .query([])
+            .map_err(|source| self.sqlite_error(source))?;
+        let mut current_key = None::<(i64, i64)>;
+        let mut current_side = StatisticsUnitSide::Ally;
+        let mut current_commander = String::new();
+        let mut current_player_kills = 0_i64;
+        let mut current_rows = Vec::<StatisticsPlayerUnitFactRow>::new();
+        let mut source_row_count = 0usize;
+        let mut player_count = 0usize;
+
+        while let Some(row) = rows.next().map_err(|source| self.sqlite_error(source))? {
+            source_row_count = source_row_count.saturating_add(1);
+            let replay_id = self.sqlite_row(row.get::<_, i64>(0))?;
+            let pid = self.sqlite_row(row.get::<_, i64>(1))?;
+            let key = (replay_id, pid);
+            if current_key.is_some_and(|existing| existing != key) {
+                Self::record_statistics_player_unit_facts(
+                    main_rollup,
+                    ally_rollup,
+                    current_side,
+                    &current_commander,
+                    current_player_kills,
+                    &current_rows,
+                    dictionary,
+                );
+                current_rows.clear();
+            }
+            if current_key != Some(key) {
+                player_count = player_count.saturating_add(1);
+                current_key = Some(key);
+                current_side =
+                    StatisticsUnitSide::from_is_main(self.sqlite_row(row.get::<_, i64>(2))?);
+                current_commander = self.sqlite_row(row.get::<_, String>(3))?;
+                current_player_kills = self.sqlite_row(row.get::<_, i64>(4))?;
+            }
+            current_rows.push(StatisticsPlayerUnitFactRow::new(
+                self.sqlite_row(row.get::<_, String>(5))?,
+                self.sqlite_row(row.get::<_, i64>(6))? != 0,
+                self.sqlite_row(row.get::<_, i64>(7))?,
+                self.sqlite_row(row.get::<_, i64>(8))? != 0,
+                self.sqlite_row(row.get::<_, i64>(9))?,
+                self.sqlite_row(row.get::<_, i64>(10))?,
+            ));
+        }
+
+        if current_key.is_some() {
+            Self::record_statistics_player_unit_facts(
+                main_rollup,
+                ally_rollup,
+                current_side,
+                &current_commander,
+                current_player_kills,
+                &current_rows,
+                dictionary,
+            );
+        }
+        crate::sco_log!(
+            "[SCO/stats/e2e/backend] stage=unit_player_rollup_source rows={} players={}",
+            source_row_count,
+            player_count
+        );
+        Ok(())
+    }
+
+    fn load_statistics_amon_unit_rollup(
+        &self,
+    ) -> Result<BTreeMap<String, UnitStatsRollup>, ReplayCacheDbError> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "
+                SELECT
+                    units.unit_name,
+                    SUM(
+                        CASE
+                            WHEN units.created_kind = 'hidden' THEN 0
+                            ELSE COALESCE(units.created_count, 0)
+                        END
+                    ) AS created_count,
+                    SUM(
+                        CASE
+                            WHEN units.lost_kind = 'hidden' THEN 0
+                            ELSE COALESCE(units.lost_count, 0)
+                        END
+                    ) AS lost_count,
+                    SUM(units.kills) AS kills
+                FROM replay_cache_amon_units units
+                INNER JOIN temp_stats_unit_replays selected
+                    ON selected.replay_id = units.replay_id
+                GROUP BY units.unit_name
+                HAVING created_count <> 0 OR lost_count <> 0 OR kills <> 0
+                ",
+            )
+            .map_err(|source| self.sqlite_error(source))?;
+        let mut rows = statement
+            .query([])
+            .map_err(|source| self.sqlite_error(source))?;
+        let mut rollup = BTreeMap::<String, UnitStatsRollup>::new();
+        while let Some(row) = rows.next().map_err(|source| self.sqlite_error(source))? {
+            rollup.insert(
+                self.sqlite_row(row.get::<_, String>(0))?,
+                UnitStatsRollup {
+                    created: self.sqlite_row(row.get::<_, i64>(1))?,
+                    lost: self.sqlite_row(row.get::<_, i64>(2))?,
+                    kills: self.sqlite_row(row.get::<_, i64>(3))?,
+                    ..Default::default()
+                },
+            );
+        }
+        Ok(rollup)
+    }
+
+    fn record_statistics_player_unit_facts(
+        main_rollup: &mut BTreeMap<String, CommanderUnitRollup>,
+        ally_rollup: &mut BTreeMap<String, CommanderUnitRollup>,
+        side: StatisticsUnitSide,
+        commander: &str,
+        player_kills: i64,
+        rows: &[StatisticsPlayerUnitFactRow],
+        dictionary: &Sc2DictionaryData,
+    ) {
+        if commander.trim().is_empty() {
+            return;
+        }
+        let rollup = Self::statistics_unit_rollup_for_side(main_rollup, ally_rollup, side);
+        let commander_entry = rollup.entry(commander.to_string()).or_default();
+        let mc_unit = dictionary.commander_mind_control_unit(commander);
+        let mut mc_unit_bonus_kills =
+            Self::statistics_mind_control_bonus_kills(commander, mc_unit, rows);
+
+        for row in rows {
+            let is_mc_bonus_target = mc_unit == Some(row.unit_name());
+            let unit_entry = commander_entry
+                .units
+                .entry(row.unit_name().to_string())
+                .or_default();
+            Self::apply_statistics_unit_count(
+                &mut unit_entry.created,
+                &mut unit_entry.created_hidden,
+                row.created_count(),
+                row.created_hidden(),
+            );
+            Self::apply_statistics_unit_count(
+                &mut unit_entry.lost,
+                &mut unit_entry.lost_hidden,
+                row.lost_count(),
+                row.lost_hidden(),
+            );
+            unit_entry.kills = unit_entry.kills.saturating_add(row.kills());
+            if !row.created_hidden() || commander == "Tychus" {
+                unit_entry.made = unit_entry.made.saturating_add(1);
+            }
+
+            if mc_unit_bonus_kills > 0 && is_mc_bonus_target {
+                unit_entry.kills = unit_entry.kills.saturating_add(mc_unit_bonus_kills);
+                let kills_in_game = row.kills().saturating_add(mc_unit_bonus_kills);
+                if player_kills > 0 {
+                    unit_entry
+                        .kill_percentages
+                        .push(kills_in_game as f64 / player_kills as f64);
+                } else {
+                    unit_entry.kill_percentages.push(1.0);
+                }
+                mc_unit_bonus_kills = 0;
+            } else if player_kills > 0 {
+                unit_entry
+                    .kill_percentages
+                    .push(row.kills() as f64 / player_kills as f64);
+            }
+        }
+    }
+
+    fn statistics_mind_control_bonus_kills(
+        commander: &str,
+        mc_unit: Option<&str>,
+        rows: &[StatisticsPlayerUnitFactRow],
+    ) -> i64 {
+        let Some(mc_unit_name) = mc_unit else {
+            return 0;
+        };
+        if !rows.iter().any(|row| row.unit_name() == mc_unit_name) {
+            return 0;
+        }
+        rows.iter()
+            .filter(|row| {
+                (!row.created_hidden() && row.created_count() == 0)
+                    || (commander != "Fenix" && row.unit_name() == "Disruptor")
+                    || (commander != "Tychus" && row.unit_name() == "Auto-Turret")
+            })
+            .fold(0_i64, |total, row| total.saturating_add(row.kills()))
+    }
+
+    fn apply_statistics_unit_count(
+        target: &mut i64,
+        hidden_target: &mut bool,
+        count: i64,
+        hidden: bool,
+    ) {
+        if hidden {
+            *hidden_target = true;
+        } else if !*hidden_target {
+            *target = target.saturating_add(count);
+        }
+    }
+
+    fn statistics_unit_rollup_for_side<'a>(
+        main_rollup: &'a mut BTreeMap<String, CommanderUnitRollup>,
+        ally_rollup: &'a mut BTreeMap<String, CommanderUnitRollup>,
+        side: StatisticsUnitSide,
+    ) -> &'a mut BTreeMap<String, CommanderUnitRollup> {
+        match side {
+            StatisticsUnitSide::Main => main_rollup,
+            StatisticsUnitSide::Ally => ally_rollup,
+        }
     }
 
     fn stats_where_clause(query: &ReplayCacheStatsQuery) -> (String, Vec<SqlValue>) {
@@ -1538,8 +1988,8 @@ impl ReplayCacheDatabase {
             .connection
             .prepare(
                 "
-                SELECT unit_name, created_kind, created_count, created_hidden,
-                    lost_kind, lost_count, lost_hidden, kills, fraction
+                SELECT unit_name, created_kind, created_count,
+                    lost_kind, lost_count, kills, fraction
                 FROM replay_cache_amon_units
                 WHERE replay_id = ?1
                 ORDER BY unit_name ASC
@@ -1552,33 +2002,22 @@ impl ReplayCacheDatabase {
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, Option<i64>>(2)?,
-                    row.get::<_, Option<String>>(3)?,
-                    row.get::<_, String>(4)?,
-                    row.get::<_, Option<i64>>(5)?,
-                    row.get::<_, Option<String>>(6)?,
-                    row.get::<_, i64>(7)?,
-                    row.get::<_, f64>(8)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<i64>>(4)?,
+                    row.get::<_, i64>(5)?,
+                    row.get::<_, f64>(6)?,
                 ))
             })
             .map_err(|source| self.sqlite_error(source))?;
         let mut units = BTreeMap::new();
         for row in rows {
-            let (
-                unit_name,
-                created_kind,
-                created_count,
-                created_hidden,
-                lost_kind,
-                lost_count,
-                lost_hidden,
-                kills,
-                fraction,
-            ) = row.map_err(|source| self.sqlite_error(source))?;
+            let (unit_name, created_kind, created_count, lost_kind, lost_count, kills, fraction) =
+                row.map_err(|source| self.sqlite_error(source))?;
             units.insert(
                 unit_name,
                 CacheUnitStats(
-                    Self::count_value_from_columns(created_kind, created_count, created_hidden),
-                    Self::count_value_from_columns(lost_kind, lost_count, lost_hidden),
+                    Self::count_value_from_kind_and_count(created_kind, created_count),
+                    Self::count_value_from_kind_and_count(lost_kind, lost_count),
                     kills,
                     fraction,
                 ),

@@ -208,6 +208,54 @@ impl PlayerInfoAggregateRecord {
     }
 }
 
+#[derive(Clone, Debug)]
+struct StatisticsPlayerFactRecord {
+    player_handle_key: String,
+    commander: String,
+    player_kills: i64,
+}
+
+impl StatisticsPlayerFactRecord {
+    fn from_player(player: &CachePlayer) -> Option<Self> {
+        if player.pid > 2 {
+            return None;
+        }
+
+        let player_handle = ReplayCacheDatabase::player_handle(player);
+        if player_handle.is_empty() {
+            return None;
+        }
+
+        let commander = ReplayCacheStatsFactOps::normalized_commander_name(
+            player.commander.as_deref().unwrap_or_default(),
+        );
+        if commander.is_empty() {
+            return None;
+        }
+
+        Some(Self {
+            player_handle_key: ReplayCacheStatsFactOps::normalized_handle_key(&player_handle),
+            commander,
+            player_kills: player
+                .kills
+                .map(ReplayCacheEntryRecord::u64_to_i64)
+                .unwrap_or_default(),
+        })
+    }
+
+    fn player_handle_key(&self) -> &str {
+        &self.player_handle_key
+    }
+
+    fn commander(&self) -> &str {
+        &self.commander
+    }
+
+    fn player_kills(&self) -> i64 {
+        self.player_kills
+    }
+}
+
 impl ReplayCacheDatabase {
     pub fn upsert_entries_preserving_detailed(
         &mut self,
@@ -1020,8 +1068,17 @@ impl ReplayCacheDatabase {
             source,
         })?;
 
+        let statistics_fact = StatisticsPlayerFactRecord::from_player(player);
+        if let Some(fact) = statistics_fact.as_ref() {
+            Self::insert_statistics_player(tx, replay_id, player.pid, fact, db_path)?;
+        }
         if let Some(units) = player.units.as_ref() {
             Self::insert_player_units(tx, replay_id, player.pid, units, db_path)?;
+            if let Some(fact) = statistics_fact.as_ref() {
+                Self::insert_statistics_player_units(
+                    tx, replay_id, player.pid, fact, units, db_path,
+                )?;
+            }
         }
         if let Some(icons) = player.icons.as_ref() {
             Self::insert_player_icons(tx, replay_id, player.pid, icons, db_path)?;
@@ -1067,6 +1124,33 @@ impl ReplayCacheDatabase {
         Ok(())
     }
 
+    fn insert_statistics_player(
+        tx: &Transaction<'_>,
+        replay_id: i64,
+        pid: u8,
+        fact: &StatisticsPlayerFactRecord,
+        db_path: &Path,
+    ) -> Result<(), ReplayCacheDbError> {
+        tx.execute(
+            "
+            INSERT INTO replay_cache_stats_players (
+                replay_id, pid, player_handle_key, commander
+            ) VALUES (?1, ?2, ?3, ?4)
+            ",
+            params![
+                replay_id,
+                i64::from(pid),
+                fact.player_handle_key(),
+                fact.commander(),
+            ],
+        )
+        .map_err(|source| ReplayCacheDbError::Sqlite {
+            path: db_path.to_path_buf(),
+            source,
+        })?;
+        Ok(())
+    }
+
     fn insert_player_units(
         tx: &Transaction<'_>,
         replay_id: i64,
@@ -1094,6 +1178,49 @@ impl ReplayCacheDatabase {
                     lost_count,
                     unit_stats.2,
                     unit_stats.3,
+                ],
+            )
+            .map_err(|source| ReplayCacheDbError::Sqlite {
+                path: db_path.to_path_buf(),
+                source,
+            })?;
+        }
+        Ok(())
+    }
+
+    fn insert_statistics_player_units(
+        tx: &Transaction<'_>,
+        replay_id: i64,
+        pid: u8,
+        fact: &StatisticsPlayerFactRecord,
+        units: &BTreeMap<String, CacheUnitStats>,
+        db_path: &Path,
+    ) -> Result<(), ReplayCacheDbError> {
+        for (unit_name, unit_stats) in units {
+            let (created_hidden, created_count) =
+                ReplayCacheStatsFactOps::unit_count_fact_columns(&unit_stats.0);
+            let (lost_hidden, lost_count) =
+                ReplayCacheStatsFactOps::unit_count_fact_columns(&unit_stats.1);
+            tx.execute(
+                "
+                INSERT INTO replay_cache_stats_player_units (
+                    replay_id, pid, player_handle_key, commander, player_kills,
+                    unit_name, created_hidden, created_count, lost_hidden,
+                    lost_count, kills
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                ",
+                params![
+                    replay_id,
+                    i64::from(pid),
+                    fact.player_handle_key(),
+                    fact.commander(),
+                    fact.player_kills(),
+                    unit_name,
+                    created_hidden,
+                    created_count,
+                    lost_hidden,
+                    lost_count,
+                    unit_stats.2,
                 ],
             )
             .map_err(|source| ReplayCacheDbError::Sqlite {
@@ -1189,26 +1316,22 @@ impl ReplayCacheDatabase {
         db_path: &Path,
     ) -> Result<(), ReplayCacheDbError> {
         for (unit_name, unit_stats) in units {
-            let (created_kind, created_count, created_hidden) =
-                Self::count_value_columns_with_hidden(&unit_stats.0);
-            let (lost_kind, lost_count, lost_hidden) =
-                Self::count_value_columns_with_hidden(&unit_stats.1);
+            let (created_kind, created_count) = Self::count_value_columns(&unit_stats.0);
+            let (lost_kind, lost_count) = Self::count_value_columns(&unit_stats.1);
             tx.execute(
                 "
                 INSERT INTO replay_cache_amon_units (
-                    replay_id, unit_name, created_kind, created_count, created_hidden,
-                    lost_kind, lost_count, lost_hidden, kills, fraction
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                    replay_id, unit_name, created_kind, created_count,
+                    lost_kind, lost_count, kills, fraction
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                 ",
                 params![
                     replay_id,
                     unit_name,
                     created_kind,
                     created_count,
-                    created_hidden,
                     lost_kind,
                     lost_count,
-                    lost_hidden,
                     unit_stats.2,
                     unit_stats.3,
                 ],

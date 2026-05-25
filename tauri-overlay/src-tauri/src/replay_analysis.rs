@@ -1905,6 +1905,7 @@ impl ReplayAnalysis {
             considered_games += 1;
 
             let map_snapshot = StatsReplaySnapshot {
+                replay_id: 0,
                 file: replay.file.clone(),
                 map_name: replay.map.clone(),
                 result: replay.result.clone(),
@@ -1917,7 +1918,6 @@ impl ReplayAnalysis {
                 length_realtime: replay.accurate_length,
                 bonus_completed: replay.bonus.len() as u64,
                 main: StatsPlayerSnapshot {
-                    pid: 1,
                     name: replay.main().name.clone(),
                     handle: replay.main().handle.clone(),
                     commander: main_commander_name.clone(),
@@ -1929,7 +1929,6 @@ impl ReplayAnalysis {
                     masteries: replay.main_masteries().to_vec(),
                 },
                 ally: StatsPlayerSnapshot {
-                    pid: 2,
                     name: replay.ally().name.clone(),
                     handle: replay.ally().handle.clone(),
                     commander: ally_commander_name.clone(),
@@ -1940,8 +1939,6 @@ impl ReplayAnalysis {
                     prestige: replay.ally_prestige(),
                     masteries: replay.ally_masteries().to_vec(),
                 },
-                player_units: Vec::new(),
-                amon_units: Vec::new(),
             };
             map_values.entry(map_key).or_default().record_snapshot(
                 &map_snapshot,

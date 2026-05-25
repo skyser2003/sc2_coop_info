@@ -36,6 +36,15 @@ type StatsQueryState = {
     completedAt: number;
 };
 
+type StatsTimingValue = string | number | boolean | null;
+
+type PendingStatsFilterTiming = {
+    changedAt: number;
+    query: string;
+    source: string;
+    mode: StatsRefreshMode;
+};
+
 type UseConfigStatsArgs = {
     activeTab: string;
     draft: AppSettings | null;
@@ -59,6 +68,20 @@ type UseConfigStatsResult = {
     };
     statsState: StatisticsState;
 };
+
+function nowMs(): number {
+    return performance.now();
+}
+
+function logStatsE2eTiming(
+    stage: string,
+    values: Record<string, StatsTimingValue>,
+): void {
+    console.log("[SCO/ui/e2e/stats]", {
+        stage,
+        ...values,
+    });
+}
 
 function defaultStatsFilters(): StatisticsFilters {
     return {
@@ -229,11 +252,32 @@ export function useConfigStats({
         inFlight: false,
         completedAt: 0,
     });
+    const pendingStatsFilterTimingRef =
+        React.useRef<PendingStatsFilterTiming | null>(null);
     const startupAnalysisRequestedRef = React.useRef<boolean>(false);
 
     React.useEffect(() => {
         statsFiltersRef.current = statsState.filters;
     }, [statsState.filters]);
+
+    function recordPendingStatsFilterTiming(
+        source: string,
+        mode: StatsRefreshMode,
+        filters: StatisticsFilters,
+    ): void {
+        const query = statsFiltersToQuery(filters);
+        pendingStatsFilterTimingRef.current = {
+            changedAt: nowMs(),
+            query,
+            source,
+            mode,
+        };
+        logStatsE2eTiming("filter_changed", {
+            source,
+            mode,
+            queryLength: query.length,
+        });
+    }
 
     async function postStatsAction<T extends { message?: string }>(
         request: () => Promise<T>,
@@ -256,11 +300,26 @@ export function useConfigStats({
         customFilters: StatisticsFilters | null = null,
         force = false,
     ): Promise<void> {
+        const refreshStartedAt = nowMs();
         const filters = customFilters || statsState.filters;
         const query = statsFiltersToQuery(filters);
         const existingQuery = tabData.statistics && tabData.statistics.query;
         const now = Date.now();
         const completedQuery = statsQueryRef.current;
+        const pendingFilterTiming =
+            pendingStatsFilterTimingRef.current?.query === query
+                ? pendingStatsFilterTimingRef.current
+                : null;
+        logStatsE2eTiming("refresh_enter", {
+            silent,
+            force,
+            queryLength: query.length,
+            inFlight: completedQuery.inFlight,
+            triggerSource: pendingFilterTiming?.source || null,
+            triggerToRefreshMs: pendingFilterTiming
+                ? refreshStartedAt - pendingFilterTiming.changedAt
+                : null,
+        });
         console.log("[SCO/ui] refreshStatistics request", {
             silent,
             force,
@@ -281,9 +340,17 @@ export function useConfigStats({
             !completedQuery.inFlight &&
             now - completedQuery.completedAt < 3000
         ) {
+            logStatsE2eTiming("refresh_skip_cached", {
+                queryLength: query.length,
+                elapsedMs: nowMs() - refreshStartedAt,
+            });
             return;
         }
         if (completedQuery.inFlight) {
+            logStatsE2eTiming("refresh_skip_in_flight", {
+                queryLength: query.length,
+                elapsedMs: nowMs() - refreshStartedAt,
+            });
             return;
         }
 
@@ -297,21 +364,62 @@ export function useConfigStats({
 
         try {
             setIsBusy(true);
+            const invokeStartedAt = nowMs();
             const payload = await loadStatisticsRequest(query);
+            const responseAt = nowMs();
+            logStatsE2eTiming("refresh_response", {
+                requestSeq,
+                queryLength: query.length,
+                invokeMs: responseAt - invokeStartedAt,
+                refreshToResponseMs: responseAt - refreshStartedAt,
+                triggerToResponseMs: pendingFilterTiming
+                    ? responseAt - pendingFilterTiming.changedAt
+                    : null,
+                games: Number(payload.games || 0),
+            });
             console.log("[SCO/ui] refreshStatistics response", payload);
             if (
                 statsQueryRef.current.requestSeq !== requestSeq ||
                 statsQueryRef.current.activeQuery !== query
             ) {
+                logStatsE2eTiming("refresh_stale_ignored", {
+                    requestSeq,
+                    queryLength: query.length,
+                    elapsedMs: nowMs() - refreshStartedAt,
+                });
                 console.log(
                     "[SCO/ui] refreshStatistics stale response ignored",
                 );
                 return;
             }
+            const stateApplyStartedAt = nowMs();
             setTabData((current) => ({
                 ...current,
                 statistics: payload as StatisticsPayload,
             }));
+            const stateApplyEndedAt = nowMs();
+            logStatsE2eTiming("refresh_state_queued", {
+                requestSeq,
+                queryLength: query.length,
+                stateQueueMs: stateApplyEndedAt - stateApplyStartedAt,
+                refreshToStateQueuedMs: stateApplyEndedAt - refreshStartedAt,
+                responseToStateQueuedMs: stateApplyEndedAt - responseAt,
+            });
+            requestAnimationFrame(() => {
+                const frameAt = nowMs();
+                logStatsE2eTiming("refresh_next_frame", {
+                    requestSeq,
+                    queryLength: query.length,
+                    refreshToFrameMs: frameAt - refreshStartedAt,
+                    responseToFrameMs: frameAt - responseAt,
+                    triggerToFrameMs: pendingFilterTiming
+                        ? frameAt - pendingFilterTiming.changedAt
+                        : null,
+                });
+            });
+            if (pendingFilterTiming) {
+                pendingStatsFilterTimingRef.current = null;
+            }
             statsQueryRef.current = {
                 ...statsQueryRef.current,
                 inFlight: false,
@@ -322,6 +430,11 @@ export function useConfigStats({
             }
         } catch (error) {
             console.warn("[SCO/ui] refreshStatistics failed", error);
+            logStatsE2eTiming("refresh_failed", {
+                requestSeq,
+                queryLength: query.length,
+                elapsedMs: nowMs() - refreshStartedAt,
+            });
             if (statsQueryRef.current.requestSeq !== requestSeq) {
                 return;
             }
@@ -344,11 +457,21 @@ export function useConfigStats({
                     completedAt: Date.now(),
                 };
                 if (needsFollowup) {
+                    logStatsE2eTiming("refresh_followup_scheduled", {
+                        requestSeq,
+                        queryLength: query.length,
+                        elapsedMs: nowMs() - refreshStartedAt,
+                    });
                     setTimeout(() => {
                         refreshStatistics(true, statsFiltersRef.current, true);
                     }, 0);
                 } else {
                     setIsBusy(false);
+                    logStatsE2eTiming("refresh_done", {
+                        requestSeq,
+                        queryLength: query.length,
+                        elapsedMs: nowMs() - refreshStartedAt,
+                    });
                 }
             }
         }
@@ -524,6 +647,18 @@ export function useConfigStats({
         const refreshDelayMs =
             statsRefreshModeRef.current === "immediate" ? 0 : 250;
         statsRefreshModeRef.current = "debounced";
+        const pendingFilterTiming =
+            pendingStatsFilterTimingRef.current?.query === currentQuery
+                ? pendingStatsFilterTimingRef.current
+                : null;
+        logStatsE2eTiming("refresh_scheduled", {
+            queryLength: currentQuery.length,
+            delayMs: refreshDelayMs,
+            triggerSource: pendingFilterTiming?.source || null,
+            triggerToScheduleMs: pendingFilterTiming
+                ? nowMs() - pendingFilterTiming.changedAt
+                : null,
+        });
         const timer = setTimeout(() => {
             refreshStatistics(true);
         }, refreshDelayMs);
@@ -612,6 +747,7 @@ export function useConfigStats({
         };
         statsRefreshModeRef.current = "immediate";
         statsFiltersRef.current = nextFilters;
+        recordPendingStatsFilterTiming(key, "immediate", nextFilters);
         setStatsState((current) => ({
             ...current,
             filters: nextFilters,
@@ -625,6 +761,7 @@ export function useConfigStats({
         };
         statsRefreshModeRef.current = "debounced";
         statsFiltersRef.current = nextFilters;
+        recordPendingStatsFilterTiming(key, "debounced", nextFilters);
         setStatsState((current) => ({
             ...current,
             filters: nextFilters,
@@ -642,6 +779,7 @@ export function useConfigStats({
         };
         statsRefreshModeRef.current = "debounced";
         statsFiltersRef.current = nextFilters;
+        recordPendingStatsFilterTiming(key, "debounced", nextFilters);
         setStatsState((current) => ({
             ...current,
             filters: nextFilters,
@@ -658,6 +796,11 @@ export function useConfigStats({
         };
         statsRefreshModeRef.current = "immediate";
         statsFiltersRef.current = nextFilters;
+        recordPendingStatsFilterTiming(
+            `difficulty.${key}`,
+            "immediate",
+            nextFilters,
+        );
         setStatsState((current) => ({
             ...current,
             filters: nextFilters,
@@ -674,6 +817,11 @@ export function useConfigStats({
         };
         statsRefreshModeRef.current = "immediate";
         statsFiltersRef.current = nextFilters;
+        recordPendingStatsFilterTiming(
+            `region.${key}`,
+            "immediate",
+            nextFilters,
+        );
         setStatsState((current) => ({
             ...current,
             filters: nextFilters,

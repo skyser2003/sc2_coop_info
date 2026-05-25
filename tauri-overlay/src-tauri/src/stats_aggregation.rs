@@ -2,8 +2,6 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use crate::{ReplayInfo, ReplayPlayerInfo};
-
 const PRESTIGE_TRACKING_START_YMD: u32 = 20200726;
 const MASTERY_DISTRIBUTION_RATIO_SCALE: u64 = 100_000;
 
@@ -389,7 +387,6 @@ impl StatsRegionAggregate {
 
 #[derive(Clone, Debug, Default)]
 pub struct StatsPlayerSnapshot {
-    pub pid: u8,
     pub name: String,
     pub handle: String,
     pub commander: String,
@@ -402,28 +399,8 @@ pub struct StatsPlayerSnapshot {
 }
 
 #[derive(Clone, Debug)]
-pub struct StatsPlayerUnitSnapshot {
-    pub pid: u8,
-    pub unit_name: String,
-    pub created_hidden: bool,
-    pub created_count: i64,
-    pub lost_hidden: bool,
-    pub lost_count: i64,
-    pub kills: u64,
-}
-
-#[derive(Clone, Debug)]
-pub struct StatsAmonUnitSnapshot {
-    pub unit_name: String,
-    pub created_hidden: bool,
-    pub created_count: i64,
-    pub lost_hidden: bool,
-    pub lost_count: i64,
-    pub kills: i64,
-}
-
-#[derive(Clone, Debug)]
 pub struct StatsReplaySnapshot {
+    pub replay_id: i64,
     pub file: String,
     pub map_name: String,
     pub result: String,
@@ -437,8 +414,6 @@ pub struct StatsReplaySnapshot {
     pub bonus_completed: u64,
     pub main: StatsPlayerSnapshot,
     pub ally: StatsPlayerSnapshot,
-    pub player_units: Vec<StatsPlayerUnitSnapshot>,
-    pub amon_units: Vec<StatsAmonUnitSnapshot>,
 }
 
 #[derive(Default)]
@@ -703,6 +678,7 @@ impl StatsMapAggregate {
 
     pub fn fastest_or_default(&self) -> StatsReplaySnapshot {
         self.fastest.clone().unwrap_or_else(|| StatsReplaySnapshot {
+            replay_id: 0,
             file: String::new(),
             map_name: String::new(),
             result: String::new(),
@@ -716,8 +692,6 @@ impl StatsMapAggregate {
             bonus_completed: 0,
             main: StatsPlayerSnapshot::default(),
             ally: StatsPlayerSnapshot::default(),
-            player_units: Vec::new(),
-            amon_units: Vec::new(),
         })
     }
 
@@ -919,94 +893,6 @@ impl StatsAggregationOps {
 
     fn to_value<T: Serialize>(value: &T) -> Value {
         serde_json::to_value(value).unwrap_or_else(|_| Value::Object(Default::default()))
-    }
-}
-
-impl StatsReplaySnapshot {
-    pub fn to_replay_info(&self) -> ReplayInfo {
-        ReplayInfo {
-            file: self.file.clone(),
-            date: self.date_seconds,
-            map: self.map_name.clone(),
-            result: self.result.clone(),
-            difficulty: self.difficulty.clone(),
-            enemy: self.enemy_race.clone(),
-            length: if self.length_realtime.is_finite() && self.length_realtime > 0.0 {
-                self.length_realtime.floor() as u64
-            } else {
-                0
-            },
-            accurate_length: self.length_realtime,
-            slot1: self.replay_player_info(&self.main),
-            slot2: self.replay_player_info(&self.ally),
-            main_slot: 0,
-            amon_units: self.amon_units_payload(),
-            player_stats: Value::Object(Map::new()),
-            extension: self.extension,
-            brutal_plus: self.brutal_plus,
-            weekly: self.extension,
-            weekly_name: None,
-            mutators: Vec::new(),
-            comp: String::new(),
-            bonus: vec![1; usize::try_from(self.bonus_completed).unwrap_or(0)],
-            bonus_total: None,
-            messages: Vec::new(),
-            is_detailed: self.detailed_analysis,
-        }
-    }
-
-    fn replay_player_info(&self, player: &StatsPlayerSnapshot) -> ReplayPlayerInfo {
-        ReplayPlayerInfo {
-            name: player.name.clone(),
-            handle: player.handle.clone(),
-            apm: player.apm,
-            kills: player.kills,
-            commander: player.commander.clone(),
-            commander_level: player.commander_level,
-            mastery_level: player.mastery_level,
-            prestige: player.prestige,
-            masteries: player.masteries.clone(),
-            units: self.player_units_payload(player.pid),
-            icons: Value::Object(Map::new()),
-        }
-    }
-
-    fn player_units_payload(&self, pid: u8) -> Value {
-        let mut units = Map::new();
-        for unit in self.player_units.iter().filter(|unit| unit.pid == pid) {
-            units.insert(
-                unit.unit_name.clone(),
-                Value::Array(vec![
-                    Self::unit_count_value(unit.created_count, unit.created_hidden),
-                    Self::unit_count_value(unit.lost_count, unit.lost_hidden),
-                    Value::from(unit.kills),
-                ]),
-            );
-        }
-        Value::Object(units)
-    }
-
-    fn amon_units_payload(&self) -> Value {
-        let mut units = Map::new();
-        for unit in &self.amon_units {
-            units.insert(
-                unit.unit_name.clone(),
-                Value::Array(vec![
-                    Self::unit_count_value(unit.created_count, unit.created_hidden),
-                    Self::unit_count_value(unit.lost_count, unit.lost_hidden),
-                    Value::from(unit.kills),
-                ]),
-            );
-        }
-        Value::Object(units)
-    }
-
-    fn unit_count_value(value: i64, hidden: bool) -> Value {
-        if hidden {
-            Value::String("-".to_string())
-        } else {
-            Value::from(value)
-        }
     }
 }
 
