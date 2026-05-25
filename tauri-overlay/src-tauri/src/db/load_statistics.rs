@@ -1280,29 +1280,56 @@ impl ReplayCacheDatabase {
             )
             .map_err(|source| self.sqlite_error(source))?;
 
-        {
-            let mut statement = self
-                .connection
-                .prepare("INSERT OR IGNORE INTO temp_stats_unit_replays (replay_id) VALUES (?1)")
-                .map_err(|source| self.sqlite_error(source))?;
-            for replay_id in replay_ids {
-                statement
-                    .execute(params![replay_id])
-                    .map_err(|source| self.sqlite_error(source))?;
-            }
-        }
+        self.insert_statistics_unit_replay_ids(replay_ids)?;
+        self.insert_statistics_unit_main_handles(main_handles)?;
+        Ok(())
+    }
 
-        let mut statement = self
-            .connection
-            .prepare("INSERT OR IGNORE INTO temp_stats_main_handles (handle_key) VALUES (?1)")
-            .map_err(|source| self.sqlite_error(source))?;
-        for handle in main_handles {
-            let handle_key = ReplayCacheStatsFactOps::normalized_handle_key(handle);
-            if !handle_key.is_empty() {
-                statement
-                    .execute(params![handle_key])
-                    .map_err(|source| self.sqlite_error(source))?;
+    fn insert_statistics_unit_replay_ids(
+        &self,
+        replay_ids: &[i64],
+    ) -> Result<(), ReplayCacheDbError> {
+        for replay_id_batch in replay_ids.chunks(REPLAY_CACHE_QUERY_BATCH_SIZE) {
+            if replay_id_batch.is_empty() {
+                continue;
             }
+            let placeholders = std::iter::repeat_n("(?)", replay_id_batch.len())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql = format!(
+                "INSERT OR IGNORE INTO temp_stats_unit_replays (replay_id) VALUES {placeholders}"
+            );
+            self.connection
+                .execute(&sql, params_from_iter(replay_id_batch.iter().copied()))
+                .map_err(|source| self.sqlite_error(source))?;
+        }
+        Ok(())
+    }
+
+    fn insert_statistics_unit_main_handles(
+        &self,
+        main_handles: &HashSet<String>,
+    ) -> Result<(), ReplayCacheDbError> {
+        let handle_keys = main_handles
+            .iter()
+            .map(|handle| ReplayCacheStatsFactOps::normalized_handle_key(handle))
+            .filter(|handle_key| !handle_key.is_empty())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        for handle_batch in handle_keys.chunks(REPLAY_CACHE_QUERY_BATCH_SIZE) {
+            if handle_batch.is_empty() {
+                continue;
+            }
+            let placeholders = std::iter::repeat_n("(?)", handle_batch.len())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql = format!(
+                "INSERT OR IGNORE INTO temp_stats_main_handles (handle_key) VALUES {placeholders}"
+            );
+            self.connection
+                .execute(&sql, params_from_iter(handle_batch.iter()))
+                .map_err(|source| self.sqlite_error(source))?;
         }
         Ok(())
     }

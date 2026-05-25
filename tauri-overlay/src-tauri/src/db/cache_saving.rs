@@ -1,6 +1,8 @@
 use super::array_json::ReplayCacheArrayJson;
 use super::core::*;
-use rusqlite::{OptionalExtension, Row, Transaction, TransactionBehavior, params};
+use rusqlite::{
+    OptionalExtension, Row, Transaction, TransactionBehavior, params, params_from_iter,
+};
 use s2coop_analyzer::cache_overall_stats_generator::{
     CacheIconValue, CachePlayer, CachePlayerStatsSeries, CacheReplayEntry, CacheUnitStats,
     ReplayMessage,
@@ -67,21 +69,6 @@ impl PlayerInfoSourceRow {
                 replay_total_kills: ReplayCacheEntryRecord::i64_to_u64(row.get::<_, i64>(6)?),
             },
         ))
-    }
-
-    fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
-        Ok(Self {
-            result: row.get(0)?,
-            apm: row
-                .get::<_, Option<i64>>(1)?
-                .map(ReplayCacheEntryRecord::i64_to_u32),
-            commander: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
-            date_seconds: ReplayCacheEntryRecord::i64_to_u64(row.get::<_, i64>(3)?),
-            kills: row
-                .get::<_, Option<i64>>(4)?
-                .map(ReplayCacheEntryRecord::i64_to_u64),
-            replay_total_kills: ReplayCacheEntryRecord::i64_to_u64(row.get::<_, i64>(5)?),
-        })
     }
 
     fn is_win(&self) -> Option<bool> {
@@ -806,59 +793,126 @@ impl ReplayCacheDatabase {
         plan: &PlayerInfoRefreshPlan,
         db_path: &Path,
     ) -> Result<(), ReplayCacheDbError> {
+        let full_source_rows_by_handle =
+            Self::load_player_info_source_rows_by_handles(tx, plan.full_handles(), db_path)?;
         for handle in plan.full_handles() {
-            Self::refresh_player_info_full(tx, handle, db_path)?;
+            let source_rows = full_source_rows_by_handle
+                .get(handle)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            Self::refresh_player_info_full_from_rows(tx, handle, source_rows, db_path)?;
         }
-        for handle in plan.kill_ratio_only_handles() {
-            Self::refresh_player_info_kill_ratio(tx, handle, db_path)?;
+
+        let kill_ratio_handles = plan
+            .kill_ratio_only_handles()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let kill_ratio_source_rows_by_handle =
+            Self::load_player_info_source_rows_by_handles(tx, &kill_ratio_handles, db_path)?;
+        for handle in &kill_ratio_handles {
+            let source_rows = kill_ratio_source_rows_by_handle
+                .get(handle)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            Self::refresh_player_info_kill_ratio_from_rows(tx, handle, source_rows, db_path)?;
         }
         Ok(())
     }
 
-    fn load_player_info_source_rows(
+    fn load_player_info_source_rows_by_handles(
         tx: &Transaction<'_>,
-        player_handle: &str,
+        handles: &BTreeSet<String>,
         db_path: &Path,
-    ) -> Result<Vec<PlayerInfoSourceRow>, ReplayCacheDbError> {
-        let mut statement = tx
-            .prepare(
-                "
-                SELECT
-                    e.result,
-                    p.apm,
-                    p.commander,
-                    e.date_seconds,
-                    p.kills,
-                    COALESCE(kills_by_replay.total_kills, 0) AS total_kills
-                FROM replay_cache_players p
-                INNER JOIN replay_cache_entries e ON e.id = p.replay_id
-                LEFT JOIN (
-                    SELECT replay_id, SUM(COALESCE(kills, 0)) AS total_kills
-                    FROM replay_cache_players
-                    GROUP BY replay_id
-                ) kills_by_replay ON kills_by_replay.replay_id = p.replay_id
-                WHERE p.player_handle = ?1
-                ORDER BY e.date_seconds DESC, e.date_text DESC, e.file DESC, e.hash DESC
-                ",
-            )
-            .map_err(|source| ReplayCacheDbError::Sqlite {
-                path: db_path.to_path_buf(),
-                source,
-            })?;
-        let rows = statement
-            .query_map(params![player_handle], PlayerInfoSourceRow::from_row)
-            .map_err(|source| ReplayCacheDbError::Sqlite {
-                path: db_path.to_path_buf(),
-                source,
-            })?;
-        let mut source_rows = Vec::new();
-        for row in rows {
-            source_rows.push(row.map_err(|source| ReplayCacheDbError::Sqlite {
-                path: db_path.to_path_buf(),
-                source,
-            })?);
+    ) -> Result<BTreeMap<String, Vec<PlayerInfoSourceRow>>, ReplayCacheDbError> {
+        let mut source_rows_by_handle = BTreeMap::<String, Vec<PlayerInfoSourceRow>>::new();
+        if handles.is_empty() {
+            return Ok(source_rows_by_handle);
         }
-        Ok(source_rows)
+
+        let handle_values = handles.iter().collect::<Vec<_>>();
+        for handle_batch in handle_values.chunks(REPLAY_CACHE_QUERY_BATCH_SIZE) {
+            if handle_batch.is_empty() {
+                continue;
+            }
+            let placeholders = std::iter::repeat_n("?", handle_batch.len())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql = format!(
+                "
+                WITH selected_players AS (
+                    SELECT
+                        p.player_handle,
+                        p.replay_id,
+                        e.result,
+                        p.apm,
+                        p.commander,
+                        e.date_seconds,
+                        e.date_text,
+                        e.file,
+                        e.hash,
+                        p.kills
+                    FROM replay_cache_players p
+                    INNER JOIN replay_cache_entries e ON e.id = p.replay_id
+                    WHERE p.player_handle IN ({placeholders})
+                ),
+                selected_replays AS (
+                    SELECT DISTINCT replay_id
+                    FROM selected_players
+                ),
+                kills_by_replay AS (
+                    SELECT p.replay_id, SUM(COALESCE(p.kills, 0)) AS total_kills
+                    FROM replay_cache_players p
+                    INNER JOIN selected_replays selected
+                        ON selected.replay_id = p.replay_id
+                    GROUP BY p.replay_id
+                )
+                SELECT
+                    selected_players.player_handle,
+                    selected_players.result,
+                    selected_players.apm,
+                    selected_players.commander,
+                    selected_players.date_seconds,
+                    selected_players.kills,
+                    COALESCE(kills_by_replay.total_kills, 0) AS total_kills
+                FROM selected_players
+                LEFT JOIN kills_by_replay
+                    ON kills_by_replay.replay_id = selected_players.replay_id
+                ORDER BY selected_players.player_handle ASC,
+                    selected_players.date_seconds DESC,
+                    selected_players.date_text DESC,
+                    selected_players.file DESC,
+                    selected_players.hash DESC
+                "
+            );
+            let mut statement = tx
+                .prepare(&sql)
+                .map_err(|source| ReplayCacheDbError::Sqlite {
+                    path: db_path.to_path_buf(),
+                    source,
+                })?;
+            let rows = statement
+                .query_map(
+                    params_from_iter(handle_batch.iter().map(|handle| handle.as_str())),
+                    PlayerInfoSourceRow::from_row_with_handle,
+                )
+                .map_err(|source| ReplayCacheDbError::Sqlite {
+                    path: db_path.to_path_buf(),
+                    source,
+                })?;
+            for row in rows {
+                let (handle, source_row) = row.map_err(|source| ReplayCacheDbError::Sqlite {
+                    path: db_path.to_path_buf(),
+                    source,
+                })?;
+                if !handle.trim().is_empty() {
+                    source_rows_by_handle
+                        .entry(handle)
+                        .or_default()
+                        .push(source_row);
+                }
+            }
+        }
+        Ok(source_rows_by_handle)
     }
 
     fn load_all_player_info_source_rows(
@@ -917,13 +971,13 @@ impl ReplayCacheDatabase {
         Ok(source_rows_by_handle)
     }
 
-    fn refresh_player_info_full(
+    fn refresh_player_info_full_from_rows(
         tx: &Transaction<'_>,
         player_handle: &str,
+        source_rows: &[PlayerInfoSourceRow],
         db_path: &Path,
     ) -> Result<(), ReplayCacheDbError> {
-        let source_rows = Self::load_player_info_source_rows(tx, player_handle, db_path)?;
-        let Some(aggregate) = PlayerInfoAggregateRecord::from_rows(&source_rows) else {
+        let Some(aggregate) = PlayerInfoAggregateRecord::from_rows(source_rows) else {
             if source_rows.is_empty() {
                 tx.execute(
                     "DELETE FROM replay_player_infos WHERE handle = ?1",
@@ -941,14 +995,19 @@ impl ReplayCacheDatabase {
         Self::upsert_player_info_aggregate(tx, player_handle, &aggregate, db_path)
     }
 
-    fn refresh_player_info_kill_ratio(
+    fn refresh_player_info_kill_ratio_from_rows(
         tx: &Transaction<'_>,
         player_handle: &str,
+        source_rows: &[PlayerInfoSourceRow],
         db_path: &Path,
     ) -> Result<(), ReplayCacheDbError> {
-        let source_rows = Self::load_player_info_source_rows(tx, player_handle, db_path)?;
-        let Some(aggregate) = PlayerInfoAggregateRecord::from_rows(&source_rows) else {
-            return Self::refresh_player_info_full(tx, player_handle, db_path);
+        let Some(aggregate) = PlayerInfoAggregateRecord::from_rows(source_rows) else {
+            return Self::refresh_player_info_full_from_rows(
+                tx,
+                player_handle,
+                source_rows,
+                db_path,
+            );
         };
         let changed = tx
             .execute(
