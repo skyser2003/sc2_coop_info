@@ -32,7 +32,7 @@
         {
             "label": "Push to release",
             "type": "shell",
-            "command": "git rebase main release && git push --all && git switch main",
+            "command": "git rebase main release && git push origin main release && git switch main",
             "group": {
                 "kind": "build"
             },
