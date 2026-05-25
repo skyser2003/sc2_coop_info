@@ -302,6 +302,8 @@ impl OverlayReplayPayload {
                 &player_stats,
                 &sanitized.main().name,
                 &sanitized.ally().name,
+                sanitized.main_kills(),
+                sanitized.ally_kills(),
             );
         Self {
             file: sanitized.file.clone(),
@@ -373,6 +375,8 @@ impl OverlayReplayPayload {
                 &player_stats,
                 &sanitized.main().name,
                 &sanitized.ally().name,
+                sanitized.main_kills(),
+                sanitized.ally_kills(),
             );
         Self {
             file: sanitized.file.clone(),
@@ -468,15 +472,62 @@ impl OverlayInfoOps {
 }
 
 impl OverlayInfoOps {
+    fn player_series_final_kills(series: &ReplayPlayerSeries) -> Option<f64> {
+        series
+            .killed
+            .last()
+            .copied()
+            .filter(|value| value.is_finite())
+    }
+
+    fn player_series_kill_distance(series: &ReplayPlayerSeries, expected_kills: u64) -> f64 {
+        Self::player_series_final_kills(series)
+            .map(|actual_kills| (actual_kills - expected_kills as f64).abs())
+            .unwrap_or(f64::INFINITY)
+    }
+
+    fn player_stats_should_swap_for_totals(
+        main_player_stats: &ReplayPlayerSeries,
+        ally_player_stats: &ReplayPlayerSeries,
+        main_kills: u64,
+        ally_kills: u64,
+    ) -> bool {
+        let current_distance = Self::player_series_kill_distance(main_player_stats, main_kills)
+            + Self::player_series_kill_distance(ally_player_stats, ally_kills);
+        let swapped_distance = Self::player_series_kill_distance(main_player_stats, ally_kills)
+            + Self::player_series_kill_distance(ally_player_stats, main_kills);
+
+        swapped_distance < current_distance
+    }
+
+    fn realign_player_stats_by_kill_totals(
+        main_player_stats: &mut Option<ReplayPlayerSeries>,
+        ally_player_stats: &mut Option<ReplayPlayerSeries>,
+        main_kills: u64,
+        ally_kills: u64,
+    ) {
+        let should_swap = match (main_player_stats.as_ref(), ally_player_stats.as_ref()) {
+            (Some(main_stats), Some(ally_stats)) => Self::player_stats_should_swap_for_totals(
+                main_stats, ally_stats, main_kills, ally_kills,
+            ),
+            _ => false,
+        };
+        if should_swap {
+            std::mem::swap(main_player_stats, ally_player_stats);
+        }
+    }
+
     fn semantic_player_stats_from_record(
         player_stats: &ReplayDataRecord,
         main_name: &str,
         ally_name: &str,
+        main_kills: u64,
+        ally_kills: u64,
     ) -> (Option<ReplayPlayerSeries>, Option<ReplayPlayerSeries>) {
-        let main_player_stats =
+        let mut main_player_stats =
             OverlayInfoOps::player_series_by_name(player_stats, main_name, None)
                 .or_else(|| player_stats.get("1").cloned());
-        let ally_player_stats = OverlayInfoOps::player_series_by_name(
+        let mut ally_player_stats = OverlayInfoOps::player_series_by_name(
             player_stats,
             ally_name,
             main_player_stats
@@ -484,6 +535,19 @@ impl OverlayInfoOps {
                 .and_then(|target| player_stats.values().position(|series| series == target)),
         )
         .or_else(|| player_stats.get("2").cloned());
+
+        Self::realign_player_stats_by_kill_totals(
+            &mut main_player_stats,
+            &mut ally_player_stats,
+            main_kills,
+            ally_kills,
+        );
+        if let Some(stats) = main_player_stats.as_mut() {
+            stats.name = main_name.to_string();
+        }
+        if let Some(stats) = ally_player_stats.as_mut() {
+            stats.name = ally_name.to_string();
+        }
 
         (main_player_stats, ally_player_stats)
     }

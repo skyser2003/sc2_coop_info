@@ -55,6 +55,39 @@ fn cached_orientation_replay_with_reversed_player_stats() -> ReplayInfo {
     replay
 }
 
+fn cached_orientation_replay_with_legacy_swapped_stat_values() -> ReplayInfo {
+    let mut replay = ReplayInfo::with_players(
+        ReplayPlayerInfo::default()
+            .with_name("AllyPlayer")
+            .with_commander("Swann")
+            .with_kills(44),
+        ReplayPlayerInfo::default()
+            .with_name("MainPlayer")
+            .with_commander("Abathur")
+            .with_kills(56),
+        1,
+    );
+    replay.set_file("cached-swapped-stats.SC2Replay");
+    replay.set_result("Victory");
+    replay.set_player_stats(json!({
+        "1": {
+            "name": "AllyPlayer",
+            "army": [11.0],
+            "supply": [12.0],
+            "killed": [56.0],
+            "mining": [14.0]
+        },
+        "2": {
+            "name": "MainPlayer",
+            "army": [21.0],
+            "supply": [22.0],
+            "killed": [44.0],
+            "mining": [24.0]
+        }
+    }));
+    replay
+}
+
 #[test]
 fn overlay_payload_omits_session_counts_when_disabled() {
     let state = BackendState::new();
@@ -151,5 +184,51 @@ fn overlay_payload_exposes_semantic_player_stats_for_main_and_ally() {
             .as_ref()
             .map(|stats| stats.army.clone()),
         Some(vec![11.0])
+    );
+}
+
+#[test]
+fn overlay_payload_realigns_legacy_cached_player_stats_by_kill_totals() {
+    let state = BackendState::new();
+    let payload = OverlayInfoOps::overlay_payload_from_replay(
+        &state,
+        &cached_orientation_replay_with_legacy_swapped_stat_values(),
+        false,
+        false,
+        0,
+        0,
+    );
+
+    assert_eq!(payload.main, "MainPlayer");
+    assert_eq!(payload.ally, "AllyPlayer");
+    assert_eq!(payload.mainkills, 56);
+    assert_eq!(payload.allykills, 44);
+    assert_eq!(
+        payload
+            .main_player_stats
+            .as_ref()
+            .map(|stats| stats.name.as_str()),
+        Some("MainPlayer")
+    );
+    assert_eq!(
+        payload
+            .main_player_stats
+            .as_ref()
+            .map(|stats| stats.killed.clone()),
+        Some(vec![56.0])
+    );
+    assert_eq!(
+        payload
+            .ally_player_stats
+            .as_ref()
+            .map(|stats| stats.name.as_str()),
+        Some("AllyPlayer")
+    );
+    assert_eq!(
+        payload
+            .ally_player_stats
+            .as_ref()
+            .map(|stats| stats.killed.clone()),
+        Some(vec![44.0])
     );
 }

@@ -4993,8 +4993,14 @@ impl DetailedReplayAnalyzer {
             .unwrap_or_default();
 
         let mut player_stats = BTreeMap::<u8, AnalysisPlayerStatsSeries>::new();
-        player_stats.insert(1, main_stats_counter.get_stats(main_name.as_str()));
-        player_stats.insert(2, ally_stats_counter.get_stats(ally_name.as_str()));
+        player_stats.insert(
+            main_player as u8,
+            main_stats_counter.get_stats(main_name.as_str()),
+        );
+        player_stats.insert(
+            ally_player as u8,
+            ally_stats_counter.get_stats(ally_name.as_str()),
+        );
         timings.finish(
             ReplayReportTimingSpan::PostPlayerStats,
             player_stats_started,

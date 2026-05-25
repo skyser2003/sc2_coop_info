@@ -1,4 +1,6 @@
-use s2coop_analyzer::cache_overall_stats_generator::{ProtocolBuildValue, ReplayBuildInfo};
+use s2coop_analyzer::cache_overall_stats_generator::{
+    AnalysisPlayerStatsSeries, ProtocolBuildValue, ReplayBuildInfo,
+};
 use s2coop_analyzer::tauri_replay_analysis_impl::{
     ParsedReplayInput, ParsedReplayMessage, ParsedReplayPlayer, PlayerPositions, ReplayReport,
     ReplayReportDetailData, ReplayReportDetailedInput,
@@ -110,6 +112,85 @@ fn detailed_builder_applies_positions_hash_length_and_payload_fields() {
     assert_eq!(
         report.amon_units,
         BTreeMap::from([("Zergling".to_string(), (9, 10, 11, 12.0))])
+    );
+    assert_eq!(
+        report.player_stats.get(&2).map(|stats| stats.name.as_str()),
+        Some("AllyPlayer")
+    );
+    assert_eq!(
+        report.player_stats.get(&1).map(|stats| stats.name.as_str()),
+        Some("MainPlayer")
+    );
+}
+
+#[test]
+fn detailed_builder_remaps_legacy_semantic_player_stats_to_replay_pids() {
+    let mut detailed = ReplayReportDetailedInput::from_parser(sample_replay());
+    detailed.positions = Some(PlayerPositions { main: 2, ally: 1 });
+    detailed.detail = Some(ReplayReportDetailData {
+        length: 100.0,
+        bonus: Vec::new(),
+        comp: String::new(),
+        replay_hash: None,
+        main_kills: 77,
+        ally_kills: 12,
+        main_icons: BTreeMap::new(),
+        ally_icons: BTreeMap::new(),
+        main_units: BTreeMap::new(),
+        ally_units: BTreeMap::new(),
+        amon_units: BTreeMap::new(),
+        player_stats: BTreeMap::from([
+            (
+                1,
+                AnalysisPlayerStatsSeries {
+                    name: "AllyPlayer".to_string(),
+                    supply: vec![1.0],
+                    mining: vec![2.0],
+                    army: vec![3.0],
+                    killed: vec![77.0],
+                    army_force_float_indices: Default::default(),
+                },
+            ),
+            (
+                2,
+                AnalysisPlayerStatsSeries {
+                    name: "MainPlayer".to_string(),
+                    supply: vec![4.0],
+                    mining: vec![5.0],
+                    army: vec![6.0],
+                    killed: vec![12.0],
+                    army_force_float_indices: Default::default(),
+                },
+            ),
+        ]),
+        outlaw_order: Vec::new(),
+    });
+
+    let report =
+        ReplayReport::from_detailed_input(&detailed.parser.file, &detailed, &HashSet::new());
+
+    assert_eq!(report.positions.main, 2);
+    assert_eq!(
+        report.player_stats.get(&2).map(|stats| stats.name.as_str()),
+        Some("AllyPlayer")
+    );
+    assert_eq!(
+        report
+            .player_stats
+            .get(&2)
+            .map(|stats| stats.killed.clone()),
+        Some(vec![77.0])
+    );
+    assert_eq!(
+        report.player_stats.get(&1).map(|stats| stats.name.as_str()),
+        Some("MainPlayer")
+    );
+    assert_eq!(
+        report
+            .player_stats
+            .get(&1)
+            .map(|stats| stats.killed.clone()),
+        Some(vec![12.0])
     );
 }
 

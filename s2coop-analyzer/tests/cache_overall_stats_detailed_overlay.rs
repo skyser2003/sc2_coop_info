@@ -148,5 +148,25 @@ fn detailed_cache_entry_preserves_shared_base_fields() {
     assert_eq!(entry.players[1].apm, Some(120));
     assert_eq!(entry.players[2].apm, Some(160));
     assert!(entry.player_stats.is_some());
+    let player_stats = entry
+        .player_stats
+        .as_ref()
+        .expect("detailed player stats should persist");
+    assert_eq!(
+        player_stats.get(&1).map(|stats| stats.name.as_str()),
+        Some("SlotOne")
+    );
+    assert_eq!(
+        player_stats.get(&1).map(|stats| stats.killed.clone()),
+        Some(vec![0, 2])
+    );
+    assert_eq!(
+        player_stats.get(&2).map(|stats| stats.name.as_str()),
+        Some("SlotTwo")
+    );
+    assert_eq!(
+        player_stats.get(&2).map(|stats| stats.killed.clone()),
+        Some(vec![1, 4])
+    );
     assert_eq!(entry.comp.as_deref(), Some("Masters and Machines"));
 }

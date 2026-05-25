@@ -375,21 +375,66 @@ impl ReplayReport {
         }
     }
 
+    fn take_player_stats_for_player(
+        player_stats: &mut BTreeMap<u8, AnalysisPlayerStatsSeries>,
+        player_pid: u8,
+        legacy_semantic_pid: u8,
+        player_name: &str,
+    ) -> AnalysisPlayerStatsSeries {
+        let target_name = player_name.trim();
+        if let Some(candidate) = player_stats.get(&player_pid) {
+            let candidate_name = candidate.name.trim();
+            if target_name.is_empty() || candidate_name.is_empty() || candidate_name == target_name
+            {
+                let mut selected = player_stats
+                    .remove(&player_pid)
+                    .expect("candidate key must remain present");
+                selected.name = player_name.to_string();
+                return selected;
+            }
+        }
+
+        if !target_name.is_empty() {
+            let matching_pid = player_stats
+                .iter()
+                .find(|(_, stats)| stats.name.trim() == target_name)
+                .map(|(pid, _)| *pid);
+            if let Some(pid) = matching_pid {
+                let mut selected = player_stats
+                    .remove(&pid)
+                    .expect("matching key must remain present");
+                selected.name = player_name.to_string();
+                return selected;
+            }
+        }
+
+        if let Some(mut selected) = player_stats.remove(&legacy_semantic_pid) {
+            selected.name = player_name.to_string();
+            return selected;
+        }
+
+        if let Some(mut selected) = player_stats.remove(&player_pid) {
+            selected.name = player_name.to_string();
+            return selected;
+        }
+
+        AnalysisPlayerStatsSeries::empty_named(player_name.to_string())
+    }
+
     fn player_stats_with_names(
         incoming: Option<BTreeMap<u8, AnalysisPlayerStatsSeries>>,
+        main_pid: u8,
         main_name: &str,
+        ally_pid: u8,
         ally_name: &str,
     ) -> BTreeMap<u8, AnalysisPlayerStatsSeries> {
-        let mut player_stats = incoming.unwrap_or_default();
-        player_stats
-            .entry(1)
-            .or_insert_with(|| AnalysisPlayerStatsSeries::empty_named(main_name.to_string()))
-            .name = main_name.to_string();
-        player_stats
-            .entry(2)
-            .or_insert_with(|| AnalysisPlayerStatsSeries::empty_named(ally_name.to_string()))
-            .name = ally_name.to_string();
-        player_stats
+        let mut incoming_stats = incoming.unwrap_or_default();
+        let main_stats =
+            Self::take_player_stats_for_player(&mut incoming_stats, main_pid, 1, main_name);
+        let ally_stats =
+            Self::take_player_stats_for_player(&mut incoming_stats, ally_pid, 2, ally_name);
+
+        BTreeMap::from([(ally_pid, ally_stats), (main_pid, main_stats)])
     }
 
     pub fn from_detailed_input(
@@ -405,7 +450,9 @@ impl ReplayReport {
         let ally_player = replay.player_or_unknown(ally_pid);
         let player_stats = Self::player_stats_with_names(
             detail.map(|value| value.player_stats.clone()),
+            main_pid,
             &main_player.name,
+            ally_pid,
             &ally_player.name,
         );
 
