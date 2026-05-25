@@ -30,4 +30,4 @@
 - Frontend styling should consider both dark mode and light mode.
 - After editing rust code, run 'cargo clippy' and fix simple warnings.
 - Do not use #[allow(...)] to suppress warnings.
-- Only update DB version before deploying publicly.
+- Only update DB version when I demand, which would be before deploying a new version.  When updating db version, double check db migration queries and codes.
