@@ -6,6 +6,8 @@ mod load_games;
 mod load_players;
 mod load_statistics;
 mod load_weeklies;
+mod schema_creation;
+mod schema_migration;
 
 pub use cache_writer::{
     QueuedReplayCacheEntrySink, ReplayCacheWriteQueue, ReplayCacheWriteResult,
