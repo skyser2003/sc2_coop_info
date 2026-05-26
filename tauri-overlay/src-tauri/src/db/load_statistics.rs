@@ -214,7 +214,7 @@ impl ReplayCacheDatabase {
         let snapshots_started_at = Instant::now();
         let mut snapshots = self.load_stats_replay_snapshots(query, main_names, main_handles)?;
         let snapshot_count = snapshots.len();
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=snapshot_query scope={:?} rows={} elapsed_ms={:.3}",
             query.scope(),
             snapshot_count,
@@ -226,7 +226,7 @@ impl ReplayCacheDatabase {
             Self::stats_snapshot_matches_query(snapshot, query, main_handles, dictionary)
         });
         let matched_count = snapshots.len();
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=rust_filter rows_in={} rows_out={} elapsed_ms={:.3}",
             snapshot_count,
             matched_count,
@@ -242,7 +242,7 @@ impl ReplayCacheDatabase {
         if include_detailed {
             snapshots.retain(|snapshot| snapshot.detailed_analysis);
         }
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=detailed_filter include_detailed={} rows_in={} rows_out={} elapsed_ms={:.3}",
             include_detailed,
             matched_count,
@@ -258,12 +258,12 @@ impl ReplayCacheDatabase {
             main_handles,
             dictionary,
         )?;
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=payload_aggregate games={} elapsed_ms={:.3}",
             payload.games(),
             ReplayCacheStatisticsLoadOps::elapsed_ms(aggregate_started_at)
         );
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=load_statistics_payload_total games={} elapsed_ms={:.3}",
             payload.games(),
             ReplayCacheStatisticsLoadOps::elapsed_ms(total_started_at)
@@ -839,7 +839,7 @@ impl ReplayCacheDatabase {
             .iter()
             .filter(|snapshot| snapshot.detailed_analysis)
             .count() as u64;
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=aggregate_snapshots rows_in={} valid={} detailed={} elapsed_ms={:.3}",
             snapshot_count,
             total_games,
@@ -881,7 +881,7 @@ impl ReplayCacheDatabase {
                 )),
             );
         }
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=map_data rows={} elapsed_ms={:.3}",
             map_data.len(),
             ReplayCacheStatisticsLoadOps::elapsed_ms(map_started_at)
@@ -891,7 +891,7 @@ impl ReplayCacheDatabase {
         let commander_data = StatsAggregationOps::build_commander_data(
             StatsCommanderDataInput::new(&main_commander, total_games, &sum_main, None),
         );
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=commander_data rows={} elapsed_ms={:.3}",
             commander_data.len(),
             ReplayCacheStatisticsLoadOps::elapsed_ms(commander_started_at)
@@ -914,7 +914,7 @@ impl ReplayCacheDatabase {
                 &sum_ally,
                 Some(&main_frequency),
             ));
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=ally_commander_data rows={} elapsed_ms={:.3}",
             ally_commander_data.len(),
             ReplayCacheStatisticsLoadOps::elapsed_ms(ally_commander_started_at)
@@ -937,7 +937,7 @@ impl ReplayCacheDatabase {
                 )
             })
             .collect::<Map<String, Value>>();
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=difficulty_data rows={} elapsed_ms={:.3}",
             difficulty_data.len(),
             ReplayCacheStatisticsLoadOps::elapsed_ms(difficulty_started_at)
@@ -969,7 +969,7 @@ impl ReplayCacheDatabase {
                 )
             })
             .collect::<Map<String, Value>>();
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=region_data rows={} elapsed_ms={:.3}",
             region_data.len(),
             ReplayCacheStatisticsLoadOps::elapsed_ms(region_started_at)
@@ -998,7 +998,7 @@ impl ReplayCacheDatabase {
                 )
             })
             .collect::<Map<String, Value>>();
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=player_data rows={} elapsed_ms={:.3}",
             player_data.len(),
             ReplayCacheStatisticsLoadOps::elapsed_ms(player_started_at)
@@ -1014,7 +1014,7 @@ impl ReplayCacheDatabase {
         } else {
             Value::Null
         };
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=unit_data include_detailed={} elapsed_ms={:.3}",
             include_detailed,
             ReplayCacheStatisticsLoadOps::elapsed_ms(unit_started_at)
@@ -1045,7 +1045,7 @@ impl ReplayCacheDatabase {
                 )
             })
             .collect::<BTreeMap<_, _>>();
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=payload_serialize elapsed_ms={:.3}",
             ReplayCacheStatisticsLoadOps::elapsed_ms(serialize_started_at)
         );
@@ -1059,7 +1059,7 @@ impl ReplayCacheDatabase {
             main_players.into_iter().collect(),
             main_player_handles.into_iter().collect(),
         );
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=statistics_payload_from_snapshots_total games={} elapsed_ms={:.3}",
             payload.games(),
             ReplayCacheStatisticsLoadOps::elapsed_ms(total_started_at)
@@ -1201,7 +1201,7 @@ impl ReplayCacheDatabase {
         let total_started_at = Instant::now();
         let temp_started_at = Instant::now();
         self.prepare_statistics_unit_temp_tables(replay_ids, main_handles)?;
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=unit_temp_tables replay_ids={} main_handles={} elapsed_ms={:.3}",
             replay_ids.len(),
             main_handles.len(),
@@ -1212,7 +1212,7 @@ impl ReplayCacheDatabase {
         let mut ally_rollup = BTreeMap::<String, CommanderUnitRollup>::new();
         let player_count_started_at = Instant::now();
         self.load_statistics_unit_player_counts(&mut main_rollup, &mut ally_rollup)?;
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=unit_player_counts main_commanders={} ally_commanders={} elapsed_ms={:.3}",
             main_rollup.len(),
             ally_rollup.len(),
@@ -1221,7 +1221,7 @@ impl ReplayCacheDatabase {
 
         let player_units_started_at = Instant::now();
         self.load_statistics_player_unit_rollup(&mut main_rollup, &mut ally_rollup, dictionary)?;
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=unit_player_rollup main_commanders={} ally_commanders={} elapsed_ms={:.3}",
             main_rollup.len(),
             ally_rollup.len(),
@@ -1230,7 +1230,7 @@ impl ReplayCacheDatabase {
 
         let amon_started_at = Instant::now();
         let amon_rollup = self.load_statistics_amon_unit_rollup()?;
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=unit_amon_rollup rows={} elapsed_ms={:.3}",
             amon_rollup.len(),
             ReplayCacheStatisticsLoadOps::elapsed_ms(amon_started_at)
@@ -1249,11 +1249,11 @@ impl ReplayCacheDatabase {
                 ),
                 StatsUnitDataOps::build_amon_unit_data(amon_rollup),
             ));
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=unit_payload_build elapsed_ms={:.3}",
             ReplayCacheStatisticsLoadOps::elapsed_ms(build_started_at)
         );
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=unit_data_from_facts_total elapsed_ms={:.3}",
             ReplayCacheStatisticsLoadOps::elapsed_ms(total_started_at)
         );
@@ -1458,7 +1458,7 @@ impl ReplayCacheDatabase {
                 dictionary,
             );
         }
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=unit_player_rollup_source rows={} players={}",
             source_row_count,
             player_count

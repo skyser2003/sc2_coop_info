@@ -62,7 +62,7 @@ impl ReplayCacheDatabase {
     ) {
         match result {
             Ok(_) => {
-                crate::sco_log!(
+                crate::sco_info!(
                     "[SCO/cache-db] schema version update completed from={} to={} path='{}' elapsed={}ms",
                     from_version,
                     CURRENT_SCHEMA_VERSION,
@@ -71,7 +71,7 @@ impl ReplayCacheDatabase {
                 );
             }
             Err(error) => {
-                crate::sco_log!(
+                crate::sco_error!(
                     "[SCO/cache-db] schema version update failed from={} to={} path='{}' elapsed={}ms error={}",
                     from_version,
                     CURRENT_SCHEMA_VERSION,

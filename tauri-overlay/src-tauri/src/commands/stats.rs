@@ -54,7 +54,7 @@ impl StatsCommands {
             state.replay_scan_progress().as_payload(),
             state.dictionary_data().ok(),
         );
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=config_stats_get_snapshot path_len={} elapsed_ms={:.3}",
             path.len(),
             snapshot_started_at.elapsed().as_secs_f64() * 1000.0
@@ -91,7 +91,7 @@ impl StatsCommands {
                     }
                 },
             };
-            crate::sco_log!(
+            crate::sco_debug!(
                 "[SCO/stats/e2e/backend] stage=config_stats_get_build_payload path_len={} elapsed_ms={:.3}",
                 path_for_worker.len(),
                 payload_started_at.elapsed().as_secs_f64() * 1000.0
@@ -100,12 +100,12 @@ impl StatsCommands {
             serde_json::from_value(payload)
                 .map_err(|error| format!("Invalid stats payload: {error}"))
                 .inspect(|payload: &StatsStatePayload| {
-                    crate::sco_log!(
+                    crate::sco_debug!(
                         "[SCO/stats/e2e/backend] stage=config_stats_get_typed_payload games={} elapsed_ms={:.3}",
                         payload.games,
                         typed_started_at.elapsed().as_secs_f64() * 1000.0
                     );
-                    crate::sco_log!(
+                    crate::sco_debug!(
                         "[SCO/stats/e2e/backend] stage=config_stats_get_worker_total elapsed_ms={:.3}",
                         worker_started_at.elapsed().as_secs_f64() * 1000.0
                     );
@@ -113,12 +113,12 @@ impl StatsCommands {
         })
         .await
         .map_err(|error| format!("Failed to read /config/stats: {error}"))?;
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/e2e/backend] stage=config_stats_get_blocking_await elapsed_ms={:.3}",
             worker_wait_started_at.elapsed().as_secs_f64() * 1000.0
         );
         if let Ok(payload) = result.as_ref() {
-            crate::sco_log!(
+            crate::sco_debug!(
                 "[SCO/stats/e2e/backend] stage=config_stats_get_total games={} elapsed_ms={:.3}",
                 payload.games,
                 total_started_at.elapsed().as_secs_f64() * 1000.0
@@ -165,7 +165,7 @@ impl StatsCommands {
         match action {
             "frontend_ready" => {
                 let request_started_at = Instant::now();
-                crate::sco_log!("[SCO/stats/action] frontend_ready requested");
+                crate::sco_info!("[SCO/stats/action] frontend_ready requested");
                 TauriOverlayOps::request_startup_analysis(
                     app.clone(),
                     state.stats_handle(),
@@ -177,7 +177,7 @@ impl StatsCommands {
                 let stats = stats_handle
                     .lock()
                     .map_err(|error| format!("Failed to access stats state: {error}"))?;
-                crate::sco_log!(
+                crate::sco_info!(
                     "[SCO/stats] frontend_ready completed in {}ms",
                     request_started_at.elapsed().as_millis()
                 );
@@ -196,7 +196,7 @@ impl StatsCommands {
                 let mode = TauriOverlayOps::analysis_mode(include_detailed);
 
                 let limit = UNLIMITED_REPLAY_LIMIT;
-                crate::sco_log!("[SCO/stats] {action} requested replay_limit={limit} on thread");
+                crate::sco_info!("[SCO/stats] {action} requested replay_limit={limit} on thread");
                 TauriOverlayOps::spawn_analysis_task(
                     app.clone(),
                     state.stats_handle(),
@@ -217,7 +217,7 @@ impl StatsCommands {
                         }
                     })
                     .unwrap_or_else(|| TauriOverlayOps::analysis_started_message(mode));
-                crate::sco_log!(
+                crate::sco_debug!(
                     "[SCO/stats/action] {} immediate response message={}",
                     action,
                     status
@@ -245,7 +245,7 @@ impl StatsCommands {
             .lock()
             .map_err(|error| format!("Failed to access stats state: {error}"))?;
         let request_started_at = Instant::now();
-        crate::sco_log!("[SCO/stats/action] action={action}");
+        crate::sco_info!("[SCO/stats/action] action={action}");
 
         match action {
             "stop_detailed_analysis" => {
@@ -264,7 +264,7 @@ impl StatsCommands {
                 } else {
                     stats.set_message("Detailed analysis stop could not be requested.");
                 }
-                crate::sco_log!(
+                crate::sco_info!(
                     "[SCO/stats] stop_detailed_analysis requested elapsed={}ms",
                     request_started_at.elapsed().as_millis()
                 );
@@ -286,27 +286,27 @@ impl StatsCommands {
                         Ok(_) => {
                             let path = dump_path.display();
                             stats.set_message(format!("Data dumped to {path}"));
-                            crate::sco_log!("[SCO/stats] dump_data written to {path}");
+                            crate::sco_info!("[SCO/stats] dump_data written to {path}");
                         }
                         Err(error) => {
                             let message = format!("Failed to write dump: {error}");
-                            crate::sco_log!("[SCO/stats] {message}");
+                            crate::sco_warn!("[SCO/stats] {message}");
                             stats.set_message(message);
                         }
                     },
                     Err(error) => {
                         let message = format!("Failed to serialize dump: {error}");
-                        crate::sco_log!("[SCO/stats] {message}");
+                        crate::sco_warn!("[SCO/stats] {message}");
                         stats.set_message(message);
                     }
                 }
-                crate::sco_log!(
+                crate::sco_debug!(
                     "[SCO/stats] dump_data completed in {}ms",
                     request_started_at.elapsed().as_millis()
                 );
             }
             "delete_parsed_data" => {
-                crate::sco_log!("[SCO/stats/action] delete_parsed_data requested");
+                crate::sco_info!("[SCO/stats/action] delete_parsed_data requested");
                 stats.set_ready(false);
                 stats.set_startup_analysis_requested(false);
                 stats.set_analysis(Some(TauriOverlayOps::empty_stats_payload()));
@@ -319,7 +319,7 @@ impl StatsCommands {
                 state.clear_stats_current_replay_files();
                 state.set_overlay_replay_data_active(false);
                 TauriOverlayOps::clear_analysis_cache_files();
-                crate::sco_log!(
+                crate::sco_info!(
                     "[SCO/stats] delete_parsed_data completed in {}ms",
                     request_started_at.elapsed().as_millis()
                 );
@@ -332,16 +332,16 @@ impl StatsCommands {
                     if let Err(error) =
                         state.persist_bool_setting("detailed_analysis_atstart", enabled)
                     {
-                        crate::sco_log!(
+                        crate::sco_warn!(
                             "[SCO/settings] Failed to save detailed_analysis_atstart: {error}"
                         );
                     }
                     stats.set_message(TauriOverlayOps::analysis_at_start_message(enabled));
-                    crate::sco_log!(
+                    crate::sco_info!(
                         "[SCO/stats] set_detailed_analysis_atstart requested: {enabled}"
                     );
                 }
-                crate::sco_log!(
+                crate::sco_debug!(
                     "[SCO/stats] set_detailed_analysis_atstart completed in {}ms",
                     request_started_at.elapsed().as_millis()
                 );
@@ -360,20 +360,20 @@ impl StatsCommands {
                         Ok(()) => stats.set_message(format!("Revealing file: {file}")),
                         Err(error) => {
                             let message = format!("Unable to reveal file: {error}");
-                            crate::sco_log!("[SCO/stats] reveal_file failed: {error}");
+                            crate::sco_warn!("[SCO/stats] reveal_file failed: {error}");
                             stats.set_message(message);
                         }
                     }
                 }
 
-                crate::sco_log!(
+                crate::sco_info!(
                     "[SCO/stats] reveal_file requested: {} elapsed={}ms",
                     if !file.is_empty() { file } else { "<empty>" },
                     request_started_at.elapsed().as_millis()
                 );
             }
             _ => {
-                crate::sco_log!("[SCO/stats] unsupported action: {action}");
+                crate::sco_warn!("[SCO/stats] unsupported action: {action}");
                 return Ok(StatsActionPayload {
                     status: "ok",
                     result: OverlayActionResult {
@@ -386,7 +386,7 @@ impl StatsCommands {
             }
         }
 
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/action] done action={} elapsed={}ms",
             action,
             request_started_at.elapsed().as_millis()

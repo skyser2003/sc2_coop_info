@@ -71,7 +71,7 @@ impl AppLifecycleService {
                     && let Err(error) =
                         overlay_info::OverlayInfoOps::stabilize_overlay_bounds(&overlay_window)
                 {
-                    crate::sco_log!(
+                    crate::sco_warn!(
                         "[SCO/overlay] Failed to stabilize overlay bounds after resize: {error}"
                     );
                 }
@@ -93,7 +93,7 @@ impl AppLifecycleService {
                     && let Err(error) =
                         overlay_info::OverlayInfoOps::stabilize_overlay_bounds(&overlay_window)
                 {
-                    crate::sco_log!(
+                    crate::sco_warn!(
                         "[SCO/overlay] Failed to stabilize overlay bounds after scale change: {error}"
                     );
                 }
@@ -114,7 +114,7 @@ impl AppLifecycleService {
 
             tauri::async_runtime::spawn(async move {
                 if let Err(error) = TauriOverlayOps::auto_update(handle).await {
-                    crate::sco_log!("Auto update failed: {}", error);
+                    crate::sco_warn!("Auto update failed: {}", error);
                 }
             });
         }
@@ -125,7 +125,7 @@ impl AppLifecycleService {
 
         let startup_settings = state.read_settings_memory();
         if let Err(error) = startup_settings.sync_start_with_windows_registration() {
-            crate::sco_log!("[SCO/settings] Failed to initialize start_with_windows: {error}");
+            crate::sco_warn!("[SCO/settings] Failed to initialize start_with_windows: {error}");
         }
 
         overlay_info::OverlayInfoOps::sync_overlay_runtime_settings(app.app_handle());
@@ -133,7 +133,7 @@ impl AppLifecycleService {
 
         if let Err(error) = overlay_info::OverlayInfoOps::register_overlay_hotkeys(app.app_handle())
         {
-            crate::sco_log!("[SCO/hotkey] {error}");
+            crate::sco_warn!("[SCO/hotkey] {error}");
         }
 
         TauriOverlayOps::spawn_replay_creation_watcher(app.app_handle().clone());
@@ -156,7 +156,9 @@ impl AppLifecycleService {
             detailed_stop_controller_slot,
             StartupAnalysisTrigger::Setup,
         ) {
-            crate::sco_log!("[SCO/stats] failed to request startup analysis during setup: {error}");
+            crate::sco_warn!(
+                "[SCO/stats] failed to request startup analysis during setup: {error}"
+            );
         }
 
         Ok(())

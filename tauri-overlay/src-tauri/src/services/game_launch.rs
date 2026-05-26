@@ -75,7 +75,7 @@ impl TauriOverlayOps {
         }
 
         let invalidation_generation = state.invalidate_delayed_player_stats_popup_generation();
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/launch] invalidated delayed player stats popups generation={}",
             invalidation_generation
         );

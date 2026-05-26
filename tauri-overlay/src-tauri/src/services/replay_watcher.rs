@@ -49,7 +49,7 @@ impl TauriOverlayOps {
         let resources = match resources {
             Some(resources) => resources,
             None => {
-                crate::sco_log!(
+                crate::sco_warn!(
                     "[SCO/watch] parse abort file='{}' reason=replay_analysis_resources_unavailable",
                     path.to_string_lossy()
                 );
@@ -57,7 +57,7 @@ impl TauriOverlayOps {
             }
         };
         let file = path.to_string_lossy().to_string();
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/watch] parse start file='{}' max_attempts={} retry_ms={}",
             file,
             MAX_ATTEMPTS,
@@ -68,7 +68,7 @@ impl TauriOverlayOps {
         for attempt in 0..MAX_ATTEMPTS {
             let attempt_num = attempt + 1;
             if !path.exists() {
-                crate::sco_log!(
+                crate::sco_debug!(
                     "[SCO/watch] parse abort file='{}' attempt={}/{} reason=file_missing",
                     file,
                     attempt_num,
@@ -89,7 +89,7 @@ impl TauriOverlayOps {
                     (meta.len(), modified)
                 })
                 .unwrap_or((0, 0));
-            crate::sco_log!(
+            crate::sco_debug!(
                 "[SCO/watch] parse attempt file='{}' attempt={}/{} size={} modified={}",
                 file,
                 attempt_num,
@@ -99,7 +99,7 @@ impl TauriOverlayOps {
             );
 
             if size_bytes < MIN_REPLAY_SIZE_BYTES {
-                crate::sco_log!(
+                crate::sco_debug!(
                     "[SCO/watch] parse wait file='{}' attempt={}/{} reason=size_below_min min={} current={}",
                     file,
                     attempt_num,
@@ -116,7 +116,7 @@ impl TauriOverlayOps {
 
             match previous_size {
                 None => {
-                    crate::sco_log!(
+                    crate::sco_debug!(
                         "[SCO/watch] parse wait file='{}' attempt={}/{} reason=awaiting_size_stability size={}",
                         file,
                         attempt_num,
@@ -130,7 +130,7 @@ impl TauriOverlayOps {
                     continue;
                 }
                 Some(previous) if previous != size_bytes => {
-                    crate::sco_log!(
+                    crate::sco_debug!(
                         "[SCO/watch] parse wait file='{}' attempt={}/{} reason=size_changed previous={} current={}",
                         file,
                         attempt_num,
@@ -160,7 +160,7 @@ impl TauriOverlayOps {
                     } else {
                         "non-string panic payload".to_string()
                     };
-                    crate::sco_log!(
+                    crate::sco_error!(
                         "[SCO/watch] parse panic file='{}' attempt={}/{} message='{}'",
                         file,
                         attempt_num,
@@ -168,7 +168,7 @@ impl TauriOverlayOps {
                         panic_message
                     );
                     if attempt + 1 < MAX_ATTEMPTS {
-                        crate::sco_log!(
+                        crate::sco_debug!(
                             "[SCO/watch] parse retry scheduled file='{}' next_attempt={} wait_ms={}",
                             file,
                             attempt_num + 1,
@@ -181,7 +181,7 @@ impl TauriOverlayOps {
             };
             let Some((replay, cache_entry)) = parsed else {
                 if attempt + 1 < MAX_ATTEMPTS {
-                    crate::sco_log!(
+                    crate::sco_debug!(
                         "[SCO/watch] parse retry scheduled file='{}' next_attempt={} wait_ms={}",
                         file,
                         attempt_num + 1,
@@ -192,7 +192,7 @@ impl TauriOverlayOps {
                 continue;
             };
             if replay.result != "Unparsed" {
-                crate::sco_log!(
+                crate::sco_info!(
                     "[SCO/watch] parse success file='{}' attempt={}/{} result='{}' main='{}' ally='{}' main_comm='{}' ally_comm='{}' map='{}' length={}",
                     file,
                     attempt_num,
@@ -207,7 +207,7 @@ impl TauriOverlayOps {
                 );
                 return Some((replay, cache_entry));
             }
-            crate::sco_log!(
+            crate::sco_debug!(
                 "[SCO/watch] parse pending file='{}' attempt={}/{} result='Unparsed'",
                 file,
                 attempt_num,
@@ -215,7 +215,7 @@ impl TauriOverlayOps {
             );
 
             if attempt + 1 < MAX_ATTEMPTS {
-                crate::sco_log!(
+                crate::sco_debug!(
                     "[SCO/watch] parse retry scheduled file='{}' next_attempt={} wait_ms={}",
                     file,
                     attempt_num + 1,
@@ -224,7 +224,7 @@ impl TauriOverlayOps {
                 thread::sleep(RETRY_DELAY);
             }
         }
-        crate::sco_log!(
+        crate::sco_warn!(
             "[SCO/watch] parse failed file='{}' attempts_exhausted={}",
             file,
             MAX_ATTEMPTS
@@ -289,14 +289,14 @@ impl TauriOverlayOps {
                 &entry,
                 persist_lock.as_ref(),
             ) {
-                crate::sco_log!(
+                crate::sco_warn!(
                     "[SCO/{log_prefix}] failed to persist detailed cache entry for '{}': {error}",
                     replay_file
                 );
                 return;
             }
 
-            crate::sco_log!(
+            crate::sco_debug!(
                 "[SCO/{log_prefix}] persisted detailed cache entry for '{}'",
                 replay_file
             );
@@ -361,7 +361,7 @@ impl TauriOverlayOps {
             return ReplayProcessOutcome::Ignored;
         }
         if !path.exists() {
-            crate::sco_log!(
+            crate::sco_debug!(
                 "[SCO/watch] skip path='{}' reason=missing",
                 path.to_string_lossy()
             );
@@ -373,17 +373,17 @@ impl TauriOverlayOps {
             return ReplayProcessOutcome::Ignored;
         }
         if handled_files.contains(&file) {
-            crate::sco_log!("[SCO/watch] skip file='{}' reason=already_handled", file);
+            crate::sco_debug!("[SCO/watch] skip file='{}' reason=already_handled", file);
             return ReplayProcessOutcome::AlreadyHandled;
         }
-        crate::sco_log!("[SCO/watch] processing new replay file='{}'", file);
+        crate::sco_info!("[SCO/watch] processing new replay file='{}'", file);
 
         let state = app.state::<BackendState>();
         let resources = state.replay_analysis_resources().ok();
         let Some((parsed, cache_entry)) =
             TauriOverlayOps::parse_new_replay_with_retries(path, resources.as_deref())
         else {
-            crate::sco_log!("[SCO/watch] failed to parse new replay '{}'", file);
+            crate::sco_warn!("[SCO/watch] failed to parse new replay '{}'", file);
             return ReplayProcessOutcome::RetryLater;
         };
 
@@ -391,7 +391,7 @@ impl TauriOverlayOps {
         let main_handles = state.configured_main_handles();
         let replay = parsed.oriented_for_main_identity(&main_names, &main_handles);
         if replay.main_commander().trim().is_empty() && replay.ally_commander().trim().is_empty() {
-            crate::sco_log!(
+            crate::sco_warn!(
                 "[SCO/watch] parsed replay ignored file='{}' reason=missing_commanders main='{}' ally='{}'",
                 replay.file,
                 replay.main_commander(),
@@ -402,7 +402,7 @@ impl TauriOverlayOps {
         }
 
         handled_files.insert(file);
-        crate::sco_log!(
+        crate::sco_info!(
             "[SCO/watch] replay accepted file='{}' date={} result='{}' main='{}' ally='{}' main_comm='{}' ally_comm='{}'",
             replay.file,
             replay.date,
@@ -420,7 +420,7 @@ impl TauriOverlayOps {
         if replay_cached {
             state.record_session_result(&replay.result);
         } else {
-            crate::sco_log!(
+            crate::sco_debug!(
                 "[SCO/watch] replay displayed without cache file='{}' reason=not_cache_persistable",
                 replay.file
             );
@@ -434,7 +434,7 @@ impl TauriOverlayOps {
         if entered_game_end_state {
             TauriOverlayOps::spawn_today_win_bonus_scan(app.clone(), replay.file.clone());
         } else {
-            crate::sco_log!(
+            crate::sco_debug!(
                 "[SCO/today-win-bonus] scan suppressed replay='{}' reason=not_game_end_transition map='{}' result='{}' main_comm='{}' ally_comm='{}'",
                 replay.file,
                 replay.map(),
@@ -446,14 +446,14 @@ impl TauriOverlayOps {
         let show_replay_info_after_game = settings.show_replay_info_after_game();
 
         if show_replay_info_after_game {
-            crate::sco_log!(
+            crate::sco_debug!(
                 "[SCO/watch] emitting replay to overlay file='{}'",
                 replay.file
             );
             overlay_info::OverlayInfoOps::emit_replay_to_overlay_from_replay(app, &replay, true);
             state.set_overlay_replay_data_active(true);
         } else {
-            crate::sco_log!(
+            crate::sco_debug!(
                 "[SCO/watch] replay overlay suppressed by settings file='{}'",
                 replay.file
             );
@@ -465,7 +465,7 @@ impl TauriOverlayOps {
         }
 
         let invalidation_generation = state.invalidate_delayed_player_stats_popup_generation();
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/watch] invalidated delayed player stats popups generation={} replay='{}'",
             invalidation_generation,
             replay.file
@@ -501,7 +501,7 @@ impl TauriOverlayOps {
         if let Some(previous_root) = watched_root.take()
             && let Err(error) = watcher.unwatch(&previous_root)
         {
-            crate::sco_log!(
+            crate::sco_warn!(
                 "[SCO/watch] failed to stop watching replay root '{}': {error}",
                 previous_root.display()
             );
@@ -515,7 +515,7 @@ impl TauriOverlayOps {
         };
 
         if let Err(error) = watcher.watch(&replay_root, RecursiveMode::Recursive) {
-            crate::sco_log!(
+            crate::sco_error!(
                 "[SCO/watch] failed to watch replay root '{}': {error}",
                 replay_root.display()
             );
@@ -523,7 +523,7 @@ impl TauriOverlayOps {
         }
 
         TauriOverlayOps::seed_handled_replay_files_for_watch_root(&replay_root, handled_files);
-        crate::sco_log!(
+        crate::sco_info!(
             "[SCO/watch] replay watcher active on {}",
             replay_root.display()
         );
@@ -539,7 +539,7 @@ impl TauriOverlayOps {
         }
 
         if !path.exists() {
-            crate::sco_log!(
+            crate::sco_debug!(
                 "[SCO/show] skip path='{}' reason=missing",
                 path.to_string_lossy()
             );
@@ -552,7 +552,7 @@ impl TauriOverlayOps {
             return (ReplayProcessOutcome::Ignored, None);
         }
 
-        crate::sco_log!("[SCO/show] processing existing replay file='{}'", file);
+        crate::sco_info!("[SCO/show] processing existing replay file='{}'", file);
 
         let replay_hash = ReplayFileIdentity::calculate_hash(path);
         if let Some(existing) = state.cached_replay_by_hash(&replay_hash)
@@ -571,7 +571,7 @@ impl TauriOverlayOps {
             }
             Ok(_) => {}
             Err(error) => {
-                crate::sco_log!(
+                crate::sco_warn!(
                     "[SCO/cache-db] replay show cache lookup failed for '{}': {error}",
                     file
                 );
@@ -582,7 +582,7 @@ impl TauriOverlayOps {
         let Some((parsed, cache_entry)) =
             TauriOverlayOps::parse_new_replay_with_retries(path, resources.as_deref())
         else {
-            crate::sco_log!("[SCO/show] failed to parse existing replay '{}'", file);
+            crate::sco_warn!("[SCO/show] failed to parse existing replay '{}'", file);
             return (ReplayProcessOutcome::RetryLater, None);
         };
 
@@ -590,7 +590,7 @@ impl TauriOverlayOps {
         let main_handles = state.configured_main_handles();
         let replay = parsed.oriented_for_main_identity(&main_names, &main_handles);
 
-        crate::sco_log!(
+        crate::sco_info!(
             "[SCO/show] replay accepted file='{}' date={} result='{}' main='{}' ally='{}' main_comm='{}' ally_comm='{}'",
             replay.file,
             replay.date,
@@ -607,7 +607,7 @@ impl TauriOverlayOps {
             false
         };
         if !replay_cached {
-            crate::sco_log!(
+            crate::sco_debug!(
                 "[SCO/show] replay displayed without cache file='{}' reason=not_cache_persistable",
                 replay.file
             );
@@ -628,10 +628,10 @@ impl TauriOverlayOps {
             ReplayProcessOutcome::RetryLater => {
                 let should_log_start = pending_fallback_files.is_empty();
                 if pending_fallback_files.insert(file.to_string()) {
-                    crate::sco_log!("[SCO/watch] fallback queued file='{}'", file);
+                    crate::sco_debug!("[SCO/watch] fallback queued file='{}'", file);
                 }
                 if should_log_start && !pending_fallback_files.is_empty() {
-                    crate::sco_log!(
+                    crate::sco_debug!(
                         "[SCO/watch] fallback polling started pending={}",
                         pending_fallback_files.len()
                     );
@@ -641,9 +641,9 @@ impl TauriOverlayOps {
             | ReplayProcessOutcome::AlreadyHandled
             | ReplayProcessOutcome::Ignored => {
                 if pending_fallback_files.remove(file) {
-                    crate::sco_log!("[SCO/watch] fallback cleared file='{}'", file);
+                    crate::sco_debug!("[SCO/watch] fallback cleared file='{}'", file);
                     if pending_fallback_files.is_empty() {
-                        crate::sco_log!("[SCO/watch] fallback polling stopped");
+                        crate::sco_debug!("[SCO/watch] fallback polling stopped");
                     }
                 }
             }
@@ -662,7 +662,7 @@ impl TauriOverlayOps {
             ) {
                 Ok(watcher) => watcher,
                 Err(error) => {
-                    crate::sco_log!("[SCO/watch] failed to initialize replay watcher: {error}");
+                    crate::sco_error!("[SCO/watch] failed to initialize replay watcher: {error}");
                     return;
                 }
             };
@@ -692,7 +692,7 @@ impl TauriOverlayOps {
                         .map(|last| now.duration_since(last) >= Duration::from_secs(5))
                         .unwrap_or(true);
                     if should_log {
-                        crate::sco_log!(
+                        crate::sco_warn!(
                             "[SCO/watch] account_folder replay root unavailable, retrying in 5s"
                         );
                         missing_root_logged_at = Some(now);
@@ -708,7 +708,7 @@ impl TauriOverlayOps {
                         if !TauriOverlayOps::is_replay_creation_event(&event.kind) {
                             continue;
                         }
-                        crate::sco_log!(
+                        crate::sco_debug!(
                             "[SCO/watch] notify event kind={:?} paths={}",
                             event.kind,
                             event.paths.len()
@@ -741,7 +741,7 @@ impl TauriOverlayOps {
                         }
                     }
                     Ok(ReplayWatcherMessage::Event(Err(error))) => {
-                        crate::sco_log!("[SCO/watch] watcher event error: {error}");
+                        crate::sco_warn!("[SCO/watch] watcher event error: {error}");
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                         if pending_fallback_files.is_empty() || watched_root.is_none() {
@@ -766,7 +766,7 @@ impl TauriOverlayOps {
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                         app.state::<BackendState>().set_replay_watcher_sender(None);
-                        crate::sco_log!(
+                        crate::sco_warn!(
                             "[SCO/watch] replay watcher channel disconnected; stopping"
                         );
                         break;

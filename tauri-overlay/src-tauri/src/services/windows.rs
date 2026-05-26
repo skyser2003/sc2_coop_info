@@ -63,7 +63,7 @@ impl TauriOverlayOps {
         if let Some(window) = app.get_webview_window(overlay_info::OVERLAY_WINDOW_LABEL)
             && let Err(error) = overlay_info::OverlayInfoOps::apply_overlay_placement(&window)
         {
-            crate::sco_log!("Could not apply saved overlay placement: {error}");
+            crate::sco_warn!("Could not apply saved overlay placement: {error}");
         }
         let _ = app
             .get_webview_window(overlay_info::SC2_OVERLAY_WINDOW_LABEL)
@@ -93,7 +93,7 @@ impl TauriOverlayOps {
             && let Err(error) =
                 performance_overlay::PerformanceOverlayOps::apply_saved_geometry(&window)
         {
-            crate::sco_log!("Could not apply saved performance placement: {error}");
+            crate::sco_warn!("Could not apply saved performance placement: {error}");
         }
     }
 }

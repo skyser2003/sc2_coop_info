@@ -2477,7 +2477,7 @@ impl TypeDecoder for BitPackedDecoder<'_> {
 
     fn instance_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
         if std::env::var("S2_DEBUG_DECODER").is_ok() {
-            eprintln!(
+            log::trace!(
                 "[bitpacked] typeid={typeid} op={} used_bits={}",
                 typeinfo.op_name(),
                 self.used_bits(),
@@ -3308,7 +3308,7 @@ impl TypeDecoder for VersionedDecoder<'_> {
 
     fn instance_from_typeinfo(&mut self, typeinfo: &TypeInfo) -> Result<Value, DecodeError> {
         if std::env::var("S2_DEBUG_DECODER").is_ok() {
-            eprintln!(
+            log::trace!(
                 "[versioned] typeid={typeid} op={} used_bits={}",
                 typeinfo.op_name(),
                 self.used_bits(),

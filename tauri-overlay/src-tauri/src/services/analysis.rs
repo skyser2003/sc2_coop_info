@@ -34,7 +34,7 @@ impl TauriOverlayOps {
             .replay_scan_progress()
             .as_payload();
         if log_event {
-            crate::sco_log!(
+            crate::sco_debug!(
                 "[SCO/stats/event] emit {} stage={} status={} completed={} total={} elapsed_ms={}",
                 SCO_REPLAY_SCAN_PROGRESS_EVENT,
                 payload.stage,
@@ -45,7 +45,7 @@ impl TauriOverlayOps {
             );
         }
         if let Err(error) = app.emit(SCO_REPLAY_SCAN_PROGRESS_EVENT, payload) {
-            crate::sco_log!("[SCO/stats] failed to emit scan progress: {error}");
+            crate::sco_warn!("[SCO/stats] failed to emit scan progress: {error}");
         }
     }
 
@@ -54,14 +54,14 @@ impl TauriOverlayOps {
             mode: mode.key().to_string(),
             message: message.to_string(),
         };
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats/event] emit {} mode={} message={}",
             SCO_ANALYSIS_COMPLETED_EVENT,
             payload.mode,
             payload.message
         );
         if let Err(error) = app.emit(SCO_ANALYSIS_COMPLETED_EVENT, payload) {
-            crate::sco_log!("[SCO/stats] failed to emit analysis completed event: {error}");
+            crate::sco_warn!("[SCO/stats] failed to emit analysis completed event: {error}");
         }
     }
 
@@ -81,7 +81,7 @@ impl TauriOverlayOps {
             if let Err(error) = std::fs::remove_file(&path)
                 && error.kind() != std::io::ErrorKind::NotFound
             {
-                crate::sco_log!(
+                crate::sco_warn!(
                     "[SCO/cache] failed to delete analysis cache file '{}': {error}",
                     path.display()
                 );
@@ -115,7 +115,7 @@ impl TauriOverlayOps {
                 }
                 let normalized =
                     TauriOverlayOps::normalize_detailed_analysis_logger_message(&message);
-                crate::sco_log!("[SCO/stats] {normalized}");
+                crate::sco_debug!("[SCO/stats] {normalized}");
                 replay_scan_progress.set_stage("detailed_analysis_running");
                 replay_scan_progress.set_status("Parsing");
                 if let Ok(mut guard) = stats.lock() {
@@ -155,7 +155,7 @@ impl TauriOverlayOps {
         let writer_finish_start = Instant::now();
         let write_result = cache_writer.finish();
         let writer_finish_elapsed = writer_finish_start.elapsed();
-        crate::sco_log!(
+        crate::sco_debug!(
             concat!(
                 "[SCO/stats] detailed sqlite writer batch_size={} ",
                 "analyze_ms={} finish_wait_ms={} sqlite_open_ms={} sqlite_write_ms={} ",
@@ -173,7 +173,7 @@ impl TauriOverlayOps {
         );
         if let Ok(summary) = analysis_result.as_ref() {
             let timing = summary.timing_report();
-            crate::sco_log!(
+            crate::sco_debug!(
                 concat!(
                     "[SCO/stats] detailed analyzer phases total_ms={} ",
                     "collect_files_ms={} collect_candidates_ms={} replay_analysis_ms={} ",
@@ -243,7 +243,7 @@ impl TauriOverlayOps {
         };
 
         if outcome.started() {
-            crate::sco_log!(
+            crate::sco_info!(
                 "[SCO/stats] startup analysis requested from {} mode={}",
                 trigger.label(),
                 TauriOverlayOps::startup_analysis_mode(outcome.include_detailed())
@@ -256,7 +256,7 @@ impl TauriOverlayOps {
                 outcome.include_detailed(),
             );
         } else {
-            crate::sco_log!(
+            crate::sco_debug!(
                 "[SCO/stats] startup analysis already requested before {} mode={}",
                 trigger.label(),
                 TauriOverlayOps::startup_analysis_mode(outcome.include_detailed())
@@ -272,7 +272,7 @@ impl TauriOverlayOps {
         let database = match ReplayCacheDatabase::open_for_cache_path(&cache_path) {
             Ok(database) => database,
             Err(error) => {
-                crate::sco_log!(
+                crate::sco_warn!(
                     "[SCO/cache-db] failed to open existing detailed cache identity database: {error}"
                 );
                 return HashMap::new();
@@ -282,7 +282,7 @@ impl TauriOverlayOps {
         match database.load_detailed_cache_identities_by_hash() {
             Ok(identities_by_hash) => identities_by_hash,
             Err(error) => {
-                crate::sco_log!(
+                crate::sco_warn!(
                     "[SCO/cache-db] failed to load existing detailed cache identities for reuse: {error}"
                 );
                 HashMap::new()
@@ -351,7 +351,7 @@ impl TauriOverlayOps {
             let load_existing_start = Instant::now();
             let existing_detailed_cache_identities_by_hash =
                 TauriOverlayOps::load_existing_detailed_cache_identities_by_hash();
-            crate::sco_log!(
+            crate::sco_debug!(
                 "[SCO/stats] detailed existing-cache identity load entries={} elapsed={}ms",
                 existing_detailed_cache_identities_by_hash.len(),
                 load_existing_start.elapsed().as_millis()
@@ -379,7 +379,7 @@ impl TauriOverlayOps {
 
             let generation_summary = generation_result?;
             let completed = generation_summary.completed();
-            crate::sco_log!(
+            crate::sco_info!(
                 concat!(
                     "[SCO/stats] detailed scan generated '{}' with {} new replay entr{} ",
                     "completed={} elapsed={}ms"
@@ -400,7 +400,7 @@ impl TauriOverlayOps {
             let main_handles = state.configured_main_handles();
             let dictionary_start = Instant::now();
             let dictionary = state.dictionary_data()?;
-            crate::sco_log!(
+            crate::sco_debug!(
                 "[SCO/stats] detailed dictionary access elapsed={}ms",
                 dictionary_start.elapsed().as_millis()
             );
@@ -422,7 +422,7 @@ impl TauriOverlayOps {
                         ReplayCacheDatabase::db_path_for_cache_path(&cache_path).display()
                     )
                 })?;
-            crate::sco_log!(
+            crate::sco_debug!(
                 "[SCO/stats] detailed sqlite statistics snapshot games={} elapsed={}ms",
                 payload.games(),
                 snapshot_start.elapsed().as_millis()
@@ -483,7 +483,7 @@ impl TauriOverlayOps {
             let mut guard = match stats.lock() {
                 Ok(guard) => guard,
                 Err(error) => {
-                    crate::sco_log!(
+                    crate::sco_warn!(
                         "[SCO/stats] failed to start background {} thread: {error}",
                         mode.display()
                     );
@@ -494,10 +494,10 @@ impl TauriOverlayOps {
             if guard.analysis_running() {
                 let active_mode = guard.analysis_running_mode();
                 if active_mode == Some(mode) {
-                    crate::sco_log!("[SCO/stats] {} already running", mode.display());
+                    crate::sco_info!("[SCO/stats] {} already running", mode.display());
                     guard.set_message(TauriOverlayOps::analysis_already_running_message(mode));
                 } else {
-                    crate::sco_log!(
+                    crate::sco_info!(
                         "[SCO/stats] {} blocked while another analysis is running",
                         mode.display()
                     );
@@ -541,7 +541,7 @@ impl TauriOverlayOps {
         let main_handles_for_thread = main_handles.clone();
         thread::spawn(move || {
             let started_at = Instant::now();
-            crate::sco_log!("[SCO/stats] {} thread started", mode.display());
+            crate::sco_info!("[SCO/stats] {} thread started", mode.display());
             replay_scan_progress_for_thread.set_stage(if include_detailed {
                 "detailed_analysis_running"
             } else {
@@ -584,7 +584,7 @@ impl TauriOverlayOps {
                 Ok(outcome) => outcome,
                 Err(message) => {
                     let elapsed = started_at.elapsed();
-                    crate::sco_log!("[SCO/stats] {} failed: {message}", mode.display());
+                    crate::sco_warn!("[SCO/stats] {} failed: {message}", mode.display());
                     if let Ok(mut guard) = analysis_state.lock() {
                         guard.set_analysis_terminal_status(mode, "failed");
                         guard.set_detailed_analysis_status(
@@ -664,7 +664,7 @@ impl TauriOverlayOps {
                         }
                     })
                     .collect::<Vec<_>>();
-                crate::sco_log!(
+                crate::sco_debug!(
                     "[SCO/stats] {} dedupe replay summaries replays={} elapsed={}ms",
                     mode.display(),
                     all_replays.len(),
@@ -676,7 +676,7 @@ impl TauriOverlayOps {
             let current_files_start = Instant::now();
             let current_replay_files =
                 settings_for_thread.current_replay_files_snapshot(UNLIMITED_REPLAY_LIMIT);
-            crate::sco_log!(
+            crate::sco_debug!(
                 "[SCO/stats] {} current replay file snapshot files={} elapsed={}ms",
                 mode.display(),
                 current_replay_files.len(),
@@ -690,7 +690,7 @@ impl TauriOverlayOps {
                     *current_files = current_replay_files;
                 }
                 Err(_) => {
-                    crate::sco_log!(
+                    crate::sco_warn!(
                         "[SCO/stats] failed to update current replay file set after scan"
                     );
                 }
@@ -705,7 +705,7 @@ impl TauriOverlayOps {
                     .state::<BackendState>()
                     .dictionary_data()
                     .ok();
-                crate::sco_log!(
+                crate::sco_debug!(
                     "[SCO/stats] {} rebuild dictionary access elapsed={}ms available={}",
                     mode.display(),
                     dictionary_start.elapsed().as_millis(),
@@ -734,7 +734,7 @@ impl TauriOverlayOps {
                             "Dictionary data is unavailable.",
                         )
                     });
-                crate::sco_log!(
+                crate::sco_debug!(
                     "[SCO/stats] {} build rebuild snapshot elapsed={}ms",
                     mode.display(),
                     snapshot_start.elapsed().as_millis()
@@ -745,7 +745,7 @@ impl TauriOverlayOps {
             let mut guard = match analysis_state.lock() {
                 Ok(guard) => guard,
                 Err(error) => {
-                    crate::sco_log!(
+                    crate::sco_warn!(
                         "[SCO/stats] {} aborted before rebuild: {error}",
                         mode.display()
                     );
@@ -773,7 +773,7 @@ impl TauriOverlayOps {
 
             let apply_snapshot_start = Instant::now();
             TauriOverlayOps::apply_rebuild_snapshot(&mut guard, snapshot, mode);
-            crate::sco_log!(
+            crate::sco_debug!(
                 "[SCO/stats] {} apply rebuild snapshot elapsed={}ms",
                 mode.display(),
                 apply_snapshot_start.elapsed().as_millis()
@@ -814,7 +814,7 @@ impl TauriOverlayOps {
             replay_scan_progress_for_thread.set_status("Completed");
             let _ = progress_tx.send(ProgressEmitterCommand::Stop);
 
-            crate::sco_log!(
+            crate::sco_info!(
                 "[SCO/stats] {} finished in {}ms for {} replay(s) completed={}",
                 mode.display(),
                 started_at.elapsed().as_millis(),
@@ -840,7 +840,7 @@ impl TauriOverlayOps {
         detailed_stop_controller_slot: Arc<Mutex<Option<Arc<GenerateCacheStopController>>>>,
         include_detailed: bool,
     ) {
-        crate::sco_log!(
+        crate::sco_info!(
             "[SCO/stats] startup analysis mode={}",
             TauriOverlayOps::startup_analysis_mode(include_detailed)
         );

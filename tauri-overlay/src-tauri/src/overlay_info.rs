@@ -925,7 +925,7 @@ impl OverlayInfoOps {
             .join("+");
 
         if blocked {
-            crate::sco_log!("[SCO/hotkey] Backspace/Delete cannot be used as global hotkey");
+            crate::sco_warn!("[SCO/hotkey] Backspace/Delete cannot be used as global hotkey");
             return None;
         }
 
@@ -933,7 +933,7 @@ impl OverlayInfoOps {
             return Some(canonical);
         }
 
-        crate::sco_log!("[SCO/hotkey] Ignoring invalid hotkey '{raw}'");
+        crate::sco_warn!("[SCO/hotkey] Ignoring invalid hotkey '{raw}'");
         None
     }
 }
@@ -950,13 +950,13 @@ impl OverlayInfoOps {
         }
 
         let pressed = shortcut.into_string().to_ascii_lowercase();
-        crate::sco_log!("[SCO/hotkey] Triggered shortcut '{pressed}' => '{action}'");
+        crate::sco_debug!("[SCO/hotkey] Triggered shortcut '{pressed}' => '{action}'");
 
         match action {
             "overlay_newer" | "overlay_older" | "overlay_player_stats" => {
                 let state = app_handle.state::<BackendState>();
                 if !state.try_begin_hotkey_action() {
-                    crate::sco_log!(
+                    crate::sco_debug!(
                         "[SCO/hotkey] Ignoring '{pressed}' because another hotkey action is running"
                     );
                     return;
@@ -1033,7 +1033,7 @@ impl OverlayInfoOps {
 
         for binding in state.resolved_overlay_hotkey_bindings() {
             if active_reassign_path.as_deref() == Some(binding.path()) {
-                crate::sco_log!(
+                crate::sco_debug!(
                     "[SCO/hotkey] Skipping '{}' because it is currently being reassigned",
                     binding.path()
                 );
@@ -1041,13 +1041,13 @@ impl OverlayInfoOps {
             }
             if let Some(existing_action) = registered.get(binding.canonical()) {
                 if *existing_action == binding.action() {
-                    crate::sco_log!(
+                    crate::sco_debug!(
                         "[SCO/hotkey] Duplicate hotkey '{}' for '{}' ignored.",
                         binding.canonical(),
                         binding.action()
                     );
                 } else {
-                    crate::sco_log!(
+                    crate::sco_warn!(
                         "[SCO/hotkey] Hotkey '{}' already bound to '{}', skipping '{}'.",
                         binding.canonical(),
                         existing_action,
@@ -1056,7 +1056,7 @@ impl OverlayInfoOps {
                 }
                 continue;
             }
-            crate::sco_log!(
+            crate::sco_debug!(
                 "[SCO/hotkey] Registering '{}' for '{}'",
                 binding.shortcut(),
                 binding.action()
@@ -1067,7 +1067,7 @@ impl OverlayInfoOps {
         }
 
         if registered_count == 0 {
-            crate::sco_log!("[SCO/hotkey] No overlay hotkeys configured.");
+            crate::sco_info!("[SCO/hotkey] No overlay hotkeys configured.");
         }
 
         Ok(())
@@ -1092,7 +1092,7 @@ impl OverlayInfoOps {
 
         if let Some(binding) = binding {
             OverlayInfoOps::unregister_hotkey_binding(app, &binding)?;
-            crate::sco_log!(
+            crate::sco_debug!(
                 "[SCO/hotkey] Removed hotkey trigger for '{}' while it is being reassigned",
                 path
             );
@@ -1115,7 +1115,7 @@ impl OverlayInfoOps {
             settings_value.hotkey_binding_for_reassign_end(path, fallback_binding.as_ref())
         else {
             state.set_active_hotkey_reassign_binding(None);
-            crate::sco_log!("[SCO/hotkey] '{path}' has no active binding after reassignment");
+            crate::sco_warn!("[SCO/hotkey] '{path}' has no active binding after reassignment");
             return Ok(());
         };
 
@@ -1125,7 +1125,7 @@ impl OverlayInfoOps {
             .any(|other| other.path() != binding.path() && other.canonical() == binding.canonical())
         {
             state.set_active_hotkey_reassign_binding(None);
-            crate::sco_log!(
+            crate::sco_warn!(
                 "[SCO/hotkey] Hotkey '{}' conflicts with another binding, skipping '{}'.",
                 binding.canonical(),
                 binding.path()
@@ -1135,7 +1135,7 @@ impl OverlayInfoOps {
 
         OverlayInfoOps::register_hotkey_binding(app, &binding)?;
         state.set_active_hotkey_reassign_binding(None);
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/hotkey] Recreated hotkey trigger for '{}' as '{}'",
             path,
             binding.shortcut()
@@ -1296,7 +1296,7 @@ impl OverlayInfoOps {
     ) -> Option<ReplayInfo> {
         let cache_path = PathManagerOps::get_cache_path();
         let database = ReplayCacheDatabase::open_for_cache_path(&cache_path).map_err(|error| {
-            crate::sco_log!("[SCO/cache-db] replay display cache lookup failed: {error}");
+            crate::sco_warn!("[SCO/cache-db] replay display cache lookup failed: {error}");
             error
         });
         let Ok(database) = database else {
@@ -1316,7 +1316,7 @@ impl OverlayInfoOps {
             },
         }
         .map_err(|error| {
-            crate::sco_log!("[SCO/cache-db] replay display row lookup failed: {error}");
+            crate::sco_warn!("[SCO/cache-db] replay display row lookup failed: {error}");
             error
         })
         .ok()
@@ -1335,7 +1335,7 @@ impl OverlayInfoOps {
 
         let cache_path = PathManagerOps::get_cache_path();
         let database = ReplayCacheDatabase::open_for_cache_path(&cache_path).map_err(|error| {
-            crate::sco_log!("[SCO/cache-db] replay move cache lookup failed: {error}");
+            crate::sco_warn!("[SCO/cache-db] replay move cache lookup failed: {error}");
             error.to_string()
         })?;
 
@@ -1352,7 +1352,7 @@ impl OverlayInfoOps {
                     CANDIDATE_BATCH_SIZE,
                 )
                 .map_err(|error| {
-                    crate::sco_log!("[SCO/cache-db] replay move row lookup failed: {error}");
+                    crate::sco_warn!("[SCO/cache-db] replay move row lookup failed: {error}");
                     error.to_string()
                 })?;
             if entries.is_empty() {
@@ -1937,7 +1937,7 @@ impl OverlayInfoOps {
     pub fn show_sc2_overlay_window<R: Runtime>(app: &tauri::AppHandle<R>) {
         OverlayInfoOps::sync_overlay_runtime_settings(app);
         if let Err(error) = OverlayInfoOps::sync_sc2_overlay_window_to_sc2(app) {
-            crate::sco_log!("[SCO/sc2-overlay] Failed to show SC2 overlay: {error}");
+            crate::sco_warn!("[SCO/sc2-overlay] Failed to show SC2 overlay: {error}");
         }
     }
 }
@@ -1962,7 +1962,7 @@ impl OverlayInfoOps {
                     }
                     Err(error) => {
                         if last_error.as_deref() != Some(error.as_str()) {
-                            crate::sco_log!(
+                            crate::sco_warn!(
                                 "[SCO/sc2-overlay] Failed to sync SC2 overlay bounds: {error}"
                             );
                         }
@@ -2012,7 +2012,7 @@ impl OverlayInfoOps {
             None::<&str>,
         )
         .inspect_err(|error| {
-            crate::sco_log!("Failed to create tray menu item '{MENU_ITEM_SHOW_CONFIG}': {error}");
+            crate::sco_error!("Failed to create tray menu item '{MENU_ITEM_SHOW_CONFIG}': {error}");
         })
         .ok()?;
 
@@ -2024,13 +2024,15 @@ impl OverlayInfoOps {
             None::<&str>,
         )
         .inspect_err(|error| {
-            crate::sco_log!("Failed to create tray menu item '{MENU_ITEM_SHOW_OVERLAY}': {error}");
+            crate::sco_error!(
+                "Failed to create tray menu item '{MENU_ITEM_SHOW_OVERLAY}': {error}"
+            );
         })
         .ok()?;
 
         let quit_item = MenuItem::with_id(app, MENU_ITEM_QUIT, "Quit", true, None::<&str>)
             .inspect_err(|error| {
-                crate::sco_log!("Failed to create tray menu item '{MENU_ITEM_QUIT}': {error}");
+                crate::sco_error!("Failed to create tray menu item '{MENU_ITEM_QUIT}': {error}");
             })
             .ok()?;
 

@@ -455,7 +455,7 @@ impl BackendState {
         if let Some(sender) = sender
             && sender.send(ReplayWatcherMessage::RefreshRoot).is_err()
         {
-            crate::sco_log!("[SCO/watch] failed to request replay watcher root refresh");
+            crate::sco_warn!("[SCO/watch] failed to request replay watcher root refresh");
         }
     }
 
@@ -474,15 +474,14 @@ impl BackendState {
             serde_json::to_string(payload).unwrap_or_else(|_| "<invalid-json>".into())
         });
         if let Some(serialized_body) = serialized_body {
-            self.append_log_line_if_enabled(&format!(
+            crate::sco_debug!(
                 "[SCO/request] method={} path={} body={}",
-                method, path, serialized_body
-            ));
+                method,
+                path,
+                serialized_body
+            );
         } else {
-            self.append_log_line_if_enabled(&format!(
-                "[SCO/request] method={} path={}",
-                method, path
-            ));
+            crate::sco_debug!("[SCO/request] method={} path={}", method, path);
         }
     }
 
@@ -508,7 +507,7 @@ impl BackendState {
         if previous_start_with_windows != sanitized.start_with_windows()
             && let Err(error) = sanitized.sync_start_with_windows_registration()
         {
-            crate::sco_log!("[SCO/settings] Failed to sync start_with_windows: {error}");
+            crate::sco_warn!("[SCO/settings] Failed to sync start_with_windows: {error}");
         }
 
         Ok(())
@@ -748,7 +747,7 @@ impl BackendState {
                     database.load_overlay_player_stats_row(player_handle, &fallback_name)
                 })
                 .map_err(|error| {
-                    crate::sco_log!(
+                    crate::sco_warn!(
                         "[SCO/player-stats] failed to load player row from cache: {error}"
                     );
                     error
@@ -794,7 +793,7 @@ impl BackendState {
     fn cached_replay_by_file_or_latest(&self, file: Option<&str>) -> Option<ReplayInfo> {
         let cache_path = PathManagerOps::get_cache_path();
         let database = ReplayCacheDatabase::open_for_cache_path(&cache_path).map_err(|error| {
-            crate::sco_log!("[SCO/cache-db] failed to open replay cache: {error}");
+            crate::sco_warn!("[SCO/cache-db] failed to open replay cache: {error}");
             error
         });
         let Ok(database) = database else {
@@ -810,7 +809,7 @@ impl BackendState {
             None => database.load_latest_entry(),
         }
         .map_err(|error| {
-            crate::sco_log!("[SCO/cache-db] failed to load selected replay: {error}");
+            crate::sco_warn!("[SCO/cache-db] failed to load selected replay: {error}");
             error
         })
         .ok()
@@ -836,7 +835,7 @@ impl BackendState {
         ReplayCacheDatabase::open_for_cache_path(&cache_path)
             .and_then(|database| database.load_entry_by_hash(replay_hash))
             .map_err(|error| {
-                crate::sco_log!("[SCO/cache-db] failed to load replay by hash: {error}");
+                crate::sco_warn!("[SCO/cache-db] failed to load replay by hash: {error}");
                 error
             })
             .ok()
@@ -913,7 +912,7 @@ impl BackendState {
         }
 
         thread::spawn(move || {
-            crate::sco_log!("[SCO/players] background player scan started (limit={limit})");
+            crate::sco_info!("[SCO/players] background player scan started (limit={limit})");
             let replays = match replay_analysis_resources {
                 Ok(resources) => ReplayAnalysis::analyze_replays_with_resources(
                     limit,
@@ -925,7 +924,7 @@ impl BackendState {
                     resources.as_ref(),
                 ),
                 Err(error) => {
-                    crate::sco_log!("[SCO/players] background player scan skipped: {error}");
+                    crate::sco_warn!("[SCO/players] background player scan skipped: {error}");
                     Vec::new()
                 }
             };
@@ -936,12 +935,12 @@ impl BackendState {
                     state.set_current_replay_file_if_empty(selected);
                 }
                 Err(error) => {
-                    crate::sco_log!("[SCO/players] failed to access replay state: {error}");
+                    crate::sco_warn!("[SCO/players] failed to access replay state: {error}");
                 }
             }
 
             players_scan_in_flight.store(false, Ordering::Release);
-            crate::sco_log!("[SCO/players] background player scan completed");
+            crate::sco_info!("[SCO/players] background player scan completed");
         });
     }
 
@@ -999,7 +998,7 @@ impl BackendState {
         ReplayCacheDatabase::open_for_cache_path(&PathManagerOps::get_cache_path())
             .and_then(|database| database.has_player_info_rows())
             .map_err(|error| {
-                crate::sco_log!("[SCO/player-stats] failed to check cached player rows: {error}");
+                crate::sco_warn!("[SCO/player-stats] failed to check cached player rows: {error}");
                 error
             })
             .unwrap_or(false)

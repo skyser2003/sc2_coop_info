@@ -446,7 +446,7 @@ impl ReplayAnalysisTiming for ReplayAnalysisTimingCollector {
             return;
         }
 
-        eprintln!(
+        log::debug!(
             "[s2coop timing] analyze_replay_file_impl label=\"{}\" total={:.3}ms",
             self.label,
             self.started.elapsed().as_secs_f64() * 1000.0
@@ -454,21 +454,21 @@ impl ReplayAnalysisTiming for ReplayAnalysisTimingCollector {
         for span in REPLAY_REPORT_TIMING_SPANS {
             let duration = self.spans[span.index()];
             if duration > Duration::ZERO {
-                eprintln!(
+                log::trace!(
                     "[s2coop timing] span.{}={:.3}ms",
                     span.label(),
                     duration.as_secs_f64() * 1000.0
                 );
             }
         }
-        eprintln!(
+        log::trace!(
             "[s2coop timing] count.events_input={}",
             self.events_input_count
         );
         for (index, count) in self.event_counts.iter().enumerate() {
             if *count > 0 {
                 let name = REPLAY_EVENT_KIND_TIMING_COUNT_NAMES[index];
-                eprintln!("[s2coop timing] {name}={count}");
+                log::trace!("[s2coop timing] {name}={count}");
             }
         }
     }

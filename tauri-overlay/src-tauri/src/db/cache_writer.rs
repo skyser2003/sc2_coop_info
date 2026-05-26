@@ -276,7 +276,7 @@ impl ReplayCacheWriteQueue {
         {
             Ok(result) => result,
             Err(_) => {
-                crate::sco_log!("[SCO/cache] cache writer thread panicked");
+                crate::sco_error!("[SCO/cache] cache writer thread panicked");
                 ReplayCacheWriteResult::default()
             }
         }
@@ -292,7 +292,7 @@ impl ReplayCacheWriteQueue {
             Ok(database) => database,
             Err(error) => {
                 result.set_database_open(database_open_start.elapsed());
-                crate::sco_log!("[SCO/cache] failed to open cache writer: {error}");
+                crate::sco_error!("[SCO/cache] failed to open cache writer: {error}");
                 for command in receiver {
                     if !command.entries().is_empty() {
                         result.add_attempted_entries(command.entries().len());
@@ -331,7 +331,7 @@ impl ReplayCacheWriteQueue {
                 }
                 Err(error) => {
                     result.increment_failed_batches();
-                    crate::sco_log!("[SCO/cache] failed to persist cache writer batch: {error}");
+                    crate::sco_warn!("[SCO/cache] failed to persist cache writer batch: {error}");
                     if let Some(result_sender) = command.result_sender() {
                         let _ = result_sender.send(Err(error.to_string()));
                     }

@@ -778,11 +778,11 @@ impl AppSettings {
                     .find(|(default_path, _)| *default_path == path)
                     .and_then(|(_, default_value)| OverlayInfoOps::normalize_hotkey(default_value)),
                 Some(Value::Bool(false)) => {
-                    crate::sco_log!("[SCO/hotkey] '{path}' disabled by settings.");
+                    crate::sco_debug!("[SCO/hotkey] '{path}' disabled by settings.");
                     None
                 }
                 Some(Value::Bool(true)) => {
-                    crate::sco_log!(
+                    crate::sco_warn!(
                         "[SCO/hotkey] '{path}' has invalid non-string binding, skipping."
                     );
                     None
@@ -790,21 +790,21 @@ impl AppSettings {
                 Some(Value::String(raw)) => {
                     let raw = raw.trim();
                     if raw.is_empty() {
-                        crate::sco_log!("[SCO/hotkey] '{path}' is empty, disabled by settings.");
+                        crate::sco_warn!("[SCO/hotkey] '{path}' is empty, disabled by settings.");
                         None
                     } else {
                         OverlayInfoOps::normalize_hotkey(raw)
                     }
                 }
                 Some(_) => {
-                    crate::sco_log!("[SCO/hotkey] '{path}' has invalid binding type, skipping.");
+                    crate::sco_warn!("[SCO/hotkey] '{path}' has invalid binding type, skipping.");
                     None
                 }
             };
 
             let Some(shortcut) = shortcut else {
                 if using_default {
-                    crate::sco_log!("[SCO/hotkey] Missing binding for '{path}', skipping.");
+                    crate::sco_warn!("[SCO/hotkey] Missing binding for '{path}', skipping.");
                 }
                 continue;
             };
@@ -812,7 +812,7 @@ impl AppSettings {
             let parsed = match tauri_plugin_global_shortcut::Shortcut::from_str(&shortcut) {
                 Ok(parsed) => parsed,
                 Err(error) => {
-                    crate::sco_log!(
+                    crate::sco_warn!(
                         "[SCO/hotkey] Failed to parse hotkey '{shortcut}' for '{path}': {error}"
                     );
                     continue;
@@ -820,7 +820,7 @@ impl AppSettings {
             };
 
             if using_default {
-                crate::sco_log!("[SCO/hotkey] Falling back to default for '{path}'.");
+                crate::sco_debug!("[SCO/hotkey] Falling back to default for '{path}'.");
             }
 
             bindings.push(ResolvedHotkeyBinding::new(

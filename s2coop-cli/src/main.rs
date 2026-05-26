@@ -1,7 +1,10 @@
 use s2coop_cli::app::CliApplication;
+use s2coop_cli::logging::CliLoggingOps;
 use s2coop_cli::progress::CliProgressBar;
 
 fn main() {
+    CliLoggingOps::initialize_env_logger();
+
     let args = std::env::args().collect::<Vec<String>>();
     let progress_bar = CliProgressBar::build();
     let logger_progress_bar = progress_bar.clone();

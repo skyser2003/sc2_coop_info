@@ -767,7 +767,7 @@ impl ReplayAnalysisOps {
         let database = match ReplayCacheDatabase::open_for_cache_path(cache_path) {
             Ok(database) => database,
             Err(error) => {
-                crate::sco_log!(
+                crate::sco_warn!(
                     "[SCO/cache] failed to open {log_label} database for '{}': {error}",
                     db_path.display()
                 );
@@ -778,7 +778,7 @@ impl ReplayAnalysisOps {
         match database.load_summary_entries(query) {
             Ok(entries) => entries,
             Err(error) => {
-                crate::sco_log!(
+                crate::sco_warn!(
                     "[SCO/cache] failed to read {log_label} database for '{}': {error}",
                     db_path.display()
                 );
@@ -796,7 +796,7 @@ impl ReplayAnalysisOps {
         let database = match ReplayCacheDatabase::open_for_cache_path(cache_path) {
             Ok(database) => database,
             Err(error) => {
-                crate::sco_log!(
+                crate::sco_warn!(
                     "[SCO/cache] failed to open {log_label} database for '{}': {error}",
                     db_path.display()
                 );
@@ -807,7 +807,7 @@ impl ReplayAnalysisOps {
         match database.load_entries(query) {
             Ok(entries) => entries,
             Err(error) => {
-                crate::sco_log!(
+                crate::sco_warn!(
                     "[SCO/cache] failed to read {log_label} database for '{}': {error}",
                     db_path.display()
                 );
@@ -1830,7 +1830,7 @@ impl ReplayAnalysis {
         }
 
         let started_at = Instant::now();
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats] rebuild_analysis_payload start include_detailed={} replays={}",
             include_detailed,
             replays.len()
@@ -1880,7 +1880,7 @@ impl ReplayAnalysis {
                 None => {
                     invalid_result += 1;
                     if invalid_result <= 5 {
-                        crate::sco_log!(
+                        crate::sco_warn!(
                             "[SCO/stats] unrecognized result for {:?}: {}",
                             replay.file,
                             replay.result
@@ -2074,7 +2074,7 @@ impl ReplayAnalysis {
 
         let total_games = considered_games;
         if total_games == 0 {
-            crate::sco_log!(
+            crate::sco_debug!(
                 "[SCO/stats] aggregate stage filtered all replays; scanned={} invalid_result={}",
                 total_scanned,
                 invalid_result
@@ -2087,7 +2087,7 @@ impl ReplayAnalysis {
         let region_count = region_values.len();
         let difficulty_count = difficulty_values.len();
         let player_count = player_values.len();
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats] aggregate stage done in {}ms (maps={} commanders={} allies={} regions={} diffs={} players={})",
             started_at.elapsed().as_millis(),
             map_count,
@@ -2173,7 +2173,7 @@ impl ReplayAnalysis {
                 )),
             );
         }
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats] map_data stage done in {}ms (rows={})",
             map_started_at.elapsed().as_millis(),
             map_data.len()
@@ -2183,7 +2183,7 @@ impl ReplayAnalysis {
         let commander_data = StatsAggregationOps::build_commander_data(
             StatsCommanderDataInput::new(&main_commander, total_games, &sum_main, None),
         );
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats] commander_data stage done in {}ms (rows={})",
             commander_started_at.elapsed().as_millis(),
             commander_data.len()
@@ -2211,7 +2211,7 @@ impl ReplayAnalysis {
                 &sum_ally,
                 Some(&main_commander_frequency),
             ));
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats] ally_commander_data stage done in {}ms (rows={})",
             ally_started_at.elapsed().as_millis(),
             ally_commander_data.len()
@@ -2232,7 +2232,7 @@ impl ReplayAnalysis {
                 )),
             );
         }
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats] difficulty_data stage done in {}ms (rows={})",
             difficulty_started_at.elapsed().as_millis(),
             difficulty_data.len()
@@ -2277,7 +2277,7 @@ impl ReplayAnalysis {
                 )),
             );
         }
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats] region_data stage done in {}ms (rows={})",
             region_started_at.elapsed().as_millis(),
             region_data.len()
@@ -2309,7 +2309,7 @@ impl ReplayAnalysis {
                 )),
             );
         }
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats] player_data stage done in {}ms (rows={})",
             player_started_at.elapsed().as_millis(),
             player_data.len()
@@ -2337,7 +2337,7 @@ impl ReplayAnalysis {
                 unit_data,
             ));
 
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats] rebuild_analysis_payload completed in {}ms",
             started_at.elapsed().as_millis()
         );
@@ -2787,7 +2787,7 @@ impl ReplayAnalysis {
         dictionary: &Sc2DictionaryData,
     ) -> StatsSnapshot {
         let started_at = Instant::now();
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats] rebuild_state_from_replays start mode={} replays={}",
             if include_detailed {
                 "detailed"
@@ -2821,7 +2821,7 @@ impl ReplayAnalysis {
                 main_handles,
                 dictionary,
             );
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats] rebuild_state_from_replays extracted {} main identities",
             main_players.len().max(main_handles.len())
         );
@@ -2831,7 +2831,7 @@ impl ReplayAnalysis {
         } else {
             format!("Scanned {replay_count} replay file(s).")
         };
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/stats] rebuild_state_from_replays end mode={} ready={} games={} duration={}ms",
             if include_detailed {
                 "detailed"
@@ -2896,7 +2896,7 @@ impl ReplayAnalysis {
             dictionary,
         );
 
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/cache] loaded {} replay(s) from detailed-analysis cache '{}'",
             replays.len(),
             ReplayCacheDatabase::db_path_for_cache_path(cache_path).display()
@@ -2994,7 +2994,7 @@ impl ReplayAnalysis {
             replays.truncate(limit);
         }
 
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/cache] loaded {} replay(s) from unified cache '{}' (includes both simple and detailed)",
             replays.len(),
             ReplayCacheDatabase::db_path_for_cache_path(cache_path).display()
@@ -3092,7 +3092,7 @@ impl ReplayAnalysis {
                 let cache_entry = result
                     .cache_persistable()
                     .then_some(result.into_cache_entry());
-                crate::sco_log!(
+                crate::sco_debug!(
                     "[SCO/replay] parsed file='{}' for cache projection in {}ms persistable={}",
                     file_label,
                     parse_started_at.elapsed().as_millis(),
@@ -3101,7 +3101,7 @@ impl ReplayAnalysis {
                 Some((replay, cache_entry))
             }
             Err(error) => {
-                crate::sco_log!(
+                crate::sco_warn!(
                     "[SCO/replay] cache persistence parse failed for {file_label} in {}ms: {error}",
                     parse_started_at.elapsed().as_millis()
                 );
@@ -3183,22 +3183,22 @@ impl ReplayAnalysis {
         scan_progress.set_status("Loading cache");
 
         let scan_started_at = Instant::now();
-        crate::sco_log!("[SCO/replay] analyze_replays start limit={limit}");
+        crate::sco_info!("[SCO/replay] analyze_replays start limit={limit}");
         scan_progress.set_stage("resolving_replay_root");
 
         let Some(root) = settings.resolve_replay_root() else {
-            crate::sco_log!("[SCO/replay] Replay root not configured");
+            crate::sco_warn!("[SCO/replay] Replay root not configured");
             scan_progress.set_status("Completed");
             scan_progress.set_stage("no_replay_root");
             return Vec::new();
         };
-        crate::sco_log!("[SCO/replay] scan root: {}", root.display());
+        crate::sco_debug!("[SCO/replay] scan root: {}", root.display());
 
         let cache_path = PathManagerOps::get_cache_path();
         let analyzed_files = ReplayCacheDatabase::open_for_cache_path(&cache_path)
             .and_then(|database| database.load_cached_files())
             .map_err(|error| {
-                crate::sco_log!("[SCO/cache] failed to load cached replay file list: {error}");
+                crate::sco_warn!("[SCO/cache] failed to load cached replay file list: {error}");
                 error
             })
             .unwrap_or_default();
@@ -3222,7 +3222,7 @@ impl ReplayAnalysis {
         scan_progress.set_to_parse(paths_to_parse_len as u64);
         scan_progress.set_cache_hits((all_paths_len - paths_to_parse_len) as u64);
 
-        crate::sco_log!(
+        crate::sco_info!(
             "[SCO/replay] collected {} path(s) in {}ms, {} already cached, parsing {}",
             all_paths_len,
             collect_started_at.elapsed().as_millis(),
@@ -3238,7 +3238,7 @@ impl ReplayAnalysis {
             if limit > 0 && replays.len() > limit {
                 replays.truncate(limit);
             }
-            crate::sco_log!(
+            crate::sco_info!(
                 "[SCO/replay] analyze_replays finished from cache in {}ms (total={})",
                 scan_started_at.elapsed().as_millis(),
                 replays.len()
@@ -3291,7 +3291,7 @@ impl ReplayAnalysis {
         ) {
             Ok(result) => result.into_values(),
             Err(error) => {
-                crate::sco_log!(
+                crate::sco_warn!(
                     "[SCO/cache] failed to parse simple analysis worker batch: {error}"
                 );
                 Vec::new()
@@ -3317,7 +3317,7 @@ impl ReplayAnalysis {
         let persisted_cache_entries = cache_writer_result.persisted_entries();
 
         if !failed_to_parse.is_empty() {
-            crate::sco_log!(
+            crate::sco_warn!(
                 "[SCO/replay] failed to parse {} replay(s): {}",
                 failed_to_parse.len(),
                 failed_to_parse.join(", ")
@@ -3328,7 +3328,7 @@ impl ReplayAnalysis {
         scan_progress.set_failed(failed_to_parse as u64);
         scan_progress.set_parse_skipped(0);
 
-        crate::sco_log!(
+        crate::sco_info!(
             "[SCO/replay] parsed {} replay(s) with rayon in {}ms (threads={worker_threads})",
             parsed_replays.len(),
             parse_started_at.elapsed().as_millis()
@@ -3336,7 +3336,7 @@ impl ReplayAnalysis {
 
         scan_progress.set_stage("finalizing_results");
         scan_progress.set_status("Finalizing results");
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/replay] finalizing {} parsed replay result(s) against {} cached replay file(s)",
             parsed_replays.len(),
             analyzed_files.len()
@@ -3383,13 +3383,13 @@ impl ReplayAnalysis {
             }
         }
 
-        crate::sco_log!(
+        crate::sco_debug!(
             "[SCO/cache] persisted {} simple-analysis cache entr(y/ies) with writer batches of {}",
             persisted_cache_entries,
             DEFAULT_CACHE_ENTRY_SINK_BATCH_SIZE
         );
         if cache_writer_result.failed_batches() > 0 {
-            crate::sco_log!(
+            crate::sco_warn!(
                 "[SCO/cache] failed to persist {} simple-analysis cache writer batch(es)",
                 cache_writer_result.failed_batches()
             );
@@ -3407,7 +3407,7 @@ impl ReplayAnalysis {
             .iter()
             .filter(|replay| replay.result == "Unparsed")
             .count();
-        crate::sco_log!(
+        crate::sco_info!(
             "[SCO/replay] analyze_replays finished in {}ms (parsed={}, unparsed={}, cached={})",
             scan_started_at.elapsed().as_millis(),
             all_replays.len() - unparsed_count,
@@ -3570,7 +3570,7 @@ impl ReplayAnalysis {
                                 ReplayAnalysisOps::report_value(&payload.main_handles());
                         }
                         Err(error) => {
-                            crate::sco_log!(
+                            crate::sco_warn!(
                                 "[SCO/cache] failed to build filtered statistics from database '{}': {error}",
                                 ReplayCacheDatabase::db_path_for_cache_path(&cache_path).display()
                             );

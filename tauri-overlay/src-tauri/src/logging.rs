@@ -3,18 +3,23 @@ use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 
-use crate::path_manager;
+use env_logger::{Builder, Env};
+use log::{Level, Record};
 
 use crate::app_settings::AppSettings;
+use crate::path_manager::PathManagerOps;
 
 pub struct LoggingOps;
 
 const MAX_LOG_FILE_BYTES: u64 = 100 * 1024 * 1024;
 const MAX_ROLLING_LOG_FILES: usize = 3;
+const RUST_LOG_ENV_VAR: &str = "RUST_LOG";
+const DEVELOPMENT_LOG_DIRECTIVE: &str = "trace";
+const DEPLOYMENT_LOG_DIRECTIVE: &str = "info";
 
 impl LoggingOps {
     fn logs_file_path() -> PathBuf {
-        path_manager::PathManagerOps::get_log_path()
+        PathManagerOps::get_log_path()
     }
 }
 
@@ -27,6 +32,60 @@ impl LoggingOps {
 impl LoggingOps {
     pub fn max_rolling_log_files() -> usize {
         MAX_ROLLING_LOG_FILES
+    }
+}
+
+impl LoggingOps {
+    pub fn default_filter_directive() -> &'static str {
+        LoggingOps::default_filter_directive_for(PathManagerOps::is_dev_env())
+    }
+
+    pub fn default_filter_directive_for(development_environment: bool) -> &'static str {
+        if development_environment {
+            DEVELOPMENT_LOG_DIRECTIVE
+        } else {
+            DEPLOYMENT_LOG_DIRECTIVE
+        }
+    }
+}
+
+impl LoggingOps {
+    pub fn initialize_env_logger() {
+        let env = Env::default()
+            .filter(RUST_LOG_ENV_VAR)
+            .default_filter_or(LoggingOps::default_filter_directive());
+        let mut builder = Builder::from_env(env);
+        builder.format(|formatter, record| {
+            let timestamp = formatter.timestamp_millis().to_string();
+            let line = LoggingOps::format_log_record(&timestamp, record);
+            LoggingOps::append_line_if_enabled(&line);
+            writeln!(formatter, "{line}")
+        });
+
+        if let Err(error) = builder.try_init() {
+            eprintln!("[SCO/log] failed to initialize logger: {error}");
+        }
+    }
+}
+
+impl LoggingOps {
+    pub fn format_record_line(
+        timestamp: &str,
+        level: Level,
+        target: &str,
+        message: &str,
+    ) -> String {
+        let level_text = level.to_string();
+        format!("{timestamp} {level_text:<5} {target} - {message}")
+    }
+
+    fn format_log_record(timestamp: &str, record: &Record<'_>) -> String {
+        LoggingOps::format_record_line(
+            timestamp,
+            record.level(),
+            record.target(),
+            &record.args().to_string(),
+        )
     }
 }
 
@@ -166,12 +225,5 @@ impl LoggingOps {
         if let Err(error) = LoggingOps::append_line(message) {
             eprintln!("[SCO/log] {error}");
         }
-    }
-}
-
-impl LoggingOps {
-    pub fn log_line(message: &str) {
-        eprintln!("{message}");
-        LoggingOps::append_line_if_enabled(message);
     }
 }

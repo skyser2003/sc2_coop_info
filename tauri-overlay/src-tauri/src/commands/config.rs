@@ -67,7 +67,7 @@ impl TauriOverlayOps {
         if overlay_hotkeys_changed
             && let Err(error) = overlay_info::OverlayInfoOps::register_overlay_hotkeys(app)
         {
-            crate::sco_log!("[SCO/hotkey] Failed to reload hotkeys: {error}");
+            crate::sco_warn!("[SCO/hotkey] Failed to reload hotkeys: {error}");
         }
         if overlay_placement_changed
             && let Some(window) = app.get_webview_window(overlay_info::OVERLAY_WINDOW_LABEL)
@@ -76,7 +76,7 @@ impl TauriOverlayOps {
                 &next_settings,
             )
         {
-            crate::sco_log!("[SCO/overlay] Failed to apply overlay placement: {error}");
+            crate::sco_warn!("[SCO/overlay] Failed to apply overlay placement: {error}");
         }
         if performance_runtime_changed {
             crate::performance_overlay::PerformanceOverlayOps::apply_settings(app);

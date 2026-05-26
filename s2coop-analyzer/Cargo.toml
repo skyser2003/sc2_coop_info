@@ -12,6 +12,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 s2protocol-port = { workspace = true }
 md5 = "0.7"
 indexmap = { version = "2", features = ["serde"] }
+log = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "1"

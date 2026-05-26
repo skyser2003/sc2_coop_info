@@ -1,3 +1,4 @@
+use log::Level;
 use sco_tauri_overlay::TestHelperOps;
 use sco_tauri_overlay::{AppSettings, LoggingOps, TauriOverlayOps};
 use serde_json::Value;
@@ -76,6 +77,20 @@ fn logging_setting_respects_boolean_flag() {
         .enable_logging()
     );
     assert!(AppSettings::merge_settings_with_defaults(json!({})).enable_logging());
+}
+
+#[test]
+fn env_logger_defaults_to_trace_for_development_and_info_for_deployment() {
+    assert_eq!(LoggingOps::default_filter_directive_for(true), "trace");
+    assert_eq!(LoggingOps::default_filter_directive_for(false), "info");
+}
+
+#[test]
+fn formatted_log_line_includes_level_target_and_message() {
+    let line =
+        LoggingOps::format_record_line("2026-05-27T00:00:00.000Z", Level::Warn, "sco.test", "msg");
+
+    assert_eq!(line, "2026-05-27T00:00:00.000Z WARN  sco.test - msg");
 }
 
 #[test]

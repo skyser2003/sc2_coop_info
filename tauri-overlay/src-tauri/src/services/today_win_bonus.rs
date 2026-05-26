@@ -22,7 +22,7 @@ impl TauriOverlayOps {
             let scan_started_at = Instant::now();
             let scan_deadline = scan_started_at + SCAN_DURATION;
             let mut today_win_bonus_capture = today_win_bonus::TodayWinBonusWindowCapture::new();
-            crate::sco_log!(
+            crate::sco_info!(
                 "[SCO/today-win-bonus] scan started replay='{}' duration_secs={} interval_secs=1 initial_capture_method='{}' fallback_after_failures={}",
                 replay_file,
                 SCAN_DURATION.as_secs(),
@@ -72,7 +72,7 @@ impl TauriOverlayOps {
             }
 
             let capture_fallback_state = today_win_bonus_capture.fallback_state();
-            crate::sco_log!(
+            crate::sco_info!(
                 "[SCO/today-win-bonus] scan summary replay='{}' reason={} attempts={} captured={} not_detected={} skipped_not_focused={} errors={} window_capture_failures={} fallback_happened={} selected_fallback_method='{}' active_capture_method='{}' elapsed_ms={} detected_at='{}' save_error='{}' last_error='{}'",
                 replay_file,
                 ended_reason,
@@ -112,7 +112,7 @@ impl TauriOverlayOps {
 
     pub fn log_sc2_game_state_transition(transition: Option<Sc2GameStateTransition>, reason: &str) {
         if let Some(transition) = transition {
-            crate::sco_log!(
+            crate::sco_info!(
                 "[SCO/game-state] {:?} -> {:?} reason={}",
                 transition.previous(),
                 transition.current(),
@@ -125,7 +125,7 @@ impl TauriOverlayOps {
         let scan_started_at = Instant::now();
         let state = app.state::<BackendState>();
         let mut today_win_bonus_capture = today_win_bonus::TodayWinBonusWindowCapture::new();
-        crate::sco_log!(
+        crate::sco_info!(
             "[SCO/today-win-bonus] focus scan started sc2_game_state={:?} initial_capture_method='{}'",
             sc2_game_state,
             today_win_bonus::TodayWinBonusWindowCapture::initial_capture_method()
@@ -158,7 +158,7 @@ impl TauriOverlayOps {
         }
 
         let capture_fallback_state = today_win_bonus_capture.fallback_state();
-        crate::sco_log!(
+        crate::sco_info!(
             "[SCO/today-win-bonus] focus scan summary sc2_game_state={:?} result={} window_capture_failures={} fallback_happened={} selected_fallback_method='{}' active_capture_method='{}' elapsed_ms={} detected_at='{}' save_error='{}' last_error='{}'",
             sc2_game_state,
             result,
@@ -229,7 +229,7 @@ impl TauriOverlayOps {
         }) {
             Ok(listener) => Some(listener),
             Err(error) => {
-                crate::sco_log!("[SCO/today-win-bonus] active window listener failed: {error}");
+                crate::sco_warn!("[SCO/today-win-bonus] active window listener failed: {error}");
                 None
             }
         }

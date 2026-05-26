@@ -54,6 +54,8 @@ pub use db::{
     ReplayCacheWriteSendError, ReplayCacheWriteSender, SqliteReplayCacheEntrySink,
 };
 pub use game_launch_detector::{GameLaunchDetector, GameLaunchStatus};
+#[doc(hidden)]
+pub use log as __log;
 pub use logging::LoggingOps;
 pub use monitor_settings::{MonitorDescriptor, MonitorSettingsOps};
 pub use overlay_info::{
@@ -90,9 +92,37 @@ pub use today_win_bonus::{
 };
 
 #[macro_export]
-macro_rules! sco_log {
+macro_rules! sco_error {
     ($($arg:tt)*) => {{
-        $crate::LoggingOps::log_line(&format!($($arg)*));
+        $crate::__log::error!($($arg)*);
+    }};
+}
+
+#[macro_export]
+macro_rules! sco_warn {
+    ($($arg:tt)*) => {{
+        $crate::__log::warn!($($arg)*);
+    }};
+}
+
+#[macro_export]
+macro_rules! sco_info {
+    ($($arg:tt)*) => {{
+        $crate::__log::info!($($arg)*);
+    }};
+}
+
+#[macro_export]
+macro_rules! sco_debug {
+    ($($arg:tt)*) => {{
+        $crate::__log::debug!($($arg)*);
+    }};
+}
+
+#[macro_export]
+macro_rules! sco_trace {
+    ($($arg:tt)*) => {{
+        $crate::__log::trace!($($arg)*);
     }};
 }
 
@@ -130,6 +160,8 @@ pub struct TauriOverlayApp;
 impl TauriOverlayApp {
     #[cfg_attr(mobile, tauri::mobile_entry_point)]
     pub fn run() {
+        LoggingOps::initialize_env_logger();
+
         let settings = AppSettings::from_saved_file();
 
         let state = BackendState::new_with_settings(settings.clone());

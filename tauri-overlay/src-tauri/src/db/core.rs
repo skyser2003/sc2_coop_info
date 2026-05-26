@@ -1549,7 +1549,7 @@ impl ReplayCacheDatabase {
             connection,
         };
         if let Err(error) = database.import_legacy_cache_if_needed(db_existed) {
-            crate::sco_log!("[SCO/cache-db] legacy cache import skipped: {error}");
+            crate::sco_warn!("[SCO/cache-db] legacy cache import skipped: {error}");
         }
         database.backfill_statistics_fact_tables_if_needed()?;
         Ok(database)
@@ -1654,7 +1654,7 @@ impl ReplayCacheDatabase {
         self.connection
             .execute_batch(&sql)
             .map_err(|source| self.sqlite_error(source))?;
-        crate::sco_log!(
+        crate::sco_info!(
             "[SCO/cache-db] statistics fact table backfill elapsed={}ms",
             started_at.elapsed().as_millis()
         );
@@ -1700,7 +1700,7 @@ impl ReplayCacheDatabase {
     }
 
     pub fn import_legacy_cache_file(&mut self) -> Result<usize, ReplayCacheDbError> {
-        crate::sco_log!(
+        crate::sco_info!(
             "[SCO/cache-db] starting legacy JSON cache import from '{}'",
             self.legacy_cache_path.display()
         );
@@ -1709,7 +1709,7 @@ impl ReplayCacheDatabase {
         Self::normalize_legacy_cache_dates_to_utc(&mut entries);
         let changed = self.upsert_entries_preserving_detailed(&entries)?;
         Self::remove_imported_legacy_file(&self.legacy_cache_path)?;
-        crate::sco_log!(
+        crate::sco_info!(
             "[SCO/cache-db] completed legacy JSON cache import from '{}' (entries={}, changed={})",
             self.legacy_cache_path.display(),
             entry_count,
@@ -1719,7 +1719,7 @@ impl ReplayCacheDatabase {
     }
 
     fn import_temp_cache_file(&mut self, temp_path: &Path) -> Result<usize, ReplayCacheDbError> {
-        crate::sco_log!(
+        crate::sco_info!(
             "[SCO/cache-db] starting legacy JSONL temp cache import from '{}'",
             temp_path.display()
         );
@@ -1728,7 +1728,7 @@ impl ReplayCacheDatabase {
         Self::normalize_legacy_cache_dates_to_utc(&mut entries);
         let changed = self.upsert_entries_preserving_detailed(&entries)?;
         Self::remove_imported_legacy_file(temp_path)?;
-        crate::sco_log!(
+        crate::sco_info!(
             "[SCO/cache-db] completed legacy JSONL temp cache import from '{}' (entries={}, changed={})",
             temp_path.display(),
             entry_count,
@@ -1826,7 +1826,7 @@ impl ReplayCacheDatabase {
                 Ok(entry) if !entry.hash.is_empty() => entries.push(entry),
                 Ok(_) => {}
                 Err(source) => {
-                    crate::sco_log!(
+                    crate::sco_warn!(
                         "[SCO/cache-db] ignored malformed temp cache row '{}': {source}",
                         temp_path.display()
                     );

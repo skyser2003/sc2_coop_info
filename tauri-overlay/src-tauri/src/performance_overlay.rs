@@ -336,7 +336,7 @@ impl PerformanceOverlayOps {
         let height = i32::try_from(geometry.height()).unwrap_or(i32::MAX);
         let value = [geometry.x(), geometry.y(), width, height];
         if let Err(error) = state.persist_serialized_setting_value("performance_geometry", &value) {
-            crate::sco_log!("[SCO/performance] Failed to save geometry: {error}");
+            crate::sco_warn!("[SCO/performance] Failed to save geometry: {error}");
         }
     }
 }
@@ -456,7 +456,7 @@ impl PerformanceOverlayOps {
         if let Some(window) = app.get_webview_window("performance")
             && let Err(error) = PerformanceOverlayOps::apply_saved_geometry(&window)
         {
-            crate::sco_log!("[SCO/performance] Failed to apply geometry: {error}");
+            crate::sco_warn!("[SCO/performance] Failed to apply geometry: {error}");
         }
 
         if settings.performance_show_enabled() {

@@ -84,7 +84,7 @@ impl TauriOverlayOps {
             ReplayCacheDatabase::open_for_cache_path(&PathManagerOps::get_cache_path())
                 .and_then(|database| database.load_entry_by_file(requested_file))
                 .map_err(|error| {
-                    crate::sco_log!(
+                    crate::sco_warn!(
                         "[SCO/cache-db] replay chat cache lookup failed for '{}': {error}",
                         requested_file
                     );
@@ -149,7 +149,7 @@ impl TauriOverlayOps {
             ReplayCacheDatabase::open_for_cache_path(&PathManagerOps::get_cache_path())
                 .and_then(|database| database.load_entry_by_file(requested_file))
                 .map_err(|error| {
-                    crate::sco_log!(
+                    crate::sco_warn!(
                         "[SCO/cache-db] replay visual cache lookup failed for '{}': {error}",
                         requested_file
                     );

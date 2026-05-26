@@ -27,7 +27,7 @@ impl TauriOverlayOps {
                     };
                 }
                 Err(_) => {
-                    crate::sco_log!("Failed to build system tray icon");
+                    crate::sco_error!("Failed to build system tray icon");
                 }
             }
         }
