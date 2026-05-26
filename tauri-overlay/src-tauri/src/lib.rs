@@ -36,7 +36,9 @@ mod system_ops;
 mod test_helper;
 mod today_win_bonus;
 
-pub use active_window::{ActiveWindowDetector, ActiveWindowInfo, ActiveWindowListener};
+pub use active_window::{
+    ActiveWindowDetector, ActiveWindowInfo, ActiveWindowListener, ActiveWindowRect,
+};
 pub use app_settings::{AppSettings, PlayerNotes, RandomizerChoices};
 pub use backend_state::BackendState;
 pub use command_payloads::{

@@ -5,12 +5,9 @@ use std::{
     collections::{BTreeMap, VecDeque},
     time::Duration,
 };
-use xcap::{Monitor, Window};
+use xcap::Monitor;
 
-use crate::{
-    ActiveWindowDetector, ActiveWindowInfo, AppSettings, FirstWinBonusTimerPayload,
-    MonitorSettingsOps,
-};
+use crate::{ActiveWindowDetector, AppSettings, FirstWinBonusTimerPayload, MonitorSettingsOps};
 
 pub const TODAY_WIN_BONUS_SETTINGS_KEY: &str = "latest_today_win_bonus_time";
 pub const FIRST_WIN_BONUS_COOLDOWN_HOURS: i64 = 22;
@@ -847,108 +844,58 @@ impl TodayWinBonusDetector {
     }
 
     pub fn focused_sc2_window_rect() -> Result<Option<ScreenRect>, String> {
-        let Some(window) = Self::focused_sc2_window()? else {
-            return Ok(None);
-        };
-
-        Self::window_screen_rect(&window).map(Some)
+        Self::active_sc2_window_rect()
     }
 
     pub fn sc2_window_rect() -> Result<Option<ScreenRect>, String> {
-        let Some(window) = Self::sc2_window()? else {
-            return Ok(None);
-        };
-
-        Self::window_screen_rect(&window).map(Some)
+        Self::active_sc2_window_rect()
     }
 
     pub fn is_sc2_window_identity(app_name: &str, title: &str) -> bool {
         ActiveWindowDetector::is_sc2_window_identity(app_name, title)
     }
 
-    fn window_is_sc2(window: &Window) -> bool {
-        let app_name = window.app_name().unwrap_or_default();
-        let title = window.title().unwrap_or_default();
-        ActiveWindowInfo::new(app_name, title).is_sc2_window()
+    fn active_sc2_window_rect() -> Result<Option<ScreenRect>, String> {
+        let Some(info) = ActiveWindowDetector::focused_sc2_window_info()? else {
+            return Ok(None);
+        };
+        let Some(rect) = info.rect() else {
+            return Ok(None);
+        };
+
+        ScreenRect::new(rect.x(), rect.y(), rect.width(), rect.height())
+            .ok_or_else(|| "Active SC2 window has invalid dimensions".to_string())
+            .map(Some)
     }
 
-    fn focused_sc2_window() -> Result<Option<Window>, String> {
-        let windows = Window::all()
-            .map_err(|error| format!("Failed to enumerate windows for SC2 capture: {error}"))?;
-
-        Ok(windows.into_iter().find(|window| {
-            if !window.is_focused().unwrap_or(false) || window.is_minimized().unwrap_or(true) {
-                return false;
-            }
-
-            Self::window_is_sc2(window)
-        }))
-    }
-
-    fn sc2_window() -> Result<Option<Window>, String> {
-        let windows = Window::all()
-            .map_err(|error| format!("Failed to enumerate windows for SC2 overlay: {error}"))?;
-        let mut candidate = None;
-
-        for window in windows {
-            if window.is_minimized().unwrap_or(true) || !Self::window_is_sc2(&window) {
-                continue;
-            }
-            if window.is_focused().unwrap_or(false) {
-                return Ok(Some(window));
-            }
-            if candidate.is_none() {
-                candidate = Some(window);
-            }
-        }
-
-        Ok(candidate)
-    }
-
-    fn window_screen_rect(window: &Window) -> Result<ScreenRect, String> {
-        ScreenRect::new(
-            window
-                .x()
-                .map_err(|error| format!("Failed to read SC2 window x: {error}"))?,
-            window
-                .y()
-                .map_err(|error| format!("Failed to read SC2 window y: {error}"))?,
-            window
-                .width()
-                .map_err(|error| format!("Failed to read SC2 window width: {error}"))?,
-            window
-                .height()
-                .map_err(|error| format!("Failed to read SC2 window height: {error}"))?,
-        )
-        .ok_or_else(|| "SC2 window has invalid dimensions".to_string())
-    }
-
-    fn capture_focused_window_visible_region(window: &Window) -> Result<RgbaImage, String> {
-        let monitor = window
-            .current_monitor()
-            .map_err(|error| format!("Failed to resolve focused SC2 monitor: {error}"))?;
-        let window_rect = Self::window_screen_rect(window)?;
-        let monitor_rect = ScreenRect::new(
-            monitor
-                .x()
-                .map_err(|error| format!("Failed to read focused SC2 monitor x: {error}"))?,
-            monitor
-                .y()
-                .map_err(|error| format!("Failed to read focused SC2 monitor y: {error}"))?,
-            monitor
-                .width()
-                .map_err(|error| format!("Failed to read focused SC2 monitor width: {error}"))?,
-            monitor
-                .height()
-                .map_err(|error| format!("Failed to read focused SC2 monitor height: {error}"))?,
-        )
-        .ok_or_else(|| "Focused SC2 monitor has invalid dimensions".to_string())?;
+    #[cfg(not(windows))]
+    fn capture_focused_window_visible_region(window_rect: ScreenRect) -> Result<RgbaImage, String> {
+        let monitor = Self::capture_monitor_for_window(window_rect)?;
+        let monitor_rect =
+            ScreenRect::new(monitor.x(), monitor.y(), monitor.width(), monitor.height())
+                .ok_or_else(|| "Focused SC2 monitor has invalid dimensions".to_string())?;
         let region = Self::monitor_capture_region_for_window(window_rect, monitor_rect)
             .ok_or_else(|| "Focused SC2 window is outside its current monitor".to_string())?;
 
         monitor
+            .monitor()
             .capture_region(region.x(), region.y(), region.width(), region.height())
             .map_err(|error| format!("Failed to capture focused SC2 monitor region: {error}"))
+    }
+
+    #[cfg(not(windows))]
+    fn capture_monitor_for_window(window_rect: ScreenRect) -> Result<CaptureMonitor, String> {
+        Self::capture_monitors()?
+            .into_iter()
+            .filter_map(|monitor| {
+                let monitor_rect =
+                    ScreenRect::new(monitor.x(), monitor.y(), monitor.width(), monitor.height())?;
+                let area = Self::screen_rect_intersection_area(window_rect, monitor_rect);
+                (area > 0).then_some((area, monitor))
+            })
+            .max_by_key(|(area, _monitor)| *area)
+            .map(|(_area, monitor)| monitor)
+            .ok_or_else(|| "Focused SC2 window does not intersect any monitor".to_string())
     }
 
     pub fn capture_image_looks_usable(image: &RgbaImage) -> bool {
@@ -1034,6 +981,29 @@ impl TodayWinBonusDetector {
         )
     }
 
+    #[cfg(not(windows))]
+    fn screen_rect_intersection_area(left: ScreenRect, right: ScreenRect) -> u64 {
+        let left_x = i64::from(left.x());
+        let left_y = i64::from(left.y());
+        let left_right = left_x.saturating_add(i64::from(left.width()));
+        let left_bottom = left_y.saturating_add(i64::from(left.height()));
+        let right_x = i64::from(right.x());
+        let right_y = i64::from(right.y());
+        let right_right = right_x.saturating_add(i64::from(right.width()));
+        let right_bottom = right_y.saturating_add(i64::from(right.height()));
+
+        let width = left_right.min(right_right) - left_x.max(right_x);
+        let height = left_bottom.min(right_bottom) - left_y.max(right_y);
+        if width <= 0 || height <= 0 {
+            return 0;
+        }
+
+        u64::try_from(width)
+            .ok()
+            .and_then(|width| u64::try_from(height).ok().map(|height| width * height))
+            .unwrap_or(0)
+    }
+
     fn capture_selected_monitor_left_half(requested_monitor: usize) -> Result<RgbaImage, String> {
         let monitor = Self::selected_capture_monitor(requested_monitor)?;
         let width = (monitor.width() / 2).max(1);
@@ -1045,6 +1015,18 @@ impl TodayWinBonusDetector {
     }
 
     fn selected_capture_monitor(requested_monitor: usize) -> Result<CaptureMonitor, String> {
+        let monitors = Self::capture_monitors()?;
+
+        let index = MonitorSettingsOps::selected_monitor_index(requested_monitor, monitors.len())
+            .ok_or_else(|| "No monitors detected for OCR".to_string())?;
+
+        monitors
+            .get(index)
+            .cloned()
+            .ok_or_else(|| "Selected monitor was not found for OCR".to_string())
+    }
+
+    fn capture_monitors() -> Result<Vec<CaptureMonitor>, String> {
         let mut monitors = Monitor::all()
             .map_err(|error| format!("Failed to enumerate monitors for OCR: {error}"))?
             .into_iter()
@@ -1058,13 +1040,7 @@ impl TodayWinBonusDetector {
                 .then(left.name().cmp(right.name()))
         });
 
-        let index = MonitorSettingsOps::selected_monitor_index(requested_monitor, monitors.len())
-            .ok_or_else(|| "No monitors detected for OCR".to_string())?;
-
-        monitors
-            .get(index)
-            .cloned()
-            .ok_or_else(|| "Selected monitor was not found for OCR".to_string())
+        Ok(monitors)
     }
 
     pub fn detect_in_left_half_with_reader<R: TodayWinBonusDigitReader>(
@@ -1313,57 +1289,69 @@ impl TodayWinBonusWindowCapture {
     pub fn capture_focused_sc2_window_detection(
         &mut self,
     ) -> Result<Option<TodayWinBonusDetection>, String> {
-        let Some(window) = TodayWinBonusDetector::focused_sc2_window()? else {
+        let image = self.capture_focused_window_image()?;
+        let Some(image) = image else {
             return Ok(None);
         };
-        let image = self.capture_focused_window_image(&window)?;
         let reader = ImageprocTodayWinBonusDigitReader;
         TodayWinBonusDetector::detect_in_left_half_with_reader(&image, &reader).map(Some)
     }
 
-    fn capture_focused_window_image(&mut self, window: &Window) -> Result<RgbaImage, String> {
-        #[cfg(windows)]
-        {
-            if self.fallback_state.should_try_window_capture() {
-                let window_rect = TodayWinBonusDetector::window_screen_rect(window)?;
-                match windows_gdi_window_dc_capture::capture_focused_sc2_window(window_rect) {
-                    Ok(image) if TodayWinBonusDetector::capture_image_looks_usable(&image) => {
-                        self.fallback_state.record_window_capture_success();
-                        return Ok(image);
-                    }
-                    Ok(_image) => {
-                        self.fallback_state.record_window_capture_failure();
-                        if self.fallback_state.region_capture_fallback() {
-                            return TodayWinBonusDetector::capture_focused_window_visible_region(
-                                window,
-                            );
-                        }
+    #[cfg(windows)]
+    fn capture_focused_window_image(&mut self) -> Result<Option<RgbaImage>, String> {
+        let Some(window_rect) = TodayWinBonusDetector::focused_sc2_window_rect()? else {
+            return Ok(None);
+        };
 
-                        return Err(format!(
-                            "GDI window capture produced unusable image ({}/{})",
-                            self.fallback_state.consecutive_window_capture_failures(),
-                            WINDOW_CAPTURE_FAILURES_BEFORE_REGION_FALLBACK
-                        ));
+        if self.fallback_state.should_try_window_capture() {
+            match windows_gdi_window_dc_capture::capture_focused_sc2_window(window_rect) {
+                Ok(image) if TodayWinBonusDetector::capture_image_looks_usable(&image) => {
+                    self.fallback_state.record_window_capture_success();
+                    return Ok(Some(image));
+                }
+                Ok(_image) => {
+                    self.fallback_state.record_window_capture_failure();
+                    if self.fallback_state.region_capture_fallback() {
+                        return windows_gdi_window_dc_capture::capture_focused_sc2_window_region(
+                            window_rect,
+                        )
+                        .map(Some);
                     }
-                    Err(error) => {
-                        self.fallback_state.record_window_capture_failure();
-                        if self.fallback_state.region_capture_fallback() {
-                            return TodayWinBonusDetector::capture_focused_window_visible_region(
-                                window,
-                            );
-                        }
 
-                        return Err(format!(
-                            "GDI window capture failed ({}/{}): {error}",
-                            self.fallback_state.consecutive_window_capture_failures(),
-                            WINDOW_CAPTURE_FAILURES_BEFORE_REGION_FALLBACK
-                        ));
+                    return Err(format!(
+                        "GDI window capture produced unusable image ({}/{})",
+                        self.fallback_state.consecutive_window_capture_failures(),
+                        WINDOW_CAPTURE_FAILURES_BEFORE_REGION_FALLBACK
+                    ));
+                }
+                Err(error) => {
+                    self.fallback_state.record_window_capture_failure();
+                    if self.fallback_state.region_capture_fallback() {
+                        return windows_gdi_window_dc_capture::capture_focused_sc2_window_region(
+                            window_rect,
+                        )
+                        .map(Some);
                     }
+
+                    return Err(format!(
+                        "GDI window capture failed ({}/{}): {error}",
+                        self.fallback_state.consecutive_window_capture_failures(),
+                        WINDOW_CAPTURE_FAILURES_BEFORE_REGION_FALLBACK
+                    ));
                 }
             }
         }
 
-        TodayWinBonusDetector::capture_focused_window_visible_region(window)
+        windows_gdi_window_dc_capture::capture_focused_sc2_window_region(window_rect).map(Some)
+    }
+
+    #[cfg(not(windows))]
+    fn capture_focused_window_image(&mut self) -> Result<Option<RgbaImage>, String> {
+        let Some(window_rect) = TodayWinBonusDetector::focused_sc2_window_rect()? else {
+            return Ok(None);
+        };
+
+        TodayWinBonusDetector::capture_focused_window_visible_region(window_rect).map(Some)
     }
 }
 
@@ -1500,8 +1488,8 @@ mod windows_gdi_window_dc_capture {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Gdi::{
         BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC,
-        DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDIBits, GetWindowDC, HBITMAP, HDC, HGDIOBJ,
-        ReleaseDC, SRCCOPY, SelectObject,
+        DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, GetDIBits, GetWindowDC, HBITMAP, HDC,
+        HGDIOBJ, ReleaseDC, SRCCOPY, SelectObject,
     };
     use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, IsIconic};
 
@@ -1531,6 +1519,33 @@ mod windows_gdi_window_dc_capture {
         fn drop(&mut self) {
             unsafe {
                 let _ = ReleaseDC(Some(self.hwnd), self.hdc);
+            }
+        }
+    }
+
+    struct ScreenDc {
+        hdc: HDC,
+    }
+
+    impl ScreenDc {
+        fn new() -> Result<Self, String> {
+            let hdc = unsafe { GetDC(None) };
+            if hdc.is_invalid() {
+                return Err("GetDC failed for GDI screen capture".to_string());
+            }
+
+            Ok(Self { hdc })
+        }
+
+        fn hdc(&self) -> HDC {
+            self.hdc
+        }
+    }
+
+    impl Drop for ScreenDc {
+        fn drop(&mut self) {
+            unsafe {
+                let _ = ReleaseDC(None, self.hdc);
             }
         }
     }
@@ -1617,36 +1632,75 @@ mod windows_gdi_window_dc_capture {
     }
 
     pub fn capture_focused_sc2_window(window_rect: ScreenRect) -> Result<RgbaImage, String> {
-        let hwnd = unsafe { GetForegroundWindow() };
-        if hwnd.is_invalid() {
-            return Err("No foreground window for GDI window capture".to_string());
-        }
-        if unsafe { IsIconic(hwnd).as_bool() } {
-            return Err("Foreground window is minimized".to_string());
-        }
-        if !window_is_sc2(hwnd) {
+        let Some(hwnd) = focused_sc2_hwnd() else {
+            return Err("Foreground window is not SC2".to_string());
+        };
+        let (width, height) = capture_dimensions(window_rect, "GDI window capture")?;
+
+        capture_window_dc(hwnd, width, height)
+    }
+
+    pub fn capture_focused_sc2_window_region(window_rect: ScreenRect) -> Result<RgbaImage, String> {
+        if focused_sc2_hwnd().is_none() {
             return Err("Foreground window is not SC2".to_string());
         }
 
-        let width = i32::try_from(window_rect.width())
-            .map_err(|_| "SC2 window is too wide for GDI capture".to_string())?;
-        let height = i32::try_from(window_rect.height())
-            .map_err(|_| "SC2 window is too tall for GDI capture".to_string())?;
-        if width <= 0 || height <= 0 {
-            return Err("SC2 window has invalid GDI capture bounds".to_string());
+        capture_screen_region(window_rect)
+    }
+
+    fn focused_sc2_hwnd() -> Option<HWND> {
+        let hwnd = unsafe { GetForegroundWindow() };
+        if hwnd.is_invalid() || unsafe { IsIconic(hwnd).as_bool() } || !window_is_sc2(hwnd) {
+            return None;
         }
 
-        capture_window_dc(hwnd, width, height)
+        Some(hwnd)
     }
 
     fn window_is_sc2(hwnd: HWND) -> bool {
         crate::ActiveWindowDetector::windows_window_info(hwnd).is_sc2_window()
     }
 
+    fn capture_dimensions(rect: ScreenRect, context: &str) -> Result<(i32, i32), String> {
+        let width = i32::try_from(rect.width())
+            .map_err(|_| format!("SC2 window is too wide for {context}"))?;
+        let height = i32::try_from(rect.height())
+            .map_err(|_| format!("SC2 window is too tall for {context}"))?;
+        if width <= 0 || height <= 0 {
+            return Err(format!("SC2 window has invalid bounds for {context}"));
+        }
+
+        Ok((width, height))
+    }
+
     fn capture_window_dc(hwnd: HWND, width: i32, height: i32) -> Result<RgbaImage, String> {
         let window_dc = WindowDc::new(hwnd)?;
-        let memory_dc = MemoryDc::new(window_dc.hdc())?;
-        let bitmap = Bitmap::new(window_dc.hdc(), width, height)?;
+        capture_dc_region(window_dc.hdc(), 0, 0, width, height, "GDI window capture")
+    }
+
+    fn capture_screen_region(window_rect: ScreenRect) -> Result<RgbaImage, String> {
+        let (width, height) = capture_dimensions(window_rect, "GDI screen capture")?;
+        let screen_dc = ScreenDc::new()?;
+        capture_dc_region(
+            screen_dc.hdc(),
+            window_rect.x(),
+            window_rect.y(),
+            width,
+            height,
+            "GDI screen capture",
+        )
+    }
+
+    fn capture_dc_region(
+        source_hdc: HDC,
+        source_x: i32,
+        source_y: i32,
+        width: i32,
+        height: i32,
+        context: &str,
+    ) -> Result<RgbaImage, String> {
+        let memory_dc = MemoryDc::new(source_hdc)?;
+        let bitmap = Bitmap::new(source_hdc, width, height)?;
         let _selected = SelectObjectGuard::new(memory_dc.hdc(), bitmap.handle())?;
 
         unsafe {
@@ -1656,15 +1710,15 @@ mod windows_gdi_window_dc_capture {
                 0,
                 width,
                 height,
-                Some(window_dc.hdc()),
-                0,
-                0,
+                Some(source_hdc),
+                source_x,
+                source_y,
                 SRCCOPY,
             )
-            .map_err(|error| format!("BitBlt failed for GDI window capture: {error}"))?;
+            .map_err(|error| format!("BitBlt failed for {context}: {error}"))?;
         }
 
-        to_rgba_image(memory_dc.hdc(), bitmap.handle(), width, height)
+        to_rgba_image(memory_dc.hdc(), bitmap.handle(), width, height, context)
     }
 
     fn to_rgba_image(
@@ -1672,13 +1726,14 @@ mod windows_gdi_window_dc_capture {
         bitmap: HBITMAP,
         width: i32,
         height: i32,
+        context: &str,
     ) -> Result<RgbaImage, String> {
         let width_u32 = u32::try_from(width).map_err(|_| "Invalid bitmap width".to_string())?;
         let height_u32 = u32::try_from(height).map_err(|_| "Invalid bitmap height".to_string())?;
         let buffer_size = width_u32
             .checked_mul(height_u32)
             .and_then(|value| value.checked_mul(4))
-            .ok_or_else(|| "GDI window bitmap is too large".to_string())?;
+            .ok_or_else(|| format!("{context} bitmap is too large"))?;
         let mut bitmap_info = BITMAPINFO {
             bmiHeader: BITMAPINFOHEADER {
                 biSize: mem::size_of::<BITMAPINFOHEADER>() as u32,
@@ -1706,7 +1761,7 @@ mod windows_gdi_window_dc_capture {
             )
         };
         if scan_lines == 0 {
-            return Err("GetDIBits failed for GDI window capture".to_string());
+            return Err(format!("GetDIBits failed for {context}"));
         }
 
         for pixel in buffer.chunks_exact_mut(4) {
@@ -1715,6 +1770,6 @@ mod windows_gdi_window_dc_capture {
         }
 
         RgbaImage::from_raw(width_u32, height_u32, buffer)
-            .ok_or_else(|| "RgbaImage::from_raw failed for GDI window capture".to_string())
+            .ok_or_else(|| format!("RgbaImage::from_raw failed for {context}"))
     }
 }

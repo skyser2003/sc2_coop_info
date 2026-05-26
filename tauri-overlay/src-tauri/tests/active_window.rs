@@ -1,4 +1,4 @@
-use sco_tauri_overlay::{ActiveWindowDetector, ActiveWindowInfo};
+use sco_tauri_overlay::{ActiveWindowDetector, ActiveWindowInfo, ActiveWindowRect};
 
 #[test]
 fn active_window_info_identifies_sc2_by_process_or_title() {
@@ -19,4 +19,17 @@ fn active_window_identity_trims_and_normalizes_values() {
         "",
         "  starcraft ii  "
     ));
+}
+
+#[test]
+fn active_window_info_exposes_optional_rect() {
+    let rect = ActiveWindowRect::new(-20, 40, 1600, 900).expect("valid rect");
+    let info = ActiveWindowInfo::new_with_rect("SC2_x64.exe", "StarCraft II", Some(rect));
+
+    assert_eq!(info.rect(), Some(rect));
+    assert_eq!(rect.x(), -20);
+    assert_eq!(rect.y(), 40);
+    assert_eq!(rect.width(), 1600);
+    assert_eq!(rect.height(), 900);
+    assert!(ActiveWindowRect::new(0, 0, 0, 900).is_none());
 }

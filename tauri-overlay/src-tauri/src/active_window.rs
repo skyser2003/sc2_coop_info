@@ -1,13 +1,62 @@
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ActiveWindowRect {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+impl ActiveWindowRect {
+    pub fn new(x: i32, y: i32, width: u32, height: u32) -> Option<Self> {
+        if width == 0 || height == 0 {
+            return None;
+        }
+
+        Some(Self {
+            x,
+            y,
+            width,
+            height,
+        })
+    }
+
+    pub fn x(&self) -> i32 {
+        self.x
+    }
+
+    pub fn y(&self) -> i32 {
+        self.y
+    }
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+}
+
 pub struct ActiveWindowInfo {
     application_name: String,
     title: String,
+    rect: Option<ActiveWindowRect>,
 }
 
 impl ActiveWindowInfo {
     pub fn new(application_name: impl Into<String>, title: impl Into<String>) -> Self {
+        Self::new_with_rect(application_name, title, None)
+    }
+
+    pub fn new_with_rect(
+        application_name: impl Into<String>,
+        title: impl Into<String>,
+        rect: Option<ActiveWindowRect>,
+    ) -> Self {
         Self {
             application_name: application_name.into(),
             title: title.into(),
+            rect,
         }
     }
 
@@ -17,6 +66,10 @@ impl ActiveWindowInfo {
 
     pub fn title(&self) -> &str {
         &self.title
+    }
+
+    pub fn rect(&self) -> Option<ActiveWindowRect> {
+        self.rect
     }
 
     pub fn is_sc2_window(&self) -> bool {
@@ -49,6 +102,10 @@ impl ActiveWindowDetector {
         Ok(Self::focused_window_info()?
             .as_ref()
             .is_some_and(ActiveWindowInfo::is_sc2_window))
+    }
+
+    pub fn focused_sc2_window_info() -> Result<Option<ActiveWindowInfo>, String> {
+        Ok(Self::focused_window_info()?.filter(ActiveWindowInfo::is_sc2_window))
     }
 
     pub fn spawn_focus_listener<F>(callback: F) -> Result<ActiveWindowListener, String>
@@ -87,7 +144,7 @@ mod platform {
     use std::thread;
 
     use windows::Win32::Foundation::{
-        CloseHandle, HANDLE, HINSTANCE, HWND, LPARAM, LRESULT, WPARAM,
+        CloseHandle, HANDLE, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM,
     };
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::System::Threading::{
@@ -96,15 +153,15 @@ mod platform {
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         CREATESTRUCTW, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
-        GWLP_USERDATA, GetForegroundWindow, GetMessageW, GetWindowLongPtrW, GetWindowTextLengthW,
-        GetWindowTextW, GetWindowThreadProcessId, HSHELL_WINDOWACTIVATED, IsIconic, MSG,
-        PostThreadMessageW, RegisterClassW, RegisterShellHookWindow, RegisterWindowMessageW,
-        SetWindowLongPtrW, TranslateMessage, WINDOW_EX_STYLE, WINDOW_STYLE, WM_NCCREATE, WM_QUIT,
-        WNDCLASSW,
+        GWLP_USERDATA, GetForegroundWindow, GetMessageW, GetWindowLongPtrW, GetWindowRect,
+        GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, HSHELL_WINDOWACTIVATED,
+        IsIconic, MSG, PostThreadMessageW, RegisterClassW, RegisterShellHookWindow,
+        RegisterWindowMessageW, SetWindowLongPtrW, TranslateMessage, WINDOW_EX_STYLE, WINDOW_STYLE,
+        WM_NCCREATE, WM_QUIT, WNDCLASSW,
     };
     use windows::core::{PWSTR, w};
 
-    use super::{ActiveWindowInfo, FocusCallback};
+    use super::{ActiveWindowInfo, ActiveWindowRect, FocusCallback};
 
     const HSHELL_RUDEAPPACTIVATED: u32 = 0x8004;
 
@@ -137,10 +194,20 @@ mod platform {
         }
 
         pub fn window_info(hwnd: HWND) -> ActiveWindowInfo {
-            ActiveWindowInfo::new(
+            ActiveWindowInfo::new_with_rect(
                 Self::process_file_name(hwnd).unwrap_or_default(),
                 Self::window_title(hwnd),
+                Self::window_rect(hwnd),
             )
+        }
+
+        fn window_rect(hwnd: HWND) -> Option<ActiveWindowRect> {
+            let mut rect = RECT::default();
+            unsafe { GetWindowRect(hwnd, &mut rect) }.ok()?;
+            let width = u32::try_from(i64::from(rect.right) - i64::from(rect.left)).ok()?;
+            let height = u32::try_from(i64::from(rect.bottom) - i64::from(rect.top)).ok()?;
+
+            ActiveWindowRect::new(rect.left, rect.top, width, height)
         }
 
         fn process_file_name(hwnd: HWND) -> Option<String> {
@@ -406,7 +473,7 @@ mod platform {
 mod platform {
     use std::ffi::{CStr, c_char, c_void};
 
-    use super::{ActiveWindowInfo, FocusCallback};
+    use super::{ActiveWindowInfo, ActiveWindowRect, FocusCallback};
 
     type ObjectiveCBool = i8;
     type ObjectiveCClass = *mut c_void;
@@ -501,9 +568,10 @@ mod platform {
                 return Ok(None);
             }
 
-            Ok(Some(ActiveWindowInfo::new(
+            Ok(Some(ActiveWindowInfo::new_with_rect(
                 application_name,
                 bundle_identifier,
+                Self::focused_xcap_window_rect(),
             )))
         }
 
@@ -651,6 +719,25 @@ mod platform {
             let notification_center = Self::send_id(workspace, b"notificationCenter\0");
             (!notification_center.is_null()).then_some(notification_center)
         }
+
+        fn focused_xcap_window_rect() -> Option<ActiveWindowRect> {
+            xcap::Window::all().ok()?.into_iter().find_map(|window| {
+                if !window.is_focused().unwrap_or(false) || window.is_minimized().unwrap_or(true) {
+                    return None;
+                }
+
+                Self::xcap_window_rect(&window)
+            })
+        }
+
+        fn xcap_window_rect(window: &xcap::Window) -> Option<ActiveWindowRect> {
+            ActiveWindowRect::new(
+                window.x().ok()?,
+                window.y().ok()?,
+                window.width().ok()?,
+                window.height().ok()?,
+            )
+        }
     }
 
     pub struct PlatformActiveWindowListener {
@@ -762,7 +849,7 @@ mod platform {
     use std::thread;
     use std::time::Duration;
 
-    use super::{ActiveWindowInfo, FocusCallback};
+    use super::{ActiveWindowInfo, ActiveWindowRect, FocusCallback};
 
     pub struct PlatformActiveWindowDetector;
 
@@ -777,9 +864,10 @@ mod platform {
                     return None;
                 }
 
-                Some(ActiveWindowInfo::new(
+                Some(ActiveWindowInfo::new_with_rect(
                     window.app_name().unwrap_or_default(),
                     window.title().unwrap_or_default(),
+                    Self::xcap_window_rect(&window),
                 ))
             }))
         }
@@ -807,6 +895,15 @@ mod platform {
                 .map_err(|error| format!("Failed to spawn active window listener: {error}"))?;
 
             Ok(PlatformActiveWindowListener::new(join_handle))
+        }
+
+        fn xcap_window_rect(window: &xcap::Window) -> Option<ActiveWindowRect> {
+            ActiveWindowRect::new(
+                window.x().ok()?,
+                window.y().ok()?,
+                window.width().ok()?,
+                window.height().ok()?,
+            )
         }
     }
 
