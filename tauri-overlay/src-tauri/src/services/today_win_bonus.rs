@@ -1,11 +1,17 @@
 use serde_json::Value;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+    mpsc::{self, Receiver, RecvTimeoutError, TryRecvError},
+};
 use std::thread;
 use std::time::{Duration, Instant};
 use tauri::{Manager, Wry};
 
 use crate::{
-    AppSettings, BackendState, FirstWinBonusDisplayMode, FirstWinBonusTimerPayload, Sc2GameState,
-    Sc2GameStateTransition, TauriOverlayOps, overlay_info, today_win_bonus,
+    ActiveWindowDetector, ActiveWindowListener, AppSettings, BackendState,
+    FirstWinBonusDisplayMode, FirstWinBonusTimerPayload, Sc2GameState, Sc2GameStateTransition,
+    TauriOverlayOps, overlay_info, today_win_bonus,
 };
 
 impl TauriOverlayOps {
@@ -167,12 +173,6 @@ impl TauriOverlayOps {
         );
     }
 
-    fn spawn_today_win_bonus_focus_scan(app: tauri::AppHandle<Wry>, sc2_game_state: Sc2GameState) {
-        thread::spawn(move || {
-            TauriOverlayOps::try_today_win_bonus_focus_scan(&app, sc2_game_state);
-        });
-    }
-
     fn first_win_bonus_timer_payload(
         settings: &AppSettings,
         visible: bool,
@@ -192,7 +192,10 @@ impl TauriOverlayOps {
         if !sc2_focused {
             return false;
         }
-        if sc2_game_state != Sc2GameState::Lobby {
+        if matches!(
+            sc2_game_state,
+            Sc2GameState::GameStarting | Sc2GameState::GamePlaying
+        ) {
             return false;
         }
 
@@ -207,16 +210,117 @@ impl TauriOverlayOps {
         }
     }
 
+    fn spawn_first_win_bonus_focus_listener(
+        app: tauri::AppHandle<Wry>,
+        focus_sender: mpsc::Sender<bool>,
+        initial_sc2_focused: bool,
+    ) -> Option<ActiveWindowListener> {
+        let previous_sc2_focused = Arc::new(AtomicBool::new(initial_sc2_focused));
+        match ActiveWindowDetector::spawn_focus_listener(move |sc2_focused| {
+            let previous = previous_sc2_focused.swap(sc2_focused, Ordering::AcqRel);
+            if previous == sc2_focused {
+                return;
+            }
+
+            let _ = focus_sender.send(sc2_focused);
+            if sc2_focused {
+                TauriOverlayOps::spawn_today_win_bonus_focus_activation(app.clone());
+            }
+        }) {
+            Ok(listener) => Some(listener),
+            Err(error) => {
+                crate::sco_log!("[SCO/today-win-bonus] active window listener failed: {error}");
+                None
+            }
+        }
+    }
+
+    fn spawn_today_win_bonus_focus_activation(app: tauri::AppHandle<Wry>) {
+        thread::spawn(move || {
+            let sc2_game_state = app.state::<BackendState>().sc2_game_state();
+            TauriOverlayOps::try_today_win_bonus_focus_scan(&app, sc2_game_state);
+            let sc2_focused = ActiveWindowDetector::focused_window_is_sc2().unwrap_or(false);
+            TauriOverlayOps::sync_first_win_bonus_timer_overlay(&app, sc2_focused, !sc2_focused);
+        });
+    }
+
+    fn sync_first_win_bonus_timer_overlay(
+        app: &tauri::AppHandle<Wry>,
+        sc2_focused: bool,
+        delay_hide: bool,
+    ) {
+        let state = app.state::<BackendState>();
+        let timer_visible = state.first_win_bonus_timer_visible();
+        let settings = state.read_settings_memory();
+        let sc2_game_state = state.sc2_game_state();
+        let visible = TauriOverlayOps::first_win_bonus_timer_should_be_visible(
+            &settings,
+            sc2_focused,
+            sc2_game_state,
+        );
+
+        if visible {
+            let payload = TauriOverlayOps::first_win_bonus_timer_payload(&settings, true);
+            overlay_info::OverlayInfoOps::emit_first_win_bonus_timer(app, payload);
+        } else if timer_visible {
+            if delay_hide {
+                state.start_first_win_bonus_timer_hide_delay_if_needed(
+                    today_win_bonus::FIRST_WIN_BONUS_TIMER_POLL_INTERVAL,
+                );
+                if !state.first_win_bonus_timer_hide_delay_elapsed() {
+                    return;
+                }
+            }
+
+            let payload = TauriOverlayOps::first_win_bonus_timer_payload(&settings, false);
+            overlay_info::OverlayInfoOps::emit_first_win_bonus_timer(app, payload);
+        }
+    }
+
+    fn wait_first_win_bonus_focus_event(
+        focus_receiver: &Receiver<bool>,
+        current_sc2_focused: bool,
+        timeout: Duration,
+    ) -> bool {
+        let mut sc2_focused = match focus_receiver.recv_timeout(timeout) {
+            Ok(next_sc2_focused) => next_sc2_focused,
+            Err(RecvTimeoutError::Timeout) => return current_sc2_focused,
+            Err(RecvTimeoutError::Disconnected) => return current_sc2_focused,
+        };
+
+        loop {
+            match focus_receiver.try_recv() {
+                Ok(next_sc2_focused) => sc2_focused = next_sc2_focused,
+                Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => return sc2_focused,
+            }
+        }
+    }
+
     pub fn spawn_first_win_bonus_timer_task(app: tauri::AppHandle<Wry>) {
         thread::spawn(move || {
             thread::sleep(Duration::from_secs(4));
 
-            let mut previous_sc2_focused = None::<bool>;
+            let mut sc2_focused = ActiveWindowDetector::focused_window_is_sc2().unwrap_or(false);
+            let (focus_sender, focus_receiver) = mpsc::channel();
+            let focus_listener = TauriOverlayOps::spawn_first_win_bonus_focus_listener(
+                app.clone(),
+                focus_sender,
+                sc2_focused,
+            );
+            let use_focus_poll_fallback = focus_listener.is_none();
+            let _focus_listener = focus_listener;
             loop {
-                thread::sleep(today_win_bonus::FIRST_WIN_BONUS_TIMER_POLL_INTERVAL);
+                sc2_focused = TauriOverlayOps::wait_first_win_bonus_focus_event(
+                    &focus_receiver,
+                    sc2_focused,
+                    today_win_bonus::FIRST_WIN_BONUS_TIMER_POLL_INTERVAL,
+                );
+                if use_focus_poll_fallback {
+                    sc2_focused =
+                        ActiveWindowDetector::focused_window_is_sc2().unwrap_or(sc2_focused);
+                }
 
                 let state = app.state::<BackendState>();
-                let timer_visible = state.first_win_bonus_timer_visible();
                 let settings = state.read_settings_memory();
                 let game_ended_duration =
                     TauriOverlayOps::sc2_game_ended_display_duration(&settings);
@@ -228,40 +332,7 @@ impl TauriOverlayOps {
                     ),
                     "timer_tick",
                 );
-                let sc2_game_state = state.sc2_game_state();
-                let sc2_focused =
-                    today_win_bonus::TodayWinBonusDetector::focused_sc2_window_active()
-                        .unwrap_or(false);
-                let sc2_focus_regained = previous_sc2_focused == Some(false) && sc2_focused;
-                previous_sc2_focused = Some(sc2_focused);
-                let visible = TauriOverlayOps::first_win_bonus_timer_should_be_visible(
-                    &settings,
-                    sc2_focused,
-                    sc2_game_state,
-                );
-
-                if visible {
-                    let payload = TauriOverlayOps::first_win_bonus_timer_payload(&settings, true);
-                    overlay_info::OverlayInfoOps::emit_first_win_bonus_timer(&app, payload);
-                } else if timer_visible {
-                    state.start_first_win_bonus_timer_hide_delay_if_needed(
-                        today_win_bonus::FIRST_WIN_BONUS_TIMER_POLL_INTERVAL,
-                    );
-                    if state.first_win_bonus_timer_hide_delay_elapsed() {
-                        let payload =
-                            TauriOverlayOps::first_win_bonus_timer_payload(&settings, false);
-                        overlay_info::OverlayInfoOps::emit_first_win_bonus_timer(&app, payload);
-                    }
-                }
-
-                if sc2_focus_regained
-                    && matches!(
-                        sc2_game_state,
-                        Sc2GameState::Lobby | Sc2GameState::GameEnded
-                    )
-                {
-                    TauriOverlayOps::spawn_today_win_bonus_focus_scan(app.clone(), sc2_game_state);
-                }
+                TauriOverlayOps::sync_first_win_bonus_timer_overlay(&app, sc2_focused, true);
             }
         });
     }

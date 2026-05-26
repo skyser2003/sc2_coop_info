@@ -7,7 +7,10 @@ use std::{
 };
 use xcap::{Monitor, Window};
 
-use crate::{AppSettings, FirstWinBonusTimerPayload, MonitorSettingsOps};
+use crate::{
+    ActiveWindowDetector, ActiveWindowInfo, AppSettings, FirstWinBonusTimerPayload,
+    MonitorSettingsOps,
+};
 
 pub const TODAY_WIN_BONUS_SETTINGS_KEY: &str = "latest_today_win_bonus_time";
 pub const FIRST_WIN_BONUS_COOLDOWN_HOURS: i64 = 22;
@@ -840,7 +843,7 @@ impl TodayWinBonusDetector {
     }
 
     pub fn focused_sc2_window_active() -> Result<bool, String> {
-        Self::focused_sc2_window().map(|window| window.is_some())
+        ActiveWindowDetector::focused_window_is_sc2()
     }
 
     pub fn focused_sc2_window_rect() -> Result<Option<ScreenRect>, String> {
@@ -860,20 +863,13 @@ impl TodayWinBonusDetector {
     }
 
     pub fn is_sc2_window_identity(app_name: &str, title: &str) -> bool {
-        let normalized_app_name = app_name.trim().to_ascii_lowercase();
-        let normalized_title = title.trim().to_ascii_lowercase();
-
-        normalized_app_name == "sc2.exe"
-            || normalized_app_name == "sc2_x64.exe"
-            || normalized_app_name == "starcraft ii.exe"
-            || normalized_app_name == "starcraft ii"
-            || normalized_title == "starcraft ii"
+        ActiveWindowDetector::is_sc2_window_identity(app_name, title)
     }
 
     fn window_is_sc2(window: &Window) -> bool {
         let app_name = window.app_name().unwrap_or_default();
         let title = window.title().unwrap_or_default();
-        Self::is_sc2_window_identity(&app_name, &title)
+        ActiveWindowInfo::new(app_name, title).is_sc2_window()
     }
 
     fn focused_sc2_window() -> Result<Option<Window>, String> {
@@ -1501,24 +1497,15 @@ impl TodayWinBonusDetector {
 mod windows_gdi_window_dc_capture {
     use image::RgbaImage;
     use std::mem;
-    use std::path::Path;
-    use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND};
+    use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Gdi::{
         BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC,
         DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDIBits, GetWindowDC, HBITMAP, HDC, HGDIOBJ,
         ReleaseDC, SRCCOPY, SelectObject,
     };
-    use windows::Win32::System::Threading::{
-        OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
-        QueryFullProcessImageNameW,
-    };
-    use windows::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
-        IsIconic,
-    };
-    use windows::core::PWSTR;
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, IsIconic};
 
-    use super::{ScreenRect, TodayWinBonusDetector};
+    use super::ScreenRect;
 
     struct WindowDc {
         hwnd: HWND,
@@ -1629,33 +1616,6 @@ mod windows_gdi_window_dc_capture {
         }
     }
 
-    struct ProcessHandle {
-        handle: HANDLE,
-    }
-
-    impl ProcessHandle {
-        fn new(process_id: u32) -> Result<Self, String> {
-            let handle = unsafe {
-                OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process_id)
-                    .map_err(|error| format!("OpenProcess failed for foreground window: {error}"))?
-            };
-
-            Ok(Self { handle })
-        }
-
-        fn handle(&self) -> HANDLE {
-            self.handle
-        }
-    }
-
-    impl Drop for ProcessHandle {
-        fn drop(&mut self) {
-            unsafe {
-                let _ = CloseHandle(self.handle);
-            }
-        }
-    }
-
     pub fn capture_focused_sc2_window(window_rect: ScreenRect) -> Result<RgbaImage, String> {
         let hwnd = unsafe { GetForegroundWindow() };
         if hwnd.is_invalid() {
@@ -1680,52 +1640,7 @@ mod windows_gdi_window_dc_capture {
     }
 
     fn window_is_sc2(hwnd: HWND) -> bool {
-        let app_name = process_file_name(hwnd).unwrap_or_default();
-        let title = window_title(hwnd);
-
-        TodayWinBonusDetector::is_sc2_window_identity(&app_name, &title)
-    }
-
-    fn process_file_name(hwnd: HWND) -> Option<String> {
-        let mut process_id = 0_u32;
-        unsafe {
-            GetWindowThreadProcessId(hwnd, Some(&mut process_id));
-        }
-        if process_id == 0 {
-            return None;
-        }
-
-        let process = ProcessHandle::new(process_id).ok()?;
-        let mut buffer = vec![0_u16; 32_768];
-        let mut buffer_len = u32::try_from(buffer.len()).ok()?;
-        unsafe {
-            QueryFullProcessImageNameW(
-                process.handle(),
-                PROCESS_NAME_WIN32,
-                PWSTR(buffer.as_mut_ptr()),
-                &mut buffer_len,
-            )
-            .ok()?;
-        }
-
-        let image_name = String::from_utf16_lossy(&buffer[..buffer_len as usize]);
-        let file_name = Path::new(&image_name).file_name()?.to_str()?;
-        Some(file_name.to_string())
-    }
-
-    fn window_title(hwnd: HWND) -> String {
-        let length = unsafe { GetWindowTextLengthW(hwnd) };
-        if length <= 0 {
-            return String::new();
-        }
-
-        let mut buffer = vec![0_u16; length as usize + 1];
-        let copied = unsafe { GetWindowTextW(hwnd, &mut buffer) };
-        if copied <= 0 {
-            return String::new();
-        }
-
-        String::from_utf16_lossy(&buffer[..copied as usize])
+        crate::ActiveWindowDetector::windows_window_info(hwnd).is_sc2_window()
     }
 
     fn capture_window_dc(hwnd: HWND, width: i32, height: i32) -> Result<RgbaImage, String> {

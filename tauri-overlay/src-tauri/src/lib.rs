@@ -3,6 +3,7 @@ use std::time::Duration;
 use crate::commands::{config, replays, stats, system};
 use crate::services::{app_lifecycle::AppLifecycleService, tray::TrayState};
 
+mod active_window;
 mod app_settings;
 mod backend_state;
 mod command_payloads;
@@ -35,6 +36,7 @@ mod system_ops;
 mod test_helper;
 mod today_win_bonus;
 
+pub use active_window::{ActiveWindowDetector, ActiveWindowInfo, ActiveWindowListener};
 pub use app_settings::{AppSettings, PlayerNotes, RandomizerChoices};
 pub use backend_state::BackendState;
 pub use command_payloads::{

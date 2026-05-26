@@ -412,7 +412,6 @@ impl TauriOverlayOps {
             replay.main_commander(),
             replay.ally_commander()
         );
-        let replay_cache_persistable = cache_entry.is_some();
         let replay_cached = if cache_entry.is_some() {
             state.record_replay_cache_update_if_persistable(&replay, true)
         } else {
@@ -427,10 +426,23 @@ impl TauriOverlayOps {
             );
         }
         let settings = state.read_settings_memory();
-        TauriOverlayOps::log_sc2_game_state_transition(
-            state.transition_sc2_game_state(Sc2GameState::GameEnded, Instant::now()),
-            "replay_processed",
-        );
+        let game_state_transition =
+            state.transition_sc2_game_state(Sc2GameState::GameEnded, Instant::now());
+        let entered_game_end_state = game_state_transition
+            .is_some_and(|transition| transition.current() == Sc2GameState::GameEnded);
+        TauriOverlayOps::log_sc2_game_state_transition(game_state_transition, "replay_processed");
+        if entered_game_end_state {
+            TauriOverlayOps::spawn_today_win_bonus_scan(app.clone(), replay.file.clone());
+        } else {
+            crate::sco_log!(
+                "[SCO/today-win-bonus] scan suppressed replay='{}' reason=not_game_end_transition map='{}' result='{}' main_comm='{}' ally_comm='{}'",
+                replay.file,
+                replay.map(),
+                replay.result(),
+                replay.main_commander(),
+                replay.ally_commander()
+            );
+        }
         let show_replay_info_after_game = settings.show_replay_info_after_game();
 
         if show_replay_info_after_game {
@@ -450,19 +462,6 @@ impl TauriOverlayOps {
 
         if let Some(cache_entry) = cache_entry {
             TauriOverlayOps::spawn_detailed_cache_persist(&state, cache_entry, "watch");
-        }
-
-        if replay_cache_persistable {
-            TauriOverlayOps::spawn_today_win_bonus_scan(app.clone(), replay.file.clone());
-        } else {
-            crate::sco_log!(
-                "[SCO/today-win-bonus] scan suppressed replay='{}' reason=not_cache_persistable map='{}' result='{}' main_comm='{}' ally_comm='{}'",
-                replay.file,
-                replay.map(),
-                replay.result(),
-                replay.main_commander(),
-                replay.ally_commander()
-            );
         }
 
         let invalidation_generation = state.invalidate_delayed_player_stats_popup_generation();
