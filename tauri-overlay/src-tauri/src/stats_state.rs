@@ -385,10 +385,6 @@ impl StatsState {
         self.analysis.as_ref()
     }
 
-    pub fn analysis_cloned(&self) -> Option<Value> {
-        self.analysis.clone()
-    }
-
     pub fn games(&self) -> u64 {
         self.games
     }

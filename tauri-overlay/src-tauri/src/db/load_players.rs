@@ -1,7 +1,7 @@
 use super::array_json::ReplayCacheArrayJson;
 use super::core::*;
 use crate::PlayerRowPayload;
-use rusqlite::{Row, params, params_from_iter, types::Value as SqlValue};
+use rusqlite::{Error as SqlError, Row, params, params_from_iter, types::Value as SqlValue};
 use s2coop_analyzer::cache_overall_stats_generator::{CacheIconValue, CachePlayer, CacheUnitStats};
 use std::collections::{BTreeMap, HashMap};
 
@@ -162,6 +162,136 @@ impl ReplayCacheDatabase {
             &where_bind_values,
             query,
         )
+    }
+
+    pub fn has_player_info_rows(&self) -> Result<bool, ReplayCacheDbError> {
+        let exists = self
+            .connection
+            .query_row(
+                "
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM replay_player_infos
+                    WHERE wins + losses > 0
+                    LIMIT 1
+                )
+                ",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|source| self.sqlite_error(source))?;
+        Ok(exists != 0)
+    }
+
+    pub fn load_overlay_player_stats_row(
+        &self,
+        player_handle: &str,
+        player_name: &str,
+    ) -> Result<Option<PlayerRowPayload>, ReplayCacheDbError> {
+        let handle_key = Self::normalized_handle_key(player_handle);
+        if !handle_key.is_empty()
+            && let Some(row) = self.load_overlay_player_stats_row_by_handle_key(&handle_key)?
+        {
+            return Ok(Some(row));
+        }
+
+        let player_name = player_name.trim();
+        if player_name.is_empty() {
+            return Ok(None);
+        }
+
+        self.load_overlay_player_stats_row_by_latest_name(player_name)
+    }
+
+    fn overlay_player_stats_row_sql(where_sql: &str) -> String {
+        format!(
+            "
+            SELECT
+                info.handle,
+                COALESCE((
+                    SELECT p.player_name
+                    FROM replay_cache_players p
+                    INNER JOIN replay_cache_entries e ON e.id = p.replay_id
+                    WHERE p.player_handle = info.handle
+                        AND TRIM(COALESCE(p.player_name, '')) <> ''
+                    ORDER BY e.date_seconds DESC, e.date_text DESC, e.file DESC, e.hash DESC
+                    LIMIT 1
+                ), info.handle) AS player,
+                COALESCE((
+                    SELECT json_group_array(name)
+                    FROM (
+                        SELECT
+                            p.player_name AS name,
+                            MAX(e.date_seconds) AS last_seen
+                        FROM replay_cache_players p
+                        INNER JOIN replay_cache_entries e ON e.id = p.replay_id
+                        WHERE p.player_handle = info.handle
+                            AND TRIM(COALESCE(p.player_name, '')) <> ''
+                        GROUP BY p.player_name
+                        ORDER BY last_seen DESC, name ASC
+                    )
+                ), '[]') AS player_names,
+                info.wins,
+                info.losses,
+                CASE
+                    WHEN info.wins + info.losses <= 0 THEN 0.0
+                    ELSE CAST(info.wins AS REAL) / (info.wins + info.losses)
+                END AS winrate,
+                info.average_apm AS apm,
+                info.latest_commander AS commander,
+                info.commander_frequency AS frequency,
+                info.kill_ratio AS kills,
+                info.latest_played_time AS last_seen
+            FROM replay_player_infos info
+            WHERE info.wins + info.losses > 0
+                AND {where_sql}
+            LIMIT 1
+            "
+        )
+    }
+
+    fn query_optional_player_row(
+        &self,
+        sql: &str,
+        bind_value: &str,
+    ) -> Result<Option<PlayerRowPayload>, ReplayCacheDbError> {
+        let mut statement = self
+            .connection
+            .prepare(sql)
+            .map_err(|source| self.sqlite_error(source))?;
+        match statement.query_row(params![bind_value], Self::player_row_payload_from_row) {
+            Ok(row) => Ok(Some(row)),
+            Err(SqlError::QueryReturnedNoRows) => Ok(None),
+            Err(source) => Err(self.sqlite_error(source)),
+        }
+    }
+
+    fn load_overlay_player_stats_row_by_handle_key(
+        &self,
+        handle_key: &str,
+    ) -> Result<Option<PlayerRowPayload>, ReplayCacheDbError> {
+        let sql = Self::overlay_player_stats_row_sql("LOWER(TRIM(info.handle)) = LOWER(TRIM(?1))");
+        self.query_optional_player_row(&sql, handle_key)
+    }
+
+    fn load_overlay_player_stats_row_by_latest_name(
+        &self,
+        player_name: &str,
+    ) -> Result<Option<PlayerRowPayload>, ReplayCacheDbError> {
+        let sql = Self::overlay_player_stats_row_sql(
+            "
+            LOWER(TRIM(info.handle)) = (
+                SELECT LOWER(TRIM(p.player_handle))
+                FROM replay_cache_players p
+                INNER JOIN replay_cache_entries e ON e.id = p.replay_id
+                WHERE LOWER(TRIM(p.player_name)) = LOWER(TRIM(?1))
+                    AND TRIM(COALESCE(p.player_handle, '')) <> ''
+                ORDER BY e.date_seconds DESC, e.date_text DESC, e.file DESC, e.hash DESC
+                LIMIT 1
+            )
+            ",
+        );
+        self.query_optional_player_row(&sql, player_name)
     }
 
     fn count_player_rows_page(

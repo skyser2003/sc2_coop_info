@@ -7,15 +7,11 @@ use serde_json::json;
 use std::sync::Arc;
 
 #[test]
-fn replay_cache_slot_update_sets_selected_file_without_shared_cache() {
+fn selected_replay_file_update_does_not_store_replay_cache_in_memory() {
     let replay_path = TestHelperOps::test_replay_path("example.SC2Replay");
     let state = BackendState::new();
-    let mut replay = ReplayInfo::default();
-    replay.set_file(replay_path.clone());
-    replay.set_date(123);
-    replay.set_result("Victory");
 
-    state.upsert_replay_cache_slot(&replay);
+    state.set_current_replay_file(Some(&replay_path));
 
     assert_eq!(
         state.get_current_replay_file().as_deref(),

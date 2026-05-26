@@ -473,6 +473,61 @@ fn sqlite_cache_stores_player_identity_by_handle() {
 }
 
 #[test]
+fn sqlite_cache_loads_overlay_player_stats_row_from_fresh_player_info() {
+    let root = unique_temp_path("replay_cache_db_overlay_player_stats");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
+    let mut entry = sample_cache_entry(
+        "overlay-player-stats.SC2Replay",
+        "overlay-player-stats-hash",
+        "2026-01-02 00:00:00",
+        true,
+        "Victory",
+    );
+    let main_player = sample_player(1, "Main Player");
+    let mut ally_player = sample_player(2, "Fresh Ally");
+    ally_player.handle = Some("1-S2-1-222".to_string());
+    ally_player.commander = Some("Karax".to_string());
+    ally_player.apm = Some(88);
+    ally_player.kills = Some(30);
+    entry.players = vec![main_player, ally_player];
+
+    let mut database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    database
+        .replace_entries(&[entry])
+        .expect("entry should write");
+
+    assert!(
+        database
+            .has_player_info_rows()
+            .expect("player info presence should query")
+    );
+
+    let row_by_handle = database
+        .load_overlay_player_stats_row("1-s2-1-222", "unused name")
+        .expect("overlay player stats row should query")
+        .expect("fresh player info should be available by handle");
+    assert_eq!(row_by_handle.handle, "1-S2-1-222");
+    assert_eq!(row_by_handle.player, "Fresh Ally");
+    assert_eq!(row_by_handle.wins, 1);
+    assert_eq!(row_by_handle.losses, 0);
+    assert!((row_by_handle.apm - 88.0).abs() < 1e-9);
+    assert_eq!(row_by_handle.commander, "Karax");
+    assert!((row_by_handle.kills - 0.75).abs() < 1e-9);
+    assert!(row_by_handle.last_seen > 0);
+
+    let row_by_name = database
+        .load_overlay_player_stats_row("1-S2-1-999", "fresh ally")
+        .expect("overlay player stats row should query by name")
+        .expect("fresh player info should fall back to latest matching name");
+    assert_eq!(row_by_name.handle, "1-S2-1-222");
+    assert_eq!(row_by_name.player, "Fresh Ally");
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
 fn sqlite_cache_detailed_override_updates_player_kill_ratio_only() {
     fn player(
         pid: u8,

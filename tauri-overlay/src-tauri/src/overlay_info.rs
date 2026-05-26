@@ -40,6 +40,7 @@ pub const OVERLAY_SET_SHOW_CHARTS_FROM_CONFIG_EVENT: &str =
     "sco://overlay-set-show-charts-from-config";
 pub const OVERLAY_SCREENSHOT_REQUEST_EVENT: &str = "sco://overlay-screenshot-request";
 pub const OVERLAY_FIRST_WIN_BONUS_TIMER_EVENT: &str = "sco://overlay-first-win-bonus-timer";
+const FIRST_WIN_BONUS_TIMER_HIDE_TRANSITION: Duration = Duration::from_secs(1);
 
 pub const OVERLAY_HOTKEY_DEFAULTS: [(&str, &str); 6] = [
     ("hotkey_show/hide", "Ctrl+Shift+*"),
@@ -1434,6 +1435,17 @@ impl OverlayInfoOps {
 }
 
 impl OverlayInfoOps {
+    fn prepare_player_stats_overlay_display<R: Runtime>(
+        app: &tauri::AppHandle<R>,
+        state: &BackendState,
+    ) {
+        let _ = app.emit(OVERLAY_HIDESTATS_EVENT, EmptyPayload::default());
+        state.enter_player_stats_overlay_mode();
+        OverlayInfoOps::show_sc2_overlay_window(app);
+    }
+}
+
+impl OverlayInfoOps {
     pub fn perform_overlay_action(
         app: &tauri::AppHandle<Wry>,
         state: &BackendState,
@@ -1447,6 +1459,7 @@ impl OverlayInfoOps {
                     .and_then(|window| window.is_visible().ok())
                     .unwrap_or(false);
                 if overlay_visible {
+                    state.set_overlay_replay_data_active(false);
                     let _ = app.emit(OVERLAY_SHOWHIDE_EVENT, EmptyPayload::default());
                 } else {
                     OverlayInfoOps::show_overlay_window(app);
@@ -1462,6 +1475,7 @@ impl OverlayInfoOps {
                 Some(crate::OverlayActionResponse::success("Overlay shown"))
             }
             "overlay_hide" => {
+                state.set_overlay_replay_data_active(false);
                 OverlayInfoOps::hide_overlay_window(app);
                 let _ = app.emit(OVERLAY_HIDESTATS_EVENT, EmptyPayload::default());
                 Some(crate::OverlayActionResponse::success("Overlay hidden"))
@@ -1485,8 +1499,8 @@ impl OverlayInfoOps {
             "overlay_older" => Some(OverlayInfoOps::replay_move_window(app, state, -1)),
             "overlay_player_stats" => {
                 let payload = state.overlay_player_stats_payload();
+                OverlayInfoOps::prepare_player_stats_overlay_display(app, state);
                 let _ = app.emit(OVERLAY_SHOW_HIDE_PLAYER_STATS_EVENT, payload);
-                OverlayInfoOps::show_sc2_overlay_window(app);
 
                 Some(crate::OverlayActionResponse::success(
                     "Overlay player stats toggled",
@@ -1615,9 +1629,8 @@ impl OverlayInfoOps {
         }
 
         let payload = state.overlay_player_stats_payload_for_player(player_handle, player_name);
-        let _ = app.emit(OVERLAY_HIDESTATS_EVENT, EmptyPayload::default());
+        OverlayInfoOps::prepare_player_stats_overlay_display(app, state);
         let _ = app.emit(OVERLAY_PLAYER_STATS_EVENT, payload);
-        OverlayInfoOps::show_sc2_overlay_window(app);
         true
     }
 }
@@ -1814,11 +1827,12 @@ impl OverlayInfoOps {
     pub fn sc2_overlay_should_sync(replay_overlay_active: bool) -> bool {
         !replay_overlay_active
     }
-}
 
-impl OverlayInfoOps {
-    fn replay_overlay_active<R: Runtime>(app: &tauri::AppHandle<R>) -> bool {
-        app.state::<BackendState>().overlay_replay_data_active()
+    fn first_win_bonus_timer_hide_delay_elapsed(state: &BackendState) -> bool {
+        state.start_first_win_bonus_timer_hide_delay_if_needed(
+            crate::today_win_bonus::FIRST_WIN_BONUS_TIMER_POLL_INTERVAL,
+        );
+        state.first_win_bonus_timer_hide_delay_elapsed()
     }
 }
 
@@ -1856,15 +1870,29 @@ impl OverlayInfoOps {
         let Some(window) = app.get_webview_window(SC2_OVERLAY_WINDOW_LABEL) else {
             return Ok(false);
         };
-        if !OverlayInfoOps::sc2_overlay_should_sync(OverlayInfoOps::replay_overlay_active(app)) {
+        let state = app.state::<BackendState>();
+        if !OverlayInfoOps::sc2_overlay_should_sync(state.overlay_replay_data_active()) {
             let _ = window.hide();
             return Ok(false);
         }
         let Some(rect) = crate::today_win_bonus::TodayWinBonusDetector::sc2_window_rect()? else {
+            if window.is_visible().unwrap_or(false) && state.sc2_overlay_keep_visible_active() {
+                return Ok(false);
+            }
+            if window.is_visible().unwrap_or(false) && state.first_win_bonus_timer_visible() {
+                if !OverlayInfoOps::first_win_bonus_timer_hide_delay_elapsed(&state) {
+                    return Ok(false);
+                }
+                let payload = OverlayInfoOps::first_win_bonus_timer_hide_payload(&state);
+                OverlayInfoOps::emit_first_win_bonus_timer(app, payload);
+                return Ok(false);
+            }
+            state.clear_sc2_overlay_keep_visible();
             let _ = window.hide();
             return Ok(false);
         };
 
+        state.clear_sc2_overlay_keep_visible();
         OverlayInfoOps::apply_sc2_overlay_window_bounds(&window, rect)?;
         let _ = window.set_always_on_top(true);
         let _ = window.set_skip_taskbar(true);
@@ -1879,12 +1907,27 @@ impl OverlayInfoOps {
         Ok(true)
     }
 
+    fn first_win_bonus_timer_hide_payload(state: &BackendState) -> FirstWinBonusTimerPayload {
+        let settings = state.read_settings_memory();
+        crate::today_win_bonus::FirstWinBonusTimerStatus::from_latest_acquired_time(
+            settings.latest_today_win_bonus_time(),
+            chrono::Utc::now(),
+        )
+        .into_payload(false)
+    }
+
     pub fn emit_first_win_bonus_timer<R: Runtime>(
         app: &tauri::AppHandle<R>,
         payload: FirstWinBonusTimerPayload,
     ) {
+        let state = app.state::<BackendState>();
+        state.set_first_win_bonus_timer_visible(payload.visible);
+        state.clear_first_win_bonus_timer_hide_delay();
         if payload.visible {
+            state.clear_sc2_overlay_keep_visible();
             OverlayInfoOps::show_sc2_overlay_window(app);
+        } else {
+            state.keep_sc2_overlay_visible_for(FIRST_WIN_BONUS_TIMER_HIDE_TRANSITION);
         }
         let _ = app.emit(OVERLAY_FIRST_WIN_BONUS_TIMER_EVENT, payload);
     }

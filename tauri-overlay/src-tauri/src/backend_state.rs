@@ -16,15 +16,15 @@ use s2coop_analyzer::detailed_replay_analysis::{
 };
 use s2coop_analyzer::dictionary_data::Sc2DictionaryData;
 use serde::Serialize;
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use crate::replay_scan_progress::ReplayScanProgress;
 use crate::replay_state::ReplayState;
 use crate::services::replay_watcher::ReplayWatcherMessage;
 use crate::shared_types::{OverlayPlayerStatsPayload, OverlayPlayerStatsRow};
 use crate::{
-    AppSettings, PathManagerOps, ReplayCacheDatabase, ReplayCacheEntryQuery, ReplayInfo,
-    Sc2GameState, Sc2GameStateTracker, Sc2GameStateTransition, StatsState, TauriOverlayOps,
+    AppSettings, PathManagerOps, PlayerRowPayload, ReplayCacheDatabase, ReplayInfo, Sc2GameState,
+    Sc2GameStateTracker, Sc2GameStateTransition, StatsState, TauriOverlayOps,
     overlay_info::{ResolvedHotkeyBinding, RuntimeFlags},
     replay_analysis::ReplayAnalysis,
 };
@@ -69,6 +69,9 @@ pub struct BackendState {
     stats: Arc<Mutex<StatsState>>,
     stats_current_replay_files: Arc<Mutex<HashSet<String>>>,
     overlay_replay_data_active: AtomicBool,
+    sc2_overlay_keep_visible_until_millis: AtomicU64,
+    first_win_bonus_timer_visible: AtomicBool,
+    first_win_bonus_timer_hide_after_millis: AtomicU64,
     session_victories: AtomicU64,
     session_defeats: AtomicU64,
     active_settings: Arc<Mutex<AppSettings>>,
@@ -97,6 +100,13 @@ pub struct BackendState {
 impl BackendStateOps {
     fn as_u32(value: u64) -> u32 {
         u32::try_from(value).unwrap_or(u32::MAX)
+    }
+
+    fn system_time_millis() -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
+            .unwrap_or(0)
     }
 }
 
@@ -146,23 +156,46 @@ impl BackendStateOps {
 }
 
 impl BackendStateOps {
-    fn lookup_player_stats_row(
-        player_data: &Map<String, Value>,
+    fn player_note_for_identity(
+        settings: &AppSettings,
+        player_handle: &str,
         player_name: &str,
-    ) -> Option<(String, Map<String, Value>)> {
-        if let Some(value) = player_data.get(player_name).and_then(Value::as_object) {
-            return Some((player_name.to_string(), value.clone()));
-        }
+    ) -> Option<String> {
+        settings
+            .player_note(player_handle)
+            .or_else(|| settings.player_note(player_name))
+    }
 
-        let player_key = ReplayAnalysis::normalized_player_key(player_name);
-        player_data.iter().find_map(|(name, value)| {
-            if ReplayAnalysis::normalized_player_key(name) != player_key {
-                return None;
-            }
-            value
-                .as_object()
-                .map(|entry| (name.to_string(), entry.clone()))
-        })
+    fn overlay_stats_row_from_player_row(
+        settings: &AppSettings,
+        requested_player_handle: &str,
+        requested_player_name: &str,
+        row: PlayerRowPayload,
+    ) -> (String, OverlayPlayerStatsRow) {
+        let display_name = TauriOverlayOps::sanitize_replay_text(&row.player);
+        let display_name = if display_name.trim().is_empty() {
+            requested_player_name.to_string()
+        } else {
+            display_name
+        };
+        let note =
+            Self::player_note_for_identity(settings, &row.handle, &display_name).or_else(|| {
+                Self::player_note_for_identity(settings, requested_player_handle, &display_name)
+            });
+
+        (
+            display_name,
+            OverlayPlayerStatsRow::Stats {
+                wins: BackendStateOps::as_u32(row.wins),
+                losses: BackendStateOps::as_u32(row.losses),
+                apm: BackendStateOps::as_u32(row.apm.round() as u64),
+                commander: TauriOverlayOps::sanitize_replay_text(&row.commander),
+                frequency: row.frequency,
+                kills: row.kills,
+                last_seen_relative: BackendStateOps::relative_last_seen_text(row.last_seen),
+                note,
+            },
+        )
     }
 }
 
@@ -220,6 +253,9 @@ impl BackendState {
             stats: Arc::new(Mutex::new(StatsState::from_settings(&settings))),
             stats_current_replay_files: Arc::new(Mutex::new(HashSet::new())),
             overlay_replay_data_active: AtomicBool::new(false),
+            sc2_overlay_keep_visible_until_millis: AtomicU64::new(0),
+            first_win_bonus_timer_visible: AtomicBool::new(false),
+            first_win_bonus_timer_hide_after_millis: AtomicU64::new(0),
             session_victories: AtomicU64::new(0),
             session_defeats: AtomicU64::new(0),
             active_settings: Arc::new(Mutex::new(settings)),
@@ -265,6 +301,65 @@ impl BackendState {
     pub fn set_overlay_replay_data_active(&self, active: bool) {
         self.overlay_replay_data_active
             .store(active, Ordering::Release);
+    }
+
+    pub fn enter_player_stats_overlay_mode(&self) {
+        self.set_overlay_replay_data_active(false);
+    }
+
+    pub fn keep_sc2_overlay_visible_for(&self, duration: Duration) {
+        let duration_millis = u64::try_from(duration.as_millis()).unwrap_or(u64::MAX);
+        let deadline = BackendStateOps::system_time_millis().saturating_add(duration_millis);
+        self.sc2_overlay_keep_visible_until_millis
+            .store(deadline, Ordering::Release);
+    }
+
+    pub fn sc2_overlay_keep_visible_active(&self) -> bool {
+        let current_deadline = self
+            .sc2_overlay_keep_visible_until_millis
+            .load(Ordering::Acquire);
+        current_deadline != 0 && BackendStateOps::system_time_millis() < current_deadline
+    }
+
+    pub fn clear_sc2_overlay_keep_visible(&self) {
+        self.sc2_overlay_keep_visible_until_millis
+            .store(0, Ordering::Release);
+    }
+
+    pub fn first_win_bonus_timer_visible(&self) -> bool {
+        self.first_win_bonus_timer_visible.load(Ordering::Acquire)
+    }
+
+    pub fn set_first_win_bonus_timer_visible(&self, visible: bool) {
+        self.first_win_bonus_timer_visible
+            .store(visible, Ordering::Release);
+    }
+
+    pub fn start_first_win_bonus_timer_hide_delay_if_needed(&self, duration: Duration) {
+        let current_deadline = self
+            .first_win_bonus_timer_hide_after_millis
+            .load(Ordering::Acquire);
+        if current_deadline != 0 {
+            return;
+        }
+
+        let duration_millis = u64::try_from(duration.as_millis()).unwrap_or(u64::MAX);
+        let deadline = BackendStateOps::system_time_millis().saturating_add(duration_millis);
+        let _ = self
+            .first_win_bonus_timer_hide_after_millis
+            .compare_exchange(0, deadline, Ordering::AcqRel, Ordering::Acquire);
+    }
+
+    pub fn first_win_bonus_timer_hide_delay_elapsed(&self) -> bool {
+        let current_deadline = self
+            .first_win_bonus_timer_hide_after_millis
+            .load(Ordering::Acquire);
+        current_deadline != 0 && BackendStateOps::system_time_millis() >= current_deadline
+    }
+
+    pub fn clear_first_win_bonus_timer_hide_delay(&self) {
+        self.first_win_bonus_timer_hide_after_millis
+            .store(0, Ordering::Release);
     }
 
     pub fn sc2_game_state(&self) -> Sc2GameState {
@@ -637,17 +732,6 @@ impl BackendState {
         player_name: &str,
     ) -> OverlayPlayerStatsPayload {
         let settings = self.read_settings_memory();
-        let player_data = self
-            .stats
-            .lock()
-            .ok()
-            .and_then(|stats| stats.analysis_cloned())
-            .and_then(|analysis| {
-                analysis
-                    .get("PlayerData")
-                    .and_then(Value::as_object)
-                    .cloned()
-            });
 
         let input_name = TauriOverlayOps::sanitize_replay_text(player_name);
         let fallback_name = if input_name.trim().is_empty() {
@@ -657,45 +741,34 @@ impl BackendState {
         };
 
         let mut data = std::collections::BTreeMap::new();
-        let resolved = player_data
-            .as_ref()
-            .and_then(|rows| BackendStateOps::lookup_player_stats_row(rows, &fallback_name));
 
-        let (display_name, value) = if let Some((resolved_name, row)) = resolved {
-            let wins = row.get("wins").and_then(Value::as_u64).unwrap_or(0);
-            let losses = row.get("losses").and_then(Value::as_u64).unwrap_or(0);
-            let apm = row
-                .get("apm")
-                .and_then(Value::as_f64)
-                .unwrap_or(0.0)
-                .round();
-            let commander = row
-                .get("commander")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            let frequency = row.get("frequency").and_then(Value::as_f64).unwrap_or(0.0);
-            let kills = row.get("kills").and_then(Value::as_f64).unwrap_or(0.0);
-            let last_seen = row.get("last_seen").and_then(Value::as_u64).unwrap_or(0);
-            let relative_last_seen = BackendStateOps::relative_last_seen_text(last_seen);
+        let database_row =
+            ReplayCacheDatabase::open_for_cache_path(&PathManagerOps::get_cache_path())
+                .and_then(|database| {
+                    database.load_overlay_player_stats_row(player_handle, &fallback_name)
+                })
+                .map_err(|error| {
+                    crate::sco_log!(
+                        "[SCO/player-stats] failed to load player row from cache: {error}"
+                    );
+                    error
+                })
+                .ok()
+                .flatten();
+        if let Some(row) = database_row {
+            let (display_name, value) = BackendStateOps::overlay_stats_row_from_player_row(
+                &settings,
+                player_handle,
+                &fallback_name,
+                row,
+            );
+            data.insert(display_name, value);
+            return OverlayPlayerStatsPayload { data };
+        }
 
-            let note = settings.player_note(player_handle);
-            (
-                TauriOverlayOps::sanitize_replay_text(&resolved_name),
-                OverlayPlayerStatsRow::Stats {
-                    wins: BackendStateOps::as_u32(wins),
-                    losses: BackendStateOps::as_u32(losses),
-                    apm: BackendStateOps::as_u32(apm as u64),
-                    commander: TauriOverlayOps::sanitize_replay_text(commander),
-                    frequency,
-                    kills,
-                    last_seen_relative: relative_last_seen,
-                    note,
-                },
-            )
-        } else {
-            let note = settings.player_note(&fallback_name);
-            (fallback_name, OverlayPlayerStatsRow::NoGames { note })
-        };
+        let note =
+            BackendStateOps::player_note_for_identity(&settings, player_handle, &fallback_name);
+        let (display_name, value) = (fallback_name, OverlayPlayerStatsRow::NoGames { note });
 
         data.insert(display_name, value);
 
@@ -716,30 +789,6 @@ impl BackendState {
             &main_handles,
             dictionary.as_deref(),
         )
-    }
-
-    fn cached_replays_from_database(&self, limit: usize) -> Vec<ReplayInfo> {
-        let cache_path = PathManagerOps::get_cache_path();
-        let entries = match ReplayCacheDatabase::open_for_cache_path(&cache_path)
-            .and_then(|database| database.load_summary_entries(ReplayCacheEntryQuery::all(limit)))
-        {
-            Ok(entries) => entries,
-            Err(error) => {
-                crate::sco_log!("[SCO/cache-db] failed to load replay snapshot: {error}");
-                return Vec::new();
-            }
-        };
-
-        let mut replays = entries
-            .iter()
-            .filter(|entry| PathBuf::from(&entry.file).exists())
-            .map(|entry| self.replay_info_from_cache_entry(entry))
-            .collect::<Vec<_>>();
-        ReplayInfo::sort_replays(&mut replays);
-        if limit > 0 && replays.len() > limit {
-            replays.truncate(limit);
-        }
-        replays
     }
 
     fn cached_replay_by_file_or_latest(&self, file: Option<&str>) -> Option<ReplayInfo> {
@@ -769,14 +818,6 @@ impl BackendState {
         Some(self.replay_info_from_cache_entry(&entry))
     }
 
-    pub fn sync_replay_cache_slots(&self, limit: usize) -> Vec<ReplayInfo> {
-        let replays = self.cached_replays_from_database(limit);
-        if let Ok(state) = self.replay_state.lock() {
-            state.sync_selected_replay_file_from_replays(&replays);
-        }
-        replays
-    }
-
     pub fn get_current_replay_file(&self) -> Option<String> {
         self.replay_state
             .lock()
@@ -788,10 +829,6 @@ impl BackendState {
         if let Ok(replay_state) = self.replay_state.lock() {
             replay_state.set_current_replay_file(filename);
         }
-    }
-
-    pub fn upsert_replay_cache_slot(&self, replay: &ReplayInfo) {
-        self.set_current_replay_file(Some(&replay.file));
     }
 
     pub fn cached_replay_by_hash(&self, replay_hash: &str) -> Option<ReplayInfo> {
@@ -807,9 +844,9 @@ impl BackendState {
             .map(|entry| self.replay_info_from_cache_entry(&entry))
     }
 
-    pub fn clear_replay_cache_slots(&self) {
+    pub fn clear_current_replay_file(&self) {
         if let Ok(replay_state) = self.replay_state.lock() {
-            replay_state.clear_replay_cache_slots();
+            replay_state.clear_selected_replay_file();
         }
     }
 
@@ -959,17 +996,13 @@ impl BackendState {
     }
 
     pub fn stats_have_player_rows(&self) -> bool {
-        self.stats
-            .lock()
-            .ok()
-            .and_then(|stats| stats.analysis_cloned())
-            .and_then(|analysis| {
-                analysis
-                    .get("PlayerData")
-                    .and_then(Value::as_object)
-                    .cloned()
+        ReplayCacheDatabase::open_for_cache_path(&PathManagerOps::get_cache_path())
+            .and_then(|database| database.has_player_info_rows())
+            .map_err(|error| {
+                crate::sco_log!("[SCO/player-stats] failed to check cached player rows: {error}");
+                error
             })
-            .is_some_and(|rows| !rows.is_empty())
+            .unwrap_or(false)
     }
 
     pub fn replay_count_for_launch_detector(&self) -> usize {

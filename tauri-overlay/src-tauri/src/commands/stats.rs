@@ -315,7 +315,7 @@ impl StatsCommands {
                 stats.set_analysis_terminal_status(AnalysisMode::Detailed, "not started");
                 state.set_detailed_analysis_stop_controller(None);
                 stats.set_message("No parsed statistics available yet.");
-                state.clear_replay_cache_slots();
+                state.clear_current_replay_file();
                 state.clear_stats_current_replay_files();
                 state.set_overlay_replay_data_active(false);
                 TauriOverlayOps::clear_analysis_cache_files();

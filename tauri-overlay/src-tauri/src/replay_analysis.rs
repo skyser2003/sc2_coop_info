@@ -3464,14 +3464,12 @@ impl ReplayAnalysis {
     pub fn build_stats_response(
         path: &str,
         stats: &Arc<Mutex<StatsState>>,
-        _replays: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
         stats_current_replay_files: &Arc<Mutex<HashSet<String>>>,
     ) -> Result<Value, String> {
         let (main_names, main_handles) = ReplayAnalysisOps::default_main_identity();
         Self::build_stats_response_with_identity(
             path,
             stats,
-            _replays,
             stats_current_replay_files,
             ReplayScanProgress::default().as_payload(),
             &main_names,
@@ -3482,7 +3480,6 @@ impl ReplayAnalysis {
     pub fn build_stats_response_with_identity(
         path: &str,
         stats: &Arc<Mutex<StatsState>>,
-        _replays: &Arc<Mutex<HashMap<String, ReplayInfo>>>,
         stats_current_replay_files: &Arc<Mutex<HashSet<String>>>,
         scan_progress: ReplayScanProgressPayload,
         main_names: &HashSet<String>,

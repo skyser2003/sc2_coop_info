@@ -1,7 +1,10 @@
 use chrono::{DateTime, Duration as ChronoDuration, SecondsFormat, Utc};
 use image::{GrayImage, Luma, Rgba, RgbaImage};
 use imageproc::region_labelling::{Connectivity, connected_components};
-use std::collections::{BTreeMap, VecDeque};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    time::Duration,
+};
 use xcap::{Monitor, Window};
 
 use crate::{AppSettings, FirstWinBonusTimerPayload, MonitorSettingsOps};
@@ -9,6 +12,7 @@ use crate::{AppSettings, FirstWinBonusTimerPayload, MonitorSettingsOps};
 pub const TODAY_WIN_BONUS_SETTINGS_KEY: &str = "latest_today_win_bonus_time";
 pub const FIRST_WIN_BONUS_COOLDOWN_HOURS: i64 = 22;
 pub const FIRST_WIN_BONUS_COOLDOWN_SECONDS: u64 = FIRST_WIN_BONUS_COOLDOWN_HOURS as u64 * 60 * 60;
+pub const FIRST_WIN_BONUS_TIMER_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 const TARGET_TODAY_WIN_BONUS_XP: u32 = 10_000;
 pub const WINDOW_CAPTURE_FAILURES_BEFORE_REGION_FALLBACK: u8 = 5;

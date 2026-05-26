@@ -80,6 +80,11 @@ async function loadOverlayConfig(): Promise<ConfigPayload> {
 export default function Sc2OverlayPage() {
     const runtimeStartedRef = useRef<boolean>(false);
     const playerStatsHideTimerRef = useRef<TimeoutHandle | null>(null);
+    const displayModeRef = useRef<DisplayStatus>({
+        mode: DisplayMode.None,
+        immediate: true,
+    });
+    const playerStatPayloadRef = useRef<OverlayPlayerStatsPayload | null>(null);
     const firstWinBonusTimerPayloadRef =
         useRef<FirstWinBonusTimerPayload | null>(null);
     const unlistenMapRef =
@@ -120,23 +125,33 @@ export default function Sc2OverlayPage() {
         applyOverlayLanguage(payload.language);
     }
 
-    function togglePlayerStatsDisplay(
+    function showPlayerStatsDisplay(
         payload: OverlayPlayerStatsPayload,
         immediate = true,
     ): void {
-        setDisplayMode((previousDisplayMode) => {
-            const showingPlayerStats =
-                previousDisplayMode.mode === DisplayMode.PlayerStats;
+        const nextDisplayMode = {
+            mode: DisplayMode.PlayerStats,
+            immediate,
+        };
+        playerStatPayloadRef.current = payload;
+        displayModeRef.current = nextDisplayMode;
+        setPlayerStatPayload(payload);
+        setDisplayMode(nextDisplayMode);
+    }
 
-            setPlayerStatPayload(showingPlayerStats ? null : payload);
-
-            return {
-                mode: showingPlayerStats
-                    ? DisplayMode.None
-                    : DisplayMode.PlayerStats,
-                immediate,
-            };
-        });
+    function hidePlayerStatsDisplay(immediate = true): void {
+        const hasFirstWinBonusTimer =
+            firstWinBonusTimerPayloadRef.current != null;
+        const nextDisplayMode = {
+            mode: hasFirstWinBonusTimer
+                ? DisplayMode.FirstWinBonusTimer
+                : DisplayMode.None,
+            immediate: hasFirstWinBonusTimer ? true : immediate,
+        };
+        playerStatPayloadRef.current = null;
+        displayModeRef.current = nextDisplayMode;
+        setPlayerStatPayload(null);
+        setDisplayMode(nextDisplayMode);
     }
 
     function togglePlayerStatsEventHandler({
@@ -144,7 +159,16 @@ export default function Sc2OverlayPage() {
     }: {
         payload: OverlayPlayerStatsPayload;
     }): void {
-        togglePlayerStatsDisplay(payload, true);
+        const visible =
+            displayModeRef.current.mode === DisplayMode.PlayerStats &&
+            playerStatPayloadRef.current != null;
+
+        if (visible) {
+            hidePlayerStatsDisplay(true);
+            return;
+        }
+
+        showPlayerStatsDisplay(payload, true);
     }
 
     function playerStatsOnGameStartEventHandler({
@@ -152,11 +176,14 @@ export default function Sc2OverlayPage() {
     }: {
         payload: OverlayPlayerStatsPayload;
     }): void {
-        setPlayerStatPayload(payload);
-        setDisplayMode({
+        const nextDisplayMode = {
             mode: DisplayMode.PlayerStats,
             immediate: true,
-        });
+        };
+        playerStatPayloadRef.current = payload;
+        displayModeRef.current = nextDisplayMode;
+        setPlayerStatPayload(payload);
+        setDisplayMode(nextDisplayMode);
     }
 
     function firstWinBonusTimerEventHandler({
@@ -168,23 +195,29 @@ export default function Sc2OverlayPage() {
         setFirstWinBonusTimerPayload(payload);
         setDisplayMode((previousDisplayMode) => {
             if (previousDisplayMode.mode === DisplayMode.PlayerStats) {
+                displayModeRef.current = previousDisplayMode;
                 return previousDisplayMode;
             }
 
             if (payload.visible) {
-                return {
+                const nextDisplayMode = {
                     mode: DisplayMode.FirstWinBonusTimer,
                     immediate: false,
                 };
+                displayModeRef.current = nextDisplayMode;
+                return nextDisplayMode;
             }
 
             if (previousDisplayMode.mode === DisplayMode.FirstWinBonusTimer) {
-                return {
+                const nextDisplayMode = {
                     mode: DisplayMode.None,
                     immediate: false,
                 };
+                displayModeRef.current = nextDisplayMode;
+                return nextDisplayMode;
             }
 
+            displayModeRef.current = previousDisplayMode;
             return previousDisplayMode;
         });
     }
@@ -327,21 +360,14 @@ export default function Sc2OverlayPage() {
         }
 
         playerStatsHideTimerRef.current = window.setTimeout(() => {
-            setPlayerStatPayload(null);
-            setDisplayMode({
-                mode:
-                    firstWinBonusTimerPayloadRef.current == null
-                        ? DisplayMode.None
-                        : DisplayMode.FirstWinBonusTimer,
-                immediate: false,
-            });
+            hidePlayerStatsDisplay(false);
             playerStatsHideTimerRef.current = null;
         }, playerStatsHideMs);
 
         return () => {
             clearTimerRef(playerStatsHideTimerRef);
         };
-    }, [displayMode.mode, playerStatPayload]);
+    }, [displayMode, playerStatPayload]);
 
     return (
         <div className={styles.overlayPageRoot}>

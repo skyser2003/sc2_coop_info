@@ -2,6 +2,7 @@ use sco_tauri_overlay::{
     AppSettings, BackendState, ReplayInfo, StartupAnalysisRequestOutcome, StartupAnalysisTrigger,
     StatsState, TauriOverlayOps,
 };
+use std::time::Duration;
 
 #[test]
 fn parse_detailed_analysis_progress_counts_reads_running_line() {
@@ -115,4 +116,71 @@ fn record_replay_cache_update_if_persistable_selects_persistable_replay() {
         state.get_current_replay_file().as_deref(),
         Some("valid.SC2Replay")
     );
+}
+
+#[test]
+fn player_stats_overlay_mode_clears_replay_active_flag_without_losing_selection() {
+    let state = BackendState::new();
+
+    state.set_current_replay_file(Some("selected.SC2Replay"));
+    state.set_overlay_replay_data_active(true);
+    state.enter_player_stats_overlay_mode();
+
+    assert!(!state.overlay_replay_data_active());
+    assert_eq!(
+        state.get_current_replay_file().as_deref(),
+        Some("selected.SC2Replay")
+    );
+}
+
+#[test]
+fn sc2_overlay_keep_visible_grace_tracks_transition_window() {
+    let state = BackendState::new();
+
+    assert!(!state.sc2_overlay_keep_visible_active());
+
+    state.keep_sc2_overlay_visible_for(Duration::from_secs(1));
+    assert!(state.sc2_overlay_keep_visible_active());
+
+    state.clear_sc2_overlay_keep_visible();
+    assert!(!state.sc2_overlay_keep_visible_active());
+
+    state.keep_sc2_overlay_visible_for(Duration::ZERO);
+    assert!(!state.sc2_overlay_keep_visible_active());
+}
+
+#[test]
+fn first_win_bonus_timer_visibility_state_is_instance_local() {
+    let first = BackendState::new();
+    let second = BackendState::new();
+
+    assert!(!first.first_win_bonus_timer_visible());
+    assert!(!second.first_win_bonus_timer_visible());
+
+    first.set_first_win_bonus_timer_visible(true);
+
+    assert!(first.first_win_bonus_timer_visible());
+    assert!(!second.first_win_bonus_timer_visible());
+
+    first.set_first_win_bonus_timer_visible(false);
+
+    assert!(!first.first_win_bonus_timer_visible());
+}
+
+#[test]
+fn first_win_bonus_timer_hide_delay_waits_before_elapsed() {
+    let state = BackendState::new();
+
+    assert!(!state.first_win_bonus_timer_hide_delay_elapsed());
+
+    state.start_first_win_bonus_timer_hide_delay_if_needed(Duration::from_secs(1));
+    assert!(!state.first_win_bonus_timer_hide_delay_elapsed());
+
+    state.start_first_win_bonus_timer_hide_delay_if_needed(Duration::ZERO);
+    assert!(!state.first_win_bonus_timer_hide_delay_elapsed());
+
+    state.clear_first_win_bonus_timer_hide_delay();
+    state.start_first_win_bonus_timer_hide_delay_if_needed(Duration::ZERO);
+
+    assert!(state.first_win_bonus_timer_hide_delay_elapsed());
 }

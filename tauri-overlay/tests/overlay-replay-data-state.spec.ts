@@ -61,6 +61,7 @@ type OverlayTauriInternals = {
 declare global {
     interface Window {
         __SCO_REPLAY_DATA_STATE_REQUESTS__: boolean[];
+        hidestats?: () => void;
         postGameStats?: (payload: OverlayReplayPayload) => void;
     }
 }
@@ -132,6 +133,9 @@ class OverlayReplayDataStateTestOps {
 
             window.__SCO_REPLAY_DATA_STATE_REQUESTS__ = [];
             window.__TAURI_INTERNALS__ = internals;
+            window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+                unregisterListener: (): void => {},
+            };
         });
     }
 
@@ -204,6 +208,12 @@ class OverlayReplayDataStateTestOps {
         }, payload);
     }
 
+    public static async hideStats(page: Page): Promise<void> {
+        await page.evaluate(() => {
+            window.hidestats?.();
+        });
+    }
+
     public static async replayDataStateRequests(
         page: Page,
     ): Promise<boolean[]> {
@@ -235,4 +245,32 @@ test("manual replay payload marks replay data active without an inactive transit
         await OverlayReplayDataStateTestOps.replayDataStateRequests(page);
     expect(requests).toContain(true);
     expect(requests).not.toContain(false);
+});
+
+test("manual hide reports replay data inactive after replay overlay was active", async ({
+    page,
+}) => {
+    await OverlayReplayDataStateTestOps.installMock(page);
+    await page.goto("/#/overlay", { waitUntil: "domcontentloaded" });
+    await OverlayReplayDataStateTestOps.waitForOverlayBridge(page);
+    await OverlayReplayDataStateTestOps.clearReplayDataStateRequests(page);
+
+    await OverlayReplayDataStateTestOps.postReplayPayload(
+        page,
+        OverlayReplayDataStateTestOps.replayPayload(),
+    );
+    await page.waitForFunction(() =>
+        window.__SCO_REPLAY_DATA_STATE_REQUESTS__.includes(true),
+    );
+
+    await OverlayReplayDataStateTestOps.clearReplayDataStateRequests(page);
+    await OverlayReplayDataStateTestOps.hideStats(page);
+    await page.waitForFunction(() =>
+        window.__SCO_REPLAY_DATA_STATE_REQUESTS__.includes(false),
+    );
+    await page.waitForTimeout(50);
+
+    const requests =
+        await OverlayReplayDataStateTestOps.replayDataStateRequests(page);
+    expect(requests).toEqual([false]);
 });

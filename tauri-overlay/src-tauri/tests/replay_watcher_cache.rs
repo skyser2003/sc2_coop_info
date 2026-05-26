@@ -139,7 +139,7 @@ fn record_replay_cache_update_does_not_rebuild_ready_stats_snapshot() {
         .lock()
         .expect("stats mutex should not be poisoned");
     let analysis = stats
-        .analysis_cloned()
+        .analysis()
         .expect("analysis should remain present after cache update");
 
     assert_eq!(stats.games(), 0);

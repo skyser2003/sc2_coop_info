@@ -3,6 +3,7 @@ import {
     ReactNode,
     useEffect,
     useMemo,
+    useRef,
     useState,
     type CSSProperties,
 } from "react";
@@ -526,10 +527,23 @@ export default function GameStatText({
     const overlayEnglish = (value: LocalizableValue): string =>
         overlayLanguageManager.englishLabel(value);
     const statsPayload = payload;
+    const replayDataActiveRef = useRef<boolean>(false);
 
     useEffect(() => {
-        reportOverlayReplayDataState(statsPayload != null);
-    }, [reportOverlayReplayDataState, statsPayload]);
+        const active = replayModeVisible && statsPayload != null;
+        if (active) {
+            if (!replayDataActiveRef.current) {
+                reportOverlayReplayDataState(true);
+            }
+            replayDataActiveRef.current = true;
+            return;
+        }
+
+        if (replayDataActiveRef.current) {
+            reportOverlayReplayDataState(false);
+            replayDataActiveRef.current = false;
+        }
+    }, [reportOverlayReplayDataState, replayModeVisible, statsPayload]);
 
     useEffect(() => {
         if (replayModeVisible && statsPayload != null) {
