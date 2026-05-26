@@ -32,9 +32,11 @@ declare global {
         __TAURI_INTERNALS__: {};
         __TAURI_EVENT_PLUGIN_INTERNALS__: {};
         __SCO_ACTION_REQUESTS__: TestConfigRequestRecord[];
+        __SCO_CONFIG_GET_REQUESTS__: TestConfigRequestRecord[];
         __SCO_CONFIG_APPLY_REQUESTS__: TestJsonObject[];
         __SCO_CONFIG_SAVE_REQUESTS__: TestJsonObject[];
         __SCO_FOLDER_PICKER_REQUESTS__: TestConfigRequestRecord[];
+        __SCO_STATS_REQUESTS__: TestConfigRequestRecord[];
         __SCO_TAB_REQUESTS__: TestConfigRequestRecord[];
     }
 }

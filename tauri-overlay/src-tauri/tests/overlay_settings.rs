@@ -4,8 +4,8 @@ use serde_json::json;
 
 #[test]
 fn overlay_runtime_settings_defaults_to_visible_charts() {
-    let payload =
-        AppSettings::merge_settings_with_defaults(json!({})).overlay_runtime_settings_payload(0, 0);
+    let payload = AppSettings::merge_settings_with_defaults(json!({}))
+        .overlay_runtime_settings_payload(0, 0, Default::default());
     let colors = payload
         .get("colors")
         .and_then(Value::as_array)
@@ -48,7 +48,7 @@ fn overlay_runtime_settings_preserve_saved_chart_visibility_and_colors() {
         "color_amon": "#FF0000",
         "color_mastery": "#FFDC87",
     }))
-    .overlay_runtime_settings_payload(4, 1);
+    .overlay_runtime_settings_payload(4, 1, Default::default());
     let colors = payload
         .get("colors")
         .and_then(Value::as_array)

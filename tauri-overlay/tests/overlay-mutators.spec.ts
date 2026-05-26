@@ -28,6 +28,9 @@ async function installOverlayMutatorMock(
         let nextCallbackId = 1;
         let nextEventListenerId = 1;
 
+        window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+            unregisterListener: () => {},
+        };
         window.__TAURI_INTERNALS__ = {
             transformCallback: (callback: (payload: MockEvent) => void) => {
                 const id = nextCallbackId++;
@@ -132,6 +135,7 @@ test("overlay renders all mutator icons for replay payloads", async ({
             session_victory: 0,
             session_defeat: 0,
             language: "en",
+            prestige_names: {},
         });
 
         runtime.__emitMockEvent?.("sco://overlay-replay-payload", {

@@ -152,21 +152,26 @@ export default function PlayersTab({
     React.useEffect(() => {
         loadPageRef.current = state.loadPage;
     }, [state.loadPage]);
-    const pageRequest = React.useCallback(
+    const queryPageRequest = React.useCallback(
         (page: number): PlayersPageRequest => ({
-            page: clampPageNumber(page, totalPages),
+            page,
             rowsPerPage: TABLE_ROWS_PER_PAGE,
             search: normalizedSearch,
             sortKey: sortState?.key || "last_seen",
             sortDirection: sortState?.direction || "desc",
         }),
-        [normalizedSearch, sortState, totalPages],
+        [normalizedSearch, sortState],
+    );
+    const pageRequest = React.useCallback(
+        (page: number): PlayersPageRequest =>
+            queryPageRequest(clampPageNumber(page, totalPages)),
+        [queryPageRequest, totalPages],
     );
 
     React.useEffect(() => {
         setCurrentPage(1);
-        void loadPageRef.current(pageRequest(1));
-    }, [pageRequest]);
+        void loadPageRef.current(queryPageRequest(1));
+    }, [queryPageRequest]);
 
     React.useEffect(() => {
         setCurrentPage((page) => clampPageNumber(page, totalPages));

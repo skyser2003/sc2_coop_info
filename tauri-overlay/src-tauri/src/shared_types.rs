@@ -132,6 +132,7 @@ pub struct OverlayInitColorsDurationPayload {
     pub session_victory: u32,
     pub session_defeat: u32,
     pub language: String,
+    pub prestige_names: BTreeMap<String, LocalizedLabels>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]

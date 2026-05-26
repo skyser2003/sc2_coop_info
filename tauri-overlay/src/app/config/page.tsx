@@ -32,7 +32,7 @@ export default function ConfigPage({ onThemeModeChange }: ConfigPageProps) {
         invoke<boolean>("is_dev").then((isDevInvoke) => {
             setIsDev(isDevInvoke);
         });
-    });
+    }, []);
 
     return (
         <Container

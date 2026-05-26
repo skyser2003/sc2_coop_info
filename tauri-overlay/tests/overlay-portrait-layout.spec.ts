@@ -21,9 +21,27 @@ async function installOverlayPortraitMock(
         };
 
         const callbacks = new Map<number, (payload: MockEvent) => void>();
+        const listenerHandlers = new Map<
+            number,
+            { eventName: string; handler: number }
+        >();
         let nextCallbackId = 1;
         let nextEventListenerId = 1;
 
+        window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+            unregisterListener: (_eventName: string, eventId: number) => {
+                const listener = listenerHandlers.get(eventId);
+                if (!listener) {
+                    return;
+                }
+                const current = listeners.get(listener.eventName) || [];
+                listeners.set(
+                    listener.eventName,
+                    current.filter((handler) => handler !== listener.handler),
+                );
+                listenerHandlers.delete(eventId);
+            },
+        };
         window.__TAURI_INTERNALS__ = {
             transformCallback: (callback: (payload: MockEvent) => void) => {
                 const id = nextCallbackId++;
@@ -45,7 +63,12 @@ async function installOverlayPortraitMock(
                     const current = listeners.get(eventName) || [];
                     current.push(handler);
                     listeners.set(eventName, current);
-                    return nextEventListenerId++;
+                    const eventListenerId = nextEventListenerId++;
+                    listenerHandlers.set(eventListenerId, {
+                        eventName,
+                        handler,
+                    });
+                    return eventListenerId;
                 }
 
                 if (command === "plugin:event|unlisten") {
@@ -120,6 +143,7 @@ test("overlay layout stays within portrait viewport width", async ({
             session_defeat: 0,
             language: "en",
             hide_nicknames_in_overlay: false,
+            prestige_names: {},
         });
         runtime.__emitMockEvent?.("sco://overlay-replay-payload", {
             file: "portrait-layout.SC2Replay",

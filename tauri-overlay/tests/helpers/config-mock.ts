@@ -283,9 +283,11 @@ export async function installConfigMock(
             });
 
             window.__SCO_ACTION_REQUESTS__ = [];
+            window.__SCO_CONFIG_GET_REQUESTS__ = [];
             window.__SCO_CONFIG_APPLY_REQUESTS__ = [];
             window.__SCO_CONFIG_SAVE_REQUESTS__ = [];
             window.__SCO_FOLDER_PICKER_REQUESTS__ = [];
+            window.__SCO_STATS_REQUESTS__ = [];
             window.__SCO_TAB_REQUESTS__ = [];
             window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
                 unregisterListener: () => {},
@@ -312,6 +314,9 @@ export async function installConfigMock(
                         return true;
                     }
                     if (command === "config_get") {
+                        window.__SCO_CONFIG_GET_REQUESTS__.push(
+                            cloneJson(request || {}),
+                        );
                         return configPayload();
                     }
                     if (command === "config_update") {
@@ -353,6 +358,9 @@ export async function installConfigMock(
                         };
                     }
                     if (command === "config_stats_get") {
+                        window.__SCO_STATS_REQUESTS__.push(
+                            cloneJson(request || {}),
+                        );
                         return statsPayload();
                     }
                     if (command === "config_action") {

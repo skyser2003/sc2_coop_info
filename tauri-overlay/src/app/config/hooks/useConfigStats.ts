@@ -255,6 +255,11 @@ export function useConfigStats({
     const pendingStatsFilterTimingRef =
         React.useRef<PendingStatsFilterTiming | null>(null);
     const startupAnalysisRequestedRef = React.useRef<boolean>(false);
+    const activeTabRef = React.useRef<string>(activeTab);
+
+    React.useEffect(() => {
+        activeTabRef.current = activeTab;
+    }, [activeTab]);
 
     React.useEffect(() => {
         statsFiltersRef.current = statsState.filters;
@@ -501,7 +506,9 @@ export function useConfigStats({
                         ) {
                             safeStatus(payload.message);
                         }
-                        void refreshStatistics(true, null, true);
+                        if (activeTabRef.current === "statistics") {
+                            void refreshStatistics(true, null, true);
+                        }
                     },
                 );
             } catch (error) {
@@ -593,8 +600,7 @@ export function useConfigStats({
         };
     }, []);
 
-    const observesStatistics =
-        activeTab === "statistics" || activeTab === "settings";
+    const observesStatistics = activeTab === "statistics";
 
     React.useEffect(() => {
         if (!observesStatistics) {

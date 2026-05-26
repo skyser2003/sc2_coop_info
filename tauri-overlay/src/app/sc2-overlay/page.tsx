@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import FirstWinBonusTimerMode from "../overlay/component/FirstWinBonusTimerMode";
 import PlayerStatMode from "../overlay/component/PlayerStatMode";
 import { createLanguageManager } from "../i18n/languageManager";
 import styles from "../overlay/main.module.css";
 import type {
-    ConfigPayload,
     FirstWinBonusTimerPayload,
     OverlayInitColorsDurationPayload,
     OverlayLanguagePreviewPayload,
@@ -41,10 +39,6 @@ type DisplayStatus = {
     mode: DisplayMode;
     immediate: boolean;
 };
-type ConfigRequestPayload = {
-    method: "GET";
-    path: "/config";
-};
 
 function clearTimerRef(timerRef: MutableRefObject<TimeoutHandle | null>): void {
     if (timerRef.current == null) {
@@ -63,18 +57,6 @@ function createUnlistenMap(): Record<Sc2OverlayEventName, (() => void) | null> {
         [OVERLAY_INIT_COLORS_DURATION_EVENT]: null,
         [OVERLAY_FIRST_WIN_BONUS_TIMER_EVENT]: null,
     };
-}
-
-async function loadOverlayConfig(): Promise<ConfigPayload> {
-    try {
-        return await invoke<ConfigPayload>("config_get");
-    } catch {
-        const request: ConfigRequestPayload = {
-            method: "GET",
-            path: "/config",
-        };
-        return await invoke<ConfigPayload>("config_request", request);
-    }
 }
 
 export default function Sc2OverlayPage() {
@@ -228,13 +210,6 @@ export default function Sc2OverlayPage() {
         }
 
         runtimeStartedRef.current = true;
-
-        try {
-            const response = await loadOverlayConfig();
-            applyOverlayLanguage(response.active_settings.language);
-        } catch (error) {
-            console.warn("Failed to load SC2 overlay config", error);
-        }
 
         try {
             await Promise.all([

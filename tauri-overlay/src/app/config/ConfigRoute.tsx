@@ -16,7 +16,6 @@ import type {
 
 import { createLanguageManager } from "../i18n/languageManager";
 import {
-    loadConfigRequest,
     loadReplayChatRequest,
     loadReplayVisualRequest,
     moveReplayRequest,
@@ -263,18 +262,6 @@ function performanceVisibilityFromPayload(
         return null;
     }
     return Boolean(payload.visible);
-}
-
-function performanceVisibilityFromSettings(
-    payload: AppSettings | null | undefined,
-): boolean | null {
-    if (!payload || typeof payload !== "object") {
-        return null;
-    }
-    if (!("performance_show" in payload)) {
-        return null;
-    }
-    return Boolean(payload.performance_show);
 }
 
 function prettyLabel(value: string): string {
@@ -883,7 +870,7 @@ function SettingsEditor({
         () => getTabIdFromPathname(location.pathname) ?? DEFAULT_TAB_ID,
         [location.pathname],
     );
-    const { refreshStatistics, statsActions, statsState } = useConfigStats({
+    const { statsActions, statsState } = useConfigStats({
         activeTab,
         draft,
         isBusy,
@@ -975,26 +962,6 @@ function SettingsEditor({
                             return;
                         }
                         applyPerformanceVisibilityState(visible);
-                        void loadConfigRequest()
-                            .then((payload) => {
-                                const confirmedVisible =
-                                    performanceVisibilityFromSettings(
-                                        payload?.active_settings ||
-                                            payload?.settings,
-                                    );
-                                if (!isMounted || confirmedVisible === null) {
-                                    return;
-                                }
-                                applyPerformanceVisibilityState(
-                                    confirmedVisible,
-                                );
-                            })
-                            .catch((error) => {
-                                console.warn(
-                                    "Failed to reconcile performance visibility state",
-                                    error,
-                                );
-                            });
                     },
                 );
             } catch (error) {
@@ -1024,28 +991,10 @@ function SettingsEditor({
     }, []);
 
     useEffect(() => {
-        if (activeTab === "games" && tabData.games === null) {
-            loadTabData("games");
-            return;
-        }
-        if (activeTab === "players" && tabData.players === null) {
-            loadTabData("players");
-            return;
-        }
         if (activeTab === "weeklies" && tabData.weeklies === null) {
             loadTabData("weeklies");
-            return;
         }
-        if (activeTab === "statistics" && tabData.statistics === null) {
-            refreshStatistics(true);
-        }
-    }, [
-        activeTab,
-        tabData.games,
-        tabData.players,
-        tabData.weeklies,
-        tabData.statistics,
-    ]);
+    }, [activeTab, tabData.weeklies]);
 
     async function postAction<T extends { message?: string }>(
         request: () => Promise<T>,
@@ -1338,28 +1287,6 @@ function SettingsEditor({
         resetSettings();
     }
 
-    function refreshDataTabOnClick(tabId: TabId): void {
-        if (tabId === "games") {
-            loadTabData("games");
-            return;
-        }
-        if (tabId === "players") {
-            loadTabData("players");
-            return;
-        }
-        if (tabId === "weeklies") {
-            loadTabData("weeklies");
-            return;
-        }
-        if (tabId === "statistics") {
-            refreshStatistics(true, null, true);
-            return;
-        }
-        if (tabId === "settings") {
-            refreshStatistics(true, null, true);
-        }
-    }
-
     const active = TABS.find((tab) => tab.id === activeTab) || TABS[0];
     const tabContent =
         draft === null ? (
@@ -1603,9 +1530,6 @@ function SettingsEditor({
                 variant="scrollable"
                 scrollButtons="auto"
                 allowScrollButtonsMobile
-                onChange={(_event, value: TabId) => {
-                    refreshDataTabOnClick(value);
-                }}
             >
                 {TABS.map((tab) => (
                     <Tab

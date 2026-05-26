@@ -21,7 +21,7 @@ use crate::{
     path_manager,
     performance_overlay::PerformanceGeometry,
     replay_analysis::ReplayAnalysis,
-    shared_types::{FirstWinBonusDisplayMode, OverlayInitColorsDurationPayload},
+    shared_types::{FirstWinBonusDisplayMode, LocalizedLabels, OverlayInitColorsDurationPayload},
 };
 
 pub type RandomizerChoices = BTreeMap<String, bool>;
@@ -925,6 +925,7 @@ impl AppSettings {
         &self,
         session_victories: u64,
         session_defeats: u64,
+        prestige_names: BTreeMap<String, LocalizedLabels>,
     ) -> Value {
         serde_json::to_value(OverlayInitColorsDurationPayload {
             colors: [
@@ -940,6 +941,7 @@ impl AppSettings {
             session_victory: AppSettingsOps::as_u32(session_victories),
             session_defeat: AppSettingsOps::as_u32(session_defeats),
             language: self.overlay_language().to_string(),
+            prestige_names,
         })
         .unwrap_or_else(|_| Value::Object(Default::default()))
     }

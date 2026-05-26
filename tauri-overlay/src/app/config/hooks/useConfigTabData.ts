@@ -30,6 +30,9 @@ export type PlayersPayload = {
     totalRows: number;
 };
 
+type DataTabId = "games" | "players" | "weeklies";
+type TabLoadInFlightState = Record<DataTabId, string | null>;
+
 export type TabDataState = {
     games: GamesPayload | null;
     players: PlayersPayload | null;
@@ -50,7 +53,7 @@ type UseConfigTabDataArgs = {
 type UseConfigTabDataResult = {
     gamesPageRequestRef: React.MutableRefObject<GamesPageRequest>;
     loadTabData: (
-        tabId: "games" | "players" | "weeklies",
+        tabId: DataTabId,
         force?: boolean,
         options?: LoadTabOptions,
     ) => Promise<void>;
@@ -97,8 +100,48 @@ function defaultPlayersPageRequest(): PlayersPageRequest {
     };
 }
 
+function gameRequestKey(request: GamesPageRequest): string {
+    const difficultyFilters = Object.entries(request.difficultyFilters)
+        .map(([key, enabled]) => `${key}:${enabled ? "1" : "0"}`)
+        .join(",");
+    return [
+        request.page,
+        request.rowsPerPage,
+        request.search,
+        request.sortKey,
+        request.sortDirection,
+        difficultyFilters,
+        request.includeNormalGames ? "1" : "0",
+        request.includeMutationGames ? "1" : "0",
+    ].join("|");
+}
+
+function playerRequestKey(request: PlayersPageRequest): string {
+    return [
+        request.page,
+        request.rowsPerPage,
+        request.search,
+        request.sortKey,
+        request.sortDirection,
+    ].join("|");
+}
+
+function tabRequestKey(
+    tabId: DataTabId,
+    gamesRequest: GamesPageRequest,
+    playersRequest: PlayersPageRequest,
+): string {
+    if (tabId === "games") {
+        return gameRequestKey(gamesRequest);
+    }
+    if (tabId === "players") {
+        return playerRequestKey(playersRequest);
+    }
+    return "weeklies";
+}
+
 function getTabPayload(
-    tabId: "games" | "players" | "weeklies",
+    tabId: DataTabId,
     payload:
         | ConfigReplaysPayload
         | ConfigPlayersPayload
@@ -135,12 +178,10 @@ export function useConfigTabData({
         weeklies: null,
         statistics: null,
     });
-    const tabLoadInFlightRef = React.useRef<
-        Record<"games" | "players" | "weeklies", boolean>
-    >({
-        games: false,
-        players: false,
-        weeklies: false,
+    const tabLoadInFlightRef = React.useRef<TabLoadInFlightState>({
+        games: null,
+        players: null,
+        weeklies: null,
     });
     const gamesPageRequestRef = React.useRef<GamesPageRequest>(
         defaultGamesPageRequest(),
@@ -151,26 +192,37 @@ export function useConfigTabData({
 
     const loadTabData = React.useCallback(
         async (
-            tabId: "games" | "players" | "weeklies",
+            tabId: DataTabId,
             force = false,
             options: LoadTabOptions = {},
         ): Promise<void> => {
-            if (!force && tabLoadInFlightRef.current[tabId]) {
+            const gamesRequest =
+                options.gamesRequest || gamesPageRequestRef.current;
+            if (tabId === "games") {
+                gamesPageRequestRef.current = gamesRequest;
+            }
+            const playersRequest =
+                options.playersRequest || playersPageRequestRef.current;
+            if (tabId === "players") {
+                playersPageRequestRef.current = playersRequest;
+            }
+
+            const requestKey = tabRequestKey(
+                tabId,
+                gamesRequest,
+                playersRequest,
+            );
+            const inFlightKey = tabLoadInFlightRef.current[tabId];
+            if (
+                inFlightKey === requestKey ||
+                (!force && inFlightKey !== null)
+            ) {
                 return;
             }
-            tabLoadInFlightRef.current[tabId] = true;
+
+            tabLoadInFlightRef.current[tabId] = requestKey;
             try {
                 setIsBusy(true);
-                const gamesRequest =
-                    options.gamesRequest || gamesPageRequestRef.current;
-                if (tabId === "games") {
-                    gamesPageRequestRef.current = gamesRequest;
-                }
-                const playersRequest =
-                    options.playersRequest || playersPageRequestRef.current;
-                if (tabId === "players") {
-                    playersPageRequestRef.current = playersRequest;
-                }
                 const payload =
                     tabId === "games"
                         ? await loadReplaysRequest(gamesRequest)
@@ -185,7 +237,9 @@ export function useConfigTabData({
             } catch (error) {
                 safeStatus(`Failed to load ${tabId}: ${error.message}`);
             } finally {
-                tabLoadInFlightRef.current[tabId] = false;
+                if (tabLoadInFlightRef.current[tabId] === requestKey) {
+                    tabLoadInFlightRef.current[tabId] = null;
+                }
                 setIsBusy(false);
             }
         },

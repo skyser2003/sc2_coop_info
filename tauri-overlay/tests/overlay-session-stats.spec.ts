@@ -28,9 +28,27 @@ async function installOverlaySessionStatsMock(
         ) => void;
 
         const callbacks = new Map<number, (payload: MockEvent) => void>();
+        const listenerHandlers = new Map<
+            number,
+            { eventName: string; handler: number }
+        >();
         let nextCallbackId = 1;
         let nextEventListenerId = 1;
 
+        window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+            unregisterListener: (_eventName: string, eventId: number) => {
+                const listener = listenerHandlers.get(eventId);
+                if (!listener) {
+                    return;
+                }
+                const current = listeners.get(listener.eventName) || [];
+                listeners.set(
+                    listener.eventName,
+                    current.filter((handler) => handler !== listener.handler),
+                );
+                listenerHandlers.delete(eventId);
+            },
+        };
         window.__TAURI_INTERNALS__ = {
             transformCallback: (callback: (payload: MockEvent) => void) => {
                 const id = nextCallbackId++;
@@ -55,7 +73,12 @@ async function installOverlaySessionStatsMock(
                     const current = listeners.get(eventName) || [];
                     current.push(handler);
                     listeners.set(eventName, current);
-                    return nextEventListenerId++;
+                    const eventListenerId = nextEventListenerId++;
+                    listenerHandlers.set(eventListenerId, {
+                        eventName,
+                        handler,
+                    });
+                    return eventListenerId;
                 }
 
                 if (command === "plugin:event|unlisten") {
@@ -140,6 +163,7 @@ test("session stats stay replay-only and update immediately from runtime setting
             session_victory: 4,
             session_defeat: 1,
             language: "en",
+            prestige_names: {},
         });
         runtime.__emitMockEvent?.("sco://overlay-showstats", {});
     });
@@ -186,6 +210,7 @@ test("session stats stay replay-only and update immediately from runtime setting
             session_victory: 4,
             session_defeat: 1,
             language: "en",
+            prestige_names: {},
         });
     });
 
@@ -212,6 +237,7 @@ test("session stats stay replay-only and update immediately from runtime setting
             session_victory: 7,
             session_defeat: 2,
             language: "en",
+            prestige_names: {},
         });
     });
 

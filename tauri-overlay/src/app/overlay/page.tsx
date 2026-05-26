@@ -22,7 +22,6 @@ import {
 } from "./charts";
 import type { DisplayValue } from "../config/types";
 import type {
-    ConfigPayload,
     OverlayColorPreviewPayload,
     OverlayInitColorsDurationPayload,
     OverlayLanguagePreviewPayload,
@@ -67,7 +66,7 @@ type AuxiliaryOverlayState = {
     visible: boolean;
     renderContent: boolean;
 };
-type OverlayInitColorsDurationInput = {
+type OverlayInitBridgeInput = {
     colors?: OverlayInitColorsDurationPayload["colors"];
     duration?: number;
     show_charts?: boolean;
@@ -76,20 +75,16 @@ type OverlayInitColorsDurationInput = {
     session_victory?: number;
     session_defeat?: number;
     language?: string;
+    prestige_names?: OverlayPrestigeNameCatalog;
 };
 type OverlayWindowBridge = Window & {
-    initColorsDuration?: (data: OverlayInitColorsDurationInput) => void;
+    initColorsDuration?: (data: OverlayInitBridgeInput) => void;
     postGameStats?: (data: OverlayReplayPayload) => void;
     showstats?: () => void;
     hidestats?: () => void;
     showhide?: () => void;
     setShowChartsFromConfig?: (show: boolean) => void;
 };
-type ConfigRequestPayload = {
-    method: "GET";
-    path: "/config";
-};
-
 const hiddenStatsPanelStyle: StatsPanelStyle = {
     display: "none",
     opacity: 0,
@@ -166,7 +161,7 @@ function overlayDurationToMilliseconds(durationSeconds?: number): number {
 }
 
 function normalizeInitPayload(
-    payload: OverlayInitColorsDurationInput,
+    payload: OverlayInitBridgeInput,
 ): OverlayInitColorsDurationPayload {
     return {
         colors: payload.colors ?? [null, null, null, null],
@@ -177,19 +172,8 @@ function normalizeInitPayload(
         session_victory: payload.session_victory ?? 0,
         session_defeat: payload.session_defeat ?? 0,
         language: payload.language ?? "en",
+        prestige_names: payload.prestige_names ?? {},
     };
-}
-
-async function loadOverlayConfig(): Promise<ConfigPayload> {
-    try {
-        return await invoke<ConfigPayload>("config_get");
-    } catch {
-        const request: ConfigRequestPayload = {
-            method: "GET",
-            path: "/config",
-        };
-        return await invoke<ConfigPayload>("config_request", request);
-    }
 }
 
 const OVERLAY_COLOR_PREVIEW_EVENT = "sco://overlay-color-preview";
@@ -270,21 +254,9 @@ export default function OverlayPage() {
     const [sessionVictoryCount, setSessionVictoryCount] = useState<number>(0);
     const [sessionDefeatCount, setSessionDefeatCount] = useState<number>(0);
 
-    async function loadOverlayPrestigeNameCatalog(): Promise<void> {
-        try {
-            const response = await loadOverlayConfig();
-            setOverlayPrestigeNameCatalog(
-                response.randomizer_catalog.prestige_names,
-            );
-        } catch (error) {
-            console.warn("Failed to load overlay prestige catalog", error);
-        }
-    }
-
     function applyOverlayLanguage(nextLanguage: string): void {
         setLanguage(nextLanguage);
         overlayLanguageManager.setLanguage(nextLanguage);
-        void loadOverlayPrestigeNameCatalog();
     }
 
     function setColors(
@@ -479,6 +451,7 @@ export default function OverlayPage() {
         setHideNicknamesInOverlay(normalizedPayload.hide_nicknames_in_overlay);
         setSessionVictoryCount(normalizedPayload.session_victory);
         setSessionDefeatCount(normalizedPayload.session_defeat);
+        setOverlayPrestigeNameCatalog(normalizedPayload.prestige_names);
         setColors(
             normalizedPayload.colors[0],
             normalizedPayload.colors[1],

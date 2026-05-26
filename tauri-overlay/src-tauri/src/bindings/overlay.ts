@@ -38,7 +38,7 @@ export type OverlayColorPreviewPayload = { color_player1?: string, color_player2
 
 export type OverlayIconValue = number | Array<string>;
 
-export type OverlayInitColorsDurationPayload = { colors: [string | null, string | null, string | null, string | null], duration: number, show_charts: boolean, show_session: boolean, hide_nicknames_in_overlay: boolean, session_victory: number, session_defeat: number, language: string, };
+export type OverlayInitColorsDurationPayload = { colors: [string | null, string | null, string | null, string | null], duration: number, show_charts: boolean, show_session: boolean, hide_nicknames_in_overlay: boolean, session_victory: number, session_defeat: number, language: string, prestige_names: { [key in string]: LocalizedLabels }, };
 
 export type OverlayLanguagePreviewPayload = { language: string, };
 

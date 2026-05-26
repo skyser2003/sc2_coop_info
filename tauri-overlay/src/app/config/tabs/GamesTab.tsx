@@ -438,9 +438,9 @@ export default function GamesTab({
     React.useEffect(() => {
         loadPageRef.current = state.loadPage;
     }, [state.loadPage]);
-    const pageRequest = React.useCallback(
+    const queryPageRequest = React.useCallback(
         (page: number): GamesPageRequest => ({
-            page: clampPageNumber(page, totalPages),
+            page,
             rowsPerPage: TABLE_ROWS_PER_PAGE,
             search: searchText,
             sortKey: sortState?.key || "time",
@@ -455,14 +455,18 @@ export default function GamesTab({
             includeNormalGames,
             searchText,
             sortState,
-            totalPages,
         ],
+    );
+    const pageRequest = React.useCallback(
+        (page: number): GamesPageRequest =>
+            queryPageRequest(clampPageNumber(page, totalPages)),
+        [queryPageRequest, totalPages],
     );
 
     React.useEffect(() => {
         setCurrentPage(1);
-        void loadPageRef.current(pageRequest(1));
-    }, [pageRequest]);
+        void loadPageRef.current(queryPageRequest(1));
+    }, [queryPageRequest]);
 
     React.useEffect(() => {
         setCurrentPage((page) => clampPageNumber(page, totalPages));

@@ -403,6 +403,7 @@ async function postReplayPayload(
             session_victory: 0,
             session_defeat: 0,
             language: "en",
+            prestige_names: {},
         });
         runtime.__emitMockOverlayEvent?.(
             "sco://overlay-replay-payload",

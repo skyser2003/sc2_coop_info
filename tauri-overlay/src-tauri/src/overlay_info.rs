@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::FromStr;
@@ -17,8 +17,8 @@ use crate::app_settings::AppSettings;
 use crate::monitor_settings;
 use crate::randomizer;
 use crate::shared_types::{
-    EmptyPayload, FirstWinBonusTimerPayload, OverlayReplayPayload, OverlayScreenshotRequestPayload,
-    ReplayDataRecord, ReplayPlayerSeries, SharedTypesOps,
+    EmptyPayload, FirstWinBonusTimerPayload, LocalizedLabels, OverlayReplayPayload,
+    OverlayScreenshotRequestPayload, ReplayDataRecord, ReplayPlayerSeries, SharedTypesOps,
 };
 use crate::{BackendState, PathManagerOps, ReplayCacheDatabase, ReplayInfo, TauriOverlayOps};
 
@@ -1818,7 +1818,29 @@ impl OverlayInfoOps {
         let state = app.state::<crate::BackendState>();
         let settings = state.read_settings_memory();
         let (session_victories, session_defeats) = state.session_counts();
-        let payload = settings.overlay_runtime_settings_payload(session_victories, session_defeats);
+        let prestige_names = state
+            .dictionary_data()
+            .map(|dictionary| {
+                dictionary
+                    .prestige_names_json
+                    .iter()
+                    .map(|(key, value)| {
+                        (
+                            key.clone(),
+                            LocalizedLabels {
+                                en: value.en.clone(),
+                                ko: value.ko.clone(),
+                            },
+                        )
+                    })
+                    .collect::<BTreeMap<_, _>>()
+            })
+            .unwrap_or_default();
+        let payload = settings.overlay_runtime_settings_payload(
+            session_victories,
+            session_defeats,
+            prestige_names,
+        );
         let _ = app.emit(OVERLAY_INIT_COLORS_DURATION_EVENT, payload);
     }
 }
