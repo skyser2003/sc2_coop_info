@@ -3,7 +3,6 @@ use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 
-use env_logger::{Builder, Env};
 use log::{Level, Record};
 
 use crate::app_settings::AppSettings;
@@ -13,9 +12,9 @@ pub struct LoggingOps;
 
 const MAX_LOG_FILE_BYTES: u64 = 100 * 1024 * 1024;
 const MAX_ROLLING_LOG_FILES: usize = 3;
-const RUST_LOG_ENV_VAR: &str = "RUST_LOG";
 const DEVELOPMENT_LOG_DIRECTIVE: &str = "trace";
 const DEPLOYMENT_LOG_DIRECTIVE: &str = "info";
+const DEFAULT_LOG_STYLE_DIRECTIVE: &str = "always";
 
 impl LoggingOps {
     fn logs_file_path() -> PathBuf {
@@ -47,19 +46,35 @@ impl LoggingOps {
             DEPLOYMENT_LOG_DIRECTIVE
         }
     }
+
+    pub fn default_log_style_directive() -> &'static str {
+        DEFAULT_LOG_STYLE_DIRECTIVE
+    }
 }
 
 impl LoggingOps {
     pub fn initialize_env_logger() {
-        let env = Env::default()
-            .filter(RUST_LOG_ENV_VAR)
-            .default_filter_or(LoggingOps::default_filter_directive());
-        let mut builder = Builder::from_env(env);
+        let mut builder = pretty_env_logger::formatted_timed_builder();
+        builder.parse_filters(LoggingOps::default_filter_directive());
+        builder.parse_write_style(LoggingOps::default_log_style_directive());
+        builder.parse_default_env();
         builder.format(|formatter, record| {
             let timestamp = formatter.timestamp_millis().to_string();
             let line = LoggingOps::format_log_record(&timestamp, record);
             LoggingOps::append_line_if_enabled(&line);
-            writeln!(formatter, "{line}")
+
+            let level_style = formatter.default_level_style(record.level());
+            let level_text = record.level().to_string();
+            let mut target_style = formatter.style();
+            target_style.set_bold(true);
+
+            writeln!(
+                formatter,
+                "{timestamp} {:<5} {} - {}",
+                level_style.value(level_text),
+                target_style.value(record.target()),
+                record.args()
+            )
         });
 
         if let Err(error) = builder.try_init() {

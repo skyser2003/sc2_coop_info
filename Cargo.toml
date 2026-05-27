@@ -11,8 +11,8 @@ resolver = "3"
 s2coop-analyzer = { path = "s2coop-analyzer" }
 s2coop-cli = { path = "s2coop-cli" }
 s2protocol-port = { path = "s2protocol-port" }
-env_logger = "0.11.10"
 log = "0.4.30"
+pretty_env_logger = "0.5.0"
 
 [profile.dev.package.s2coop-analyzer]
 opt-level = 3

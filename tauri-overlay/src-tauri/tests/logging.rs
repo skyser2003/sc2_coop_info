@@ -80,9 +80,10 @@ fn logging_setting_respects_boolean_flag() {
 }
 
 #[test]
-fn env_logger_defaults_to_trace_for_development_and_info_for_deployment() {
+fn pretty_env_logger_defaults_to_trace_for_development_info_for_deployment_and_color() {
     assert_eq!(LoggingOps::default_filter_directive_for(true), "trace");
     assert_eq!(LoggingOps::default_filter_directive_for(false), "info");
+    assert_eq!(LoggingOps::default_log_style_directive(), "always");
 }
 
 #[test]

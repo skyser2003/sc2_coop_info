@@ -11,8 +11,8 @@ tauri-build = { version = "2", features = [] }
 s2protocol-port = { workspace = true }
 s2coop-analyzer = { workspace = true }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
-env_logger = { workspace = true }
 log = { workspace = true }
+pretty_env_logger = { workspace = true }
 
 tauri = { version = "2.11.1", features = ["tray-icon"] }
 display-info = { version = "0.5.9" }
