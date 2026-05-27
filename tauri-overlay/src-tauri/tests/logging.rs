@@ -95,6 +95,12 @@ fn formatted_log_line_includes_level_target_and_message() {
 }
 
 #[test]
+fn display_timestamp_uses_hh_mm_ss_for_console_logs() {
+    assert_eq!(LoggingOps::format_display_time(0, 0, 0), "00:00:00");
+    assert_eq!(LoggingOps::format_display_time(23, 4, 5), "23:04:05");
+}
+
+#[test]
 fn logs_file_path_stays_next_to_settings_file() {
     let settings_path = TestHelperOps::test_config_path("settings.json");
     let path = logs_file_path_from_settings_path(Path::new(&settings_path));

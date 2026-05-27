@@ -3,6 +3,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 
+use chrono::Local;
 use log::{Level, Record};
 
 use crate::app_settings::AppSettings;
@@ -50,6 +51,14 @@ impl LoggingOps {
     pub fn default_log_style_directive() -> &'static str {
         DEFAULT_LOG_STYLE_DIRECTIVE
     }
+
+    pub fn format_display_time(hour: u32, minute: u32, second: u32) -> String {
+        format!("{hour:02}:{minute:02}:{second:02}")
+    }
+
+    fn display_timestamp() -> String {
+        Local::now().format("%H:%M:%S").to_string()
+    }
 }
 
 impl LoggingOps {
@@ -62,6 +71,7 @@ impl LoggingOps {
             let timestamp = formatter.timestamp_millis().to_string();
             let line = LoggingOps::format_log_record(&timestamp, record);
             LoggingOps::append_line_if_enabled(&line);
+            let display_timestamp = LoggingOps::display_timestamp();
 
             let level_style = formatter.default_level_style(record.level());
             let level_text = record.level().to_string();
@@ -70,7 +80,7 @@ impl LoggingOps {
 
             writeln!(
                 formatter,
-                "{timestamp} {:<5} {} - {}",
+                "{display_timestamp} {:<5} {} - {}",
                 level_style.value(level_text),
                 target_style.value(record.target()),
                 record.args()
