@@ -114,7 +114,7 @@ export type StatsPlayerDataRow = { wins: number, losses: number, winrate: number
 
 export type StatsRegionDataRow = { frequency: number, Victory: number, Defeat: number, winrate: number, max_asc: number, prestiges: Record<string, number>, max_com: Array<string>, };
 
-export type StatsStatePayload = { ready: boolean, games: number, detailed_parsed_count: number, total_valid_files: number, analysis?: StatsAnalysisPayload, main_players: Array<string>, main_handles: Array<string>, analysis_running: boolean, analysis_running_mode?: string, simple_analysis_status: string, detailed_analysis_status: string, detailed_analysis_atstart: boolean, prestige_names: { [key in string]: LocalizedLabels }, message: string, scan_progress: ReplayScanProgressPayload, };
+export type StatsStatePayload = { ready: boolean, games: number, detailed_parsed_count: number, total_valid_files: number, analysis?: StatsAnalysisPayload, main_players: Array<string>, main_handles: Array<string>, analysis_running: boolean, analysis_running_mode?: string, simple_analysis_status: string, detailed_analysis_status: string, detailed_analysis_atstart: boolean, prestige_names: { [key in string]: LocalizedLabels }, message: string, scan_progress: ReplayScanProgressPayload, query?: string, };
 
 export type StatsUnitDataPayload = { main: Record<string, ({ count: number } & Record<string, StatsCommanderUnitRow | number>) | null>, ally: Record<string, ({ count: number } & Record<string, StatsCommanderUnitRow | number>) | null>, amon: { [key in string]: StatsAmonUnitRow }, };
 

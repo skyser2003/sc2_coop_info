@@ -1,8 +1,10 @@
 #![cfg(not(windows))]
 
-use sco_tauri_overlay::{BackendState, ReplayInfo, ReplayPlayerInfo, StatsState};
+use sco_tauri_overlay::{
+    BackendState, ReplayInfo, ReplayPlayerInfo, ReplayScanProgressPayload, StatsAnalysisPayload,
+    StatsState,
+};
 use sco_tauri_overlay::{ReplayAnalysis, TestHelperOps};
-use serde_json::Value;
 use serde_json::json;
 use std::sync::Arc;
 
@@ -53,13 +55,24 @@ fn sync_detailed_analysis_status_from_replays_reports_cached_progress() {
 
 #[test]
 fn stats_response_has_detailed_analysis_reads_unit_payload() {
-    let response = json!({
-        "analysis": {
+    let mut response = StatsState::default().as_payload_typed(ReplayScanProgressPayload::default());
+    response.analysis = Some(
+        StatsAnalysisPayload::from_value(json!({
+            "MapData": {},
+            "CommanderData": {},
+            "AllyCommanderData": {},
+            "DifficultyData": {},
+            "RegionData": {},
             "UnitData": {
-                "main": {}
-            }
-        }
-    });
+                "main": {},
+                "ally": {},
+                "amon": {}
+            },
+            "AmonData": {},
+            "PlayerData": {},
+        }))
+        .expect("stats analysis should deserialize"),
+    );
 
     assert!(ReplayAnalysis::stats_response_has_detailed_analysis(
         &response

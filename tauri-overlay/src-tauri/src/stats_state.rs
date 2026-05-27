@@ -522,6 +522,10 @@ impl StatsState {
     }
 
     pub fn as_payload(&self, scan_progress: ReplayScanProgressPayload) -> Value {
+        TauriOverlayOps::to_json_value(self.as_payload_typed(scan_progress))
+    }
+
+    pub fn as_payload_typed(&self, scan_progress: ReplayScanProgressPayload) -> StatsStatePayload {
         let (analysis, main_players, main_handles, prestige_names, games, message) = if self.ready {
             (
                 self.analysis.clone(),
@@ -549,7 +553,7 @@ impl StatsState {
         let analysis = StatsAnalysisPayload::from_optional_value(analysis)
             .unwrap_or_else(|error| panic!("Failed to convert stats analysis payload: {error}"));
 
-        TauriOverlayOps::to_json_value(StatsStatePayload {
+        StatsStatePayload {
             ready: self.ready,
             games,
             detailed_parsed_count: 0,
@@ -567,12 +571,8 @@ impl StatsState {
             prestige_names,
             message,
             scan_progress,
-        })
-    }
-
-    pub fn as_payload_typed(&self, scan_progress: ReplayScanProgressPayload) -> StatsStatePayload {
-        serde_json::from_value(self.as_payload(scan_progress))
-            .unwrap_or_else(|error| panic!("Failed to convert stats payload: {error}"))
+            query: None,
+        }
     }
 
     pub fn sync_detailed_analysis_status_from_replays(&mut self, replays: &[ReplayInfo]) {

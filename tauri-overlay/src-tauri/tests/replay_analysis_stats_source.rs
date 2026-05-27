@@ -2,7 +2,10 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     CacheCountValue, CacheNumericValue, CachePlayer, CacheReplayEntry, CacheUnitStats,
     ProtocolBuildValue, ReplayBuildInfo,
 };
-use sco_tauri_overlay::{ReplayAnalysis, ReplayAnalysisOps, ReplayCacheDatabase, TestHelperOps};
+use sco_tauri_overlay::{
+    ReplayAnalysis, ReplayAnalysisOps, ReplayCacheDatabase, ReplayScanProgressPayload,
+    StatsAnalysisPayload, TestHelperOps,
+};
 use sco_tauri_overlay::{ReplayInfo, ReplayPlayerInfo, StatsState, UNLIMITED_REPLAY_LIMIT};
 use serde_json::json;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -341,13 +344,24 @@ fn detailed_stats_counts_uses_cache_marker_without_unit_payloads() {
 
 #[test]
 fn stats_response_has_detailed_analysis_reads_unit_payload() {
-    let response = json!({
-        "analysis": {
+    let mut response = StatsState::default().as_payload_typed(ReplayScanProgressPayload::default());
+    response.analysis = Some(
+        StatsAnalysisPayload::from_value(json!({
+            "MapData": {},
+            "CommanderData": {},
+            "AllyCommanderData": {},
+            "DifficultyData": {},
+            "RegionData": {},
             "UnitData": {
-                "main": {}
-            }
-        }
-    });
+                "main": {},
+                "ally": {},
+                "amon": {}
+            },
+            "AmonData": {},
+            "PlayerData": {},
+        }))
+        .expect("stats analysis should deserialize"),
+    );
 
     assert!(ReplayAnalysis::stats_response_has_detailed_analysis(
         &response

@@ -349,6 +349,9 @@ pub struct StatsStatePayload {
     pub prestige_names: std::collections::BTreeMap<String, LocalizedLabels>,
     pub message: String,
     pub scan_progress: ReplayScanProgressPayload,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub query: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, TS)]

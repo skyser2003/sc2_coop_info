@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::TryLockError;
@@ -12,6 +12,48 @@ use crate::{
 };
 
 pub struct StatsCommands;
+
+#[derive(Clone, Debug, Default, Deserialize)]
+struct StatsActionPayloadFields {
+    #[serde(default)]
+    enabled: Option<bool>,
+    #[serde(default)]
+    file: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct StatsActionRequestBody {
+    action: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    file: Option<String>,
+}
+
+impl StatsActionRequestBody {
+    fn from_parts(action: String, payload: Option<Value>) -> Self {
+        let fields = payload
+            .and_then(|value| serde_json::from_value::<StatsActionPayloadFields>(value).ok())
+            .unwrap_or_default();
+        Self {
+            action,
+            enabled: fields.enabled,
+            file: fields.file,
+        }
+    }
+
+    fn action(&self) -> &str {
+        &self.action
+    }
+
+    fn enabled(&self) -> Option<bool> {
+        self.enabled
+    }
+
+    fn file(&self) -> Option<&str> {
+        self.file.as_deref()
+    }
+}
 
 #[tauri::command]
 pub async fn config_stats_get(
@@ -109,11 +151,11 @@ impl StatsCommands {
                     dictionary,
                 )?,
                 None => match stats.try_lock() {
-                    Ok(state) => state.as_payload(scan_progress),
+                    Ok(state) => state.as_payload_typed(scan_progress),
                     Err(TryLockError::WouldBlock) => {
                         let fallback = StatsState::default();
-                        let mut payload = fallback.as_payload(scan_progress);
-                        payload["message"] = Value::from("Dictionary data is unavailable.");
+                        let mut payload = fallback.as_payload_typed(scan_progress);
+                        payload.message = "Dictionary data is unavailable.".to_string();
                         payload
                     }
                     Err(TryLockError::Poisoned(_)) => {
@@ -126,20 +168,16 @@ impl StatsCommands {
                 path_for_worker.len(),
                 payload_started_at.elapsed().as_secs_f64() * 1000.0
             );
-            let typed_started_at = Instant::now();
-            serde_json::from_value(payload)
-                .map_err(|error| format!("Invalid stats payload: {error}"))
-                .inspect(|payload: &StatsStatePayload| {
-                    crate::sco_debug!(
-                        "[SCO/stats/e2e/backend] stage=config_stats_get_typed_payload games={} elapsed_ms={:.3}",
-                        payload.games,
-                        typed_started_at.elapsed().as_secs_f64() * 1000.0
-                    );
-                    crate::sco_debug!(
-                        "[SCO/stats/e2e/backend] stage=config_stats_get_worker_total elapsed_ms={:.3}",
-                        worker_started_at.elapsed().as_secs_f64() * 1000.0
-                    );
-                })
+            crate::sco_debug!(
+                "[SCO/stats/e2e/backend] stage=config_stats_get_typed_payload games={} elapsed_ms={:.3}",
+                payload.games,
+                payload_started_at.elapsed().as_secs_f64() * 1000.0
+            );
+            crate::sco_debug!(
+                "[SCO/stats/e2e/backend] stage=config_stats_get_worker_total elapsed_ms={:.3}",
+                worker_started_at.elapsed().as_secs_f64() * 1000.0
+            );
+            Ok(payload)
         })
         .await
         .map_err(|error| format!("Failed to read /config/stats: {error}"))?;
@@ -163,26 +201,16 @@ impl StatsCommands {
         payload: Option<Value>,
         state: State<'_, BackendState>,
     ) -> Result<StatsActionPayload, String> {
-        let body = if let Some(Value::Object(mut object)) = payload {
-            object.insert("action".to_string(), Value::String(action));
-            Some(Value::Object(object))
-        } else {
-            Some(TauriOverlayOps::to_json_value(
-                serde_json::json!({ "action": action }),
-            ))
-        };
-        state.log_request("post", "/config/stats/action", &body);
-        let action = body
-            .as_ref()
-            .and_then(|payload| payload.get("action"))
-            .and_then(Value::as_str)
-            .unwrap_or("");
+        let body = StatsActionRequestBody::from_parts(action, payload);
+        let body_value = Some(TauriOverlayOps::to_json_value(&body));
+        state.log_request("post", "/config/stats/action", &body_value);
+        let action = body.action();
 
         if let Some(response) = overlay_info::OverlayInfoOps::perform_overlay_action(
             &app,
             &state,
             action,
-            body.as_ref(),
+            body_value.as_ref(),
         ) {
             return Ok(StatsActionPayload {
                 status: response.status,
@@ -298,12 +326,12 @@ impl StatsCommands {
                 #[derive(Serialize)]
                 struct DumpPayload {
                     timestamp: u64,
-                    stats: Value,
+                    stats: StatsStatePayload,
                 }
 
                 let payload = TauriOverlayOps::to_json_value(DumpPayload {
                     timestamp: TauriOverlayOps::format_date_from_system_time(SystemTime::now()),
-                    stats: stats.as_payload(state.replay_scan_progress().as_payload()),
+                    stats: stats.as_payload_typed(state.replay_scan_progress().as_payload()),
                 });
                 match serde_json::to_string_pretty(&payload) {
                     Ok(contents) => match std::fs::write(&dump_path, contents) {
@@ -349,9 +377,7 @@ impl StatsCommands {
                 );
             }
             "set_detailed_analysis_atstart" => {
-                if let Some(payload) = body.as_ref()
-                    && let Some(enabled) = payload.get("enabled").and_then(Value::as_bool)
-                {
+                if let Some(enabled) = body.enabled() {
                     stats.set_detailed_analysis_atstart(enabled);
                     if let Err(error) =
                         state.persist_bool_setting("detailed_analysis_atstart", enabled)
@@ -371,11 +397,7 @@ impl StatsCommands {
                 );
             }
             "reveal_file" => {
-                let requested_file = body
-                    .as_ref()
-                    .and_then(|payload| payload.get("file"))
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let requested_file = body.file().unwrap_or("");
                 let file = requested_file;
                 if file.is_empty() {
                     stats.set_message("No replay file specified to reveal.");

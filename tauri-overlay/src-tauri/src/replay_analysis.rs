@@ -40,8 +40,8 @@ use crate::stats_units::StatsUnitDataOps;
 use crate::{
     AppSettings, CommanderUnitRollup, QueuedReplayCacheEntrySink, ReplayCacheDatabase,
     ReplayCacheEntryQuery, ReplayCacheReadScope, ReplayCacheWriteQueue, ReplayChatMessage,
-    ReplayInfo, ReplayPlayerInfo, StatsSnapshot, StatsState, TauriOverlayOps,
-    UNLIMITED_REPLAY_LIMIT, UnitStatsRollup,
+    ReplayInfo, ReplayPlayerInfo, StatsAnalysisPayload, StatsSnapshot, StatsState,
+    StatsStatePayload, TauriOverlayOps, UNLIMITED_REPLAY_LIMIT, UnitStatsRollup,
 };
 
 struct FastestMapPlayerInput<'a> {
@@ -3454,18 +3454,18 @@ impl ReplayAnalysis {
         (detailed_parsed_count, total_valid_files)
     }
 
-    pub fn stats_response_has_detailed_analysis(response: &Value) -> bool {
+    pub fn stats_response_has_detailed_analysis(response: &StatsStatePayload) -> bool {
         response
-            .get("analysis")
-            .and_then(|value| value.get("UnitData"))
-            .is_some_and(|value| !value.is_null())
+            .analysis
+            .as_ref()
+            .is_some_and(|analysis| analysis.unit_data.is_some())
     }
 
     pub fn build_stats_response(
         path: &str,
         stats: &Arc<Mutex<StatsState>>,
         stats_current_replay_files: &Arc<Mutex<HashSet<String>>>,
-    ) -> Result<Value, String> {
+    ) -> Result<StatsStatePayload, String> {
         let (main_names, main_handles) = ReplayAnalysisOps::default_main_identity();
         Self::build_stats_response_with_identity(
             path,
@@ -3484,7 +3484,7 @@ impl ReplayAnalysis {
         scan_progress: ReplayScanProgressPayload,
         main_names: &HashSet<String>,
         main_handles: &HashSet<String>,
-    ) -> Result<Value, String> {
+    ) -> Result<StatsStatePayload, String> {
         let dictionary = Sc2DictionaryData::default();
         Self::build_stats_response_with_dictionary(
             StatsResponseBuildInput::new(
@@ -3502,7 +3502,7 @@ impl ReplayAnalysis {
     pub fn build_stats_response_with_dictionary(
         input: StatsResponseBuildInput<'_>,
         dictionary: &Sc2DictionaryData,
-    ) -> Result<Value, String> {
+    ) -> Result<StatsStatePayload, String> {
         let StatsResponseBuildInput {
             path,
             stats,
@@ -3513,12 +3513,12 @@ impl ReplayAnalysis {
         } = input;
         let stats_query = StatsQuery::from_path(path);
         let mut response = match stats.try_lock() {
-            Ok(state) => state.as_payload(scan_progress.clone()),
+            Ok(state) => state.as_payload_typed(scan_progress.clone()),
             Err(error) => match error {
                 TryLockError::WouldBlock => {
                     let fallback = StatsState::default();
-                    let mut payload = fallback.as_payload(scan_progress);
-                    payload["message"] = Value::from("Statistics are updating. Try again.");
+                    let mut payload = fallback.as_payload_typed(scan_progress);
+                    payload.message = "Statistics are updating. Try again.".to_string();
                     payload
                 }
                 TryLockError::Poisoned(_) => {
@@ -3527,15 +3527,7 @@ impl ReplayAnalysis {
             },
         };
 
-        let is_ready = response
-            .get("ready")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        let analysis_running = response
-            .get("analysis_running")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        if is_ready && !analysis_running {
+        if response.ready && !response.analysis_running {
             let cache_path = PathManagerOps::get_cache_path();
             match stats_current_replay_files.try_lock() {
                 Ok(current_replay_files) => {
@@ -3556,19 +3548,19 @@ impl ReplayAnalysis {
                         },
                     ) {
                         Ok(payload) => {
-                            response["ready"] = Value::from(true);
-                            response["analysis"] = payload.analysis().clone();
-                            response["prestige_names"] =
-                                ReplayAnalysisOps::report_value(payload.prestige_names());
-                            response["games"] = Value::from(payload.games());
-                            response["detailed_parsed_count"] =
-                                Value::from(payload.detailed_parsed_count());
-                            response["total_valid_files"] =
-                                Value::from(payload.total_valid_files());
-                            response["main_players"] =
-                                ReplayAnalysisOps::report_value(&payload.main_players());
-                            response["main_handles"] =
-                                ReplayAnalysisOps::report_value(&payload.main_handles());
+                            response.ready = true;
+                            response.analysis = Some(
+                                StatsAnalysisPayload::from_value(payload.analysis().clone())
+                                    .map_err(|error| {
+                                        format!("Invalid cached stats analysis payload: {error}")
+                                    })?,
+                            );
+                            response.prestige_names = payload.prestige_names().clone();
+                            response.games = payload.games();
+                            response.detailed_parsed_count = payload.detailed_parsed_count();
+                            response.total_valid_files = payload.total_valid_files();
+                            response.main_players = payload.main_players().to_vec();
+                            response.main_handles = payload.main_handles().to_vec();
                         }
                         Err(error) => {
                             crate::sco_warn!(
@@ -3587,7 +3579,7 @@ impl ReplayAnalysis {
             }
         }
         if let Some(query) = path.split('?').nth(1) {
-            response["query"] = Value::from(query);
+            response.query = Some(query.to_string());
         }
 
         Ok(response)
