@@ -152,6 +152,14 @@ impl TauriOverlayOps {
         )
     }
 
+    pub fn cache_generation_completed_message(mode: AnalysisMode, elapsed: Duration) -> String {
+        format!(
+            "{} cache generation completed. {}",
+            mode.display(),
+            TauriOverlayOps::analysis_elapsed_suffix(elapsed)
+        )
+    }
+
     pub fn analysis_stopped_message(mode: AnalysisMode, detail: &str, elapsed: Duration) -> String {
         format!(
             "{} stopped. {} {}",
@@ -405,6 +413,10 @@ impl StatsState {
 
     pub fn analysis_running_mode(&self) -> Option<AnalysisMode> {
         self.analysis_running_mode
+    }
+
+    pub fn should_start_lazy_statistics_analysis(&self) -> bool {
+        !self.ready && !self.analysis_running
     }
 
     pub fn detailed_analysis_status(&self) -> &str {

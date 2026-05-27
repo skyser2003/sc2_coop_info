@@ -3556,6 +3556,7 @@ impl ReplayAnalysis {
                         },
                     ) {
                         Ok(payload) => {
+                            response["ready"] = Value::from(true);
                             response["analysis"] = payload.analysis().clone();
                             response["prestige_names"] =
                                 ReplayAnalysisOps::report_value(payload.prestige_names());

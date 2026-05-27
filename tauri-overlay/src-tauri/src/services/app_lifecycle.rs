@@ -130,7 +130,10 @@ impl AppLifecycleService {
 
         let state = app.state::<BackendState>();
         let flags = state.runtime_flags();
-        Self::request_startup_analysis(app);
+        let startup_settings = state.read_settings_memory();
+        if startup_settings.detailed_analysis_atstart() {
+            Self::request_startup_analysis(app);
+        }
 
         if flags.auto_update() {
             let handle = app.handle().clone();
@@ -146,7 +149,6 @@ impl AppLifecycleService {
 
         TauriOverlayOps::setup_tray_icon(app);
 
-        let startup_settings = state.read_settings_memory();
         if let Err(error) = TauriOverlayOps::sync_start_with_windows_registration(
             app.app_handle(),
             &startup_settings,

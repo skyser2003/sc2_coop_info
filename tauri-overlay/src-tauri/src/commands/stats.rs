@@ -33,8 +33,37 @@ pub async fn config_stats_action(
 }
 
 impl StatsCommands {
+    fn start_lazy_statistics_analysis_if_needed(
+        app: &tauri::AppHandle<Wry>,
+        state: &BackendState,
+    ) -> Result<(), String> {
+        let stats_handle = state.stats_handle();
+        let should_start = {
+            let stats = stats_handle
+                .lock()
+                .map_err(|error| format!("Failed to access stats state: {error}"))?;
+            stats.should_start_lazy_statistics_analysis()
+        };
+
+        if should_start {
+            crate::sco_info!(
+                "[SCO/stats] lazy statistics request starting simple analysis from config_stats_get"
+            );
+            TauriOverlayOps::spawn_analysis_task(
+                app.clone(),
+                state.stats_handle(),
+                state.stats_current_replay_files_handle(),
+                state.detailed_analysis_stop_controller_slot(),
+                false,
+                UNLIMITED_REPLAY_LIMIT,
+            );
+        }
+
+        Ok(())
+    }
+
     pub async fn config_stats_get(
-        _app: tauri::AppHandle<Wry>,
+        app: tauri::AppHandle<Wry>,
         query: Option<String>,
         state: State<'_, BackendState>,
     ) -> Result<StatsStatePayload, String> {
@@ -45,6 +74,7 @@ impl StatsCommands {
             "/config/stats".to_string()
         };
         state.log_request("get", &path, &None);
+        Self::start_lazy_statistics_analysis_if_needed(&app, &state)?;
         let snapshot_started_at = Instant::now();
         let stats = state.stats_handle();
         let stats_current_replay_files = state.stats_current_replay_files_handle();

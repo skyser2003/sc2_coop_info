@@ -15,9 +15,8 @@ use tauri::{AppHandle, Emitter, Manager, Wry};
 use crate::stats_state::AnalysisOutcome;
 use crate::{
     AnalysisCompletedPayload, AnalysisMode, BackendState, PathManagerOps,
-    QueuedReplayCacheEntrySink, ReplayAnalysis, ReplayCacheDatabase, ReplayCacheReadScope,
-    ReplayCacheStatsQuery, StartupAnalysisRequestOutcome, StartupAnalysisTrigger, StatsSnapshot,
-    StatsState, TauriOverlayOps, UNLIMITED_REPLAY_LIMIT,
+    QueuedReplayCacheEntrySink, ReplayAnalysis, ReplayCacheDatabase, StartupAnalysisRequestOutcome,
+    StartupAnalysisTrigger, StatsSnapshot, StatsState, TauriOverlayOps, UNLIMITED_REPLAY_LIMIT,
 };
 
 const SCO_REPLAY_SCAN_PROGRESS_EVENT: &str = "sco://replay-scan-progress";
@@ -394,53 +393,21 @@ impl TauriOverlayOps {
                 generation_start.elapsed().as_millis()
             );
 
-            let main_names = state.configured_main_names();
-            let main_handles = state.configured_main_handles();
-            let dictionary_start = Instant::now();
-            let dictionary = state.dictionary_data()?;
-            crate::sco_debug!(
-                "[SCO/stats] detailed dictionary access elapsed={}ms",
-                dictionary_start.elapsed().as_millis()
-            );
-            let snapshot_start = Instant::now();
-            let cache_path = PathManagerOps::get_cache_path();
-            let stats_query = ReplayCacheStatsQuery::new(ReplayCacheReadScope::DetailedOnly, limit);
-            let payload = ReplayCacheDatabase::open_for_cache_path(&cache_path)
-                .and_then(|database| {
-                    database.load_statistics_payload(
-                        &stats_query,
-                        &main_names,
-                        &main_handles,
-                        dictionary.as_ref(),
-                    )
-                })
-                .map_err(|error| {
-                    format!(
-                        "Failed to build detailed statistics from '{}': {error}",
-                        ReplayCacheDatabase::db_path_for_cache_path(&cache_path).display()
-                    )
-                })?;
-            crate::sco_debug!(
-                "[SCO/stats] detailed sqlite statistics snapshot games={} elapsed={}ms",
-                payload.games(),
-                snapshot_start.elapsed().as_millis()
-            );
             let snapshot = StatsSnapshot::new(
-                true,
-                payload.games(),
-                payload.main_players().to_vec(),
-                payload.main_handles().to_vec(),
-                payload.analysis().clone(),
-                payload.prestige_names().clone(),
-                if payload.games() == 0 {
-                    "No replay files found.".to_string()
-                } else {
-                    format!("Scanned {} replay file(s).", payload.games())
-                },
+                completed,
+                0,
+                Vec::new(),
+                Vec::new(),
+                TauriOverlayOps::empty_stats_payload(),
+                Default::default(),
+                TauriOverlayOps::cache_generation_completed_message(
+                    AnalysisMode::Detailed,
+                    generation_start.elapsed(),
+                ),
             );
 
             Ok(AnalysisOutcome::with_snapshot(
-                usize::try_from(payload.games()).unwrap_or(usize::MAX),
+                generation_summary.scanned_replays(),
                 snapshot,
                 completed,
             ))
@@ -616,7 +583,7 @@ impl TauriOverlayOps {
             {
                 let replay_count = analysis_outcome.reported_replay_count();
                 if analysis_outcome.analysis_completed() {
-                    guard.set_analysis_running_status(mode, "refreshing replay summaries");
+                    guard.set_analysis_running_status(mode, "cache generation completed");
                     guard.set_message(format!(
                         "Generated '{}' with {} replay entr{}.",
                         ReplayCacheDatabase::db_path_for_cache_path(
@@ -641,8 +608,9 @@ impl TauriOverlayOps {
 
             let (reported_replay_count, all_replays, detailed_completed, analysis_snapshot) =
                 analysis_outcome.into_parts();
+            let has_snapshot = analysis_snapshot.is_some();
 
-            let all_replays = if analysis_snapshot.is_some() {
+            let all_replays = if has_snapshot {
                 all_replays
             } else {
                 let dedupe_start = Instant::now();
@@ -694,7 +662,9 @@ impl TauriOverlayOps {
                 }
             }
 
-            replay_scan_progress_for_thread.set_stage("building_statistics");
+            if !has_snapshot {
+                replay_scan_progress_for_thread.set_stage("building_statistics");
+            }
             let snapshot = if let Some(snapshot) = analysis_snapshot {
                 snapshot
             } else {
@@ -765,16 +735,17 @@ impl TauriOverlayOps {
 
             if include_detailed && !detailed_completed {
                 guard.set_analysis_running(false);
-            } else {
+            } else if !has_snapshot {
                 guard.set_analysis_running_status(mode, "building statistics");
             }
 
             let apply_snapshot_start = Instant::now();
             TauriOverlayOps::apply_rebuild_snapshot(&mut guard, snapshot, mode);
             crate::sco_debug!(
-                "[SCO/stats] {} apply rebuild snapshot elapsed={}ms",
+                "[SCO/stats] {} apply analysis state elapsed={}ms prebuilt_snapshot={}",
                 mode.display(),
-                apply_snapshot_start.elapsed().as_millis()
+                apply_snapshot_start.elapsed().as_millis(),
+                has_snapshot
             );
             if include_detailed && !detailed_completed {
                 guard.set_analysis_running(false);
@@ -784,6 +755,11 @@ impl TauriOverlayOps {
                 guard.set_message(TauriOverlayOps::analysis_stopped_message(
                     mode,
                     "Run detailed analysis to continue generating cache.",
+                    started_at.elapsed(),
+                ));
+            } else if include_detailed {
+                guard.set_message(TauriOverlayOps::cache_generation_completed_message(
+                    mode,
                     started_at.elapsed(),
                 ));
             } else {
