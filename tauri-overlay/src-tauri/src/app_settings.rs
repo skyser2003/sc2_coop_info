@@ -461,69 +461,6 @@ impl AppSettingsOps {
 }
 
 impl AppSettingsOps {
-    #[cfg(target_os = "windows")]
-    fn sync_windows_startup_registration(enabled: bool) -> Result<(), String> {
-        if enabled {
-            let executable_path = std::env::current_exe()
-                .map_err(|error| format!("Failed to resolve executable path: {error}"))?;
-            let command_value = TauriOverlayOps::windows_startup_command_value(&executable_path);
-            let status = std::process::Command::new("reg")
-                .args([
-                    "add",
-                    r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
-                    "/v",
-                    "SCO Overlay",
-                    "/t",
-                    "REG_SZ",
-                    "/d",
-                    &command_value,
-                    "/f",
-                ])
-                .status()
-                .map_err(|error| format!("Failed to update Windows startup entry: {error}"))?;
-            if status.success() {
-                Ok(())
-            } else {
-                Err(format!(
-                    "reg add exited with status {}",
-                    status
-                        .code()
-                        .map_or_else(|| "unknown".to_string(), |code| code.to_string())
-                ))
-            }
-        } else {
-            let status = std::process::Command::new("reg")
-                .args([
-                    "delete",
-                    r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
-                    "/v",
-                    "SCO Overlay",
-                    "/f",
-                ])
-                .status()
-                .map_err(|error| format!("Failed to remove Windows startup entry: {error}"))?;
-            if status.success() || status.code() == Some(1) {
-                Ok(())
-            } else {
-                Err(format!(
-                    "reg delete exited with status {}",
-                    status
-                        .code()
-                        .map_or_else(|| "unknown".to_string(), |code| code.to_string())
-                ))
-            }
-        }
-    }
-}
-
-impl AppSettingsOps {
-    #[cfg(not(target_os = "windows"))]
-    fn sync_windows_startup_registration(_enabled: bool) -> Result<(), String> {
-        Ok(())
-    }
-}
-
-impl AppSettingsOps {
     fn extract_account_handles_from_folder(account_root: &str) -> HashSet<String> {
         let mut handles = HashSet::new();
         let root = PathBuf::from(account_root);
@@ -609,10 +546,6 @@ impl AppSettingsOps {
 }
 
 impl AppSettings {
-    pub fn sync_start_with_windows_registration(&self) -> Result<(), String> {
-        AppSettingsOps::sync_windows_startup_registration(self.start_with_windows)
-    }
-
     pub fn update_player_note(&mut self, handle: &str, note_value: &str) -> Result<(), String> {
         let normalized_handle = ReplayAnalysis::normalized_handle_key(handle);
         if normalized_handle.is_empty() {

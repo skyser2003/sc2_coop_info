@@ -124,7 +124,10 @@ impl AppLifecycleService {
         TauriOverlayOps::setup_tray_icon(app);
 
         let startup_settings = state.read_settings_memory();
-        if let Err(error) = startup_settings.sync_start_with_windows_registration() {
+        if let Err(error) = TauriOverlayOps::sync_start_with_windows_registration(
+            app.app_handle(),
+            &startup_settings,
+        ) {
             crate::sco_warn!("[SCO/settings] Failed to initialize start_with_windows: {error}");
         }
 

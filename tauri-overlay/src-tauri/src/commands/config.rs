@@ -139,10 +139,19 @@ impl ConfigCommands {
 
         next_settings.set_performance_geometry(previous_settings.performance_geometry());
 
-        if persist {
-            state.write_settings_file(&next_settings)?;
-        }
-        TauriOverlayOps::apply_runtime_settings(&app, &previous_settings, &next_settings);
+        let persisted_settings = if persist {
+            let persisted_settings = state.write_settings_file(&next_settings)?;
+            if let Err(error) =
+                TauriOverlayOps::sync_start_with_windows_registration(&app, &persisted_settings)
+            {
+                crate::sco_warn!("[SCO/settings] Failed to sync start_with_windows: {error}");
+            }
+            Some(persisted_settings)
+        } else {
+            None
+        };
+        let runtime_settings = persisted_settings.as_ref().unwrap_or(&next_settings);
+        TauriOverlayOps::apply_runtime_settings(&app, &previous_settings, runtime_settings);
 
         Ok(ConfigPayload {
             status: "ok",

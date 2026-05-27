@@ -1,12 +1,8 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::TauriOverlayOps;
 
 impl TauriOverlayOps {
-    pub fn windows_startup_command_value(executable_path: &Path) -> String {
-        format!("\"{}\"", executable_path.display())
-    }
-
     pub fn folder_dialog_start_directory(directory: Option<String>) -> Option<PathBuf> {
         let trimmed = directory
             .as_deref()

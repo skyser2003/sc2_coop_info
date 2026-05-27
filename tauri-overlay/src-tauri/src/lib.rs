@@ -5,6 +5,7 @@ use crate::services::{app_lifecycle::AppLifecycleService, tray::TrayState};
 
 mod active_window;
 mod app_settings;
+mod autostart;
 mod backend_state;
 mod command_payloads;
 mod commands;
@@ -170,6 +171,11 @@ impl TauriOverlayApp {
 
         tauri::Builder::default()
             .plugin(tauri_plugin_updater::Builder::new().build())
+            .plugin(
+                tauri_plugin_autostart::Builder::new()
+                    .app_name(TauriOverlayOps::autostart_registration_name())
+                    .build(),
+            )
             .manage(state)
             .manage(TrayState::default())
             .plugin(tauri_plugin_opener::init())

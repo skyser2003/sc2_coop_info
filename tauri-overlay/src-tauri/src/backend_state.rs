@@ -498,19 +498,11 @@ impl BackendState {
         sanitized
     }
 
-    pub fn write_settings_file(&self, value: &AppSettings) -> Result<(), String> {
-        let previous_start_with_windows = self.read_settings_memory().start_with_windows();
+    pub fn write_settings_file(&self, value: &AppSettings) -> Result<AppSettings, String> {
         let sanitized = value.write_saved_settings_file()?;
 
         self.replace_active_settings(&sanitized);
-
-        if previous_start_with_windows != sanitized.start_with_windows()
-            && let Err(error) = sanitized.sync_start_with_windows_registration()
-        {
-            crate::sco_warn!("[SCO/settings] Failed to sync start_with_windows: {error}");
-        }
-
-        Ok(())
+        Ok(sanitized)
     }
 
     pub fn persist_single_setting_value(&self, key: &str, value: Value) -> Result<(), String> {
