@@ -264,7 +264,7 @@ export default function StatisticsMapsPanel({
                             className={[styles.note, styles.statsMapFoot]
                                 .filter(Boolean)
                                 .join(" ")}
-                        >{`${languageManager.localize(fastest.difficulty || "-")} | ${formatReplayTime(fastest.date)}`}</p>
+                        >{`${languageManager.localizeDifficulty(fastest.difficulty || "-")} | ${formatReplayTime(fastest.date)}`}</p>
                     </div>
                 )}
             </div>

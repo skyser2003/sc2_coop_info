@@ -217,7 +217,9 @@ export default function StatisticsDiffRegionPanel({
                     <tbody>
                         {diffEntries.map(([name, row]) => (
                             <tr key={`diff-${name}`}>
-                                <td>{languageManager.localize(name)}</td>
+                                <td>
+                                    {languageManager.localizeDifficulty(name)}
+                                </td>
                                 <td>{formatNumber(row.Victory)}</td>
                                 <td>{formatNumber(row.Defeat)}</td>
                                 <td>{formatPercent0(row.Winrate)}</td>

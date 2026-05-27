@@ -795,12 +795,14 @@ export default function GameStatText({
         ];
 
         const difficultyText = readBoolean(statsPayload.weekly)
-            ? `${overlayText("ui_overlay_weekly")} (${overlayLocalize(statsPayload.difficulty)})`
+            ? `${overlayText("ui_overlay_weekly")} (${overlayLanguageManager.localizeDifficulty(statsPayload.difficulty)})`
             : readNumber(statsPayload.extension) > 0 && mutators.length > 0
-              ? `${overlayText("ui_overlay_custom")} (${overlayLocalize(statsPayload.difficulty)})`
+              ? `${overlayText("ui_overlay_custom")} (${overlayLanguageManager.localizeDifficulty(statsPayload.difficulty)})`
               : readNumber(statsPayload["B+"]) > 0
                 ? overlayLocalize(`B+${readNumber(statsPayload["B+"])}`)
-                : overlayLocalize(statsPayload.difficulty);
+                : overlayLanguageManager.localizeDifficulty(
+                      statsPayload.difficulty,
+                  );
 
         const sessionText = showSessionStats
             ? `${overlayText("ui_overlay_session")}: ${sessionVictoryCount} ${overlayText("ui_overlay_wins")}/${sessionVictoryCount + sessionDefeatCount} ${overlayText("ui_overlay_games")}`

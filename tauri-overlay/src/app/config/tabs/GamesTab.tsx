@@ -219,7 +219,7 @@ function difficultyDisplayLabel(
     if (Number.isFinite(brutalPlus) && brutalPlus > 0) {
         return `${languageManager.localize(`B+${Math.min(6, brutalPlus)}`)}${modeSuffix}`;
     }
-    return `${languageManager.localize(row.difficulty)}${modeSuffix}`;
+    return `${languageManager.localizeDifficulty(row.difficulty)}${modeSuffix}`;
 }
 
 export default function GamesTab({

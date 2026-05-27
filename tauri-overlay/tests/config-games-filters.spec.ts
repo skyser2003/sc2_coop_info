@@ -172,4 +172,39 @@ test.describe("Games filters and mutators", () => {
             page.getByRole("cell", { name: "No matching games" }),
         ).toHaveText("No matching games");
     });
+
+    test("translates mixed difficulty labels from saved slash strings", async ({
+        page,
+    }) => {
+        await installConfigMock(page, {
+            settings: {
+                language: "ko",
+            },
+            games: [
+                {
+                    map: "Void Launch",
+                    result: "Victory",
+                    p1: "Main",
+                    p2: "Ally",
+                    main_commander: "Abathur",
+                    ally_commander: "Swann",
+                    difficulty: "Hard/Brutal",
+                    enemy: "Terran",
+                    file: "mixed-difficulty.SC2Replay",
+                    length: 900,
+                    date: 1735689600,
+                    weekly: false,
+                    is_mutation: false,
+                    mutators: [],
+                },
+            ],
+        });
+
+        await page.goto("/", { waitUntil: "domcontentloaded" });
+        await page.getByRole("tab", { name: "게임" }).click();
+
+        const rows = page.locator("tbody tr");
+        await expect(rows).toHaveCount(1);
+        await expect(rows.nth(0)).toContainText("어려움/아주 어려움");
+    });
 });

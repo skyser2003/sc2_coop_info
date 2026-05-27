@@ -35,6 +35,7 @@ export type CommanderMasteryData = Record<
 
 const DEFAULT_LANGUAGE: AppLanguage = "en";
 const ENGLISH_LANGUAGE: AppLanguage = "en";
+const DIFFICULTY_ID_PREFIX = "difficulty_";
 const entries: LanguageData = languageData as LanguageData;
 const commanderMasteryEntries: CommanderMasteryData =
     commanderMasteryDataJson as CommanderMasteryData;
@@ -172,6 +173,34 @@ export class LanguageManager {
         );
     }
 
+    private difficultyIdFromValue(value: string): string | null {
+        const id = this.idFromValue(value);
+        if (id === null || !id.startsWith(DIFFICULTY_ID_PREFIX)) {
+            return null;
+        }
+        return id;
+    }
+
+    private difficultyPartsFromValue(value: string): string[] {
+        const trimmed = value.trim();
+        if (!trimmed.includes("/")) {
+            return [trimmed];
+        }
+
+        const parts = trimmed
+            .split("/")
+            .map((part) => part.trim())
+            .filter((part) => part !== "");
+        if (
+            parts.length < 2 ||
+            !parts.every((part) => this.difficultyIdFromValue(part) !== null)
+        ) {
+            return [trimmed];
+        }
+
+        return parts;
+    }
+
     localize(value: LocalizableValue): string {
         if (value === null || value === undefined) {
             return "";
@@ -198,6 +227,39 @@ export class LanguageManager {
 
         const entry = unitCompositionEntries[unitCompositionId];
         return entry?.[this.language] || entry?.[ENGLISH_LANGUAGE] || trimmed;
+    }
+
+    localizeDifficulty(value: LocalizableValue): string {
+        if (value === null || value === undefined) {
+            return "";
+        }
+
+        if (typeof value !== "string") {
+            return String(value);
+        }
+
+        const trimmed = value.trim();
+        if (trimmed === "") {
+            return "";
+        }
+
+        const parts = this.difficultyPartsFromValue(trimmed);
+        if (parts.length === 1) {
+            return this.localize(parts[0]);
+        }
+
+        const localizedParts: string[] = [];
+        const seenIds = new Set<string>();
+        for (const part of parts) {
+            const id = this.difficultyIdFromValue(part);
+            if (id === null || seenIds.has(id)) {
+                continue;
+            }
+            seenIds.add(id);
+            localizedParts.push(this.translate(id));
+        }
+
+        return localizedParts.length > 0 ? localizedParts.join("/") : trimmed;
     }
 
     localizeUnitName(value: LocalizableValue): string {

@@ -149,7 +149,7 @@ export default function WeekliesTab({
                     return Number.MAX_SAFE_INTEGER;
                 }
                 if (key === "difficulty") {
-                    return languageManager.localize(row.difficulty);
+                    return languageManager.localizeDifficulty(row.difficulty);
                 }
                 if (key === "wins") return Number(row.wins || 0);
                 if (key === "losses") return Number(row.losses || 0);
@@ -334,7 +334,7 @@ export default function WeekliesTab({
                                                     )}
                                                 </td>
                                                 <td>
-                                                    {languageManager.localize(
+                                                    {languageManager.localizeDifficulty(
                                                         row.difficulty,
                                                     )}
                                                 </td>
@@ -399,7 +399,7 @@ export default function WeekliesTab({
                                         )}`}
                                     </span>
                                     <span className={styles.weekliesStatChip}>
-                                        {`${t("ui_weeklies_column_best_difficulty")}: ${languageManager.localize(selectedRow.difficulty)}`}
+                                        {`${t("ui_weeklies_column_best_difficulty")}: ${languageManager.localizeDifficulty(selectedRow.difficulty)}`}
                                     </span>
                                     <span className={styles.weekliesStatChip}>
                                         {`${t("ui_weeklies_column_winrate")}: ${formatPercent(selectedRow.winrate)}`}
