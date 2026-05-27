@@ -7,6 +7,18 @@ struct TauriConfig {
     app: TauriAppConfig,
 }
 
+impl TauriConfig {
+    fn load() -> Self {
+        let config_text =
+            std::fs::read_to_string(Self::path()).expect("tauri.conf.json should be readable");
+        serde_json::from_str(&config_text).expect("tauri.conf.json should be valid JSON")
+    }
+
+    fn path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tauri.conf.json")
+    }
+}
+
 #[derive(Deserialize)]
 struct TauriAppConfig {
     security: TauriSecurityConfig,
@@ -15,33 +27,79 @@ struct TauriAppConfig {
 #[derive(Deserialize)]
 struct TauriSecurityConfig {
     csp: String,
+    capabilities: Vec<TauriCapability>,
 }
 
-fn tauri_config_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tauri.conf.json")
+impl TauriSecurityConfig {
+    fn csp_directives(&self) -> HashMap<String, HashSet<String>> {
+        self.csp
+            .split(';')
+            .filter_map(|directive| {
+                let mut tokens = directive.split_whitespace();
+                let name = tokens.next()?;
+                let values = tokens.map(ToString::to_string).collect();
+                Some((name.to_string(), values))
+            })
+            .collect()
+    }
+
+    fn capability(&self, identifier: &str) -> Option<&TauriCapability> {
+        self.capabilities
+            .iter()
+            .find(|capability| capability.matches_identifier(identifier))
+    }
 }
 
-fn tauri_config() -> TauriConfig {
-    let config_text =
-        std::fs::read_to_string(tauri_config_path()).expect("tauri.conf.json should be readable");
-    serde_json::from_str(&config_text).expect("tauri.conf.json should be valid JSON")
+#[derive(Deserialize)]
+struct TauriCapability {
+    identifier: String,
+    permissions: Vec<TauriPermission>,
 }
 
-fn csp_directives(csp: &str) -> HashMap<String, HashSet<String>> {
-    csp.split(';')
-        .filter_map(|directive| {
-            let mut tokens = directive.split_whitespace();
-            let name = tokens.next()?;
-            let values = tokens.map(ToString::to_string).collect();
-            Some((name.to_string(), values))
-        })
-        .collect()
+impl TauriCapability {
+    fn matches_identifier(&self, identifier: &str) -> bool {
+        self.identifier == identifier
+    }
+
+    fn permission_identifiers(&self) -> HashSet<&str> {
+        self.permissions
+            .iter()
+            .map(TauriPermission::identifier)
+            .collect()
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum TauriPermission {
+    Identifier(String),
+    Scoped(TauriScopedPermission),
+}
+
+impl TauriPermission {
+    fn identifier(&self) -> &str {
+        match self {
+            Self::Identifier(identifier) => identifier,
+            Self::Scoped(permission) => permission.identifier(),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct TauriScopedPermission {
+    identifier: String,
+}
+
+impl TauriScopedPermission {
+    fn identifier(&self) -> &str {
+        &self.identifier
+    }
 }
 
 #[test]
 fn packaged_csp_allows_overlay_screenshot_data_images() {
-    let config = tauri_config();
-    let directives = csp_directives(&config.app.security.csp);
+    let config = TauriConfig::load();
+    let directives = config.app.security.csp_directives();
     let img_src = directives
         .get("img-src")
         .expect("packaged CSP should declare img-src");
@@ -53,12 +111,25 @@ fn packaged_csp_allows_overlay_screenshot_data_images() {
 
 #[test]
 fn packaged_csp_allows_overlay_font_assets() {
-    let config = tauri_config();
-    let directives = csp_directives(&config.app.security.csp);
+    let config = TauriConfig::load();
+    let directives = config.app.security.csp_directives();
     let font_src = directives
         .get("font-src")
         .expect("packaged CSP should declare font-src");
 
     assert!(font_src.contains("'self'"));
     assert!(font_src.contains("data:"));
+}
+
+#[test]
+fn packaged_capability_allows_autostart_plugin_commands() {
+    let config = TauriConfig::load();
+    let capability = config
+        .app
+        .security
+        .capability("event-handler")
+        .expect("event-handler capability should be configured");
+    let permissions = capability.permission_identifiers();
+
+    assert!(permissions.contains("autostart:default"));
 }

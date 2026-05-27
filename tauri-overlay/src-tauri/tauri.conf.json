@@ -80,6 +80,7 @@
                         "core:event:allow-listen",
                         "core:event:allow-unlisten",
                         "core:event:allow-emit",
+                        "autostart:default",
                         "updater:default",
                         "opener:allow-default-urls",
                         {
