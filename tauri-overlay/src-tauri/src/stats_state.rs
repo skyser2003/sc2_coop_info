@@ -18,7 +18,6 @@ type StatsStateParts = (
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StartupAnalysisTrigger {
     Setup,
-    FrontendReady,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -37,7 +36,6 @@ impl StartupAnalysisTrigger {
     pub fn label(self) -> &'static str {
         match self {
             Self::Setup => "setup",
-            Self::FrontendReady => "frontend_ready",
         }
     }
 }

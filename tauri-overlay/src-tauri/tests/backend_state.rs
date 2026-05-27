@@ -1,6 +1,6 @@
 use sco_tauri_overlay::{
-    AppSettings, BackendState, ReplayInfo, StartupAnalysisRequestOutcome, StartupAnalysisTrigger,
-    StatsState, TauriOverlayOps,
+    AppSettings, BackendState, ReplayInfo, StartupAnalysisRequestOutcome, StatsState,
+    TauriOverlayOps,
 };
 use std::time::Duration;
 
@@ -32,10 +32,7 @@ fn parse_detailed_analysis_progress_counts_reads_completion_line() {
 fn prepare_startup_analysis_request_marks_once_and_preserves_existing_status() {
     let mut stats = StatsState::default().with_detailed_analysis_atstart(true);
 
-    let first = TauriOverlayOps::prepare_startup_analysis_request(
-        &mut stats,
-        StartupAnalysisTrigger::Setup,
-    );
+    let first = TauriOverlayOps::prepare_startup_analysis_request(&mut stats);
 
     assert_eq!(first, StartupAnalysisRequestOutcome::new(true, true));
     assert!(stats.startup_analysis_requested());
@@ -46,10 +43,7 @@ fn prepare_startup_analysis_request_marks_once_and_preserves_existing_status() {
 
     stats.set_message("Detailed analysis: generating cache.");
 
-    let second = TauriOverlayOps::prepare_startup_analysis_request(
-        &mut stats,
-        StartupAnalysisTrigger::FrontendReady,
-    );
+    let second = TauriOverlayOps::prepare_startup_analysis_request(&mut stats);
 
     assert_eq!(second, StartupAnalysisRequestOutcome::new(true, false));
     assert_eq!(stats.message(), "Detailed analysis: generating cache.");

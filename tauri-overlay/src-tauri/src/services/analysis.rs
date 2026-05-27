@@ -49,6 +49,10 @@ impl TauriOverlayOps {
         }
     }
 
+    pub fn emit_current_replay_scan_progress(app: &AppHandle<Wry>) {
+        TauriOverlayOps::emit_replay_scan_progress(app, true);
+    }
+
     fn emit_analysis_completed(app: &AppHandle<Wry>, mode: AnalysisMode, message: &str) {
         let payload = AnalysisCompletedPayload {
             mode: mode.key().to_string(),
@@ -206,7 +210,6 @@ impl TauriOverlayOps {
 
     pub fn prepare_startup_analysis_request(
         stats: &mut StatsState,
-        trigger: StartupAnalysisTrigger,
     ) -> StartupAnalysisRequestOutcome {
         let include_detailed = stats.detailed_analysis_atstart();
         if stats.startup_analysis_requested() {
@@ -215,15 +218,10 @@ impl TauriOverlayOps {
 
         stats.set_startup_analysis_requested(true);
         let mode = TauriOverlayOps::analysis_mode(include_detailed);
-        stats.set_message(match trigger {
-            StartupAnalysisTrigger::Setup => format!(
-                "{}: startup requested while the frontend loads.",
-                mode.display()
-            ),
-            StartupAnalysisTrigger::FrontendReady => {
-                format!("{}: startup requested in background.", mode.display())
-            }
-        });
+        stats.set_message(format!(
+            "{}: startup requested while the frontend loads.",
+            mode.display()
+        ));
 
         StartupAnalysisRequestOutcome::new(include_detailed, true)
     }
@@ -239,7 +237,7 @@ impl TauriOverlayOps {
             let mut guard = stats
                 .lock()
                 .map_err(|error| format!("Failed to access stats state: {error}"))?;
-            TauriOverlayOps::prepare_startup_analysis_request(&mut guard, trigger)
+            TauriOverlayOps::prepare_startup_analysis_request(&mut guard)
         };
 
         if outcome.started() {

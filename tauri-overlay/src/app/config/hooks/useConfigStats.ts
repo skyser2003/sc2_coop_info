@@ -3,14 +3,15 @@ import { listen } from "@tauri-apps/api/event";
 import type {
     AppSettings,
     AnalysisCompletedPayload,
+    ReplayScanProgressPayload,
 } from "../../../bindings/overlay";
 import {
+    attachAnalysisStatusStreamRequest,
     loadStatisticsRequest,
     postStatsActionRequest,
     showReplayRequest,
 } from "../configApi";
 import type {
-    JsonValue,
     StatisticsBoolFilterKey,
     StatisticsDifficultyKey,
     StatisticsFilters,
@@ -254,7 +255,7 @@ export function useConfigStats({
     });
     const pendingStatsFilterTimingRef =
         React.useRef<PendingStatsFilterTiming | null>(null);
-    const startupAnalysisRequestedRef = React.useRef<boolean>(false);
+    const analysisStatusAttachedRef = React.useRef<boolean>(false);
     const activeTabRef = React.useRef<string>(activeTab);
 
     React.useEffect(() => {
@@ -528,14 +529,17 @@ export function useConfigStats({
     }, []);
 
     React.useEffect(() => {
-        if (draft === null || startupAnalysisRequestedRef.current) {
+        if (draft === null || analysisStatusAttachedRef.current) {
             return;
         }
-        startupAnalysisRequestedRef.current = true;
-        console.log("[SCO/ui] frontend_ready request");
-        void postStatsActionRequest("frontend_ready")
+        analysisStatusAttachedRef.current = true;
+        console.log("[SCO/ui] attach analysis status stream request");
+        void attachAnalysisStatusStreamRequest()
             .then((payload) => {
-                console.log("[SCO/ui] frontend_ready response", payload);
+                console.log(
+                    "[SCO/ui] attach analysis status stream response",
+                    payload,
+                );
                 if (!payload || !payload.stats) {
                     return;
                 }
@@ -545,20 +549,20 @@ export function useConfigStats({
                 }));
             })
             .catch((error) => {
-                console.warn("Failed to trigger startup analysis", error);
+                console.warn("Failed to attach analysis status stream", error);
             });
     }, [draft]);
 
     React.useEffect(() => {
         let isMounted = true;
-        let unlisten = null;
+        let unlisten: null | (() => void) = null;
         (async () => {
             if (!isMounted) {
                 return;
             }
 
             try {
-                unlisten = await listen(
+                unlisten = await listen<ReplayScanProgressPayload>(
                     SCO_REPLAY_SCAN_PROGRESS_EVENT,
                     (event) => {
                         if (!isMounted) {

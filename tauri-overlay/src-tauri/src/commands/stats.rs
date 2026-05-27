@@ -6,8 +6,8 @@ use std::time::{Instant, SystemTime};
 use tauri::{State, Wry};
 
 use crate::{
-    AnalysisMode, BackendState, OverlayActionResult, ReplayAnalysis, StartupAnalysisTrigger,
-    StatsActionPayload, StatsResponseBuildInput, StatsState, StatsStatePayload, TauriOverlayOps,
+    AnalysisMode, BackendState, OverlayActionResult, ReplayAnalysis, StatsActionPayload,
+    StatsResponseBuildInput, StatsState, StatsStatePayload, TauriOverlayOps,
     UNLIMITED_REPLAY_LIMIT, overlay_info,
 };
 
@@ -163,22 +163,16 @@ impl StatsCommands {
         }
 
         match action {
-            "frontend_ready" => {
+            "attach_analysis_status_stream" => {
                 let request_started_at = Instant::now();
-                crate::sco_info!("[SCO/stats/action] frontend_ready requested");
-                TauriOverlayOps::request_startup_analysis(
-                    app.clone(),
-                    state.stats_handle(),
-                    state.stats_current_replay_files_handle(),
-                    state.detailed_analysis_stop_controller_slot(),
-                    StartupAnalysisTrigger::FrontendReady,
-                )?;
+                crate::sco_info!("[SCO/stats/action] {action} requested");
+                TauriOverlayOps::emit_current_replay_scan_progress(&app);
                 let stats_handle = state.stats_handle();
                 let stats = stats_handle
                     .lock()
                     .map_err(|error| format!("Failed to access stats state: {error}"))?;
                 crate::sco_info!(
-                    "[SCO/stats] frontend_ready completed in {}ms",
+                    "[SCO/stats] {action} completed in {}ms",
                     request_started_at.elapsed().as_millis()
                 );
                 return Ok(StatsActionPayload {

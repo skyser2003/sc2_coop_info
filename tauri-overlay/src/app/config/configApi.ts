@@ -140,6 +140,10 @@ export function postStatsActionRequest(
     });
 }
 
+export function attachAnalysisStatusStreamRequest(): Promise<StatsActionPayload> {
+    return postStatsActionRequest("attach_analysis_status_stream");
+}
+
 export function showReplayRequest(
     file: string | null,
 ): Promise<OverlayActionResponse> {

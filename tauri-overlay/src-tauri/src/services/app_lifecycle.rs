@@ -8,6 +8,28 @@ use crate::{
 pub struct AppLifecycleService;
 
 impl AppLifecycleService {
+    fn request_startup_analysis(app: &tauri::App<Wry>) {
+        let (stats, stats_current_replay_files, detailed_stop_controller_slot) = {
+            let state = app.state::<BackendState>();
+            (
+                state.stats_handle(),
+                state.stats_current_replay_files_handle(),
+                state.detailed_analysis_stop_controller_slot(),
+            )
+        };
+        if let Err(error) = TauriOverlayOps::request_startup_analysis(
+            app.app_handle().clone(),
+            stats,
+            stats_current_replay_files,
+            detailed_stop_controller_slot,
+            StartupAnalysisTrigger::Setup,
+        ) {
+            crate::sco_warn!(
+                "[SCO/stats] failed to request startup analysis during setup: {error}"
+            );
+        }
+    }
+
     pub fn handle_menu_event(app: &AppHandle<Wry>, event: MenuEvent) {
         match event.id() {
             id if id == overlay_info::MENU_ITEM_SHOW_CONFIG => {
@@ -108,6 +130,7 @@ impl AppLifecycleService {
 
         let state = app.state::<BackendState>();
         let flags = state.runtime_flags();
+        Self::request_startup_analysis(app);
 
         if flags.auto_update() {
             let handle = app.handle().clone();
@@ -144,25 +167,6 @@ impl AppLifecycleService {
         TauriOverlayOps::spawn_first_win_bonus_timer_task(app.app_handle().clone());
         overlay_info::OverlayInfoOps::spawn_sc2_overlay_window_tracker(app.app_handle().clone());
         performance_overlay::PerformanceOverlayOps::spawn_monitor(app.app_handle().clone());
-        let (stats, stats_current_replay_files, detailed_stop_controller_slot) = {
-            let state = app.state::<BackendState>();
-            (
-                state.stats_handle(),
-                state.stats_current_replay_files_handle(),
-                state.detailed_analysis_stop_controller_slot(),
-            )
-        };
-        if let Err(error) = TauriOverlayOps::request_startup_analysis(
-            app.app_handle().clone(),
-            stats,
-            stats_current_replay_files,
-            detailed_stop_controller_slot,
-            StartupAnalysisTrigger::Setup,
-        ) {
-            crate::sco_warn!(
-                "[SCO/stats] failed to request startup analysis during setup: {error}"
-            );
-        }
 
         Ok(())
     }
