@@ -17,8 +17,8 @@ import styles from "../page.module.css";
 
 const STATS_SUBTABS = [
     { id: "maps", titleId: "ui_statistics_subtab_maps" },
-    { id: "ally", titleId: "ui_statistics_subtab_allied_commanders" },
     { id: "my", titleId: "ui_statistics_subtab_my_commanders" },
+    { id: "ally", titleId: "ui_statistics_subtab_allied_commanders" },
     { id: "diffregion", titleId: "ui_statistics_subtab_difficulty_regions" },
     { id: "units", titleId: "ui_statistics_subtab_unit_stats" },
     { id: "amon", titleId: "ui_statistics_subtab_amon_stats" },

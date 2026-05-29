@@ -2148,6 +2148,16 @@
     cursor: pointer;
 }
 
+.configPage .statsUnitPickerTable tbody tr.statsUnitCommanderDisabled {
+    cursor: default;
+    color: #8b98aa;
+    background: #f8fafc;
+}
+
+.configPage .statsUnitPickerTable tbody tr.statsUnitCommanderDisabled:hover {
+    background: #f8fafc;
+}
+
 .configPage .statsUnitPickerTable td {
     text-align: left;
     font-size: 12px;
@@ -2845,6 +2855,21 @@
 
 .configPage.configPage .dataTable tr.selectedRow {
     background: var(--config-accent-soft-strong);
+}
+
+.configPage.configPage
+    .statsUnitPickerTable
+    tbody
+    tr.statsUnitCommanderDisabled {
+    color: var(--config-unit-commander-disabled-text);
+    background: var(--config-unit-commander-disabled-bg);
+}
+
+.configPage.configPage
+    .statsUnitPickerTable
+    tbody
+    tr.statsUnitCommanderDisabled:hover {
+    background: var(--config-unit-commander-disabled-bg);
 }
 
 .configPage.configPage .buttonNormal {

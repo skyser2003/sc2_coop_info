@@ -174,8 +174,8 @@ test("statistics subtabs are localized", async ({ page }) => {
     await page.getByRole("tab", { name: "Statistics" }).click();
     await expect(page.locator("nav").last().getByRole("button")).toHaveText([
         "Maps",
-        "Allied commanders",
         "My commanders",
+        "Allied commanders",
         "Difficulty and regions",
         "Unit stats",
         "Amon stats",
@@ -199,8 +199,8 @@ test("statistics subtabs are localized", async ({ page }) => {
     await page.getByRole("tab", { name: "통계" }).click();
     await expect(page.locator("nav").last().getByRole("button")).toHaveText([
         "맵",
-        "동맹 사령관",
         "내 사령관",
+        "동맹 사령관",
         "난이도 및 지역",
         "유닛 통계",
         "아몬 통계",

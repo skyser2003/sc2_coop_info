@@ -24,6 +24,10 @@ type UnitSide = "main" | "ally";
 type UnitCommanderStats = NonNullable<StatsUnitDataPayload[UnitSide][string]>;
 type UnitRowEntry = readonly [string, StatsCommanderUnitRow];
 type UnitSortField = keyof StatsCommanderUnitRow | "Name";
+type UnitCommanderEntry = {
+    readonly name: string;
+    readonly hasUnitRecord: boolean;
+};
 
 type StatisticsUnitsPanelProps = {
     analysis: StatisticsAnalysis;
@@ -58,20 +62,28 @@ export default function StatisticsUnitsPanel({
         );
     }
 
-    const mainCommanders = Object.keys(unitData.main || {}).sort((a, b) =>
-        a.localeCompare(b),
+    const mainCommanders = UnitCommanderListBuilder.entries(
+        statsPayload,
+        analysis,
+        unitData,
+        "main",
+        languageManager,
     );
-    const allyCommanders = Object.keys(unitData.ally || {}).sort((a, b) =>
-        a.localeCompare(b),
+    const allyCommanders = UnitCommanderListBuilder.entries(
+        statsPayload,
+        analysis,
+        unitData,
+        "ally",
+        languageManager,
     );
-    const mainCommander =
-        (mainCommanders.includes(statsState.selectedUnitMainCommander)
-            ? statsState.selectedUnitMainCommander
-            : mainCommanders[0]) || "";
-    const allyCommander =
-        (allyCommanders.includes(statsState.selectedUnitAllyCommander)
-            ? statsState.selectedUnitAllyCommander
-            : allyCommanders[0]) || "";
+    const mainCommander = UnitCommanderListBuilder.selectedCommander(
+        statsState.selectedUnitMainCommander,
+        mainCommanders,
+    );
+    const allyCommander = UnitCommanderListBuilder.selectedCommander(
+        statsState.selectedUnitAllyCommander,
+        allyCommanders,
+    );
     const side = statsState.selectedUnitSide || "main";
     const commander = side === "main" ? mainCommander : allyCommander;
     const source = commanderStatsFor(unitData, side, commander);
@@ -190,7 +202,9 @@ export default function StatisticsUnitsPanel({
                                 ? "ui_stats_side_main"
                                 : "ui_stats_side_ally",
                         ),
-                        commander: languageManager.localize(commander),
+                        commander: commander
+                            ? languageManager.localize(commander)
+                            : "-",
                     })}
                 </h3>
                 <p className={styles.note}>{detailNote}</p>
@@ -317,7 +331,7 @@ function CommanderPicker({
 }: {
     active: boolean;
     commander: string;
-    commanders: readonly string[];
+    commanders: readonly UnitCommanderEntry[];
     keyPrefix: string;
     languageManager: LanguageManager;
     onSelect: (name: string) => void;
@@ -337,17 +351,28 @@ function CommanderPicker({
                         .join(" ")}
                 >
                     <tbody>
-                        {commanders.map((name) => (
+                        {commanders.map((entry) => (
                             <tr
-                                key={`${keyPrefix}-${name}`}
-                                className={
-                                    active && commander === name
+                                key={`${keyPrefix}-${entry.name}`}
+                                className={[
+                                    active && commander === entry.name
                                         ? styles.selectedRow
-                                        : ""
+                                        : "",
+                                    entry.hasUnitRecord
+                                        ? ""
+                                        : styles.statsUnitCommanderDisabled,
+                                ]
+                                    .filter(Boolean)
+                                    .join(" ")}
+                                aria-disabled={!entry.hasUnitRecord}
+                                data-testid={`unit-commander-${keyPrefix}-${entry.name}`}
+                                onClick={
+                                    entry.hasUnitRecord
+                                        ? () => onSelect(entry.name)
+                                        : undefined
                                 }
-                                onClick={() => onSelect(name)}
                             >
-                                <td>{languageManager.localize(name)}</td>
+                                <td>{languageManager.localize(entry.name)}</td>
                             </tr>
                         ))}
                     </tbody>
@@ -362,7 +387,87 @@ function commanderStatsFor(
     side: UnitSide,
     commander: string,
 ): UnitCommanderStats | null {
+    if (!commander) {
+        return null;
+    }
+
     return unitData[side][commander] ?? null;
+}
+
+class UnitCommanderListBuilder {
+    static entries(
+        statsPayload: StatisticsPayload | null,
+        analysis: StatisticsAnalysis,
+        unitData: StatsUnitDataPayload,
+        side: UnitSide,
+        languageManager: LanguageManager,
+    ): UnitCommanderEntry[] {
+        const names = new Set<string>();
+        const sideCommanderData =
+            side === "main"
+                ? analysis.CommanderData
+                : analysis.AllyCommanderData;
+
+        UnitCommanderListBuilder.addCommanderNames(
+            names,
+            Object.keys(statsPayload?.prestige_names ?? {}),
+        );
+        UnitCommanderListBuilder.addCommanderNames(
+            names,
+            Object.keys(languageManager.commanderMasteryData()),
+        );
+        UnitCommanderListBuilder.addCommanderNames(
+            names,
+            Object.keys(sideCommanderData),
+        );
+        UnitCommanderListBuilder.addCommanderNames(
+            names,
+            Object.keys(unitData[side] ?? {}),
+        );
+
+        return [...names]
+            .sort((left, right) =>
+                languageManager
+                    .localize(left)
+                    .localeCompare(languageManager.localize(right)),
+            )
+            .map((name) => ({
+                name,
+                hasUnitRecord: UnitCommanderListBuilder.hasUnitRecord(
+                    commanderStatsFor(unitData, side, name),
+                ),
+            }));
+    }
+
+    static selectedCommander(
+        requestedCommander: string,
+        commanders: readonly UnitCommanderEntry[],
+    ): string {
+        const requested = commanders.find(
+            (entry) => entry.name === requestedCommander && entry.hasUnitRecord,
+        );
+        if (requested) {
+            return requested.name;
+        }
+
+        return commanders.find((entry) => entry.hasUnitRecord)?.name ?? "";
+    }
+
+    private static addCommanderNames(
+        target: Set<string>,
+        names: readonly string[],
+    ): void {
+        for (const name of names) {
+            const trimmed = name.trim();
+            if (trimmed !== "" && trimmed !== "any") {
+                target.add(trimmed);
+            }
+        }
+    }
+
+    private static hasUnitRecord(source: UnitCommanderStats | null): boolean {
+        return unitRowsFor(source).some(([name]) => name !== "sum");
+    }
 }
 
 function isUnitStatRow(

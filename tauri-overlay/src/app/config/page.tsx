@@ -52,6 +52,12 @@ export default function ConfigPage({ onThemeModeChange }: ConfigPageProps) {
                     "--config-muted-text": theme.palette.text.secondary,
                     "--config-subtle-strong": isDark ? "#cbd5e1" : "#334155",
                     "--config-disabled-text": isDark ? "#94a3b8" : "#64748b",
+                    "--config-unit-commander-disabled-text": isDark
+                        ? "#64748b"
+                        : "#94a3b8",
+                    "--config-unit-commander-disabled-bg": isDark
+                        ? "transparent"
+                        : "#f8fafc",
                     "--config-link-text": isDark
                         ? theme.palette.primary.light
                         : theme.palette.primary.dark,
