@@ -1,4 +1,5 @@
 use serde_json::Value;
+use std::path::Path;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -14,6 +15,34 @@ use crate::{
     TauriOverlayOps, overlay_info, today_win_bonus,
 };
 
+struct TodayWinBonusPersistResult {
+    saved_time: Option<String>,
+    error: Option<String>,
+}
+
+impl TodayWinBonusPersistResult {
+    fn new(saved_time: Option<String>, error: Option<String>) -> Self {
+        Self { saved_time, error }
+    }
+
+    fn saved(saved_time: String) -> Self {
+        Self::new(Some(saved_time), None)
+    }
+
+    fn failed(error: String) -> Self {
+        Self::new(None, Some(error))
+    }
+
+    fn with_error(mut self, error: String) -> Self {
+        self.error = Some(error);
+        self
+    }
+
+    fn into_parts(self) -> (Option<String>, Option<String>) {
+        (self.saved_time, self.error)
+    }
+}
+
 impl TauriOverlayOps {
     pub fn spawn_today_win_bonus_scan(app: tauri::AppHandle<Wry>, replay_file: String) {
         thread::spawn(move || {
@@ -22,9 +51,26 @@ impl TauriOverlayOps {
             let scan_started_at = Instant::now();
             let scan_deadline = scan_started_at + SCAN_DURATION;
             let mut today_win_bonus_capture = today_win_bonus::TodayWinBonusWindowCapture::new();
+            let replay_file_modified_time_seconds = {
+                let state = app.state::<BackendState>();
+                match state.update_latest_replay_file_modified_time(Path::new(&replay_file)) {
+                    Ok(modified_time_seconds) => modified_time_seconds,
+                    Err(error) => {
+                        crate::sco_warn!(
+                            "[SCO/today-win-bonus] failed to read replay file modified time replay='{}' error='{}'",
+                            replay_file,
+                            error
+                        );
+                        None
+                    }
+                }
+            };
             crate::sco_info!(
-                "[SCO/today-win-bonus] scan started replay='{}' duration_secs={} interval_secs=1 initial_capture_method='{}' fallback_after_failures={}",
+                "[SCO/today-win-bonus] scan started replay='{}' replay_file_modified_time_seconds='{}' duration_secs={} interval_secs=1 initial_capture_method='{}' fallback_after_failures={}",
                 replay_file,
+                replay_file_modified_time_seconds
+                    .map(|seconds| seconds.to_string())
+                    .unwrap_or_default(),
                 SCAN_DURATION.as_secs(),
                 today_win_bonus::TodayWinBonusWindowCapture::initial_capture_method(),
                 today_win_bonus::WINDOW_CAPTURE_FAILURES_BEFORE_REGION_FALLBACK
@@ -35,7 +81,7 @@ impl TauriOverlayOps {
             let mut skipped_not_focused = 0u32;
             let mut errors = 0u32;
             let mut last_error = None::<String>;
-            let mut detected_at = None::<String>;
+            let mut saved_time = None::<String>;
             let mut save_error = None::<String>;
             let mut ended_reason = "expired";
 
@@ -45,13 +91,11 @@ impl TauriOverlayOps {
                 match today_win_bonus_capture.capture_focused_sc2_window_detection() {
                     Ok(Some(detection)) if detection.found_today_win_bonus() => {
                         captured = captured.saturating_add(1);
-                        let detected_time =
-                            chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-                        save_error = TauriOverlayOps::persist_today_win_bonus_detected_time(
+                        let persist_result = TauriOverlayOps::persist_today_win_bonus_detected_time(
                             &state,
-                            detected_time.clone(),
+                            replay_file_modified_time_seconds,
                         );
-                        detected_at = Some(detected_time);
+                        (saved_time, save_error) = persist_result.into_parts();
                         ended_reason = "detected";
                         break;
                     }
@@ -73,8 +117,11 @@ impl TauriOverlayOps {
 
             let capture_fallback_state = today_win_bonus_capture.fallback_state();
             crate::sco_info!(
-                "[SCO/today-win-bonus] scan summary replay='{}' reason={} attempts={} captured={} not_detected={} skipped_not_focused={} errors={} window_capture_failures={} fallback_happened={} selected_fallback_method='{}' active_capture_method='{}' elapsed_ms={} detected_at='{}' save_error='{}' last_error='{}'",
+                "[SCO/today-win-bonus] scan summary replay='{}' replay_file_modified_time_seconds='{}' reason={} attempts={} captured={} not_detected={} skipped_not_focused={} errors={} window_capture_failures={} fallback_happened={} selected_fallback_method='{}' active_capture_method='{}' elapsed_ms={} saved_time='{}' save_error='{}' last_error='{}'",
                 replay_file,
+                replay_file_modified_time_seconds
+                    .map(|seconds| seconds.to_string())
+                    .unwrap_or_default(),
                 ended_reason,
                 attempts,
                 captured,
@@ -86,7 +133,7 @@ impl TauriOverlayOps {
                 today_win_bonus_capture.selected_fallback_method(),
                 today_win_bonus_capture.active_capture_method(),
                 scan_started_at.elapsed().as_millis(),
-                detected_at.as_deref().unwrap_or(""),
+                saved_time.as_deref().unwrap_or(""),
                 save_error.as_deref().unwrap_or(""),
                 last_error.as_deref().unwrap_or("")
             );
@@ -99,14 +146,28 @@ impl TauriOverlayOps {
 
     fn persist_today_win_bonus_detected_time(
         state: &BackendState,
-        detected_time: String,
-    ) -> Option<String> {
+        replay_file_modified_time_seconds: Option<u64>,
+    ) -> TodayWinBonusPersistResult {
+        let acquired_time =
+            today_win_bonus::FirstWinBonusAcquiredTime::latest_replay_file_modified_time(
+                replay_file_modified_time_seconds,
+                state.latest_replay_file_modified_time_seconds(),
+            );
+        let Some(saved_time) = acquired_time.and_then(|time| time.to_rfc3339()) else {
+            return TodayWinBonusPersistResult::failed(
+                "No latest replay file modified time was available for today's win bonus"
+                    .to_string(),
+            );
+        };
+
         match state.persist_single_setting_value(
             today_win_bonus::TODAY_WIN_BONUS_SETTINGS_KEY,
-            Value::String(detected_time),
+            Value::String(saved_time.clone()),
         ) {
-            Ok(()) => None,
-            Err(error) => Some(error.to_string()),
+            Ok(()) => TodayWinBonusPersistResult::saved(saved_time),
+            Err(error) => {
+                TodayWinBonusPersistResult::saved(saved_time).with_error(error.to_string())
+            }
         }
     }
 
@@ -131,21 +192,21 @@ impl TauriOverlayOps {
             today_win_bonus::TodayWinBonusWindowCapture::initial_capture_method()
         );
 
-        let mut detected_at = None::<String>;
+        let mut saved_time = None::<String>;
         let mut save_error = None::<String>;
         let mut last_error = None::<String>;
         let mut result = "not_detected";
 
         match today_win_bonus_capture.capture_focused_sc2_window_detection() {
             Ok(Some(detection)) if detection.found_today_win_bonus() => {
-                let detected_time =
-                    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-                save_error = TauriOverlayOps::persist_today_win_bonus_detected_time(
-                    &state,
-                    detected_time.clone(),
-                );
-                detected_at = Some(detected_time);
-                result = "detected";
+                let persist_result =
+                    TauriOverlayOps::persist_today_win_bonus_detected_time(&state, None);
+                (saved_time, save_error) = persist_result.into_parts();
+                result = if saved_time.is_some() {
+                    "detected"
+                } else {
+                    "detected_without_replay_time"
+                };
             }
             Ok(Some(_detection)) => {}
             Ok(None) => {
@@ -159,7 +220,7 @@ impl TauriOverlayOps {
 
         let capture_fallback_state = today_win_bonus_capture.fallback_state();
         crate::sco_info!(
-            "[SCO/today-win-bonus] focus scan summary sc2_game_state={:?} result={} window_capture_failures={} fallback_happened={} selected_fallback_method='{}' active_capture_method='{}' elapsed_ms={} detected_at='{}' save_error='{}' last_error='{}'",
+            "[SCO/today-win-bonus] focus scan summary sc2_game_state={:?} result={} window_capture_failures={} fallback_happened={} selected_fallback_method='{}' active_capture_method='{}' elapsed_ms={} saved_time='{}' save_error='{}' last_error='{}'",
             sc2_game_state,
             result,
             capture_fallback_state.consecutive_window_capture_failures(),
@@ -167,7 +228,7 @@ impl TauriOverlayOps {
             today_win_bonus_capture.selected_fallback_method(),
             today_win_bonus_capture.active_capture_method(),
             scan_started_at.elapsed().as_millis(),
-            detected_at.as_deref().unwrap_or(""),
+            saved_time.as_deref().unwrap_or(""),
             save_error.as_deref().unwrap_or(""),
             last_error.as_deref().unwrap_or("")
         );

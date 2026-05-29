@@ -88,9 +88,10 @@ pub use stats_state::{
 };
 pub use test_helper::TestHelperOps;
 pub use today_win_bonus::{
-    FirstWinBonusTimerStatus, ImageprocTodayWinBonusDigitReader, MonitorCaptureRegion, ScreenRect,
-    TODAY_WIN_BONUS_SETTINGS_KEY, TodayWinBonusCaptureFallbackState, TodayWinBonusDetection,
-    TodayWinBonusDetector, TodayWinBonusDigitReader, TodayWinBonusWindowCapture,
+    FirstWinBonusAcquiredTime, FirstWinBonusTimerStatus, ImageprocTodayWinBonusDigitReader,
+    MonitorCaptureRegion, ScreenRect, TODAY_WIN_BONUS_SETTINGS_KEY,
+    TodayWinBonusCaptureFallbackState, TodayWinBonusDetection, TodayWinBonusDetector,
+    TodayWinBonusDigitReader, TodayWinBonusWindowCapture,
     WINDOW_CAPTURE_FAILURES_BEFORE_REGION_FALLBACK,
 };
 

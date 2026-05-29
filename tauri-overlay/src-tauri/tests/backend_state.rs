@@ -113,6 +113,19 @@ fn record_replay_cache_update_if_persistable_selects_persistable_replay() {
 }
 
 #[test]
+fn backend_state_tracks_latest_replay_file_modified_time() {
+    let state = BackendState::new();
+
+    state.update_latest_replay_file_modified_time_seconds(u64::MAX);
+    state.update_latest_replay_file_modified_time_seconds(u64::MAX - 1);
+
+    assert_eq!(
+        state.latest_observed_replay_file_modified_time_seconds(),
+        Some(u64::MAX)
+    );
+}
+
+#[test]
 fn player_stats_overlay_mode_clears_replay_active_flag_without_losing_selection() {
     let state = BackendState::new();
 

@@ -1,8 +1,8 @@
 use chrono::{TimeZone, Utc};
 use image::{Rgba, RgbaImage};
 use sco_tauri_overlay::{
-    FirstWinBonusTimerStatus, ImageprocTodayWinBonusDigitReader, ScreenRect,
-    TodayWinBonusCaptureFallbackState, TodayWinBonusDetection, TodayWinBonusDetector,
+    FirstWinBonusAcquiredTime, FirstWinBonusTimerStatus, ImageprocTodayWinBonusDigitReader,
+    ScreenRect, TodayWinBonusCaptureFallbackState, TodayWinBonusDetection, TodayWinBonusDetector,
     TodayWinBonusDigitReader, WINDOW_CAPTURE_FAILURES_BEFORE_REGION_FALLBACK,
 };
 use std::cell::{Cell, RefCell};
@@ -10,6 +10,7 @@ use std::collections::VecDeque;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use std::time::{Duration as StdDuration, UNIX_EPOCH};
 
 struct SequenceDigitReader {
     values: RefCell<VecDeque<Option<u32>>>,
@@ -388,6 +389,88 @@ fn first_win_bonus_timer_is_unavailable_with_invalid_saved_time() {
 
     assert!(!status.available());
     assert_eq!(status.seconds_until_available(), 0);
+}
+
+#[test]
+fn first_win_bonus_acquired_time_formats_replay_file_modified_time() {
+    let replay_file_modified_time = u64::try_from(
+        Utc.with_ymd_and_hms(2026, 5, 19, 0, 0, 0)
+            .single()
+            .expect("valid replay file modified time")
+            .timestamp(),
+    )
+    .expect("test replay file modified time should be positive");
+
+    let saved_time = FirstWinBonusAcquiredTime::from_replay_file_modified_time_seconds(
+        replay_file_modified_time,
+    )
+    .expect("non-zero replay file modified time should be accepted");
+
+    assert_eq!(
+        saved_time.replay_file_modified_time_seconds(),
+        replay_file_modified_time
+    );
+    assert_eq!(
+        saved_time.to_rfc3339().as_deref(),
+        Some("2026-05-19T00:00:00Z")
+    );
+}
+
+#[test]
+fn first_win_bonus_acquired_time_formats_system_time_as_utc() {
+    let replay_file_modified_time = u64::try_from(
+        Utc.with_ymd_and_hms(2026, 5, 19, 0, 0, 0)
+            .single()
+            .expect("valid replay file modified time")
+            .timestamp(),
+    )
+    .expect("test replay file modified time should be positive");
+    let system_time = UNIX_EPOCH + StdDuration::from_secs(replay_file_modified_time);
+
+    let saved_time = FirstWinBonusAcquiredTime::from_system_time(system_time)
+        .expect("system time should convert")
+        .expect("non-zero replay file modified time should be accepted");
+
+    assert_eq!(
+        saved_time.to_rfc3339().as_deref(),
+        Some("2026-05-19T00:00:00Z")
+    );
+}
+
+#[test]
+fn first_win_bonus_acquired_time_selects_latest_replay_file_modified_time() {
+    let older = u64::try_from(
+        Utc.with_ymd_and_hms(2026, 5, 19, 0, 0, 0)
+            .single()
+            .expect("valid older replay time")
+            .timestamp(),
+    )
+    .expect("older replay time should be positive");
+    let newer = u64::try_from(
+        Utc.with_ymd_and_hms(2026, 5, 19, 1, 0, 0)
+            .single()
+            .expect("valid newer replay time")
+            .timestamp(),
+    )
+    .expect("newer replay time should be positive");
+
+    let saved_time =
+        FirstWinBonusAcquiredTime::latest_replay_file_modified_time(Some(older), Some(newer))
+            .expect("latest replay file modified time should be selected");
+
+    assert_eq!(saved_time.replay_file_modified_time_seconds(), newer);
+}
+
+#[test]
+fn first_win_bonus_acquired_time_rejects_missing_replay_file_modified_time() {
+    assert_eq!(
+        FirstWinBonusAcquiredTime::from_replay_file_modified_time_seconds(0),
+        None
+    );
+    assert_eq!(
+        FirstWinBonusAcquiredTime::latest_replay_file_modified_time(None, Some(0)),
+        None
+    );
 }
 
 #[test]

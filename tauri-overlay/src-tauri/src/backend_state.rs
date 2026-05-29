@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -23,8 +23,9 @@ use crate::replay_state::ReplayState;
 use crate::services::replay_watcher::ReplayWatcherMessage;
 use crate::shared_types::{OverlayPlayerStatsPayload, OverlayPlayerStatsRow};
 use crate::{
-    AppSettings, PathManagerOps, PlayerRowPayload, ReplayCacheDatabase, ReplayInfo, Sc2GameState,
-    Sc2GameStateTracker, Sc2GameStateTransition, StatsState, TauriOverlayOps,
+    AppSettings, FirstWinBonusAcquiredTime, PathManagerOps, PlayerRowPayload, ReplayCacheDatabase,
+    ReplayInfo, Sc2GameState, Sc2GameStateTracker, Sc2GameStateTransition, StatsState,
+    TauriOverlayOps,
     overlay_info::{ResolvedHotkeyBinding, RuntimeFlags},
     replay_analysis::ReplayAnalysis,
 };
@@ -72,6 +73,7 @@ pub struct BackendState {
     sc2_overlay_keep_visible_until_millis: AtomicU64,
     first_win_bonus_timer_visible: AtomicBool,
     first_win_bonus_timer_hide_after_millis: AtomicU64,
+    latest_replay_file_modified_time_seconds: AtomicU64,
     session_victories: AtomicU64,
     session_defeats: AtomicU64,
     active_settings: Arc<Mutex<AppSettings>>,
@@ -256,6 +258,7 @@ impl BackendState {
             sc2_overlay_keep_visible_until_millis: AtomicU64::new(0),
             first_win_bonus_timer_visible: AtomicBool::new(false),
             first_win_bonus_timer_hide_after_millis: AtomicU64::new(0),
+            latest_replay_file_modified_time_seconds: AtomicU64::new(0),
             session_victories: AtomicU64::new(0),
             session_defeats: AtomicU64::new(0),
             active_settings: Arc::new(Mutex::new(settings)),
@@ -360,6 +363,46 @@ impl BackendState {
     pub fn clear_first_win_bonus_timer_hide_delay(&self) {
         self.first_win_bonus_timer_hide_after_millis
             .store(0, Ordering::Release);
+    }
+
+    pub fn update_latest_replay_file_modified_time_seconds(
+        &self,
+        replay_file_modified_time_seconds: u64,
+    ) {
+        if replay_file_modified_time_seconds == 0 {
+            return;
+        }
+
+        self.latest_replay_file_modified_time_seconds
+            .fetch_max(replay_file_modified_time_seconds, Ordering::AcqRel);
+    }
+
+    pub fn update_latest_replay_file_modified_time(
+        &self,
+        replay_file: &Path,
+    ) -> Result<Option<u64>, String> {
+        let acquired_time = FirstWinBonusAcquiredTime::from_replay_file_modified_time(replay_file)?;
+        if let Some(acquired_time) = acquired_time {
+            let seconds = acquired_time.replay_file_modified_time_seconds();
+            self.update_latest_replay_file_modified_time_seconds(seconds);
+            Ok(Some(seconds))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn latest_observed_replay_file_modified_time_seconds(&self) -> Option<u64> {
+        match self
+            .latest_replay_file_modified_time_seconds
+            .load(Ordering::Acquire)
+        {
+            0 => None,
+            seconds => Some(seconds),
+        }
+    }
+
+    pub fn latest_replay_file_modified_time_seconds(&self) -> Option<u64> {
+        self.latest_observed_replay_file_modified_time_seconds()
     }
 
     pub fn sc2_game_state(&self) -> Sc2GameState {
@@ -941,6 +984,13 @@ impl BackendState {
             current_replay_files.insert(replay.file.clone());
         }
 
+        if let Err(error) = self.update_latest_replay_file_modified_time(Path::new(&replay.file)) {
+            crate::sco_warn!(
+                "[SCO/today-win-bonus] failed to record replay file modified time file='{}' error='{}'",
+                replay.file,
+                error
+            );
+        }
         self.set_current_replay_file(Some(&replay.file));
     }
 

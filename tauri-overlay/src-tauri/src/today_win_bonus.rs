@@ -1,9 +1,10 @@
-use chrono::{DateTime, Duration as ChronoDuration, SecondsFormat, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, SecondsFormat, TimeZone, Utc};
 use image::{GrayImage, Luma, Rgba, RgbaImage};
 use imageproc::region_labelling::{Connectivity, connected_components};
 use std::{
     collections::{BTreeMap, VecDeque},
-    time::Duration,
+    path::Path,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use xcap::Monitor;
 
@@ -117,6 +118,72 @@ impl FirstWinBonusTimerStatus {
                 .next_available_time
                 .map(|time| time.to_rfc3339_opts(SecondsFormat::Secs, true)),
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FirstWinBonusAcquiredTime {
+    replay_file_modified_time_seconds: u64,
+}
+
+impl FirstWinBonusAcquiredTime {
+    pub fn from_replay_file_modified_time_seconds(
+        replay_file_modified_time_seconds: u64,
+    ) -> Option<Self> {
+        if replay_file_modified_time_seconds == 0 {
+            return None;
+        }
+
+        Some(Self {
+            replay_file_modified_time_seconds,
+        })
+    }
+
+    pub fn from_replay_file_modified_time(replay_file: &Path) -> Result<Option<Self>, String> {
+        let modified = replay_file
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .map_err(|error| {
+                format!(
+                    "Failed to read replay file modified time '{}': {error}",
+                    replay_file.display()
+                )
+            })?;
+        Self::from_system_time(modified)
+    }
+
+    pub fn from_system_time(time: SystemTime) -> Result<Option<Self>, String> {
+        let seconds = time
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| format!("Replay file modified time is before Unix epoch: {error}"))?
+            .as_secs();
+        Ok(Self::from_replay_file_modified_time_seconds(seconds))
+    }
+
+    pub fn latest_replay_file_modified_time(
+        first_replay_file_modified_time_seconds: Option<u64>,
+        second_replay_file_modified_time_seconds: Option<u64>,
+    ) -> Option<Self> {
+        [
+            first_replay_file_modified_time_seconds,
+            second_replay_file_modified_time_seconds,
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|seconds| *seconds > 0)
+        .max()
+        .and_then(Self::from_replay_file_modified_time_seconds)
+    }
+
+    pub fn replay_file_modified_time_seconds(&self) -> u64 {
+        self.replay_file_modified_time_seconds
+    }
+
+    pub fn to_rfc3339(&self) -> Option<String> {
+        let seconds = i64::try_from(self.replay_file_modified_time_seconds).ok()?;
+        Utc.timestamp_opt(seconds, 0)
+            .single()
+            .map(|time| time.to_rfc3339_opts(SecondsFormat::Secs, true))
     }
 }
 
