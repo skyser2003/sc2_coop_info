@@ -2507,6 +2507,42 @@ fn sqlite_navigation_candidates_load_adjacent_replays_without_full_cache_scan() 
 }
 
 #[test]
+fn sqlite_load_latest_entry_date_seconds_returns_latest_replay_time() {
+    let root = unique_temp_path("replay_cache_db_latest_date_seconds");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
+    let newest = sample_cache_entry(
+        "newest.SC2Replay",
+        "newest-date-seconds-hash",
+        "2026-01-03 01:02:03",
+        true,
+        "Victory",
+    );
+    let older = sample_cache_entry(
+        "older.SC2Replay",
+        "older-date-seconds-hash",
+        "2026-01-01 00:00:00",
+        true,
+        "Victory",
+    );
+
+    let mut database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    database
+        .replace_entries(&[older, newest])
+        .expect("entries should write");
+
+    assert_eq!(
+        database
+            .load_latest_entry_date_seconds()
+            .expect("latest date seconds should load"),
+        Some(utc_seconds(2026, 1, 3, 1, 2, 3))
+    );
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
 fn opening_future_schema_version_returns_typed_error() {
     let root = unique_temp_path("replay_cache_db_future_schema");
     std::fs::create_dir_all(&root).expect("temp root should be created");

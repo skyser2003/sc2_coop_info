@@ -11,8 +11,8 @@ use tauri::{Manager, Wry};
 
 use crate::{
     ActiveWindowDetector, ActiveWindowListener, AppSettings, BackendState,
-    FirstWinBonusDisplayMode, FirstWinBonusTimerPayload, Sc2GameState, Sc2GameStateTransition,
-    TauriOverlayOps, overlay_info, today_win_bonus,
+    FirstWinBonusDisplayMode, FirstWinBonusTimerPayload, PathManagerOps, ReplayCacheDatabase,
+    Sc2GameState, Sc2GameStateTransition, TauriOverlayOps, overlay_info, today_win_bonus,
 };
 
 struct TodayWinBonusPersistResult {
@@ -148,15 +148,31 @@ impl TauriOverlayOps {
         state: &BackendState,
         replay_file_modified_time_seconds: Option<u64>,
     ) -> TodayWinBonusPersistResult {
+        let latest_observed_replay_time_seconds = state.latest_replay_file_modified_time_seconds();
+        let fallback_replay_time_seconds = if latest_observed_replay_time_seconds.is_none()
+            && replay_file_modified_time_seconds.is_none()
+        {
+            match TauriOverlayOps::latest_cached_replay_time_seconds_for_today_win_bonus() {
+                Ok(seconds) => seconds,
+                Err(error) => {
+                    crate::sco_warn!(
+                        "[SCO/today-win-bonus] failed to read latest cached replay time: {error}"
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
         let acquired_time =
-            today_win_bonus::FirstWinBonusAcquiredTime::latest_replay_file_modified_time(
+            today_win_bonus::FirstWinBonusAcquiredTime::latest_replay_time_with_fallback(
                 replay_file_modified_time_seconds,
-                state.latest_replay_file_modified_time_seconds(),
+                latest_observed_replay_time_seconds,
+                fallback_replay_time_seconds,
             );
         let Some(saved_time) = acquired_time.and_then(|time| time.to_rfc3339()) else {
             return TodayWinBonusPersistResult::failed(
-                "No latest replay file modified time was available for today's win bonus"
-                    .to_string(),
+                "No latest replay time was available for today's win bonus".to_string(),
             );
         };
 
@@ -169,6 +185,15 @@ impl TauriOverlayOps {
                 TodayWinBonusPersistResult::saved(saved_time).with_error(error.to_string())
             }
         }
+    }
+
+    fn latest_cached_replay_time_seconds_for_today_win_bonus() -> Result<Option<u64>, String> {
+        let cache_path = PathManagerOps::get_cache_path();
+        let database = ReplayCacheDatabase::open_for_cache_path(&cache_path)
+            .map_err(|error| error.to_string())?;
+        database
+            .load_latest_entry_date_seconds()
+            .map_err(|error| error.to_string())
     }
 
     pub fn log_sc2_game_state_transition(transition: Option<Sc2GameStateTransition>, reason: &str) {

@@ -462,6 +462,43 @@ fn first_win_bonus_acquired_time_selects_latest_replay_file_modified_time() {
 }
 
 #[test]
+fn first_win_bonus_acquired_time_uses_cache_fallback_only_when_observed_time_is_missing() {
+    let observed = u64::try_from(
+        Utc.with_ymd_and_hms(2026, 5, 19, 0, 0, 0)
+            .single()
+            .expect("valid observed replay time")
+            .timestamp(),
+    )
+    .expect("observed replay time should be positive");
+    let fallback = u64::try_from(
+        Utc.with_ymd_and_hms(2026, 5, 19, 1, 0, 0)
+            .single()
+            .expect("valid fallback replay time")
+            .timestamp(),
+    )
+    .expect("fallback replay time should be positive");
+
+    let fallback_saved_time =
+        FirstWinBonusAcquiredTime::latest_replay_time_with_fallback(None, None, Some(fallback))
+            .expect("cache fallback replay time should be used when observed time is missing");
+    assert_eq!(
+        fallback_saved_time.replay_file_modified_time_seconds(),
+        fallback
+    );
+
+    let observed_saved_time = FirstWinBonusAcquiredTime::latest_replay_time_with_fallback(
+        None,
+        Some(observed),
+        Some(fallback),
+    )
+    .expect("observed replay time should be used before cache fallback");
+    assert_eq!(
+        observed_saved_time.replay_file_modified_time_seconds(),
+        observed
+    );
+}
+
+#[test]
 fn first_win_bonus_acquired_time_rejects_missing_replay_file_modified_time() {
     assert_eq!(
         FirstWinBonusAcquiredTime::from_replay_file_modified_time_seconds(0),

@@ -586,6 +586,26 @@ impl ReplayCacheDatabase {
         self.entry_from_optional_record(record)
     }
 
+    pub fn load_latest_entry_date_seconds(&self) -> Result<Option<u64>, ReplayCacheDbError> {
+        let date_seconds = self
+            .connection
+            .query_row(
+                "
+                SELECT date_seconds
+                FROM replay_cache_entries
+                ORDER BY date_seconds DESC, date_text DESC, file DESC, hash DESC
+                LIMIT 1
+                ",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(|source| self.sqlite_error(source))?;
+        Ok(date_seconds
+            .map(ReplayCacheEntryRecord::i64_to_u64)
+            .filter(|seconds| *seconds > 0))
+    }
+
     pub fn load_navigation_candidates(
         &self,
         current_file: Option<&str>,

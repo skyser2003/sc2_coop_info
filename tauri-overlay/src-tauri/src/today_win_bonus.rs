@@ -175,6 +175,22 @@ impl FirstWinBonusAcquiredTime {
         .and_then(Self::from_replay_file_modified_time_seconds)
     }
 
+    pub fn latest_replay_time_with_fallback(
+        first_replay_file_modified_time_seconds: Option<u64>,
+        second_replay_file_modified_time_seconds: Option<u64>,
+        fallback_replay_time_seconds: Option<u64>,
+    ) -> Option<Self> {
+        Self::latest_replay_file_modified_time(
+            first_replay_file_modified_time_seconds,
+            second_replay_file_modified_time_seconds,
+        )
+        .or_else(|| {
+            fallback_replay_time_seconds
+                .filter(|seconds| *seconds > 0)
+                .and_then(Self::from_replay_file_modified_time_seconds)
+        })
+    }
+
     pub fn replay_file_modified_time_seconds(&self) -> u64 {
         self.replay_file_modified_time_seconds
     }
