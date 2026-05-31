@@ -1,4 +1,5 @@
 use crate::cache_overall_stats_generator::{AnalysisPlayerStatsSeries, ReplayBuildInfo};
+use crate::detailed_replay_analysis::DetailedReplayAnalyzer;
 use indexmap::IndexMap;
 use s2protocol_port::MessageEvent;
 use serde::{Deserialize, Serialize};
@@ -209,7 +210,7 @@ impl ParsedReplayInput {
         mastery_by_player: &HashMap<i64, [i64; 6]>,
         prestige_by_player: &HashMap<i64, String>,
     ) {
-        let is_mm = self.file.contains("[MM]");
+        let is_mm = DetailedReplayAnalyzer::is_mm_replay_file(&self.file);
 
         for pid in [1_i64, 2_i64] {
             let Some(player) = self.player_mut(pid as u8) else {

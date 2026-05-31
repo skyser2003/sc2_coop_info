@@ -6,7 +6,21 @@ use s2coop_analyzer::detailed_replay_analysis::{
 };
 use std::collections::HashMap;
 use std::fs;
+use std::path::Path;
 use tempfile::TempDir;
+
+#[test]
+fn mm_replay_marker_identifies_non_cache_replays() {
+    assert!(DetailedReplayAnalyzer::is_mm_replay_path(Path::new(
+        "Accounts/1-S2-1/Replays/[MM] Lock And Load.SC2Replay"
+    )));
+    assert!(!DetailedReplayAnalyzer::is_mm_replay_path(Path::new(
+        "Accounts/1-S2-1/Replays/[mm] Lock And Load.SC2Replay"
+    )));
+    assert!(!DetailedReplayAnalyzer::is_mm_replay_path(Path::new(
+        "Accounts/1-S2-1/Replays/Void Launch.SC2Replay"
+    )));
+}
 
 #[test]
 fn generate_cache_skips_invalid_replay_candidates() {
@@ -24,6 +38,33 @@ fn generate_cache_skips_invalid_replay_candidates() {
         DetailedReplayAnalyzer::analyze_full_detailed(&config, &resources, None, &runtime)
             .expect("cache generation should succeed for invalid replay placeholders");
 
+    assert_eq!(summary.scanned_replays(), 0);
+    assert!(summary.cache_entries().is_empty());
+    assert!(
+        !output_file.exists(),
+        "legacy cache json should not be written"
+    );
+}
+
+#[test]
+fn generate_cache_ignores_mm_replay_candidates() {
+    let resources = common::load_replay_resources();
+    let temp_dir = TempDir::new().expect("failed to create tempdir");
+    let account_dir = temp_dir.path().join("Accounts");
+    fs::create_dir_all(&account_dir).expect("failed to create account directory");
+    fs::write(account_dir.join("[MM] Custom.SC2Replay"), b"not a replay")
+        .expect("failed to write mm replay placeholder");
+
+    let output_file = temp_dir.path().join("cache_overall_stats");
+    let config = GenerateCacheConfig::new(account_dir, output_file.clone());
+    let runtime = GenerateCacheRuntimeOptions::default();
+    let summary =
+        DetailedReplayAnalyzer::analyze_full_detailed(&config, &resources, None, &runtime)
+            .expect("cache generation should skip mm replays");
+
+    assert_eq!(summary.timing_report().candidate_count(), 0);
+    assert_eq!(summary.timing_report().pending_candidate_count(), 0);
+    assert_eq!(summary.timing_report().reused_candidate_count(), 0);
     assert_eq!(summary.scanned_replays(), 0);
     assert!(summary.cache_entries().is_empty());
     assert!(

@@ -940,7 +940,7 @@ fn collect_replay_files_recursive(root: &Path) -> Vec<PathBuf> {
 }
 
 fn is_official_blizzard_replay(path: &Path, protocol_store: &ProtocolStore) -> bool {
-    if path.to_string_lossy().contains("[MM]") {
+    if DetailedReplayAnalyzer::is_mm_replay_path(path) {
         return false;
     }
 

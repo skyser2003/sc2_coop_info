@@ -7,7 +7,7 @@ use s2coop_analyzer::cache_overall_stats_generator::{
     CacheIconValue, CachePlayer, CachePlayerStatsSeries, CacheReplayEntry, CacheUnitStats,
     ReplayMessage,
 };
-use s2coop_analyzer::detailed_replay_analysis::CacheReplayCheck;
+use s2coop_analyzer::detailed_replay_analysis::{CacheReplayCheck, DetailedReplayAnalyzer};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 
@@ -251,6 +251,14 @@ impl StatisticsPlayerFactRecord {
 }
 
 impl ReplayCacheDatabase {
+    fn is_mm_replay_entry(entry: &CacheReplayEntry) -> bool {
+        DetailedReplayAnalyzer::is_mm_replay_file(&entry.file)
+    }
+
+    fn is_mm_replay_check(check: &CacheReplayCheck) -> bool {
+        DetailedReplayAnalyzer::is_mm_replay_file(check.file())
+    }
+
     pub fn upsert_entries_preserving_detailed(
         &mut self,
         entries: &[CacheReplayEntry],
@@ -273,7 +281,7 @@ impl ReplayCacheDatabase {
         let mut changed = 0usize;
         let mut refresh_plan = PlayerInfoRefreshPlan::default();
         for entry in entries {
-            if entry.hash.is_empty() {
+            if entry.hash.is_empty() || Self::is_mm_replay_entry(entry) {
                 continue;
             }
             let record = ReplayCacheEntryRecord::from_entry(entry)?;
@@ -311,7 +319,10 @@ impl ReplayCacheDatabase {
             })?;
         let mut changed = 0usize;
         for check in checks {
-            if check.hash().trim().is_empty() || check.file().trim().is_empty() {
+            if check.hash().trim().is_empty()
+                || check.file().trim().is_empty()
+                || Self::is_mm_replay_check(check)
+            {
                 continue;
             }
             changed =
@@ -391,7 +402,7 @@ impl ReplayCacheDatabase {
             })?;
         let mut changed = 0usize;
         for entry in entries {
-            if entry.hash.is_empty() {
+            if entry.hash.is_empty() || Self::is_mm_replay_entry(entry) {
                 continue;
             }
             let record = ReplayCacheEntryRecord::from_entry(entry)?;

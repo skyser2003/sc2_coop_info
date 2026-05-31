@@ -1043,6 +1043,14 @@ impl ReplayAnalysisResources {
 }
 
 impl DetailedReplayAnalyzer {
+    pub fn is_mm_replay_path(path: &Path) -> bool {
+        Self::is_mm_replay_file(&path.to_string_lossy())
+    }
+
+    pub fn is_mm_replay_file(file: &str) -> bool {
+        file.contains("[MM]")
+    }
+
     fn replay_game_speed_code(details: &ReplayDetails, init_data: &ReplayInitData) -> i64 {
         if matches!(details.m_gameSpeed, 0..=4) {
             details.m_gameSpeed
@@ -1101,7 +1109,8 @@ impl DetailedReplayAnalyzer {
         let mut timing = ReplayBaseParseTiming::default();
         let result = (|| -> Result<Option<ReplayBaseParse>, ReplayBaseParseError> {
             let early_filter_start = Instant::now();
-            let is_mm_replay = replay_path.to_string_lossy().contains("[MM]");
+            let replay_file = replay_path.to_string_lossy();
+            let is_mm_replay = Self::is_mm_replay_file(&replay_file);
             if options.filters.only_blizzard && is_mm_replay {
                 timing.early_filter = early_filter_start.elapsed();
                 return Ok(None);
@@ -3064,6 +3073,9 @@ impl CandidateReplay {
     }
 
     fn cache_check(&self) -> Option<CacheReplayCheck> {
+        if DetailedReplayAnalyzer::is_mm_replay_path(self.path.as_path()) {
+            return None;
+        }
         let hash = if self.hash.is_empty() {
             DetailedReplayAnalyzer::calculate_replay_hash(self.path.as_path())
         } else {
@@ -3285,6 +3297,9 @@ impl DetailedReplayAnalyzer {
                 .into_values()
                 .into_iter()
                 .map(CandidateReplayCollectionResult::into_candidate)
+                .filter(|candidate| {
+                    !DetailedReplayAnalyzer::is_mm_replay_path(candidate.path.as_path())
+                })
                 .collect::<Vec<CandidateReplay>>();
             let total_candidates = candidate_replays.len();
 
@@ -3511,7 +3526,7 @@ impl ReplayParsedInputBundle {
         let length = metadata.Duration;
         let accurate_length = base.accurate_length;
         let cache_context = ReplayCacheContext {
-            is_mm_replay: base.file.contains("[MM]"),
+            is_mm_replay: DetailedReplayAnalyzer::is_mm_replay_file(&base.file),
             is_blizzard_map: details.m_isBlizzardMap,
             recover_disabled: details.m_disableRecoverGame.unwrap_or(false),
         };
@@ -4386,7 +4401,7 @@ impl DetailedReplayAnalyzer {
             ReplayStatsCounterCore::new(counter_dicts.clone(), main_masteries, main_commander);
         let mut ally_stats_counter =
             ReplayStatsCounterCore::new(counter_dicts, ally_masteries, ally_commander);
-        if parser.file.contains("[MM]") {
+        if DetailedReplayAnalyzer::is_mm_replay_file(&parser.file) {
             main_stats_counter.set_enable_updates(true);
             ally_stats_counter.set_enable_updates(true);
         }

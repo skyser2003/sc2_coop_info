@@ -3089,9 +3089,9 @@ impl ReplayAnalysis {
                     resources.dictionary_data(),
                 )
                 .sanitized();
-                let cache_entry = result
-                    .cache_persistable()
-                    .then_some(result.into_cache_entry());
+                let cache_entry = (result.cache_persistable()
+                    && !DetailedReplayAnalyzer::is_mm_replay_path(path))
+                .then_some(result.into_cache_entry());
                 crate::sco_debug!(
                     "[SCO/replay] parsed file='{}' for cache projection in {}ms persistable={}",
                     file_label,

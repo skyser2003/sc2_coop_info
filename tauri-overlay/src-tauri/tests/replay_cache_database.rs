@@ -394,6 +394,54 @@ fn sqlite_cache_schema_stores_typed_columns_without_payload_json() {
 }
 
 #[test]
+fn sqlite_cache_skips_mm_entries_and_checks() {
+    let root = unique_temp_path("replay_cache_db_skip_mm");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
+    let db_path = ReplayCacheDatabase::db_path_for_cache_path(&cache_path);
+    let normal = sample_cache_entry(
+        "normal.SC2Replay",
+        "normal-hash",
+        "2026-01-01 00:00:00",
+        true,
+        "Victory",
+    );
+    let mm = sample_cache_entry(
+        "[MM] Custom.SC2Replay",
+        "mm-hash",
+        "2026-01-02 00:00:00",
+        true,
+        "Victory",
+    );
+
+    let mut database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    database
+        .replace_entries(&[normal, mm])
+        .expect("entries should write");
+    let cached_files = database
+        .load_cached_files()
+        .expect("cached files should load");
+    database
+        .upsert_unsaved_replay_checks(&[
+            CacheReplayCheck::new("normal-check", "normal-check.SC2Replay", 1_766_643_840),
+            CacheReplayCheck::new("mm-check", "[MM] Check.SC2Replay", 1_766_643_840),
+        ])
+        .expect("checks should write");
+    drop(database);
+
+    assert_eq!(sqlite_table_row_count(&db_path, "replay_cache_entries"), 1);
+    assert_eq!(
+        sqlite_table_row_count(&db_path, "replay_cache_unsaved_replay_checks"),
+        1
+    );
+    assert!(cached_files.contains("normal.SC2Replay"));
+    assert!(!cached_files.contains("[MM] Custom.SC2Replay"));
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
 fn sqlite_cache_stores_player_identity_by_handle() {
     let root = unique_temp_path("replay_cache_db_player_infos");
     std::fs::create_dir_all(&root).expect("temp root should be created");
@@ -1665,6 +1713,59 @@ fn sqlite_games_page_query_filters_sorts_and_offsets_in_database() {
         .expect("filtered games page should load");
     assert_eq!(mutation_search_page.total_rows(), 1);
     assert_eq!(mutation_search_page.rows()[0].hash, rifts.hash);
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn sqlite_games_page_query_supports_explicit_offsets() {
+    let root = unique_temp_path("replay_cache_db_games_offset");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
+    let mut alpha = sample_cache_entry(
+        "alpha.SC2Replay",
+        "alpha-hash",
+        "2026-01-01 00:00:00",
+        false,
+        "Victory",
+    );
+    alpha.map_name = "Alpha Map".to_string();
+    let mut beta = sample_cache_entry(
+        "beta.SC2Replay",
+        "beta-hash",
+        "2026-01-02 00:00:00",
+        false,
+        "Victory",
+    );
+    beta.map_name = "Beta Map".to_string();
+    let mut gamma = sample_cache_entry(
+        "gamma.SC2Replay",
+        "gamma-hash",
+        "2026-01-03 00:00:00",
+        false,
+        "Victory",
+    );
+    gamma.map_name = "Gamma Map".to_string();
+
+    let mut database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+    database
+        .replace_entries(&[gamma, beta, alpha])
+        .expect("entries should write");
+
+    let offset_page = database
+        .load_summary_entries_page(&ReplayCacheGamesPageQuery::new(
+            ReplayCachePage::from_offset(1, 1),
+            String::new(),
+            ReplayCacheGameSortKey::Map,
+            ReplayCacheSortDirection::Asc,
+            ReplayCacheDifficultyFilter::all(),
+            true,
+            true,
+        ))
+        .expect("offset games page should load");
+    assert_eq!(offset_page.total_rows(), 3);
+    assert_eq!(offset_page.rows()[0].hash, "beta-hash");
 
     let _ = std::fs::remove_dir_all(&root);
 }

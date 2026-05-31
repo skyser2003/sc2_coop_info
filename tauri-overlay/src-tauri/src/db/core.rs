@@ -620,22 +620,30 @@ impl ReplayCacheSortDirection {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ReplayCachePage {
-    page: usize,
     rows_per_page: usize,
+    offset: usize,
 }
 
 impl ReplayCachePage {
     pub fn new(page: usize, rows_per_page: usize) -> Self {
+        let page = page.max(1);
+        let rows_per_page = rows_per_page.max(1);
         Self {
-            page: page.max(1),
-            rows_per_page: rows_per_page.max(1),
+            rows_per_page,
+            offset: page.saturating_sub(1).saturating_mul(rows_per_page),
+        }
+    }
+
+    pub fn from_offset(offset: usize, rows_per_page: usize) -> Self {
+        let rows_per_page = rows_per_page.max(1);
+        Self {
+            rows_per_page,
+            offset,
         }
     }
 
     pub fn offset(&self) -> usize {
-        self.page
-            .saturating_sub(1)
-            .saturating_mul(self.rows_per_page)
+        self.offset
     }
 
     pub fn limit(&self) -> usize {
@@ -863,6 +871,18 @@ impl ReplayCacheGamesPageQuery {
 
     pub fn page(&self) -> ReplayCachePage {
         self.page
+    }
+
+    pub fn with_page(&self, page: ReplayCachePage) -> Self {
+        Self {
+            page,
+            search: self.search.clone(),
+            sort_key: self.sort_key,
+            sort_direction: self.sort_direction,
+            difficulty_filters: self.difficulty_filters.clone(),
+            include_normal_games: self.include_normal_games,
+            include_mutation_games: self.include_mutation_games,
+        }
     }
 
     pub fn search(&self) -> &str {
