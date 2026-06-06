@@ -39,9 +39,10 @@ use crate::stats_query::StatsQuery;
 use crate::stats_units::StatsUnitDataOps;
 use crate::{
     AppSettings, CommanderUnitRollup, QueuedReplayCacheEntrySink, ReplayCacheDatabase,
-    ReplayCacheEntryQuery, ReplayCacheReadScope, ReplayCacheWriteQueue, ReplayChatMessage,
-    ReplayInfo, ReplayPlayerInfo, StatsAnalysisPayload, StatsSnapshot, StatsState,
-    StatsStatePayload, TauriOverlayOps, UNLIMITED_REPLAY_LIMIT, UnitStatsRollup,
+    ReplayCacheEntryQuery, ReplayCacheReadScope, ReplayCacheStatisticsPayload,
+    ReplayCacheWriteQueue, ReplayChatMessage, ReplayInfo, ReplayPlayerInfo, StatsAnalysisPayload,
+    StatsSnapshot, StatsState, StatsStatePayload, TauriOverlayOps, UNLIMITED_REPLAY_LIMIT,
+    UnitStatsRollup,
 };
 
 struct FastestMapPlayerInput<'a> {
@@ -3461,6 +3462,33 @@ impl ReplayAnalysis {
             .is_some_and(|analysis| analysis.unit_data.is_some())
     }
 
+    fn stats_cache_file_exists(cache_path: &Path) -> bool {
+        ReplayCacheDatabase::db_path_for_cache_path(cache_path).exists()
+            || ReplayCacheDatabase::legacy_json_path_for_cache_path(cache_path).exists()
+    }
+
+    fn should_load_cached_statistics(response: &StatsStatePayload, cache_path: &Path) -> bool {
+        response.ready || Self::stats_cache_file_exists(cache_path)
+    }
+
+    pub fn apply_cached_statistics_payload(
+        response: &mut StatsStatePayload,
+        payload: &ReplayCacheStatisticsPayload,
+    ) -> Result<(), String> {
+        response.ready = true;
+        response.analysis = Some(
+            StatsAnalysisPayload::from_value(payload.analysis().clone())
+                .map_err(|error| format!("Invalid cached stats analysis payload: {error}"))?,
+        );
+        response.prestige_names = payload.prestige_names().clone();
+        response.games = payload.games();
+        response.detailed_parsed_count = payload.detailed_parsed_count();
+        response.total_valid_files = payload.total_valid_files();
+        response.main_players = payload.main_players().to_vec();
+        response.main_handles = payload.main_handles().to_vec();
+        Ok(())
+    }
+
     pub fn build_stats_response(
         path: &str,
         stats: &Arc<Mutex<StatsState>>,
@@ -3527,8 +3555,8 @@ impl ReplayAnalysis {
             },
         };
 
-        if response.ready && !response.analysis_running {
-            let cache_path = PathManagerOps::get_cache_path();
+        let cache_path = PathManagerOps::get_cache_path();
+        if Self::should_load_cached_statistics(&response, &cache_path) {
             match stats_current_replay_files.try_lock() {
                 Ok(current_replay_files) => {
                     let summary_query = stats_query.to_cache_query(
@@ -3548,19 +3576,7 @@ impl ReplayAnalysis {
                         },
                     ) {
                         Ok(payload) => {
-                            response.ready = true;
-                            response.analysis = Some(
-                                StatsAnalysisPayload::from_value(payload.analysis().clone())
-                                    .map_err(|error| {
-                                        format!("Invalid cached stats analysis payload: {error}")
-                                    })?,
-                            );
-                            response.prestige_names = payload.prestige_names().clone();
-                            response.games = payload.games();
-                            response.detailed_parsed_count = payload.detailed_parsed_count();
-                            response.total_valid_files = payload.total_valid_files();
-                            response.main_players = payload.main_players().to_vec();
-                            response.main_handles = payload.main_handles().to_vec();
+                            Self::apply_cached_statistics_payload(&mut response, &payload)?;
                         }
                         Err(error) => {
                             crate::sco_warn!(

@@ -225,10 +225,32 @@ impl StatsCommands {
                 let request_started_at = Instant::now();
                 crate::sco_info!("[SCO/stats/action] {action} requested");
                 TauriOverlayOps::emit_current_replay_scan_progress(&app);
-                let stats_handle = state.stats_handle();
-                let stats = stats_handle
-                    .lock()
-                    .map_err(|error| format!("Failed to access stats state: {error}"))?;
+                let stats = state.stats_handle();
+                let stats_current_replay_files = state.stats_current_replay_files_handle();
+                let scan_progress = state.replay_scan_progress().as_payload();
+                let main_names = state.configured_main_names();
+                let main_handles = state.configured_main_handles();
+                let payload = match state.dictionary_data().ok() {
+                    Some(dictionary) => ReplayAnalysis::build_stats_response_with_dictionary(
+                        StatsResponseBuildInput::new(
+                            "/config/stats",
+                            &stats,
+                            &stats_current_replay_files,
+                            scan_progress.clone(),
+                            &main_names,
+                            &main_handles,
+                        ),
+                        &dictionary,
+                    )?,
+                    None => {
+                        let guard = stats
+                            .lock()
+                            .map_err(|error| format!("Failed to access stats state: {error}"))?;
+                        let mut payload = guard.as_payload_typed(scan_progress);
+                        payload.message = "Dictionary data is unavailable.".to_string();
+                        payload
+                    }
+                };
                 crate::sco_info!(
                     "[SCO/stats] {action} completed in {}ms",
                     request_started_at.elapsed().as_millis()
@@ -239,8 +261,8 @@ impl StatsCommands {
                         ok: true,
                         path: None,
                     },
-                    message: stats.message().to_string(),
-                    stats: Some(stats.as_payload_typed(state.replay_scan_progress().as_payload())),
+                    message: payload.message.clone(),
+                    stats: Some(payload),
                 });
             }
             "start_simple_analysis" | "run_detailed_analysis" => {
