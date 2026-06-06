@@ -19,6 +19,20 @@ impl TauriConfig {
     }
 }
 
+struct FrontendIndex;
+
+impl FrontendIndex {
+    fn load() -> String {
+        std::fs::read_to_string(Self::path()).expect("frontend index.html should be readable")
+    }
+
+    fn path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("index.html")
+    }
+}
+
 #[derive(Deserialize)]
 struct TauriAppConfig {
     security: TauriSecurityConfig,
@@ -119,6 +133,44 @@ fn packaged_csp_allows_overlay_font_assets() {
 
     assert!(font_src.contains("'self'"));
     assert!(font_src.contains("data:"));
+}
+
+#[test]
+fn packaged_index_contains_initial_google_analytics_tag() {
+    let index_html = FrontendIndex::load();
+
+    assert!(index_html.contains("https://www.googletagmanager.com/gtag/js?id=G-K12WZBGJF7"));
+    assert!(index_html.contains("<script nonce=\"c2NvT3ZlcmxheUdh\">"));
+    assert!(index_html.contains("gtag(\"config\", \"G-K12WZBGJF7\");"));
+}
+
+#[test]
+fn packaged_csp_allows_initial_google_analytics_tag() {
+    let config = TauriConfig::load();
+    let directives = config.app.security.csp_directives();
+    let script_src = directives
+        .get("script-src")
+        .expect("packaged CSP should declare script-src");
+    let connect_src = directives
+        .get("connect-src")
+        .expect("packaged CSP should declare connect-src");
+    let img_src = directives
+        .get("img-src")
+        .expect("packaged CSP should declare img-src");
+
+    assert!(script_src.contains("'self'"));
+    assert!(script_src.contains("'nonce-c2NvT3ZlcmxheUdh'"));
+    assert!(script_src.contains("https://*.googletagmanager.com"));
+    assert!(!script_src.contains("'unsafe-inline'"));
+
+    assert!(connect_src.contains("'self'"));
+    assert!(connect_src.contains("data:"));
+    assert!(connect_src.contains("https://*.google-analytics.com"));
+    assert!(connect_src.contains("https://*.analytics.google.com"));
+    assert!(connect_src.contains("https://*.googletagmanager.com"));
+
+    assert!(img_src.contains("https://*.google-analytics.com"));
+    assert!(img_src.contains("https://*.googletagmanager.com"));
 }
 
 #[test]
