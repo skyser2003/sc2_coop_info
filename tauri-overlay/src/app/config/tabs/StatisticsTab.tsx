@@ -13,7 +13,7 @@ import StatisticsDiffRegionPanel from "./StatisticsDiffRegionPanel";
 import StatisticsFiltersPanel from "./StatisticsFiltersPanel";
 import StatisticsMapsPanel from "./StatisticsMapsPanel";
 import StatisticsUnitsPanel from "./StatisticsUnitsPanel";
-import styles from "../page.module.css";
+import styles from "../configStyles";
 
 const STATS_SUBTABS = [
     { id: "maps", titleId: "ui_statistics_subtab_maps" },

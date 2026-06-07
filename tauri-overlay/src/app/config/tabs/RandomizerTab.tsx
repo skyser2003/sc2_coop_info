@@ -1,51 +1,32 @@
 import * as React from "react";
 import type {
-    AppSettings,
-    LocalizedText,
     OverlayRandomizerCatalog,
     RandomizerResult,
 } from "../../../bindings/overlay";
 import type { LanguageManager } from "../../i18n/languageManager";
-import { PreviewManager } from "../../previews/PreviewManager";
-import type { PrestigeNameMap } from "../types";
-import SelectionPreview from "./SelectionPreview";
 import { Grid } from "@mui/material";
-import styles from "../page.module.css";
-
-type RandomizerChoices = AppSettings["rng_choices"];
-type RandomizerDraft = {
-    rng_choices?: RandomizerChoices | null;
-};
-
-type MutatorCatalogEntry =
-    NonNullable<OverlayRandomizerCatalog>["mutators"][number];
-type BrutalPlusCatalogEntry =
-    NonNullable<OverlayRandomizerCatalog>["brutal_plus"][number];
-type CommanderRandomizerResult = Extract<
-    RandomizerResult,
-    { kind: "commander" }
->;
-type MutatorRandomizerResult = Extract<RandomizerResult, { kind: "mutator" }>;
-
-type CommanderGeneratePayload = {
-    mode: "commander";
-    rng_choices: RandomizerChoices;
-    mastery_mode: "all_in" | "random" | "none";
-    include_map: boolean;
-    include_race: boolean;
-};
-
-type MutatorGeneratePayload = {
-    mode: "mutator";
-    mutator_mode: "all_random" | "brutal_plus";
-    mutator_min: number;
-    mutator_max: number;
-    brutal_plus: number;
-};
-
-type RandomizerGeneratePayload =
-    | CommanderGeneratePayload
-    | MutatorGeneratePayload;
+import styles from "../configStyles";
+import {
+    CommanderResultPanel,
+    MutatorResultPanel,
+} from "./RandomizerResultPanels";
+import {
+    MASTERY_MODES,
+    MUTATOR_MODES,
+    areAllCommanderPrestigesSelected,
+    areAllPrestigeColumnSelected,
+    brutalPlusLabel,
+    buildEffectiveChoices,
+    clampNumber,
+    prestigeLabelForLanguage,
+    type CommanderGeneratePayload,
+    type CommanderRandomizerResult,
+    type MutatorGeneratePayload,
+    type MutatorRandomizerResult,
+    type RandomizerChoices,
+    type RandomizerDraft,
+    type RandomizerGeneratePayload,
+} from "./randomizerModels";
 
 type RandomizerTabProps = {
     draft: RandomizerDraft | null;
@@ -59,145 +40,6 @@ type RandomizerTabProps = {
         ) => Promise<RandomizerResult | null>;
     };
 };
-
-const MASTERY_MODES: Array<{
-    labelId: string;
-    value: CommanderGeneratePayload["mastery_mode"];
-}> = [
-    { labelId: "ui_randomizer_mastery_all_in", value: "all_in" },
-    { labelId: "ui_randomizer_mastery_random", value: "random" },
-    { labelId: "ui_randomizer_mastery_none", value: "none" },
-];
-
-const MUTATOR_MODES: Array<{
-    labelId: string;
-    value: MutatorGeneratePayload["mutator_mode"];
-}> = [
-    {
-        labelId: "ui_randomizer_mutator_mode_all_random",
-        value: "all_random",
-    },
-    {
-        labelId: "ui_randomizer_mutator_mode_brutal_plus",
-        value: "brutal_plus",
-    },
-];
-
-function buildEffectiveChoices(
-    savedChoices: RandomizerChoices | null | undefined,
-    commanderNames: string[],
-): RandomizerChoices {
-    const hasSavedChoices =
-        savedChoices !== null &&
-        savedChoices !== undefined &&
-        Object.keys(savedChoices).length > 0;
-    const nextChoices: RandomizerChoices = {};
-
-    for (const commander of commanderNames) {
-        for (let prestige = 0; prestige <= 3; prestige += 1) {
-            const key = `${commander}_${prestige}`;
-            nextChoices[key] = hasSavedChoices
-                ? Boolean(savedChoices[key])
-                : prestige === 0;
-        }
-    }
-
-    return nextChoices;
-}
-
-function areAllCommanderPrestigesSelected(
-    choices: RandomizerChoices,
-    commander: string,
-): boolean {
-    for (let prestige = 0; prestige <= 3; prestige += 1) {
-        if (!choices[`${commander}_${prestige}`]) {
-            return false;
-        }
-    }
-    return true;
-}
-
-function areAllPrestigeColumnSelected(
-    choices: RandomizerChoices,
-    commanderNames: string[],
-    prestige: number,
-): boolean {
-    return commanderNames.every(
-        (commander) => choices[`${commander}_${prestige}`] === true,
-    );
-}
-
-function prestigeLabelForLanguage(
-    prestigeNames: PrestigeNameMap,
-    commander: string,
-    prestige: number,
-    language: "en" | "ko",
-): string {
-    const localized = prestigeNames[commander];
-    if (!localized) {
-        return `P${prestige}`;
-    }
-
-    return (
-        localized[language]?.[prestige] ||
-        localized.en?.[prestige] ||
-        `P${prestige}`
-    );
-}
-
-function masteryRowsFromIndices(
-    commander: string,
-    masteryIndices: Array<number | null>,
-    languageManager: LanguageManager,
-): Array<{ points: number; label: string }> {
-    const labels = languageManager.commanderMasteryLabels(commander);
-    const rows: Array<{ points: number; label: string }> = [];
-
-    for (let pairIndex = 0; pairIndex < 3; pairIndex += 1) {
-        const selected = masteryIndices[pairIndex];
-        const leftIndex = pairIndex * 2;
-        const rightIndex = leftIndex + 1;
-        const leftPoints =
-            selected === null || selected === undefined ? 0 : selected;
-        const rightPoints =
-            selected === null || selected === undefined ? 0 : 30 - selected;
-
-        rows.push({
-            points: leftPoints,
-            label: labels[leftIndex] || `Mastery ${leftIndex + 1}`,
-        });
-        rows.push({
-            points: rightPoints,
-            label: labels[rightIndex] || `Mastery ${rightIndex + 1}`,
-        });
-    }
-
-    return rows;
-}
-
-function clampNumber(value: number, min: number, max: number): number {
-    if (!Number.isFinite(value)) {
-        return min;
-    }
-    return Math.min(max, Math.max(min, value));
-}
-
-function mutatorIconPath(iconName: string): string {
-    return `/overlay/Mutator Icons/${encodeURIComponent(iconName)}.png`;
-}
-
-function localizedMutatorText(
-    value: LocalizedText,
-    languageManager: LanguageManager,
-): string {
-    return languageManager.currentLanguage() === "ko"
-        ? value.ko || value.en
-        : value.en || value.ko;
-}
-
-function brutalPlusLabel(brutalPlusText: string, level: number): string {
-    return `${brutalPlusText}${level}`;
-}
 
 export default function RandomizerTab({
     draft,
@@ -240,33 +82,6 @@ export default function RandomizerTab({
     const effectiveChoices = React.useMemo(
         () => buildEffectiveChoices(draft?.rng_choices, commanderNames),
         [draft, commanderNames],
-    );
-    const previewManager = React.useMemo(
-        () => new PreviewManager(languageManager),
-        [languageManager],
-    );
-    const resultMapRace = React.useMemo(
-        () => previewManager.splitMapRacePair(commanderResult?.map_race || ""),
-        [commanderResult, previewManager],
-    );
-    const resultCommanderPreview = React.useMemo(
-        () => previewManager.commander(commanderResult?.commander || ""),
-        [commanderResult, previewManager],
-    );
-    const resultMapPreview = React.useMemo(
-        () => previewManager.map(resultMapRace.map),
-        [previewManager, resultMapRace.map],
-    );
-    const resultMasteryRows = React.useMemo(
-        () =>
-            commanderResult
-                ? masteryRowsFromIndices(
-                      commanderResult.commander,
-                      commanderResult.mastery_indices,
-                      languageManager,
-                  )
-                : [],
-        [commanderResult, languageManager],
     );
     const brutalPlusEntries = React.useMemo(
         () => catalog?.brutal_plus || [],
@@ -644,141 +459,12 @@ export default function RandomizerTab({
                                 className={styles.randomizerResultBox}
                             >
                                 <h3>{t("ui_randomizer_result")}</h3>
-                                {commanderResult ? (
-                                    <>
-                                        <div
-                                            className={
-                                                styles.randomizerResultHead
-                                            }
-                                        >
-                                            {`${languageManager.localize(commanderResult.commander)} - ${prestigeLabelForLanguage(
-                                                catalog.prestige_names,
-                                                commanderResult.commander,
-                                                commanderResult.prestige,
-                                                languageManager.currentLanguage(),
-                                            )} (P${commanderResult.prestige})`}
-                                        </div>
-                                        <div
-                                            className={
-                                                styles.randomizerResultPreviews
-                                            }
-                                        >
-                                            <SelectionPreview
-                                                assetUrl={
-                                                    resultCommanderPreview.url
-                                                }
-                                                title={languageManager.localize(
-                                                    commanderResult.commander,
-                                                )}
-                                                subtitle={`${prestigeLabelForLanguage(
-                                                    catalog.prestige_names,
-                                                    commanderResult.commander,
-                                                    commanderResult.prestige,
-                                                    languageManager.currentLanguage(),
-                                                )} (P${commanderResult.prestige})`}
-                                                kind="commander"
-                                                className={
-                                                    styles.randomizerResultPreview
-                                                }
-                                                titleClassName={
-                                                    styles.randomizerResultPreviewTitle
-                                                }
-                                                subtitleClassName={
-                                                    styles.randomizerResultPreviewSubtitle
-                                                }
-                                            />
-                                            {resultMapRace.map !== "" ? (
-                                                <SelectionPreview
-                                                    assetUrl={
-                                                        resultMapPreview.url
-                                                    }
-                                                    title={languageManager.localize(
-                                                        resultMapRace.map,
-                                                    )}
-                                                    subtitle={
-                                                        resultMapRace.race !==
-                                                        ""
-                                                            ? languageManager.localize(
-                                                                  resultMapRace.race,
-                                                              )
-                                                            : undefined
-                                                    }
-                                                    kind="map"
-                                                    className={
-                                                        styles.randomizerResultPreview
-                                                    }
-                                                    titleClassName={
-                                                        styles.randomizerResultPreviewTitle
-                                                    }
-                                                    subtitleClassName={
-                                                        styles.randomizerResultPreviewSubtitle
-                                                    }
-                                                />
-                                            ) : null}
-                                        </div>
-                                        <div
-                                            className={[
-                                                styles.statsBlock,
-                                                styles.randomizerResultBody,
-                                            ]
-                                                .filter(Boolean)
-                                                .join(" ")}
-                                        >
-                                            {resultMasteryRows.map(
-                                                (row, index) => (
-                                                    <div
-                                                        key={`${row.label}-${index}`}
-                                                        className={[
-                                                            styles.randomizerResultRow,
-                                                            row.points === 0
-                                                                ? styles.isZero
-                                                                : "",
-                                                        ]
-                                                            .filter(Boolean)
-                                                            .join(" ")}
-                                                    >
-                                                        <span
-                                                            className={
-                                                                styles.randomizerResultPoints
-                                                            }
-                                                        >
-                                                            {String(
-                                                                row.points,
-                                                            ).padStart(2, " ")}
-                                                        </span>
-                                                        <span>{` ${row.label}`}</span>
-                                                    </div>
-                                                ),
-                                            )}
-                                        </div>
-                                        <div
-                                            className={
-                                                styles.randomizerResultFoot
-                                            }
-                                        >
-                                            {languageManager.localizeMapRacePair(
-                                                commanderResult.map_race,
-                                            )}
-                                        </div>
-                                    </>
-                                ) : (
-                                    <div
-                                        className={[
-                                            styles.statsBlock,
-                                            styles.randomizerResultBody,
-                                        ]
-                                            .filter(Boolean)
-                                            .join(" ")}
-                                    >
-                                        <div
-                                            className={
-                                                styles.randomizerResultEmpty
-                                            }
-                                        >
-                                            {t("ui_randomizer_empty_result")}
-                                        </div>
-                                    </div>
-                                )}
+                                <CommanderResultPanel
+                                    catalog={catalog}
+                                    formatText={formatText}
+                                    languageManager={languageManager}
+                                    result={commanderResult}
+                                />
                             </Grid>
                         </Grid>
                     </div>
@@ -1106,147 +792,11 @@ export default function RandomizerTab({
                                 className={styles.randomizerResultBox}
                             >
                                 <h3>{t("ui_randomizer_result")}</h3>
-                                {mutatorResult ? (
-                                    <>
-                                        <div
-                                            className={
-                                                styles.randomizerResultHead
-                                            }
-                                        >
-                                            {mutatorResult.brutal_plus === null
-                                                ? formatText(
-                                                      "ui_randomizer_mutator_result_head_random",
-                                                      {
-                                                          count: mutatorResult.mutator_count,
-                                                      },
-                                                  )
-                                                : formatText(
-                                                      "ui_randomizer_mutator_result_head_bplus",
-                                                      {
-                                                          brutalPlus:
-                                                              brutalPlusLabel(
-                                                                  t(
-                                                                      "difficulty_brutal_plus",
-                                                                  ),
-                                                                  mutatorResult.brutal_plus,
-                                                              ),
-                                                      },
-                                                  )}
-                                        </div>
-                                        <div
-                                            className={
-                                                styles.randomizerMutatorBudget
-                                            }
-                                        >
-                                            <div
-                                                className={
-                                                    styles.randomizerMutatorChip
-                                                }
-                                            >
-                                                {`${t("ui_randomizer_mutator_count")}: ${mutatorResult.mutator_count}`}
-                                            </div>
-                                            <div
-                                                className={
-                                                    styles.randomizerMutatorChip
-                                                }
-                                            >
-                                                {`${t("ui_randomizer_mutator_total_points")}: ${mutatorResult.mutator_total_points}`}
-                                            </div>
-                                        </div>
-                                        <div
-                                            className={
-                                                styles.randomizerMutatorGrid
-                                            }
-                                        >
-                                            {mutatorResult.mutators.map(
-                                                (mutator) => (
-                                                    <article
-                                                        key={mutator.id}
-                                                        className={
-                                                            styles.randomizerMutatorCard
-                                                        }
-                                                    >
-                                                        <img
-                                                            className={
-                                                                styles.randomizerMutatorIcon
-                                                            }
-                                                            src={mutatorIconPath(
-                                                                mutator.iconName,
-                                                            )}
-                                                            alt={localizedMutatorText(
-                                                                mutator.name,
-                                                                languageManager,
-                                                            )}
-                                                        />
-                                                        <div
-                                                            className={
-                                                                styles.randomizerMutatorCopy
-                                                            }
-                                                        >
-                                                            <div
-                                                                className={
-                                                                    styles.randomizerMutatorCardHead
-                                                                }
-                                                            >
-                                                                <h4
-                                                                    className={
-                                                                        styles.randomizerMutatorName
-                                                                    }
-                                                                >
-                                                                    {localizedMutatorText(
-                                                                        mutator.name,
-                                                                        languageManager,
-                                                                    )}
-                                                                </h4>
-                                                                <span
-                                                                    className={
-                                                                        styles.randomizerMutatorPoints
-                                                                    }
-                                                                >
-                                                                    {formatText(
-                                                                        "ui_randomizer_mutator_point_value",
-                                                                        {
-                                                                            points: mutator.points,
-                                                                        },
-                                                                    )}
-                                                                </span>
-                                                            </div>
-                                                            <p
-                                                                className={
-                                                                    styles.randomizerMutatorDescription
-                                                                }
-                                                            >
-                                                                {localizedMutatorText(
-                                                                    mutator.description,
-                                                                    languageManager,
-                                                                )}
-                                                            </p>
-                                                        </div>
-                                                    </article>
-                                                ),
-                                            )}
-                                        </div>
-                                    </>
-                                ) : (
-                                    <div
-                                        className={[
-                                            styles.statsBlock,
-                                            styles.randomizerResultBody,
-                                        ]
-                                            .filter(Boolean)
-                                            .join(" ")}
-                                    >
-                                        <div
-                                            className={
-                                                styles.randomizerResultEmpty
-                                            }
-                                        >
-                                            {t(
-                                                "ui_randomizer_mutator_empty_result",
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
+                                <MutatorResultPanel
+                                    formatText={formatText}
+                                    languageManager={languageManager}
+                                    result={mutatorResult}
+                                />
                             </Grid>
                         </Grid>
                     </div>

@@ -1,7 +1,7 @@
 import { Container } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import ConfigRoute from "./ConfigRoute";
-import styles from "./page.module.css";
+import styles from "./configStyles";
 import { app } from "@tauri-apps/api";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";

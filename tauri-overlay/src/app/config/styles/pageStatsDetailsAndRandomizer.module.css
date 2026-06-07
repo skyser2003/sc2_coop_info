@@ -1,0 +1,814 @@
+.configPage .statsCommanderPane {
+    background: transparent;
+    border: 0;
+    padding: 0;
+}
+
+.configPage .statsCommanderTop {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 12px;
+    align-items: stretch;
+    padding: 10px;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.48);
+}
+
+.configPage .statsCommanderSummary {
+    display: grid;
+    align-content: start;
+    min-width: 0;
+}
+
+.configPage .statsCommanderHero {
+    block-size: 100%;
+    min-block-size: 0;
+    background-position: left center;
+    background-size: cover;
+    border-radius: 0;
+    position: relative;
+    overflow: hidden;
+    border: 1px solid #334155;
+}
+
+.configPage .statsCommanderTitle {
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-weight: 800;
+    font-size: clamp(26px, 2.4vw, 52px);
+    line-height: 1;
+    color: #fff;
+    letter-spacing: 0.2px;
+    text-shadow: 2px 2px 2px #000;
+}
+
+.configPage .statsCommanderMeta {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+    color: #f8fafc;
+    font-size: clamp(16px, 1.1vw, 22px);
+    line-height: 1.2;
+}
+
+.configPage .statsCommanderMeta span strong {
+    font-weight: 800;
+}
+
+.configPage .statsCommanderBottom {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    align-items: start;
+}
+
+.configPage .statsCommanderBottomCol {
+    min-width: 0;
+}
+
+.configPage .statsCommanderSubheading {
+    margin: 0 0 6px;
+    color: #f8fafc;
+    font-size: clamp(18px, 1.35vw, 26px);
+    font-weight: 700;
+    line-height: 1.1;
+    text-decoration: underline;
+}
+
+.configPage .statsCommanderTable td {
+    font-size: clamp(14px, 0.95vw, 20px);
+    line-height: 1.2;
+    padding: 5px 8px;
+}
+
+.configPage .statsCommanderTable {
+    width: auto;
+    max-width: none;
+}
+
+.configPage .statsCommanderTablePct {
+    inline-size: 6ch;
+    text-align: right;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.configPage .statsCommanderPrestigeRow td {
+    font-weight: 700;
+    color: #dbeafe;
+    background: rgba(30, 41, 59, 0.75);
+}
+
+.configPage .statsCommanderEmptyRow td {
+    padding: 5px 8px;
+}
+
+.configPage .statsCommanderEmptyRowCell {
+    min-height: 1.2em;
+}
+
+.configPage .statsCommanderCategoryGap td {
+    border-top: 3px solid #3b82f6;
+}
+
+.configPage .masteryDistributionList {
+    display: grid;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.configPage .masteryDistributionCategory {
+    display: grid;
+    gap: 7px;
+    padding: 10px;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.48);
+}
+
+.configPage .masteryDistributionPrestigeList {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.configPage .masteryDistributionPrestigePanel {
+    display: grid;
+    min-width: 0;
+    gap: 5px;
+    padding: 6px;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    background: rgba(15, 23, 42, 0.4);
+}
+
+.configPage .masteryDistributionPrestigePanel h5 {
+    margin: 0;
+    color: #dbeafe;
+    font-size: 12px;
+    line-height: 1.2;
+}
+
+.configPage .masteryDistributionHeader {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px;
+    justify-items: start;
+    color: #e2e8f0;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: left;
+}
+
+.configPage .masteryDistributionHeader span {
+    max-inline-size: 100%;
+    overflow-wrap: anywhere;
+}
+
+.configPage .masteryDistributionHeader strong {
+    color: #93c5fd;
+    font-size: 12px;
+    text-transform: uppercase;
+}
+
+.configPage .masteryDistributionLineGraph {
+    position: relative;
+    inline-size: 100%;
+    block-size: 6.75rem;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    background: rgba(2, 6, 23, 0.72);
+    overflow: hidden;
+}
+
+.configPage .masteryDistributionGridLine {
+    position: absolute;
+    right: 0;
+    left: 0;
+    z-index: 1;
+    block-size: 1px;
+    background: rgb(148 163 184 / 0.22);
+    pointer-events: none;
+    transform: translateY(-50%);
+}
+
+.configPage .masteryDistributionEvenLine {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    z-index: 1;
+    border-left: 1px dashed rgb(226 232 240 / 0.38);
+    pointer-events: none;
+}
+
+.configPage .masteryDistributionChartSurface {
+    position: absolute;
+    inset: 6px;
+    z-index: 0;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.configPage .masteryDistributionOverlaySurface {
+    position: absolute;
+    inset: 6px;
+    z-index: 1;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.configPage .masteryDistributionChartCanvas {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+}
+
+.configPage .masteryDistributionPoint {
+    position: absolute;
+    z-index: 2;
+    inline-size: 7px;
+    block-size: 7px;
+    border: 1px solid #2563eb;
+    border-radius: 999px;
+    background: #f8fafc;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+}
+
+.configPage .masteryDistributionPointLabel {
+    position: absolute;
+    z-index: 3;
+    padding: 1px 3px;
+    border-radius: 4px;
+    background: rgba(2, 6, 23, 0.78);
+    color: #f8fafc;
+    font-size: 9px;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+    transform: translate(-50%, -100%);
+}
+
+.configPage .masteryDistributionPointLabelLeft {
+    transform: translate(0, -100%);
+}
+
+.configPage .masteryDistributionPointLabelRight {
+    transform: translate(-100%, -100%);
+}
+
+.configPage .masteryDistributionAxis,
+.configPage .masteryDistributionPeakList {
+    display: flex;
+    justify-content: space-between;
+    gap: 4px;
+    color: #cbd5e1;
+    font-size: 10px;
+    line-height: 1.2;
+}
+
+.configPage .masteryDistributionAxis span {
+    flex: 1 1 0;
+    white-space: nowrap;
+}
+
+.configPage .masteryDistributionAxis span:nth-child(2) {
+    text-align: center;
+}
+
+.configPage .masteryDistributionAxis span:last-child {
+    text-align: right;
+}
+
+.configPage .masteryDistributionPeakList {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+
+.configPage .masteryDistributionPeakList span {
+    min-width: 0;
+    max-inline-size: 100%;
+    box-sizing: border-box;
+    padding: 2px 6px;
+    border: 1px solid #475569;
+    border-radius: 999px;
+    background: rgba(30, 41, 59, 0.72);
+    overflow-wrap: anywhere;
+}
+
+.configPage .statsUnitsLayout {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    gap: 12px;
+    align-items: start;
+}
+
+.configPage .statsUnitSelectors {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    align-self: start;
+}
+
+.configPage .statsUnitCommanders {
+    align-items: start;
+}
+
+.configPage .statsUnitColumn {
+    min-width: 0;
+}
+
+.configPage .statsUnitColumn h4 {
+    margin: 0 0 6px;
+    color: #f1f5f9;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.1;
+}
+
+.configPage .statsUnitPickerTable {
+    table-layout: fixed;
+}
+
+.configPage .statsUnitPickerTable tbody tr {
+    cursor: pointer;
+}
+
+.configPage .statsUnitPickerTable tbody tr.statsUnitCommanderDisabled {
+    cursor: default;
+    color: #8b98aa;
+    background: #f8fafc;
+}
+
+.configPage .statsUnitPickerTable tbody tr.statsUnitCommanderDisabled:hover {
+    background: #f8fafc;
+}
+
+.configPage .statsUnitPickerTable td {
+    text-align: left;
+    font-size: 12px;
+    padding: 6px 8px;
+    white-space: nowrap;
+}
+
+.configPage .statsUnitTable {
+    min-width: 0;
+}
+
+.configPage .statsUnitTable h3 {
+    margin: 0 0 8px;
+    color: #f3f4f6;
+    font-size: 40px;
+    font-weight: 500;
+    line-height: 1.15;
+}
+
+.configPage .statsUnitTableGrid {
+    table-layout: fixed;
+}
+
+.configPage .statsUnitTableGrid th,
+.configPage .statsUnitTableGrid td {
+    white-space: nowrap;
+}
+
+.configPage .statsSortBtn {
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    text-align: inherit;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.configPage .statsSortBtnRight {
+    text-align: inherit;
+}
+
+.configPage .statsUnitColName {
+    text-align: left;
+}
+
+.configPage .statsUnitColNum {
+    text-align: left;
+}
+
+.configPage .statsRightNote {
+    margin-top: 8px;
+    color: #94a3b8;
+    font-size: 15px;
+}
+
+.configPage .statsSumRow td {
+    color: #dbe7f8;
+}
+
+.configPage .randomizerRoot {
+    background: #4a4a4a;
+    border-color: #5f5f5f;
+}
+
+.configPage .randomizerControls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 18px;
+}
+
+.configPage .randomizerRangeGroup {
+    width: 100%;
+}
+
+.configPage .randomizerInlineField {
+    align-items: center;
+    white-space: nowrap;
+    width: 100%;
+}
+
+.configPage .randomizerSelect {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.configPage .randomizerToggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #e5e7eb;
+}
+
+.configPage .randomizerNumberInput {
+    min-inline-size: 6em;
+    max-inline-size: 100%;
+}
+
+.configPage .randomizerChoiceBox {
+    padding: 5px;
+}
+
+.configPage .randomizerLayout {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: 16px;
+    align-items: start;
+    margin-top: 14px;
+}
+
+.configPage .randomizerPane {
+    min-width: 0;
+    display: grid;
+    gap: 14px;
+    padding: 14px;
+    border: 1px solid #5f5f5f;
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.22);
+}
+
+.configPage .randomizerPaneRight {
+    min-height: 100%;
+}
+
+.configPage .randomizerChoiceBox h3,
+.configPage .randomizerResultBox h3 {
+    margin: 0 0 10px;
+}
+
+.configPage .randomizerTableShell {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: visible;
+    border: 1px solid #6b7280;
+    background: rgba(15, 23, 42, 0.32);
+}
+
+.configPage .randomizerChoiceTable {
+    border: 0;
+    width: auto;
+    table-layout: fixed;
+}
+
+.configPage .randomizerChoiceTable th {
+    top: 0;
+    z-index: 1;
+}
+
+.configPage .randomizerChoiceTable td,
+.configPage .randomizerChoiceTable th {
+    padding: 7px 8px;
+}
+
+.configPage .randomizerCommanderCell {
+    inline-size: 10em;
+    min-inline-size: 10em;
+    max-inline-size: 10em;
+    white-space: nowrap;
+}
+
+.configPage .randomizerCheckboxCell {
+    inline-size: 3em;
+    min-inline-size: 3em;
+    text-align: center;
+}
+
+.configPage .randomizerCheckboxCell input {
+    inline-size: 1rem;
+    block-size: 1rem;
+}
+
+.configPage .randomizerCommanderToggle {
+    text-align: left;
+}
+
+.configPage .randomizerHeaderToggleCell {
+    text-align: center;
+}
+
+.configPage .randomizerHeaderToggle {
+    text-align: center;
+}
+
+.configPage .randomizerCommanderToggle:focus-visible,
+.configPage .randomizerHeaderToggle:focus-visible {
+    outline: 1px solid #60a5fa;
+    outline-offset: 2px;
+}
+
+.configPage .randomizerActions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-top: 14px;
+}
+
+.configPage .randomizerActions .note {
+    margin: 0;
+}
+
+.configPage .randomizerResultBox {
+    min-width: 0;
+    padding: 5px;
+}
+
+.configPage .randomizerMutatorSettings {
+    display: grid;
+    gap: 10px;
+}
+
+.configPage .randomizerResultHead {
+    margin-bottom: 10px;
+    font-size: 20px;
+    color: #f8fafc;
+}
+
+.configPage .randomizerResultPreviews {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.configPage .randomizerResultPreview {
+    min-height: 148px;
+    border: 1px solid #334155;
+    border-radius: 8px;
+}
+
+.configPage .randomizerResultPreviewTitle {
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    bottom: 34px;
+    color: #fff;
+    font-size: 24px;
+    font-weight: 800;
+    line-height: 1.05;
+    text-shadow: 1px 1px 2px #000;
+}
+
+.configPage .randomizerResultPreviewSubtitle {
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    bottom: 12px;
+    color: #e2e8f0;
+    font-size: 13px;
+    font-weight: 600;
+    text-shadow: 1px 1px 2px #000;
+}
+
+.configPage .randomizerResultBody {
+    min-height: 150px;
+    font-family: inherit;
+}
+
+.configPage .randomizerResultRow {
+    display: flex;
+    gap: 12px;
+    line-height: 1.5;
+}
+
+.configPage .randomizerResultRow.isZero {
+    color: #9ca3af;
+}
+
+.configPage .randomizerResultPoints {
+    inline-size: 2ch;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.configPage .randomizerResultEmpty {
+    color: #94a3b8;
+    font-style: italic;
+}
+
+.configPage .randomizerResultFoot {
+    margin-top: 10px;
+    color: #e5e7eb;
+}
+
+.configPage .randomizerMutatorBudget {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.configPage .randomizerMutatorChip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(30, 41, 59, 0.9);
+    border: 1px solid #334155;
+    color: #e2e8f0;
+    font-size: 12px;
+}
+
+.configPage .randomizerMutatorGrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.configPage .randomizerMutatorCard {
+    display: grid;
+    grid-template-columns: 4.25rem minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid #334155;
+    background: rgba(15, 23, 42, 0.72);
+}
+
+.configPage .randomizerMutatorIcon {
+    inline-size: 4.25rem;
+    block-size: 4.25rem;
+    object-fit: contain;
+    border-radius: 8px;
+    background: rgba(2, 6, 23, 0.72);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    padding: 6px;
+}
+
+.configPage .randomizerMutatorCopy {
+    min-width: 0;
+}
+
+.configPage .randomizerMutatorCardHead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.configPage .randomizerMutatorName {
+    margin: 0 0 6px;
+    color: #f8fafc;
+    font-size: 16px;
+    line-height: 1.2;
+}
+
+.configPage .randomizerMutatorPoints {
+    color: #93c5fd;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.configPage .randomizerMutatorDescription {
+    margin: 0;
+    color: #cbd5e1;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.configPage .performanceTabCard {
+    inline-size: 100%;
+    background: #3c3c3c;
+    border-color: #4d4d4d;
+    padding: 24px 26px;
+}
+
+.configPage .performanceTabCopy h3,
+.configPage .performanceTabHotkeyBlock h3 {
+    margin: 0 0 8px;
+    color: #f8fafc;
+    font-size: 21px;
+}
+
+.configPage .performanceTabCopy p {
+    margin: 0 0 18px;
+    max-inline-size: 100%;
+    color: #f5f5f5;
+    font-size: 20px;
+    line-height: 1.35;
+}
+
+.configPage .performanceTabCheck {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+    color: #ffffff;
+    font-size: 18px;
+}
+
+.configPage .performanceTabPositionBtn {
+    display: block;
+    margin-top: 18px;
+    inline-size: 100%;
+}
+
+.configPage .performanceTabHotkeyBlock {
+    margin-top: 3rem;
+}
+
+.configPage .performanceTabHotkeyRow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px;
+}
+
+.configPage .performanceTabHotkeyRow .input {
+    min-width: 0;
+    max-width: 100%;
+    background: #1a1a1a;
+}
+
+.configPage .performanceTabHotkeyRow button {
+    min-inline-size: 10em;
+    background: linear-gradient(180deg, #656565 0%, #4a4a4a 100%);
+    border: 1px solid #808080;
+}
+
+.configPage .performanceTabProcesses {
+    margin: 18px 0 0;
+    color: #d1d5db;
+    font-size: 14px;
+}
+
+.configPage .performanceTabProcessBlock {
+    margin-top: 28px;
+}
+
+.configPage .performanceTabProcessCopy {
+    margin: 0 0 12px;
+    max-inline-size: 100%;
+    color: #d1d5db;
+    font-size: 14px;
+    line-height: 1.45;
+}
+
+.configPage .performanceTabProcessRow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 16px;
+}
+
+.configPage .performanceTabProcessInput {
+    min-width: 0;
+    max-width: 100%;
+    min-height: 92px;
+    font-family: "Courier New", monospace;
+    white-space: pre-wrap;
+}
+
+/* ThemeProvider-driven surface overrides */

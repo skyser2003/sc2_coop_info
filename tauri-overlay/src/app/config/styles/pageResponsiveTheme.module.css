@@ -1,0 +1,385 @@
+.configPage.configPage {
+    color: var(--config-page-text);
+}
+
+.configPage.configPage .tabs {
+    border-bottom-color: var(--config-border);
+}
+
+.configPage.configPage .tabBtn {
+    background: var(--config-tab-bg);
+    border-color: var(--config-border);
+    color: var(--config-tab-text);
+}
+
+.configPage.configPage .tabBtn:hover {
+    background: var(--config-tab-hover-bg);
+    color: var(--config-tab-hover-text);
+}
+
+.configPage.configPage .tabBtn.isActive {
+    background: var(--config-tab-active-bg);
+    color: var(--config-tab-active-text);
+    box-shadow: inset 0 1px 0 var(--config-accent-main);
+}
+
+.configPage.configPage .subtle,
+.configPage.configPage .note,
+.configPage.configPage .gamesMutatorEmpty,
+.configPage.configPage .playersHandleCount,
+.configPage.configPage .chatModalMeta,
+.configPage.configPage .randomizerResultEmpty,
+.configPage.configPage .statsRightNote,
+.configPage.configPage .mainPathValue {
+    color: var(--config-muted-text);
+}
+
+.configPage.configPage .linkList a,
+.configPage.configPage .sectionTitle,
+.configPage.configPage .weekliesMap,
+.configPage.configPage .mainSettingsGroupTitle,
+.configPage.configPage .mainPathsTitle,
+.configPage.configPage .chatTime,
+.configPage.configPage .masteryDistributionHeader strong,
+.configPage.configPage .statsMapPlayerApm {
+    color: var(--config-link-text);
+}
+
+.configPage.configPage .linkList a:hover {
+    color: var(--config-link-hover-text);
+}
+
+.configPage.configPage .status {
+    background: var(--config-surface);
+    border-color: var(--config-border);
+    color: var(--config-page-text);
+    box-shadow: var(--config-shadow);
+}
+
+@media (max-width: 900px) {
+    .configPage .configHeader {
+        min-block-size: 0;
+        padding-right: 0;
+    }
+
+    .configPage .status {
+        position: static;
+        inline-size: 100%;
+        margin-bottom: 10px;
+        max-inline-size: none;
+    }
+
+    .configPage .visualPlayer {
+        grid-template-columns: 1fr;
+    }
+
+    .configPage .statsCommanderTop {
+        grid-template-columns: 1fr;
+    }
+
+    .configPage .statsCommanderHero {
+        min-block-size: 140px;
+    }
+
+    .configPage .visualControls {
+        grid-template-columns: 1fr;
+    }
+
+    .configPage .visualFrameLabel {
+        text-align: left;
+    }
+}
+
+.configPage.configPage .card,
+.configPage.configPage .mainSettingsGroup,
+.configPage.configPage .mainSettingsBox,
+.configPage.configPage .weekliesDetailCard,
+.configPage.configPage .weekliesMutatorCard,
+.configPage.configPage .randomizerMutatorCard,
+.configPage.configPage .randomizerPane,
+.configPage.configPage .chatRow,
+.configPage.configPage .chatModal,
+.configPage.configPage .visualMetaGrid div,
+.configPage.configPage .visualAssaultBox,
+.configPage.configPage .visualTopUnits,
+.configPage.configPage .visualCounts,
+.configPage.configPage .visualLayerToggle,
+.configPage.configPage .performanceTabCard,
+.configPage.configPage .gamesPanel,
+.configPage.configPage .statsRoot,
+.configPage.configPage .randomizerRoot {
+    background: var(--config-surface);
+    border-color: var(--config-border);
+    box-shadow: var(--config-shadow);
+}
+
+.configPage.configPage .field,
+.configPage.configPage .chatModalHeader,
+.configPage.configPage .statsSubtabs {
+    border-bottom-color: var(--config-border);
+}
+
+.configPage.configPage .fieldLabel,
+.configPage.configPage .gamesFilterCheck,
+.configPage.configPage .chatPlayer,
+.configPage.configPage .chatText,
+.configPage.configPage .randomizerToggle,
+.configPage.configPage .colorRowLabel,
+.configPage.configPage .mainRowLabel,
+.configPage.configPage .performanceTabCheck,
+.configPage.configPage .performanceTabCopy p,
+.configPage.configPage .performanceTabProcesses,
+.configPage.configPage .performanceTabProcessCopy,
+.configPage.configPage .statsMapPlayerLine span,
+.configPage.configPage .statsMapMasteries,
+.configPage.configPage .statsMapPlayerEmpty,
+.configPage.configPage .randomizerResultFoot,
+.configPage.configPage .weekliesDetailTitle,
+.configPage.configPage .weekliesMutatorName,
+.configPage.configPage .randomizerMutatorName,
+.configPage.configPage .statsCommanderMeta,
+.configPage.configPage .statsCommanderSubheading,
+.configPage.configPage .masteryDistributionHeader,
+.configPage.configPage .masteryDistributionPrestigePanel h5,
+.configPage.configPage .randomizerResultHead,
+.configPage.configPage .performanceTabCopy h3,
+.configPage.configPage .performanceTabHotkeyBlock h3,
+.configPage.configPage .statsUnitTable h3,
+.configPage.configPage .statsFilterGroup h4,
+.configPage.configPage .statsFiltersSide h4,
+.configPage.configPage .statsCheckboxLine span,
+.configPage.configPage .statsSideActions p,
+.configPage.configPage .statsMapPlayer h4,
+.configPage.configPage .statsMapPlayerLine strong,
+.configPage.configPage .statsMapMasteries strong,
+.configPage.configPage .mainSettingCheck span {
+    color: var(--config-page-text);
+}
+
+.configPage.configPage .input,
+.configPage.configPage textarea.input,
+.configPage.configPage .statsBlock,
+.configPage.configPage .colorRowInputButton,
+.configPage.configPage .performanceTabHotkeyRow .input {
+    background: var(--config-input-bg);
+    border-color: var(--config-border-strong);
+    color: var(--config-page-text);
+}
+
+.configPage.configPage .colorRowInputButton:hover {
+    background: var(--config-input-hover-bg);
+}
+
+.configPage.configPage .dataTable,
+.configPage.configPage .dataTable th,
+.configPage.configPage .dataTable td,
+.configPage.configPage .randomizerTableShell,
+.configPage.configPage .randomizerMutatorCard,
+.configPage.configPage .gamesIconBtn,
+.configPage.configPage .gamesRowBtn,
+.configPage.configPage .visualStage,
+.configPage.configPage .visualMetaGrid div,
+.configPage.configPage .visualAssaultBox,
+.configPage.configPage .visualTopUnits,
+.configPage.configPage .visualCounts,
+.configPage.configPage .visualLayerToggle,
+.configPage.configPage .statsPaneRight,
+.configPage.configPage .statsCommanderHero,
+.configPage.configPage .statsCommanderTop,
+.configPage.configPage .statsFilterGroup,
+.configPage.configPage .statsMapPlayer,
+.configPage.configPage .masteryDistributionCategory,
+.configPage.configPage .masteryDistributionPrestigePanel,
+.configPage.configPage .masteryDistributionLineGraph,
+.configPage.configPage .masteryDistributionPeakList span,
+.configPage.configPage .randomizerResultPreview,
+.configPage.configPage .weekliesCurrentPill,
+.configPage.configPage .weekliesStatChip,
+.configPage.configPage .playersHandleChip,
+.configPage.configPage .randomizerMutatorChip {
+    border-color: var(--config-border);
+}
+
+.configPage.configPage .dataTable th {
+    background: var(--config-table-header-bg);
+}
+
+.configPage.configPage .tablePaginationSummary,
+.configPage.configPage .gamesFilterLabel,
+.configPage.configPage .chatEmpty,
+.configPage.configPage .visualMetaGrid span,
+.configPage.configPage .visualCountRow span,
+.configPage.configPage .visualAssaultBox p,
+.configPage.configPage .visualTopUnits p,
+.configPage.configPage .visualFrameLabel,
+.configPage.configPage .visualSpeedControl,
+.configPage.configPage .statsUnitColumn h4,
+.configPage.configPage .masteryDistributionAxis,
+.configPage.configPage .masteryDistributionPeakList,
+.configPage.configPage .weekliesMutatorDescription,
+.configPage.configPage .randomizerMutatorDescription {
+    color: var(--config-subtle-strong);
+}
+
+.configPage.configPage .statsDetailEmpty,
+.configPage.configPage .randomizerResultEmpty {
+    background: var(--config-empty-bg);
+    border: 1px solid var(--config-border);
+    color: var(--config-empty-text);
+}
+
+.configPage.configPage .dataTable tbody tr:hover,
+.configPage.configPage .playersSummaryRow.isExpanded {
+    background: var(--config-accent-soft);
+}
+
+.configPage.configPage .dataTable tr.selectedRow {
+    background: var(--config-accent-soft-strong);
+}
+
+.configPage.configPage
+    .statsUnitPickerTable
+    tbody
+    tr.statsUnitCommanderDisabled {
+    color: var(--config-unit-commander-disabled-text);
+    background: var(--config-unit-commander-disabled-bg);
+}
+
+.configPage.configPage
+    .statsUnitPickerTable
+    tbody
+    tr.statsUnitCommanderDisabled:hover {
+    background: var(--config-unit-commander-disabled-bg);
+}
+
+.configPage.configPage .buttonNormal {
+    background: var(--config-button-bg);
+    color: var(--config-button-text);
+}
+
+.configPage.configPage .buttonNormal:disabled {
+    background: var(--config-button-disabled-bg);
+}
+
+.configPage.configPage .dataTable .tableSortBtn,
+.configPage.configPage .dataTable .statsSortBtn,
+.configPage.configPage .dataTable .buttonRandomizerTable {
+    background: transparent;
+    border: 0;
+    color: inherit;
+    box-shadow: none;
+}
+
+.configPage.configPage .miniBtn,
+.configPage.configPage .tablePaginationBtn:not(.buttonNormal),
+.configPage.configPage .gamesIconBtn:not(.buttonNormal),
+.configPage.configPage .gamesRowBtn:not(.buttonNormal),
+.configPage.configPage .playersExpanderBtn,
+.configPage.configPage .buttonTab,
+.configPage.configPage .performanceTabPositionBtn:not(.buttonNormal),
+.configPage.configPage .performanceTabHotkeyRow button {
+    background: var(--config-button-neutral-bg);
+    color: var(--config-button-neutral-text);
+    border: 1px solid var(--config-border);
+}
+
+.configPage.configPage .miniBtn.isActive,
+.configPage.configPage .buttonTab.isActive {
+    background: var(--config-button-selected-bg);
+    color: var(--config-button-selected-text);
+}
+
+.configPage.configPage .selectionPreview {
+    background: var(--config-preview-bg);
+}
+
+.configPage.configPage .chatModalBackdrop {
+    background: var(--config-modal-backdrop);
+}
+
+.configPage.configPage .weekliesCurrentPill,
+.configPage.configPage .weekliesStatChip,
+.configPage.configPage .playersHandleChip,
+.configPage.configPage .randomizerMutatorChip {
+    background: var(--config-chip-bg);
+    color: var(--config-chip-text);
+}
+
+.configPage.configPage .weekliesCurrentPill {
+    background: var(--config-accent-soft);
+    border-color: var(--config-accent-border);
+    color: var(--config-link-text);
+}
+
+.configPage.configPage .playersExpanderBtn {
+    background: var(--config-chip-bg);
+}
+
+.configPage.configPage .playersExpanderBtn:hover {
+    background: var(--config-accent-soft);
+    border-color: var(--config-accent-border);
+}
+
+.configPage.configPage .playersDetailCell,
+.configPage.configPage .statsPaneRight,
+.configPage.configPage .statsCommanderTop,
+.configPage.configPage .statsFilterGroup,
+.configPage.configPage .statsMapPlayer,
+.configPage.configPage .masteryDistributionCategory,
+.configPage.configPage .masteryDistributionPrestigePanel,
+.configPage.configPage .randomizerTableShell,
+.configPage.configPage .mainSettingsGroup,
+.configPage.configPage .mainSettingsBox {
+    background: var(--config-surface-soft);
+}
+
+.configPage.configPage .masteryDistributionLineGraph {
+    background: var(--config-chart-bg);
+}
+
+.configPage.configPage .masteryDistributionGridLine {
+    background: var(--config-chart-grid);
+}
+
+.configPage.configPage .masteryDistributionEvenLine {
+    border-left-color: var(--config-chart-even);
+}
+
+.configPage.configPage .masteryDistributionPointLabel {
+    background: var(--config-chart-label-bg);
+    color: var(--config-chart-label-text);
+}
+
+.configPage.configPage .randomizerChoiceTable td,
+.configPage.configPage .randomizerChoiceTable th {
+    color: var(--config-page-text);
+    background: transparent;
+}
+
+.configPage.configPage .buttonRandomizerTable {
+    background: transparent;
+    border: 0;
+    color: var(--config-page-text);
+    box-shadow: none;
+}
+
+.configPage.configPage .statsCommanderPrestigeRow td {
+    color: var(--config-link-text);
+    background: var(--config-accent-selected-bg);
+}
+
+.configPage.configPage .statsCommanderCategoryGap td {
+    border-top-color: var(--config-accent-main);
+}
+
+.configPage.configPage .statsSumRow td {
+    color: var(--config-page-text);
+}
+
+.configPage.configPage .mainSettingCheck.isDisabled {
+    opacity: 1;
+}
+
+.configPage.configPage .mainSettingCheck.isDisabled span {
+    color: var(--config-disabled-text);
+}

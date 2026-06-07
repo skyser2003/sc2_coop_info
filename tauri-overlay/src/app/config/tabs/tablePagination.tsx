@@ -1,6 +1,6 @@
 import * as React from "react";
 import { createLanguageManager } from "../../i18n/languageManager";
-import styles from "../page.module.css";
+import styles from "../configStyles";
 
 export const TABLE_ROWS_PER_PAGE = 20;
 

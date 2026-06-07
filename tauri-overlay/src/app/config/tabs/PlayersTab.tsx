@@ -2,7 +2,7 @@ import * as React from "react";
 import type { PlayerRowPayload } from "../../../bindings/overlay";
 import type { LanguageManager } from "../../i18n/languageManager";
 import type { DisplayValue } from "../types";
-import styles from "../page.module.css";
+import styles from "../configStyles";
 import { nextSortState, sortIndicator, type SortState } from "./tableSort";
 import {
     TABLE_ROWS_PER_PAGE,

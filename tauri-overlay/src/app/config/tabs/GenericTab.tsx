@@ -2,7 +2,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import * as React from "react";
 import type { AppSettings } from "../../../bindings/overlay";
 import type { JsonValue } from "../types";
-import styles from "../page.module.css";
+import styles from "../configStyles";
 
 type TabGroup = {
     title: string;

@@ -5,7 +5,7 @@ import type {
     ReplayVisualUnit,
     ReplayVisualUnitGroup,
 } from "../../../bindings/overlay";
-import styles from "../page.module.css";
+import styles from "../configStyles";
 import type { DisplayValue } from "../types";
 import { buildUnitTracks, interpolatedUnits } from "./replayVisualTracks";
 

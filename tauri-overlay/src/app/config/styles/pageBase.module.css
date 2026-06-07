@@ -1,0 +1,306 @@
+.configPage {
+    color: var(--config-page-text);
+}
+
+.configPage h1 {
+    margin: 0 0 10px;
+}
+
+.configPage .configHeader {
+    position: relative;
+    padding-right: 25rem;
+}
+
+.configPage .configHeader h1 {
+    margin: 0;
+}
+
+.configPage .tabs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 12px 0 8px;
+    padding: 4px;
+    border-bottom: 1px solid #243145;
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+.configPage .tabBtn {
+    border: 1px solid #1f2a3d;
+    border-bottom: 0;
+    border-radius: 8px 8px 0 0;
+    padding: 9px 12px;
+    background: #1a2236;
+    color: #9fb2c7;
+}
+
+.configPage .tabBtn:hover {
+    background: #273451;
+    color: #e5e7eb;
+}
+
+.configPage .tabBtn.isActive {
+    color: #dbeafe;
+    background: #111827;
+    box-shadow: inset 0 1px 0 #60a5fa;
+}
+
+.configPage .subtle {
+    color: #93a4b8;
+    margin-top: 0;
+}
+
+.configPage .status {
+    margin: 0;
+    color: #f1f5f9;
+    min-height: 2.75rem;
+    background: #111827;
+    border: 1px solid #243245;
+    padding: 10px 14px;
+    border-radius: 12px;
+    position: absolute;
+    top: 0;
+    right: 0;
+    inline-size: 24rem;
+    max-inline-size: calc(100vw - 48px);
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    box-shadow: 0 12px 28px rgb(15 23 42 / 0.18);
+    backdrop-filter: blur(10px);
+    overflow-wrap: anywhere;
+    z-index: 1;
+}
+
+.configPage .note {
+    margin: 0 0 8px;
+    color: #98a9bf;
+}
+
+.configPage .linkList {
+    margin: 6px 0 0;
+    padding-left: 20px;
+}
+
+.configPage .linkList li {
+    margin: 6px 0;
+}
+
+.configPage .linkList a {
+    color: #93c5fd;
+}
+
+.configPage .linkList a:hover {
+    color: #bfdbfe;
+}
+
+.configPage .card {
+    background: rgba(17, 24, 39, 0.95);
+    border-radius: 10px;
+    padding: 14px;
+    border: 1px solid #253451;
+    margin-top: 14px;
+    box-shadow: 0 6px 18px rgb(0 0 0 / 18%);
+}
+
+.configPage .fieldTextarea,
+.configPage .group,
+.configPage .mainRangeRow,
+.configPage .mainSettingsInlineNumbers,
+.configPage .mono,
+.configPage .player,
+.configPage .randomizerMainGrid,
+.configPage .randomizerPaneLeft,
+.configPage .selectionPreviewTitle,
+.configPage .selectionPreviewSubtitle,
+.configPage .statsCommanderMasteryRow,
+.configPage .statsDiffWrap,
+.configPage .statsMapDetail,
+.configPage .statsNarrow,
+.configPage .statsPaneLeft,
+.configPage .submit {
+    --config-module-hook: initial;
+}
+
+.configPage .tabContent .card:first-child {
+    margin-top: 10px;
+}
+
+.configPage .sectionTitle {
+    color: #8cb4ff;
+    margin-bottom: 8px;
+}
+
+.configPage .nodeDepth0 summary {
+    font-weight: 700;
+    margin-top: 4px;
+}
+
+.configPage .field {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid #1f2a3d;
+}
+
+.configPage .field:last-child {
+    border-bottom: 0;
+}
+
+.configPage .fieldLabel {
+    flex: 0 1 18rem;
+    font-size: 14px;
+    color: #e2e8f0;
+}
+
+.configPage .input,
+.configPage textarea.input {
+    background: #0a1020;
+    border: 1px solid #334155;
+    color: #e2e8f0;
+    border-radius: 6px;
+    padding: 8px;
+    min-width: 0;
+    flex: 1 1 18rem;
+    inline-size: 100%;
+}
+
+.configPage textarea.input {
+    min-height: 84px;
+    font-family: "Courier New", monospace;
+}
+
+.configPage details.card {
+    margin-top: 8px;
+}
+
+.configPage details.card > .field {
+    padding-left: 8px;
+}
+
+.configPage .nodeDepth1 {
+    margin-left: 12px;
+}
+
+.configPage .nodeDepth2 {
+    margin-left: 24px;
+}
+
+.configPage .nodeDepth3 {
+    margin-left: 36px;
+}
+
+.configPage .footer {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+}
+
+.configPage .isHidden {
+    display: none !important;
+}
+
+.configPage .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.configPage .tableWrap {
+    overflow-x: auto;
+}
+
+.configPage .tablePagination {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.configPage .tablePaginationSummary {
+    margin: 0;
+    color: #cbd5e1;
+    font-size: 13px;
+}
+
+.configPage .tablePaginationControls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.configPage .tablePaginationPage {
+    min-inline-size: 7em;
+    color: #e5e7eb;
+    text-align: center;
+    font-size: 13px;
+}
+
+.configPage .tablePaginationBtn {
+    min-inline-size: 8em;
+    padding: 8px 12px;
+}
+
+.configPage .dataTable {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid #27364f;
+}
+
+.configPage .dataTable th,
+.configPage .dataTable td {
+    border-bottom: 1px solid #27364f;
+    text-align: left;
+    padding: 8px 10px;
+    font-size: 13px;
+    vertical-align: top;
+}
+
+.configPage .dataTable th {
+    background: rgba(15, 23, 42, 0.85);
+    position: sticky;
+    top: 0;
+}
+
+.configPage .tableSortBtn {
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    text-align: inherit;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.configPage .tableSortBtn:focus-visible {
+    outline: 1px solid #60a5fa;
+    outline-offset: 2px;
+}
+
+.configPage .dataTable tbody tr {
+    cursor: default;
+}
+
+.configPage .dataTable tbody tr:hover {
+    background: rgba(37, 99, 235, 0.18);
+}
+
+.configPage .dataTable tr.selectedRow {
+    background: rgba(37, 99, 235, 0.3);
+}
+
+.configPage .dataTable .emptyCell {
+    text-align: center;
+    color: #93a4b8;
+}

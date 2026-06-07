@@ -3,7 +3,7 @@ import type { LanguageManager } from "../../i18n/languageManager";
 import type { AppSettings } from "../../../bindings/overlay";
 import type { JsonValue } from "../types";
 import { Grid } from "@mui/material";
-import styles from "../page.module.css";
+import styles from "../configStyles";
 
 type PerformanceActions = {
     isBusy: boolean;

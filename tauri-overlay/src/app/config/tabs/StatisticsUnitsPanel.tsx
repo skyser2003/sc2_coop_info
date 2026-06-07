@@ -18,7 +18,7 @@ import {
     readNumber,
     translate,
 } from "./statisticsViewModels";
-import styles from "../page.module.css";
+import styles from "../configStyles";
 
 type UnitSide = "main" | "ally";
 type UnitCommanderStats = NonNullable<StatsUnitDataPayload[UnitSide][string]>;

@@ -27,7 +27,7 @@ import {
     readNumber,
     translate,
 } from "./statisticsViewModels";
-import styles from "../page.module.css";
+import styles from "../configStyles";
 
 type StatisticsMapsPanelProps = {
     analysis: StatisticsAnalysis;

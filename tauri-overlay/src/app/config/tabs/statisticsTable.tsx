@@ -1,6 +1,6 @@
 import type * as React from "react";
 import { sortIndicator, type SortState } from "./tableSort";
-import styles from "../page.module.css";
+import styles from "../configStyles";
 
 export type HeaderColumn = {
     key: string;

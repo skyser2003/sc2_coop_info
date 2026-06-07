@@ -5,7 +5,7 @@ import type { StatisticsAnalysis, StatisticsPayload } from "../types";
 import { sortRows, type SortState } from "./tableSort";
 import { tableHeader } from "./statisticsTable";
 import { formatNumber, readNumber, translate } from "./statisticsViewModels";
-import styles from "../page.module.css";
+import styles from "../configStyles";
 
 type StatisticsAmonPanelProps = {
     analysis: StatisticsAnalysis;

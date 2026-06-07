@@ -9,7 +9,7 @@ import type {
     StatisticsState,
     StatsHelpers,
 } from "../types";
-import styles from "../page.module.css";
+import styles from "../configStyles";
 
 type StatisticsFiltersPanelProps = {
     actions: StatsHelpers;

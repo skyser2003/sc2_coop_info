@@ -20,7 +20,7 @@ import {
     translate,
 } from "./statisticsViewModels";
 import SelectionPreview from "./SelectionPreview";
-import styles from "../page.module.css";
+import styles from "../configStyles";
 
 const MASTERY_DISTRIBUTION_GRAPH_TOP = 24;
 const MASTERY_DISTRIBUTION_LABEL_OFFSET = 4;
