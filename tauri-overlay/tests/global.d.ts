@@ -3,6 +3,7 @@ import type {
     JsonPrimitive,
     JsonValue,
 } from "../src/app/config/types";
+import type { StatsStatePayload } from "../src/bindings/overlay";
 
 export {};
 
@@ -16,6 +17,7 @@ declare global {
         command?: string;
         directory?: string;
         event?: string;
+        eventId?: number;
         file?: string;
         handler?: number;
         limit?: number;
@@ -30,7 +32,11 @@ declare global {
 
     interface Window {
         __TAURI_INTERNALS__: {};
-        __TAURI_EVENT_PLUGIN_INTERNALS__: {};
+        __TAURI_EVENT_PLUGIN_INTERNALS__: {
+            unregisterListener?: (eventName: string, eventId: number) => void;
+        };
+        __emitMockConfigEvent?: (eventName: string, payload: JsonValue) => void;
+        __setMockStatsPayload?: (payload: StatsStatePayload) => void;
         __SCO_ACTION_REQUESTS__: TestConfigRequestRecord[];
         __SCO_CONFIG_GET_REQUESTS__: TestConfigRequestRecord[];
         __SCO_CONFIG_APPLY_REQUESTS__: TestJsonObject[];

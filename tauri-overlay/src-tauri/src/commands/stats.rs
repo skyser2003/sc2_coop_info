@@ -75,6 +75,38 @@ pub async fn config_stats_action(
 }
 
 impl StatsCommands {
+    fn current_stats_payload(
+        path: &str,
+        state: &BackendState,
+    ) -> Result<StatsStatePayload, String> {
+        let stats = state.stats_handle();
+        let stats_current_replay_files = state.stats_current_replay_files_handle();
+        let scan_progress = state.replay_scan_progress().as_payload();
+        let main_names = state.configured_main_names();
+        let main_handles = state.configured_main_handles();
+        match state.dictionary_data().ok() {
+            Some(dictionary) => ReplayAnalysis::build_stats_response_with_dictionary(
+                StatsResponseBuildInput::new(
+                    path,
+                    &stats,
+                    &stats_current_replay_files,
+                    scan_progress.clone(),
+                    &main_names,
+                    &main_handles,
+                ),
+                &dictionary,
+            ),
+            None => {
+                let guard = stats
+                    .lock()
+                    .map_err(|error| format!("Failed to access stats state: {error}"))?;
+                let mut payload = guard.as_payload_typed(scan_progress);
+                payload.message = "Dictionary data is unavailable.".to_string();
+                Ok(payload)
+            }
+        }
+    }
+
     fn start_lazy_statistics_analysis_if_needed(
         app: &tauri::AppHandle<Wry>,
         state: &BackendState,
@@ -225,32 +257,7 @@ impl StatsCommands {
                 let request_started_at = Instant::now();
                 crate::sco_info!("[SCO/stats/action] {action} requested");
                 TauriOverlayOps::emit_current_replay_scan_progress(&app);
-                let stats = state.stats_handle();
-                let stats_current_replay_files = state.stats_current_replay_files_handle();
-                let scan_progress = state.replay_scan_progress().as_payload();
-                let main_names = state.configured_main_names();
-                let main_handles = state.configured_main_handles();
-                let payload = match state.dictionary_data().ok() {
-                    Some(dictionary) => ReplayAnalysis::build_stats_response_with_dictionary(
-                        StatsResponseBuildInput::new(
-                            "/config/stats",
-                            &stats,
-                            &stats_current_replay_files,
-                            scan_progress.clone(),
-                            &main_names,
-                            &main_handles,
-                        ),
-                        &dictionary,
-                    )?,
-                    None => {
-                        let guard = stats
-                            .lock()
-                            .map_err(|error| format!("Failed to access stats state: {error}"))?;
-                        let mut payload = guard.as_payload_typed(scan_progress);
-                        payload.message = "Dictionary data is unavailable.".to_string();
-                        payload
-                    }
-                };
+                let payload = Self::current_stats_payload("/config/stats", &state)?;
                 crate::sco_info!(
                     "[SCO/stats] {action} completed in {}ms",
                     request_started_at.elapsed().as_millis()
@@ -296,10 +303,7 @@ impl StatsCommands {
                     action,
                     status
                 );
-                let stats_payload =
-                    state.stats_handle().lock().ok().map(|stats| {
-                        stats.as_payload_typed(state.replay_scan_progress().as_payload())
-                    });
+                let stats_payload = Self::current_stats_payload("/config/stats", &state).ok();
                 return Ok(StatsActionPayload {
                     status: "ok",
                     result: OverlayActionResult {

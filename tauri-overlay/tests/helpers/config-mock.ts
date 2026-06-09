@@ -1,4 +1,5 @@
 import type { Page } from "@playwright/test";
+import type { StatsStatePayload } from "../../src/bindings/overlay";
 
 export type ConfigMockMutator = {
     name: {
@@ -66,6 +67,7 @@ export type ConfigMockPageRequest = {
 export type ConfigMockOptions = {
     games?: readonly ConfigMockGameRow[];
     players?: readonly ConfigMockPlayerRow[];
+    stats?: StatsStatePayload;
     weeklies?: readonly ConfigMockSettings[];
     settings?: ConfigMockSettings;
 };
@@ -78,6 +80,9 @@ type ConfigMockInvokeRequest = {
         settings?: ConfigMockSettings;
     };
     command?: string;
+    event?: string;
+    eventId?: number;
+    handler?: number;
     method?: string;
     path?: string;
     persist?: boolean;
@@ -89,6 +94,7 @@ type ConfigMockInvokeRequest = {
 type ConfigMockInitOptions = {
     games: readonly ConfigMockGameRow[];
     players: readonly ConfigMockPlayerRow[];
+    stats: StatsStatePayload;
     weeklies: readonly ConfigMockSettings[];
     settings: ConfigMockSettings;
 };
@@ -97,6 +103,55 @@ function defaultOptions(options: ConfigMockOptions): ConfigMockInitOptions {
     return {
         games: options.games ?? [],
         players: options.players ?? [],
+        stats: options.stats ?? {
+            ready: true,
+            games: 0,
+            detailed_parsed_count: 0,
+            total_valid_files: 0,
+            analysis_running: false,
+            simple_analysis_status: "Simple analysis: completed.",
+            detailed_analysis_status: "Detailed analysis: not started.",
+            detailed_analysis_atstart: false,
+            main_players: [],
+            main_handles: [],
+            prestige_names: {},
+            message: "",
+            query: "",
+            scan_progress: {
+                stage: "idle",
+                status: "Idle",
+                parsing_status: "Idle",
+                total: 0,
+                total_replay_files: 0,
+                cache_hits: 0,
+                files_already_cached: 0,
+                to_parse: 0,
+                completed: 0,
+                newly_parsed: 0,
+                newly_parsed_files: 0,
+                failed: 0,
+                parse_failed_files: 0,
+                parse_skipped: 0,
+                parse_skipped_files: 0,
+                elapsed_ms: 0,
+                total_time_taken_ms: 0,
+            },
+            analysis: {
+                MapData: {},
+                CommanderData: {},
+                AllyCommanderData: {},
+                DifficultyData: {},
+                RegionData: {},
+                PlayerData: {},
+                AmonData: {},
+                MapDataReady: true,
+                UnitData: {
+                    main: {},
+                    ally: {},
+                    amon: {},
+                },
+            },
+        },
         weeklies: options.weeklies ?? [],
         settings: {
             account_folder: "fixtures/accounts",
@@ -113,16 +168,25 @@ export async function installConfigMock(
     options: ConfigMockOptions = {},
 ): Promise<void> {
     await page.addInitScript(
-        ({ games, players, weeklies, settings: initialSettings }) => {
+        ({ games, players, stats, weeklies, settings: initialSettings }) => {
             type BrowserGameRow = ConfigMockGameRow;
             type BrowserPlayerRow = ConfigMockPlayerRow;
             type BrowserPageRequest = ConfigMockPageRequest;
             type BrowserInvokeRequest = ConfigMockInvokeRequest;
+            type BrowserStatsPayload = StatsStatePayload;
+            type BrowserEventRecord = {
+                eventName: string;
+                callbackId: number;
+            };
 
             const cloneJson = <T>(value: T): T =>
                 JSON.parse(JSON.stringify(value)) as T;
             let settings = cloneJson(initialSettings);
             let activeSettings = cloneJson(settings);
+            let statsState: BrowserStatsPayload = cloneJson(stats);
+            const eventListeners = new Map<string, number[]>();
+            const eventListenerRecords = new Map<number, BrowserEventRecord>();
+            let nextEventListenerId = 1;
 
             const pageSlice = <T>(
                 rows: readonly T[],
@@ -257,30 +321,7 @@ export async function installConfigMock(
                 monitor_catalog: [],
             });
 
-            const statsPayload = () => ({
-                status: "ok",
-                ready: true,
-                games: 0,
-                analysis_running: false,
-                analysis_running_mode: null,
-                message: "",
-                query: "",
-                analysis: {
-                    MapData: {},
-                    CommanderData: {},
-                    AllyCommanderData: {},
-                    DifficultyData: {},
-                    RegionData: {},
-                    PlayerData: {},
-                    AmonData: {},
-                    MapDataReady: true,
-                    UnitData: {
-                        main: {},
-                        ally: {},
-                        amon: {},
-                    },
-                },
-            });
+            const statsPayload = () => cloneJson(statsState);
 
             window.__SCO_ACTION_REQUESTS__ = [];
             window.__SCO_CONFIG_GET_REQUESTS__ = [];
@@ -290,7 +331,34 @@ export async function installConfigMock(
             window.__SCO_STATS_REQUESTS__ = [];
             window.__SCO_TAB_REQUESTS__ = [];
             window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
-                unregisterListener: () => {},
+                unregisterListener: (eventName: string, eventId: number) => {
+                    const record = eventListenerRecords.get(eventId);
+                    if (!record || record.eventName !== eventName) {
+                        return;
+                    }
+                    const listeners = eventListeners.get(eventName) || [];
+                    eventListeners.set(
+                        eventName,
+                        listeners.filter(
+                            (callbackId) => callbackId !== record.callbackId,
+                        ),
+                    );
+                    eventListenerRecords.delete(eventId);
+                },
+            };
+            window.__emitMockConfigEvent = (eventName, payload) => {
+                for (const callbackId of eventListeners.get(eventName) || []) {
+                    const callback = window[`_${callbackId}`];
+                    if (typeof callback === "function") {
+                        callback({
+                            event: eventName,
+                            payload,
+                        });
+                    }
+                }
+            };
+            window.__setMockStatsPayload = (payload) => {
+                statsState = cloneJson(payload);
             };
 
             window.__TAURI_INTERNALS__ = {
@@ -302,9 +370,27 @@ export async function installConfigMock(
                         return "0.1.0";
                     }
                     if (command === "plugin:event|listen") {
-                        return 1;
+                        const eventName = request?.event || "";
+                        const callbackId = Number(request?.handler || 0);
+                        const eventId = nextEventListenerId++;
+                        const listeners = eventListeners.get(eventName) || [];
+                        eventListeners.set(eventName, [
+                            ...listeners,
+                            callbackId,
+                        ]);
+                        eventListenerRecords.set(eventId, {
+                            eventName,
+                            callbackId,
+                        });
+                        return eventId;
                     }
                     if (command === "plugin:event|unlisten") {
+                        const eventName = request?.event || "";
+                        const eventId = Number(request?.eventId || 0);
+                        window.__TAURI_EVENT_PLUGIN_INTERNALS__.unregisterListener?.(
+                            eventName,
+                            eventId,
+                        );
                         return null;
                     }
                     if (command === "plugin:event|emit") {
@@ -372,7 +458,12 @@ export async function installConfigMock(
                         };
                     }
                     if (command === "config_stats_action") {
-                        return { status: "ok", message: "ok" };
+                        return {
+                            status: "ok",
+                            message: "ok",
+                            result: { ok: true },
+                            stats: statsPayload(),
+                        };
                     }
                     if (command === "config_replay_show") {
                         return { status: "ok", message: "Replay sent" };

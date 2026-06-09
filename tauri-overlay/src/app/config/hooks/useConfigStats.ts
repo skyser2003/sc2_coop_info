@@ -46,6 +46,8 @@ type PendingStatsFilterTiming = {
     mode: StatsRefreshMode;
 };
 
+type StatsProgressPayload = StatisticsPayload["scan_progress"];
+
 type UseConfigStatsArgs = {
     activeTab: string;
     draft: AppSettings | null;
@@ -227,8 +229,122 @@ function applyStatsActionPayload(
     console.log("[SCO/ui] applying stats action payload", payload);
     setTabData((current) => ({
         ...current,
-        statistics: payload.stats,
+        statistics: mergeStatisticsPayload(current.statistics, payload.stats),
     }));
+}
+
+function readProgressNumber(
+    progress: StatsProgressPayload | null | undefined,
+    key: keyof StatsProgressPayload,
+): number {
+    const value = progress?.[key];
+    return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function progressStatus(
+    progress: StatsProgressPayload | null | undefined,
+): string {
+    return typeof progress?.status === "string"
+        ? progress.status.trim().toLocaleLowerCase()
+        : "";
+}
+
+function progressStage(
+    progress: StatsProgressPayload | null | undefined,
+): string {
+    return typeof progress?.stage === "string"
+        ? progress.stage.trim().toLocaleLowerCase()
+        : "";
+}
+
+function progressCompleted(
+    progress: StatsProgressPayload | null | undefined,
+): number {
+    return readProgressNumber(progress, "completed");
+}
+
+function progressElapsed(
+    progress: StatsProgressPayload | null | undefined,
+): number {
+    return readProgressNumber(progress, "elapsed_ms");
+}
+
+function progressIsTerminal(
+    progress: StatsProgressPayload | null | undefined,
+): boolean {
+    const status = progressStatus(progress);
+    const stage = progressStage(progress);
+    return (
+        status === "completed" ||
+        stage === "analysis_ready" ||
+        stage === "analysis_failed" ||
+        stage === "completed"
+    );
+}
+
+function progressIsActive(
+    progress: StatsProgressPayload | null | undefined,
+): boolean {
+    const status = progressStatus(progress);
+    const stage = progressStage(progress);
+    if (status === "idle" || progressIsTerminal(progress)) {
+        return false;
+    }
+    return (
+        status === "parsing" ||
+        stage.includes("running") ||
+        stage.includes("queued") ||
+        stage.includes("starting") ||
+        stage.includes("collecting") ||
+        stage.includes("parsing") ||
+        stage.includes("finalizing") ||
+        stage.includes("building")
+    );
+}
+
+function shouldKeepCurrentProgress(
+    current: StatisticsPayload,
+    next: StatisticsPayload,
+): boolean {
+    const currentProgress = current.scan_progress;
+    const nextProgress = next.scan_progress;
+    if (!currentProgress || !nextProgress || !next.analysis_running) {
+        return false;
+    }
+    if (progressIsTerminal(nextProgress)) {
+        return false;
+    }
+    if (progressIsTerminal(currentProgress)) {
+        return current.analysis_running && next.analysis_running;
+    }
+    if (!progressIsActive(currentProgress)) {
+        return false;
+    }
+    if (!progressIsActive(nextProgress)) {
+        return true;
+    }
+    const currentCompleted = progressCompleted(currentProgress);
+    const nextCompleted = progressCompleted(nextProgress);
+    if (currentCompleted !== nextCompleted) {
+        return currentCompleted > nextCompleted;
+    }
+    return progressElapsed(currentProgress) > progressElapsed(nextProgress);
+}
+
+function mergeStatisticsPayload(
+    current: StatisticsPayload | null,
+    next: StatisticsPayload,
+): StatisticsPayload {
+    if (current === null) {
+        return next;
+    }
+    if (!shouldKeepCurrentProgress(current, next)) {
+        return next;
+    }
+    return {
+        ...next,
+        scan_progress: current.scan_progress,
+    };
 }
 
 export function useConfigStats({
@@ -256,11 +372,15 @@ export function useConfigStats({
     const pendingStatsFilterTimingRef =
         React.useRef<PendingStatsFilterTiming | null>(null);
     const analysisStatusAttachedRef = React.useRef<boolean>(false);
-    const activeTabRef = React.useRef<string>(activeTab);
+    const tabDataRef = React.useRef<TabDataState>(tabData);
+    const refreshStatisticsRef = React.useRef<
+        UseConfigStatsResult["refreshStatistics"] | null
+    >(null);
+    const eventRefreshInFlightRef = React.useRef<boolean>(false);
 
     React.useEffect(() => {
-        activeTabRef.current = activeTab;
-    }, [activeTab]);
+        tabDataRef.current = tabData;
+    }, [tabData]);
 
     React.useEffect(() => {
         statsFiltersRef.current = statsState.filters;
@@ -309,7 +429,9 @@ export function useConfigStats({
         const refreshStartedAt = nowMs();
         const filters = customFilters || statsState.filters;
         const query = statsFiltersToQuery(filters);
-        const existingQuery = tabData.statistics && tabData.statistics.query;
+        const existingQuery =
+            tabDataRef.current.statistics &&
+            tabDataRef.current.statistics.query;
         const now = Date.now();
         const completedQuery = statsQueryRef.current;
         const pendingFilterTiming =
@@ -401,7 +523,10 @@ export function useConfigStats({
             const stateApplyStartedAt = nowMs();
             setTabData((current) => ({
                 ...current,
-                statistics: payload as StatisticsPayload,
+                statistics: mergeStatisticsPayload(
+                    current.statistics,
+                    payload as StatisticsPayload,
+                ),
             }));
             const stateApplyEndedAt = nowMs();
             logStatsE2eTiming("refresh_state_queued", {
@@ -483,6 +608,22 @@ export function useConfigStats({
         }
     }
 
+    refreshStatisticsRef.current = refreshStatistics;
+
+    function requestStatsRefreshFromEvent(): void {
+        if (eventRefreshInFlightRef.current) {
+            return;
+        }
+        eventRefreshInFlightRef.current = true;
+        void (async () => {
+            try {
+                await refreshStatisticsRef.current?.(true, null, true);
+            } finally {
+                eventRefreshInFlightRef.current = false;
+            }
+        })();
+    }
+
     React.useEffect(() => {
         let isMounted = true;
         let unlisten: null | (() => void) = null;
@@ -507,9 +648,7 @@ export function useConfigStats({
                         ) {
                             safeStatus(payload.message);
                         }
-                        if (activeTabRef.current === "statistics") {
-                            void refreshStatistics(true, null, true);
-                        }
+                        requestStatsRefreshFromEvent();
                     },
                 );
             } catch (error) {
@@ -545,7 +684,10 @@ export function useConfigStats({
                 }
                 setTabData((current) => ({
                     ...current,
-                    statistics: payload.stats as StatisticsPayload,
+                    statistics: mergeStatisticsPayload(
+                        current.statistics,
+                        payload.stats as StatisticsPayload,
+                    ),
                 }));
             })
             .catch((error) => {
@@ -576,16 +718,24 @@ export function useConfigStats({
                         if (!progress || typeof progress !== "object") {
                             return;
                         }
+                        const typedProgress =
+                            progress as StatisticsPayload["scan_progress"];
                         setTabData((current) => ({
                             ...current,
                             statistics: current.statistics
                                 ? {
                                       ...current.statistics,
-                                      scan_progress:
-                                          progress as StatisticsPayload["scan_progress"],
+                                      scan_progress: typedProgress,
                                   }
                                 : current.statistics,
                         }));
+                        if (
+                            progressIsTerminal(typedProgress) ||
+                            (tabDataRef.current.statistics === null &&
+                                progressIsActive(typedProgress))
+                        ) {
+                            requestStatsRefreshFromEvent();
+                        }
                     },
                 );
             } catch (error) {

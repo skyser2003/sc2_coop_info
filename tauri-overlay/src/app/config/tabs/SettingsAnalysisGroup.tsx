@@ -63,8 +63,8 @@ export default function SettingsAnalysisGroup({
         !simpleAnalysisRunning &&
         normalizedSimpleAnalysisStatusLower === "simple analysis: completed." &&
         normalizedAnalysisMessage.length > 0;
-    const preferDetailedProgressTotal =
-        detailedAnalysisRunning ||
+    const preferAnalysisProgressTotal =
+        analysisRunning ||
         normalizedDetailedAnalysisStatusLower.includes("stopping") ||
         normalizedDetailedAnalysisStatusLower.includes("stopped");
     const showAnalysisMessage =
@@ -222,7 +222,7 @@ export default function SettingsAnalysisGroup({
                     languageManager,
                     analysisTotalValidFiles,
                     analysisDetailedParsedCount,
-                    preferDetailedProgressTotal,
+                    preferAnalysisProgressTotal,
                 )}
             </div>
         </section>
