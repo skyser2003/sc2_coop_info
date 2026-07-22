@@ -354,8 +354,7 @@ export function useConfigStats({
 }: UseConfigStatsArgs): UseConfigStatsResult {
     const frontendLoaded = draft !== null;
     const observesStatistics = frontendLoaded && activeTab === "statistics";
-    const { analysisStatus, refreshAnalysisStatus } =
-        useConfigAnalysisStatus(frontendLoaded);
+    const { analysisStatus } = useConfigAnalysisStatus(frontendLoaded);
     const [statsState, setStatsState] =
         React.useState<StatisticsState>(defaultStatsState);
     const statsFiltersRef = React.useRef<StatisticsFilters>(
@@ -718,7 +717,6 @@ export function useConfigStats({
         if (observesStatistics) {
             applyStatsActionPayload(result, setTabData);
         }
-        await refreshAnalysisStatus();
     }
 
     async function runDetailedAnalysis(): Promise<void> {
@@ -730,7 +728,6 @@ export function useConfigStats({
         if (observesStatistics) {
             applyStatsActionPayload(result, setTabData);
         }
-        await refreshAnalysisStatus();
     }
 
     async function stopDetailedAnalysis(): Promise<void> {
@@ -742,7 +739,6 @@ export function useConfigStats({
         if (observesStatistics) {
             applyStatsActionPayload(result, setTabData);
         }
-        await refreshAnalysisStatus();
     }
 
     async function dumpData(): Promise<void> {
@@ -758,7 +754,6 @@ export function useConfigStats({
         if (observesStatistics) {
             applyStatsActionPayload(result, setTabData);
         }
-        await refreshAnalysisStatus();
     }
 
     async function setDetailedAnalysisAtStart(enabled: boolean): Promise<void> {

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type {
+    AnalysisStatusPayload,
     ReplayScanProgressPayload,
     StatsAnalysisPayload,
     StatsStatePayload,
@@ -114,6 +115,28 @@ function completedStats(
     });
 }
 
+function analysisStatusPayload(
+    stats: StatsStatePayload,
+): AnalysisStatusPayload {
+    return {
+        status: "ok",
+        ready: stats.ready,
+        analysis_running: stats.analysis_running,
+        ...(typeof stats.analysis_running_mode === "string"
+            ? { analysis_running_mode: stats.analysis_running_mode }
+            : {}),
+        current_status:
+            stats.analysis_running_mode === "simple"
+                ? stats.simple_analysis_status
+                : stats.detailed_analysis_status,
+        simple_analysis_status: stats.simple_analysis_status,
+        detailed_analysis_status: stats.detailed_analysis_status,
+        detailed_parsed_count: stats.detailed_parsed_count,
+        total_valid_files: stats.total_valid_files,
+        scan_progress: stats.scan_progress,
+    };
+}
+
 async function statsRequestCount(page: Page): Promise<number> {
     return page.evaluate(() => window.__SCO_STATS_REQUESTS__.length);
 }
@@ -163,9 +186,7 @@ test.describe("Config statistics lazy loading", () => {
         });
 
         await expect(page.locator("#app-status")).toHaveText("Settings loaded");
-        await expect
-            .poll(() => analysisStatusRequestCount(page))
-            .toBeGreaterThan(0);
+        await expect.poll(() => analysisStatusRequestCount(page)).toBe(1);
         await expect(
             page.getByText("Detailed analysis: loaded from cache (8/10).", {
                 exact: true,
@@ -196,20 +217,34 @@ test.describe("Config statistics lazy loading", () => {
             waitUntil: "domcontentloaded",
         });
         await expect(page.locator("#app-status")).toHaveText("Settings loaded");
-        await expect
-            .poll(() => analysisStatusRequestCount(page))
-            .toBeGreaterThan(0);
+        await expect.poll(() => analysisStatusRequestCount(page)).toBe(1);
 
-        await setMockStats(page, completedStats(9));
+        const statusRequestsBeforeEvent =
+            await analysisStatusRequestCount(page);
+        for (const completedCount of [3, 4, 5]) {
+            const running = detailedRunningStats(
+                progressPayload(
+                    "detailed_analysis_running",
+                    "Parsing",
+                    10,
+                    completedCount,
+                ),
+            );
+            await setMockStats(page, running);
+            await emitConfigEvent(
+                page,
+                "sco://analysis-status",
+                analysisStatusPayload(running),
+            );
+        }
+
+        const completed = completedStats(9);
+        await setMockStats(page, completed);
         await emitConfigEvent(
             page,
-            "sco://replay-scan-progress",
-            progressPayload("analysis_ready", "Completed", 10, 10),
+            "sco://analysis-status",
+            analysisStatusPayload(completed),
         );
-        await emitConfigEvent(page, "sco://analysis-completed", {
-            mode: "detailed",
-            message: "Detailed analysis cache generation completed.",
-        });
 
         await expect(
             page.getByText("Detailed analysis: loaded from cache (9/10).", {
@@ -218,6 +253,9 @@ test.describe("Config statistics lazy loading", () => {
         ).toBeVisible();
         expect(await statsRequestCount(page)).toBe(0);
         expect(await statsActionRequestCount(page)).toBe(0);
+        expect(await analysisStatusRequestCount(page)).toBe(
+            statusRequestsBeforeEvent,
+        );
         await expect(page.locator("#app-status")).toHaveText("Settings loaded");
     });
 
@@ -275,12 +313,16 @@ test.describe("Config statistics lazy loading", () => {
             page.getByRole("button", { name: "Dump Data" }),
         ).toBeDisabled();
         const requestsBeforeCompletion = await statsRequestCount(page);
+        const statusRequestsBeforeCompletion =
+            await analysisStatusRequestCount(page);
 
-        await setMockStats(page, completedStats(9));
-        await emitConfigEvent(page, "sco://analysis-completed", {
-            mode: "detailed",
-            message: "Detailed analysis cache generation completed.",
-        });
+        const completed = completedStats(9);
+        await setMockStats(page, completed);
+        await emitConfigEvent(
+            page,
+            "sco://analysis-status",
+            analysisStatusPayload(completed),
+        );
 
         await expect
             .poll(() => statsRequestCount(page))
@@ -294,5 +336,8 @@ test.describe("Config statistics lazy loading", () => {
                 exact: true,
             }),
         ).toHaveCount(0);
+        expect(await analysisStatusRequestCount(page)).toBe(
+            statusRequestsBeforeCompletion,
+        );
     });
 });

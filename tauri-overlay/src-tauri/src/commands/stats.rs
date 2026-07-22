@@ -485,7 +485,7 @@ impl StatsCommands {
             action,
             request_started_at.elapsed().as_millis()
         );
-        Ok(StatsActionPayload {
+        let response = StatsActionPayload {
             status: "ok",
             result: OverlayActionResult {
                 ok: true,
@@ -493,6 +493,9 @@ impl StatsCommands {
             },
             message: "Action processed".to_string(),
             stats: Some(stats.as_payload_typed(state.replay_scan_progress().as_payload())),
-        })
+        };
+        drop(stats);
+        TauriOverlayOps::emit_current_analysis_status(&app);
+        Ok(response)
     }
 }

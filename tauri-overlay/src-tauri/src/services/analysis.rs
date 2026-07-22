@@ -14,13 +14,14 @@ use tauri::{AppHandle, Emitter, Manager, Wry};
 
 use crate::stats_state::AnalysisOutcome;
 use crate::{
-    AnalysisCompletedPayload, AnalysisMode, BackendState, PathManagerOps,
+    AnalysisCompletedPayload, AnalysisMode, AnalysisStatusPayload, BackendState, PathManagerOps,
     QueuedReplayCacheEntrySink, ReplayAnalysis, ReplayCacheDatabase, StartupAnalysisRequestOutcome,
     StartupAnalysisTrigger, StatsSnapshot, StatsState, TauriOverlayOps, UNLIMITED_REPLAY_LIMIT,
 };
 
 const SCO_REPLAY_SCAN_PROGRESS_EVENT: &str = "sco://replay-scan-progress";
 const SCO_ANALYSIS_COMPLETED_EVENT: &str = "sco://analysis-completed";
+const SCO_ANALYSIS_STATUS_EVENT: &str = "sco://analysis-status";
 
 enum ProgressEmitterCommand {
     Stop,
@@ -46,10 +47,33 @@ impl TauriOverlayOps {
         if let Err(error) = app.emit(SCO_REPLAY_SCAN_PROGRESS_EVENT, payload) {
             crate::sco_warn!("[SCO/stats] failed to emit scan progress: {error}");
         }
+        TauriOverlayOps::emit_analysis_status(app);
     }
 
     pub fn emit_current_replay_scan_progress(app: &AppHandle<Wry>) {
         TauriOverlayOps::emit_replay_scan_progress(app, true);
+    }
+
+    pub fn emit_current_analysis_status(app: &AppHandle<Wry>) {
+        TauriOverlayOps::emit_analysis_status(app);
+    }
+
+    fn emit_analysis_status(app: &AppHandle<Wry>) {
+        let state = app.state::<BackendState>();
+        let stats_handle = state.stats_handle();
+        let stats = match stats_handle.lock() {
+            Ok(stats) => stats,
+            Err(error) => {
+                crate::sco_warn!("[SCO/stats] failed to access analysis status: {error}");
+                return;
+            }
+        };
+        let payload = AnalysisStatusPayload::new(&stats, state.replay_scan_progress().as_payload());
+        drop(stats);
+
+        if let Err(error) = app.emit(SCO_ANALYSIS_STATUS_EVENT, payload) {
+            crate::sco_warn!("[SCO/stats] failed to emit analysis status: {error}");
+        }
     }
 
     fn emit_analysis_completed(app: &AppHandle<Wry>, mode: AnalysisMode, message: &str) {
