@@ -231,6 +231,10 @@ impl ReplayMapAnalysisFlags {
     fn is_malwarfare(&self) -> bool {
         self.malwarfare
     }
+
+    fn is_cradle_of_death(&self) -> bool {
+        self.cradle_of_death
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

@@ -553,6 +553,60 @@ fn queued_detailed_cache_sink_persists_checked_replay_identities() {
 }
 
 #[test]
+fn detailed_cache_identities_exclude_unidentified_cradle_replays() {
+    let root = unique_temp_path("replay_cache_db_cradle_identity_refresh");
+    std::fs::create_dir_all(&root).expect("temp root should be created");
+    let cache_path = root.join("cache_overall_stats.sqlite3");
+    let mut database =
+        ReplayCacheDatabase::open_for_cache_path(&cache_path).expect("database should open");
+
+    let mut unidentified_cradle = sample_cache_entry(
+        "unidentified-cradle.SC2Replay",
+        "unidentified-cradle-hash",
+        "2026:01:01:00:05:00",
+        true,
+        "Defeat",
+    );
+    unidentified_cradle.map_name = "Cradle of Death".to_string();
+    unidentified_cradle.comp = Some("Unidentified AI".to_string());
+    let mut identified_cradle = sample_cache_entry(
+        "identified-cradle.SC2Replay",
+        "identified-cradle-hash",
+        "2026:01:01:00:06:00",
+        true,
+        "Victory",
+    );
+    identified_cradle.map_name = "Cradle of Death".to_string();
+    identified_cradle.comp = Some("Shadow Disruption".to_string());
+    let mut unidentified_other_map = sample_cache_entry(
+        "unidentified-other.SC2Replay",
+        "unidentified-other-hash",
+        "2026:01:01:00:07:00",
+        true,
+        "Defeat",
+    );
+    unidentified_other_map.comp = Some("Unidentified AI".to_string());
+
+    database
+        .upsert_entries_preserving_detailed(&[
+            unidentified_cradle,
+            identified_cradle,
+            unidentified_other_map,
+        ])
+        .expect("entries should save");
+
+    let identities_by_hash = database
+        .load_detailed_cache_identities_by_hash()
+        .expect("detailed cache identities should load");
+
+    assert!(!identities_by_hash.contains_key("unidentified-cradle-hash"));
+    assert!(identities_by_hash.contains_key("identified-cradle-hash"));
+    assert!(identities_by_hash.contains_key("unidentified-other-hash"));
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
 fn imports_legacy_json_cache_file_into_database() {
     let root = unique_temp_path("replay_cache_db_import");
     std::fs::create_dir_all(&root).expect("temp root should be created");

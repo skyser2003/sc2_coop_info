@@ -160,5 +160,7 @@ pub(super) struct UnitDiedDetailHandlerInput<'event, 'snapshot> {
     pub(super) self_killing_units: &'event HashSet<String>,
     pub(super) duplicating_units: &'event HashSet<String>,
     pub(super) salvage_units: &'event HashSet<String>,
+    pub(super) startup_removed_wave_units: &'event mut HashSet<String>,
+    pub(super) units_in_waves: &'event HashSet<String>,
     pub(super) string_sets: &'event ReplayEventStringSets,
 }

@@ -191,6 +191,7 @@ impl DetailedReplayAnalyzer {
         let mut outlaw_order_seen: HashSet<String> = HashSet::new();
         let mut wave_units = WaveUnitsState::default();
         let mut identified_waves: IdentifiedWavesMap = BTreeMap::new();
+        let mut startup_removed_wave_units = HashSet::<String>::new();
         let mut killbot_feed = vec![0_i64, 0, 0];
         let mut custom_kill_count: replay_event_handlers::NestedPlayerCountMap = IndexMap::new();
         let mut used_mutator_spider_mines: HashSet<i64> = HashSet::new();
@@ -701,6 +702,8 @@ impl DetailedReplayAnalyzer {
                             self_killing_units: self_killing_units_set,
                             duplicating_units: duplicating_units_set,
                             salvage_units: salvage_units_set,
+                            startup_removed_wave_units: &mut startup_removed_wave_units,
+                            units_in_waves: dictionaries.units_in_waves,
                             string_sets: event_string_sets,
                         },
                     );
@@ -779,7 +782,14 @@ impl DetailedReplayAnalyzer {
         let comp = DetailedReplayAnalyzer::enemy_comp_from_identified_waves(
             &identified_waves,
             dictionaries.unit_comp_dict,
-        );
+        )
+        .or_else(|| {
+            DetailedReplayAnalyzer::enemy_comp_from_startup_removed_units(
+                &startup_removed_wave_units,
+                dictionaries.unit_comp_dict,
+            )
+        })
+        .unwrap_or_else(|| "Unidentified AI".to_string());
         timings.finish(ReplayReportTimingSpan::PostBonusComp, bonus_comp_started);
 
         let custom_icons_started = timings.start();

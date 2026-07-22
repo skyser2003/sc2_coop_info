@@ -101,6 +101,8 @@ impl ReplayUnitDeathEventHandlers {
             self_killing_units,
             duplicating_units,
             salvage_units,
+            startup_removed_wave_units,
+            units_in_waves,
             string_sets,
         } = input;
         let mut update = UnitDiedDetailUpdate {
@@ -123,6 +125,17 @@ impl ReplayUnitDeathEventHandlers {
             .unwrap_or(false);
         let killing_player_is_main = killing_player == Some(main_player);
         let killing_player_is_ally = killing_player == Some(ally_player);
+
+        // Cradle removes composition-specific template units during initialization. This is the
+        // only composition evidence available when a replay ends before its first attack wave.
+        if map_flags.is_cradle_of_death()
+            && event.gameloop == 0
+            && losing_player_is_amon
+            && units_in_waves.contains(killed_unit_type)
+        {
+            startup_removed_wave_units.insert(killed_unit_type.to_owned());
+        }
+
         let commander = killing_player
             .and_then(|pid| commander_by_player.get(&pid))
             .map(String::as_str);

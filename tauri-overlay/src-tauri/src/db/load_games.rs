@@ -53,6 +53,10 @@ impl ReplayCacheDatabase {
                 SELECT hash, date_seconds
                 FROM replay_cache_entries
                 WHERE detailed_analysis = 1
+                  AND NOT (
+                      map_name = 'Cradle of Death'
+                      AND COALESCE(TRIM(comp), '') IN ('', 'Unidentified AI')
+                  )
 
                 UNION
 

@@ -394,7 +394,7 @@ impl DetailedReplayAnalyzer {
     pub(super) fn enemy_comp_from_identified_waves(
         identified_waves: &IdentifiedWavesMap,
         unit_comp_dict: &HashMap<String, Vec<HashSet<String>>>,
-    ) -> String {
+    ) -> Option<String> {
         let mut ai_order = unit_comp_dict.keys().collect::<Vec<&String>>();
         ai_order.sort();
         let mut scores = ai_order
@@ -439,9 +439,58 @@ impl DetailedReplayAnalyzer {
             }
         }
 
-        best_ai
-            .cloned()
-            .unwrap_or_else(|| "Unidentified AI".to_string())
+        best_ai.cloned()
+    }
+
+    pub(super) fn enemy_comp_from_startup_removed_units(
+        removed_units: &HashSet<String>,
+        unit_comp_dict: &HashMap<String, Vec<HashSet<String>>>,
+    ) -> Option<String> {
+        const MINIMUM_MATCHED_UNITS: usize = 4;
+        const MINIMUM_F1_SCORE: f64 = 0.65;
+        const MINIMUM_RUNNER_UP_MARGIN: f64 = 0.1;
+
+        if removed_units.len() < MINIMUM_MATCHED_UNITS {
+            return None;
+        }
+
+        let mut scores = unit_comp_dict
+            .iter()
+            .map(|(composition, waves)| {
+                let roster = waves
+                    .iter()
+                    .flat_map(|wave| wave.iter().map(String::as_str))
+                    .collect::<HashSet<&str>>();
+                let matched_units = removed_units
+                    .iter()
+                    .filter(|unit| roster.contains(unit.as_str()))
+                    .count();
+                let precision = matched_units as f64 / removed_units.len() as f64;
+                let recall = if roster.is_empty() {
+                    0.0
+                } else {
+                    matched_units as f64 / roster.len() as f64
+                };
+                let f1_score = if precision + recall > 0.0 {
+                    2.0 * precision * recall / (precision + recall)
+                } else {
+                    0.0
+                };
+                (composition, matched_units, f1_score)
+            })
+            .collect::<Vec<(&String, usize, f64)>>();
+        scores.sort_by(|left, right| right.2.total_cmp(&left.2).then_with(|| left.0.cmp(right.0)));
+
+        let (best_composition, best_matches, best_score) = scores.first().copied()?;
+        let runner_up_score = scores.get(1).map(|score| score.2).unwrap_or_default();
+        if best_matches < MINIMUM_MATCHED_UNITS
+            || best_score < MINIMUM_F1_SCORE
+            || best_score - runner_up_score < MINIMUM_RUNNER_UP_MARGIN
+        {
+            return None;
+        }
+
+        Some(best_composition.clone())
     }
 
     pub(super) fn apply_custom_kill_icons(
