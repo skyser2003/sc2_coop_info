@@ -344,6 +344,8 @@ pub struct StatsState {
     analysis_running_mode: Option<AnalysisMode>,
     simple_analysis_status: String,
     detailed_analysis_status: String,
+    detailed_parsed_count: u64,
+    total_valid_files: u64,
     detailed_analysis_atstart: bool,
     prestige_names: std::collections::BTreeMap<String, LocalizedLabels>,
     message: String,
@@ -368,6 +370,8 @@ impl Default for StatsState {
                 AnalysisMode::Detailed,
                 "not started",
             ),
+            detailed_parsed_count: 0,
+            total_valid_files: 0,
             detailed_analysis_atstart: false,
             prestige_names: Default::default(),
             message: "No parsed statistics available yet.".to_string(),
@@ -421,6 +425,25 @@ impl StatsState {
 
     pub fn detailed_analysis_status(&self) -> &str {
         &self.detailed_analysis_status
+    }
+
+    pub fn simple_analysis_status(&self) -> &str {
+        &self.simple_analysis_status
+    }
+
+    pub fn current_analysis_status(&self) -> &str {
+        match self.analysis_running_mode {
+            Some(AnalysisMode::Simple) => &self.simple_analysis_status,
+            Some(AnalysisMode::Detailed) | None => &self.detailed_analysis_status,
+        }
+    }
+
+    pub fn detailed_parsed_count(&self) -> u64 {
+        self.detailed_parsed_count
+    }
+
+    pub fn total_valid_files(&self) -> u64 {
+        self.total_valid_files
     }
 
     pub fn message(&self) -> &str {
@@ -485,6 +508,15 @@ impl StatsState {
 
     pub fn set_detailed_analysis_status(&mut self, value: impl Into<String>) {
         self.detailed_analysis_status = value.into();
+    }
+
+    pub fn set_detailed_analysis_progress(
+        &mut self,
+        detailed_parsed_count: u64,
+        total_valid_files: u64,
+    ) {
+        self.detailed_parsed_count = detailed_parsed_count;
+        self.total_valid_files = total_valid_files;
     }
 
     pub fn set_detailed_analysis_atstart(&mut self, value: bool) {
@@ -556,8 +588,8 @@ impl StatsState {
         StatsStatePayload {
             ready: self.ready,
             games,
-            detailed_parsed_count: 0,
-            total_valid_files: 0,
+            detailed_parsed_count: self.detailed_parsed_count,
+            total_valid_files: self.total_valid_files,
             analysis,
             main_players,
             main_handles,
@@ -591,6 +623,7 @@ impl StatsState {
             })
             .count();
 
+        self.set_detailed_analysis_progress(detailed_parsed_count as u64, total_valid_files as u64);
         self.set_analysis_running(false);
         self.set_detailed_analysis_status(if detailed_parsed_count == 0 {
             TauriOverlayOps::analysis_status_text(AnalysisMode::Detailed, "not started")
@@ -622,6 +655,7 @@ impl StatsState {
             })
             .count();
 
+        self.set_detailed_analysis_progress(detailed_parsed_count as u64, total_valid_files as u64);
         self.set_analysis_running(false);
         self.set_detailed_analysis_status(if detailed_parsed_count == 0 {
             TauriOverlayOps::analysis_status_text(AnalysisMode::Detailed, "not started")

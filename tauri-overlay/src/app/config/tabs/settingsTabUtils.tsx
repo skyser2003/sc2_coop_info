@@ -252,12 +252,10 @@ export function renderAnalysisProgress(
     const progress = progressInput || {};
     const total = Number(progress.total_replay_files ?? progress.total ?? 0);
     const failed = Number(progress.parse_failed_files ?? progress.failed ?? 0);
-    const completed = Number(
-        progress.completed ??
-            Number(progress.files_already_cached ?? progress.cache_hits ?? 0) +
-                Number(
-                    progress.newly_parsed ?? progress.newly_parsed_files ?? 0,
-                ),
+    const completed = Math.max(
+        Number(progress.completed ?? 0),
+        Number(progress.files_already_cached ?? progress.cache_hits ?? 0) +
+            Number(progress.newly_parsed ?? progress.newly_parsed_files ?? 0),
     );
     const safeTotal =
         preferProgressTotal && total > 0

@@ -98,23 +98,10 @@ function detailedRunningStats(
     });
 }
 
-function simpleRunningStats(
-    progress: ReplayScanProgressPayload,
+function completedStats(
+    detailedParsedCount: number,
+    simpleStatus = "Simple analysis: completed.",
 ): StatsStatePayload {
-    return statsPayload({
-        analysisRunning: true,
-        analysisRunningMode: "simple",
-        detailedParsedCount: 0,
-        detailedStatus: "Detailed analysis: not started.",
-        games: 0,
-        message: "Simple analysis: scanning replays.",
-        progress,
-        simpleStatus: "Simple analysis: scanning replays.",
-        totalValidFiles: 0,
-    });
-}
-
-function completedStats(detailedParsedCount: number): StatsStatePayload {
     return statsPayload({
         analysisRunning: false,
         detailedParsedCount,
@@ -122,13 +109,21 @@ function completedStats(detailedParsedCount: number): StatsStatePayload {
         games: 10,
         message: "Detailed analysis cache generation completed.",
         progress: progressPayload("analysis_ready", "Completed", 10, 10),
-        simpleStatus: "Simple analysis: completed.",
+        simpleStatus,
         totalValidFiles: 10,
     });
 }
 
 async function statsRequestCount(page: Page): Promise<number> {
     return page.evaluate(() => window.__SCO_STATS_REQUESTS__.length);
+}
+
+async function statsActionRequestCount(page: Page): Promise<number> {
+    return page.evaluate(() => window.__SCO_STATS_ACTION_REQUESTS__.length);
+}
+
+async function analysisStatusRequestCount(page: Page): Promise<number> {
+    return page.evaluate(() => window.__SCO_ANALYSIS_STATUS_REQUESTS__.length);
 }
 
 async function setMockStats(
@@ -155,23 +150,40 @@ async function emitConfigEvent(
     );
 }
 
-test.describe("Config analysis startup events", () => {
-    test("shows completed cached analysis when startup finishes before settings loads", async ({
+test.describe("Config statistics lazy loading", () => {
+    test("loads completed analysis status without loading statistics on startup", async ({
         page,
     }) => {
         await installConfigMock(page, {
-            stats: completedStats(8),
+            stats: completedStats(8, "Simple analysis: waiting for startup."),
         });
 
         await page.goto("/#/config/settings", {
             waitUntil: "domcontentloaded",
         });
 
-        await expect(page.getByText("Progress: 8/10")).toBeVisible();
+        await expect(page.locator("#app-status")).toHaveText("Settings loaded");
+        await expect
+            .poll(() => analysisStatusRequestCount(page))
+            .toBeGreaterThan(0);
+        await expect(
+            page.getByText("Detailed analysis: loaded from cache (8/10).", {
+                exact: true,
+            }),
+        ).toBeVisible();
+        await expect(
+            page.getByText("No statistics loaded.", { exact: true }),
+        ).toHaveCount(0);
+        await expect(
+            page.getByText("Simple analysis: waiting for startup.", {
+                exact: true,
+            }),
+        ).toHaveCount(0);
         expect(await statsRequestCount(page)).toBe(0);
+        expect(await statsActionRequestCount(page)).toBe(0);
     });
 
-    test("refreshes settings stats when detailed analysis completes after frontend loads", async ({
+    test("updates analysis status outside statistics without loading statistics", async ({
         page,
     }) => {
         await installConfigMock(page, {
@@ -183,16 +195,86 @@ test.describe("Config analysis startup events", () => {
         await page.goto("/#/config/settings", {
             waitUntil: "domcontentloaded",
         });
-        await expect(page.getByText("Progress: 2/10")).toBeVisible();
+        await expect(page.locator("#app-status")).toHaveText("Settings loaded");
+        await expect
+            .poll(() => analysisStatusRequestCount(page))
+            .toBeGreaterThan(0);
 
-        const midProgress = progressPayload(
-            "detailed_analysis_running",
-            "Parsing",
-            10,
-            4,
+        await setMockStats(page, completedStats(9));
+        await emitConfigEvent(
+            page,
+            "sco://replay-scan-progress",
+            progressPayload("analysis_ready", "Completed", 10, 10),
         );
-        await emitConfigEvent(page, "sco://replay-scan-progress", midProgress);
-        await expect(page.getByText("Progress: 4/10")).toBeVisible();
+        await emitConfigEvent(page, "sco://analysis-completed", {
+            mode: "detailed",
+            message: "Detailed analysis cache generation completed.",
+        });
+
+        await expect(
+            page.getByText("Detailed analysis: loaded from cache (9/10).", {
+                exact: true,
+            }),
+        ).toBeVisible();
+        expect(await statsRequestCount(page)).toBe(0);
+        expect(await statsActionRequestCount(page)).toBe(0);
+        await expect(page.locator("#app-status")).toHaveText("Settings loaded");
+    });
+
+    test("loads current statistics when the statistics tab opens", async ({
+        page,
+    }) => {
+        await installConfigMock(page, {
+            stats: completedStats(9),
+        });
+
+        await page.goto("/#/config/settings", {
+            waitUntil: "domcontentloaded",
+        });
+        expect(await statsRequestCount(page)).toBe(0);
+        expect(await statsActionRequestCount(page)).toBe(0);
+
+        await page.getByRole("tab", { name: "Statistics" }).click();
+
+        await expect.poll(() => statsRequestCount(page)).toBeGreaterThan(0);
+        await expect(
+            page.getByRole("button", { name: "Dump Data" }),
+        ).toBeEnabled();
+        expect(await statsActionRequestCount(page)).toBe(0);
+
+        await page.getByRole("tab", { name: "Settings" }).click();
+        await expect(
+            page.getByText("Detailed analysis: loaded from cache (9/10).", {
+                exact: true,
+            }),
+        ).toBeVisible();
+        await expect(
+            page.getByText("Detailed analysis cache generation completed.", {
+                exact: true,
+            }),
+        ).toHaveCount(0);
+        await expect(
+            page.getByText("No statistics loaded.", { exact: true }),
+        ).toHaveCount(0);
+    });
+
+    test("refreshes statistics on completion without displaying its message", async ({
+        page,
+    }) => {
+        await installConfigMock(page, {
+            stats: detailedRunningStats(
+                progressPayload("detailed_analysis_running", "Parsing", 10, 2),
+            ),
+        });
+
+        await page.goto("/#/config/statistics", {
+            waitUntil: "domcontentloaded",
+        });
+        await expect.poll(() => statsRequestCount(page)).toBeGreaterThan(0);
+        await expect(
+            page.getByRole("button", { name: "Dump Data" }),
+        ).toBeDisabled();
+        const requestsBeforeCompletion = await statsRequestCount(page);
 
         await setMockStats(page, completedStats(9));
         await emitConfigEvent(page, "sco://analysis-completed", {
@@ -200,33 +282,17 @@ test.describe("Config analysis startup events", () => {
             message: "Detailed analysis cache generation completed.",
         });
 
-        await expect.poll(() => statsRequestCount(page)).toBeGreaterThan(0);
-        await expect(page.getByText("Progress: 9/10")).toBeVisible();
+        await expect
+            .poll(() => statsRequestCount(page))
+            .toBeGreaterThan(requestsBeforeCompletion);
         await expect(
-            page.getByRole("button", { name: "Run detailed analysis" }),
+            page.getByRole("button", { name: "Dump Data" }),
         ).toBeEnabled();
-    });
-
-    test("uses live progress totals while simple analysis is running", async ({
-        page,
-    }) => {
-        await installConfigMock(page, {
-            stats: simpleRunningStats(
-                progressPayload("scan_running", "Parsing", 10, 1),
-            ),
-        });
-
-        await page.goto("/#/config/settings", {
-            waitUntil: "domcontentloaded",
-        });
-        await expect(page.getByText("Progress: 1/10")).toBeVisible();
-
-        await emitConfigEvent(
-            page,
-            "sco://replay-scan-progress",
-            progressPayload("scan_running", "Parsing", 10, 3),
-        );
-
-        await expect(page.getByText("Progress: 3/10")).toBeVisible();
+        await expect(page.locator("#app-status")).toHaveText("Settings loaded");
+        await expect(
+            page.getByText("Detailed analysis cache generation completed.", {
+                exact: true,
+            }),
+        ).toHaveCount(0);
     });
 });

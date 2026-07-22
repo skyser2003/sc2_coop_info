@@ -43,9 +43,10 @@ pub use active_window::{
 pub use app_settings::{AppSettings, PlayerNotes, RandomizerChoices};
 pub use backend_state::BackendState;
 pub use command_payloads::{
-    AnalysisCompletedPayload, ConfigChatPayload, ConfigPayload, ConfigPlayersPayload,
-    ConfigReplayVisualPayload, ConfigReplaysPayload, ConfigWeekliesPayload, OverlayActionResponse,
-    OverlayActionResult, StatsActionPayload, StatsAnalysisPayload, StatsStatePayload,
+    AnalysisCompletedPayload, AnalysisStatusPayload, ConfigChatPayload, ConfigPayload,
+    ConfigPlayersPayload, ConfigReplayVisualPayload, ConfigReplaysPayload, ConfigWeekliesPayload,
+    OverlayActionResponse, OverlayActionResult, StatsActionPayload, StatsAnalysisPayload,
+    StatsStatePayload,
 };
 pub use db::{
     QueuedReplayCacheEntrySink, ReplayCacheDatabase, ReplayCacheDbError,
@@ -191,6 +192,7 @@ impl TauriOverlayApp {
                 config::config_players_get,
                 config::config_weeklies_get,
                 stats::config_stats_get,
+                stats::config_analysis_status_get,
                 replays::config_replay_show,
                 replays::config_replay_chat,
                 replays::config_replay_visual,

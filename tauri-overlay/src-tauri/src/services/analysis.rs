@@ -578,9 +578,19 @@ impl TauriOverlayOps {
                 }
             };
 
+            let completed_progress = replay_scan_progress_for_thread.as_payload();
             if let Ok(mut guard) = analysis_state.lock()
                 && include_detailed
             {
+                let detailed_parsed_count = completed_progress.completed.max(
+                    completed_progress
+                        .cache_hits
+                        .saturating_add(completed_progress.newly_parsed),
+                );
+                guard.set_detailed_analysis_progress(
+                    detailed_parsed_count,
+                    completed_progress.total,
+                );
                 let replay_count = analysis_outcome.reported_replay_count();
                 if analysis_outcome.analysis_completed() {
                     guard.set_analysis_running_status(mode, "cache generation completed");

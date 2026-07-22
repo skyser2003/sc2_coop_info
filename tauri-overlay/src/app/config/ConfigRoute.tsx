@@ -102,7 +102,7 @@ function SettingsEditor({
         () => getTabIdFromPathname(location.pathname) ?? DEFAULT_TAB_ID,
         [location.pathname],
     );
-    const { statsActions, statsState } = useConfigStats({
+    const { analysisStatus, statsActions, statsState } = useConfigStats({
         activeTab,
         draft,
         isBusy,
@@ -538,7 +538,7 @@ function SettingsEditor({
                 isBusy,
                 settingsActions: {
                     isBusy,
-                    ready: tabData.statistics?.ready,
+                    ready: analysisStatus?.ready,
                     hasPendingChanges: dirty,
                     promptPath,
                     openFolderPath,
@@ -559,35 +559,29 @@ function SettingsEditor({
                     monitorOptions: monitorCatalog,
                     isHotkeyClearKey,
                     isHotkeyModifierKey,
-                    analysisRunning: Boolean(
-                        tabData.statistics?.analysis_running,
-                    ),
+                    analysisRunning: Boolean(analysisStatus?.analysis_running),
                     analysisRunningMode:
-                        typeof tabData.statistics?.analysis_running_mode ===
+                        typeof analysisStatus?.analysis_running_mode ===
                         "string"
-                            ? tabData.statistics.analysis_running_mode
+                            ? analysisStatus.analysis_running_mode
                             : null,
-                    simpleAnalysisStatus: String(
-                        tabData.statistics?.simple_analysis_status || "",
+                    analysisStatus: String(
+                        analysisStatus?.current_status || "",
                     ),
-                    detailedAnalysisStatus: String(
-                        tabData.statistics?.detailed_analysis_status || "",
-                    ),
-                    analysisMessage: String(tabData.statistics?.message || ""),
                     analysisScanProgress:
-                        tabData.statistics?.scan_progress &&
-                        typeof tabData.statistics.scan_progress === "object" &&
-                        !Array.isArray(tabData.statistics.scan_progress)
-                            ? (tabData.statistics.scan_progress as Record<
+                        analysisStatus?.scan_progress &&
+                        typeof analysisStatus.scan_progress === "object" &&
+                        !Array.isArray(analysisStatus.scan_progress)
+                            ? (analysisStatus.scan_progress as Record<
                                   string,
                                   JsonValue
                               >)
                             : null,
                     analysisTotalValidFiles: Number(
-                        tabData.statistics?.total_valid_files ?? 0,
+                        analysisStatus?.total_valid_files ?? 0,
                     ),
                     analysisDetailedParsedCount: Number(
-                        tabData.statistics?.detailed_parsed_count ?? 0,
+                        analysisStatus?.detailed_parsed_count ?? 0,
                     ),
                 },
                 refreshPlayers: () => loadTabData("players"),

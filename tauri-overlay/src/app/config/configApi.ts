@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+    AnalysisStatusPayload,
     AppSettings,
     ConfigChatPayload,
     ConfigPayload,
@@ -120,6 +121,12 @@ export function loadStatisticsRequest(
     });
 }
 
+export function loadAnalysisStatusRequest(): Promise<AnalysisStatusPayload> {
+    return invokeConfigCommand<AnalysisStatusPayload>(
+        "config_analysis_status_get",
+    );
+}
+
 export function postConfigActionRequest(
     action: string,
     payload: JsonObject = {},
@@ -138,10 +145,6 @@ export function postStatsActionRequest(
         action,
         payload,
     });
-}
-
-export function attachAnalysisStatusStreamRequest(): Promise<StatsActionPayload> {
-    return postStatsActionRequest("attach_analysis_status_stream");
 }
 
 export function showReplayRequest(

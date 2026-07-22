@@ -178,6 +178,59 @@ export async function installTauriMock(
             value: TestJsonValue | undefined,
             fallback: TestJsonObject,
         ): TestJsonValue => (value === undefined ? fallback : value);
+        const analysisStatusPayload = (): TestJsonObject => {
+            const configuredStats = payload
+                ? jsonValueOr(payload.stats, payload)
+                : {};
+            const stats = isJsonRecord(configuredStats) ? configuredStats : {};
+            const configuredProgress = stats.scan_progress;
+            const scanProgress = isJsonRecord(configuredProgress)
+                ? configuredProgress
+                : {
+                      stage: "idle",
+                      status: "Idle",
+                      parsing_status: "Idle",
+                      total: 0,
+                      total_replay_files: 0,
+                      cache_hits: 0,
+                      files_already_cached: 0,
+                      to_parse: 0,
+                      completed: 0,
+                      newly_parsed: 0,
+                      newly_parsed_files: 0,
+                      failed: 0,
+                      parse_failed_files: 0,
+                      parse_skipped: 0,
+                      parse_skipped_files: 0,
+                      elapsed_ms: 0,
+                      total_time_taken_ms: 0,
+                  };
+            const simpleAnalysisStatus = String(
+                stats.simple_analysis_status ||
+                    "Simple analysis: waiting for startup.",
+            );
+            const detailedAnalysisStatus = String(
+                stats.detailed_analysis_status ||
+                    "Detailed analysis: not started.",
+            );
+            return {
+                status: "ok",
+                ready: Boolean(stats.ready),
+                analysis_running: Boolean(stats.analysis_running),
+                ...(typeof stats.analysis_running_mode === "string"
+                    ? { analysis_running_mode: stats.analysis_running_mode }
+                    : {}),
+                current_status:
+                    stats.analysis_running_mode === "simple"
+                        ? simpleAnalysisStatus
+                        : detailedAnalysisStatus,
+                simple_analysis_status: simpleAnalysisStatus,
+                detailed_analysis_status: detailedAnalysisStatus,
+                detailed_parsed_count: Number(stats.detailed_parsed_count || 0),
+                total_valid_files: Number(stats.total_valid_files || 0),
+                scan_progress: scanProgress,
+            };
+        };
         const pageRows = (
             rows: readonly TestJsonObject[],
             pageRequest?: TestTauriRequest,
@@ -358,6 +411,9 @@ export async function installTauriMock(
                             },
                         },
                     };
+                }
+                if (command === "config_analysis_status_get") {
+                    return analysisStatusPayload();
                 }
                 if (command === "config_stats_action") {
                     return { status: "ok", message: "ok" };

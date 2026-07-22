@@ -24,9 +24,7 @@ export type SettingsActions = {
     isHotkeyModifierKey: (key: string) => boolean;
     analysisRunning?: boolean;
     analysisRunningMode?: string | null;
-    detailedAnalysisStatus?: string;
-    simpleAnalysisStatus?: string;
-    analysisMessage?: string;
+    analysisStatus?: string;
     analysisScanProgress?: Record<string, JsonValue> | null;
     analysisTotalValidFiles?: number;
     analysisDetailedParsedCount?: number;

@@ -6,8 +6,8 @@ use std::time::{Instant, SystemTime};
 use tauri::{State, Wry};
 
 use crate::{
-    AnalysisMode, BackendState, OverlayActionResult, ReplayAnalysis, StatsActionPayload,
-    StatsResponseBuildInput, StatsState, StatsStatePayload, TauriOverlayOps,
+    AnalysisMode, AnalysisStatusPayload, BackendState, OverlayActionResult, ReplayAnalysis,
+    StatsActionPayload, StatsResponseBuildInput, StatsState, StatsStatePayload, TauriOverlayOps,
     UNLIMITED_REPLAY_LIMIT, overlay_info,
 };
 
@@ -74,7 +74,28 @@ pub async fn config_stats_action(
     StatsCommands::config_stats_action(app, action, payload, state).await
 }
 
+#[tauri::command]
+pub fn config_analysis_status_get(
+    state: State<'_, BackendState>,
+) -> Result<AnalysisStatusPayload, String> {
+    StatsCommands::config_analysis_status_get(state)
+}
+
 impl StatsCommands {
+    pub fn config_analysis_status_get(
+        state: State<'_, BackendState>,
+    ) -> Result<AnalysisStatusPayload, String> {
+        state.log_request("get", "/config/analysis-status", &None);
+        let stats_handle = state.stats_handle();
+        let stats = stats_handle
+            .lock()
+            .map_err(|error| format!("Failed to access analysis state: {error}"))?;
+        Ok(AnalysisStatusPayload::new(
+            &stats,
+            state.replay_scan_progress().as_payload(),
+        ))
+    }
+
     fn current_stats_payload(
         path: &str,
         state: &BackendState,
@@ -391,6 +412,7 @@ impl StatsCommands {
                 stats.clear_prestige_names();
                 stats.set_analysis_terminal_status(AnalysisMode::Simple, "not started");
                 stats.set_analysis_terminal_status(AnalysisMode::Detailed, "not started");
+                stats.set_detailed_analysis_progress(0, 0);
                 state.set_detailed_analysis_stop_controller(None);
                 stats.set_message("No parsed statistics available yet.");
                 state.clear_current_replay_file();

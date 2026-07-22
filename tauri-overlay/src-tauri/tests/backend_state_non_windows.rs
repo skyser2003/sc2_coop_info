@@ -50,6 +50,8 @@ fn sync_detailed_analysis_status_from_replays_reports_cached_progress() {
         stats.detailed_analysis_status(),
         "Detailed analysis: loaded from cache (1/2)."
     );
+    assert_eq!(stats.detailed_parsed_count(), 1);
+    assert_eq!(stats.total_valid_files(), 2);
     assert!(!stats.analysis_running());
 }
 

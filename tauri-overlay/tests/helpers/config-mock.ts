@@ -1,5 +1,8 @@
 import type { Page } from "@playwright/test";
-import type { StatsStatePayload } from "../../src/bindings/overlay";
+import type {
+    AnalysisStatusPayload,
+    StatsStatePayload,
+} from "../../src/bindings/overlay";
 
 export type ConfigMockMutator = {
     name: {
@@ -174,6 +177,7 @@ export async function installConfigMock(
             type BrowserPageRequest = ConfigMockPageRequest;
             type BrowserInvokeRequest = ConfigMockInvokeRequest;
             type BrowserStatsPayload = StatsStatePayload;
+            type BrowserAnalysisStatusPayload = AnalysisStatusPayload;
             type BrowserEventRecord = {
                 eventName: string;
                 callbackId: number;
@@ -322,12 +326,34 @@ export async function installConfigMock(
             });
 
             const statsPayload = () => cloneJson(statsState);
+            const analysisStatusPayload = (): BrowserAnalysisStatusPayload => ({
+                status: "ok",
+                ready: statsState.ready,
+                analysis_running: statsState.analysis_running,
+                ...(typeof statsState.analysis_running_mode === "string"
+                    ? {
+                          analysis_running_mode:
+                              statsState.analysis_running_mode,
+                      }
+                    : {}),
+                current_status:
+                    statsState.analysis_running_mode === "simple"
+                        ? statsState.simple_analysis_status
+                        : statsState.detailed_analysis_status,
+                simple_analysis_status: statsState.simple_analysis_status,
+                detailed_analysis_status: statsState.detailed_analysis_status,
+                detailed_parsed_count: statsState.detailed_parsed_count,
+                total_valid_files: statsState.total_valid_files,
+                scan_progress: cloneJson(statsState.scan_progress),
+            });
 
             window.__SCO_ACTION_REQUESTS__ = [];
+            window.__SCO_ANALYSIS_STATUS_REQUESTS__ = [];
             window.__SCO_CONFIG_GET_REQUESTS__ = [];
             window.__SCO_CONFIG_APPLY_REQUESTS__ = [];
             window.__SCO_CONFIG_SAVE_REQUESTS__ = [];
             window.__SCO_FOLDER_PICKER_REQUESTS__ = [];
+            window.__SCO_STATS_ACTION_REQUESTS__ = [];
             window.__SCO_STATS_REQUESTS__ = [];
             window.__SCO_TAB_REQUESTS__ = [];
             window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
@@ -449,6 +475,12 @@ export async function installConfigMock(
                         );
                         return statsPayload();
                     }
+                    if (command === "config_analysis_status_get") {
+                        window.__SCO_ANALYSIS_STATUS_REQUESTS__.push(
+                            cloneJson(request || {}),
+                        );
+                        return analysisStatusPayload();
+                    }
                     if (command === "config_action") {
                         window.__SCO_ACTION_REQUESTS__.push(request || null);
                         return {
@@ -458,6 +490,9 @@ export async function installConfigMock(
                         };
                     }
                     if (command === "config_stats_action") {
+                        window.__SCO_STATS_ACTION_REQUESTS__.push(
+                            cloneJson(request || {}),
+                        );
                         return {
                             status: "ok",
                             message: "ok",

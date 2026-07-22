@@ -36,12 +36,8 @@ export default function SettingsAnalysisGroup({
         analysisRunning && analysisRunningMode === "detailed";
     const simpleAnalysisRunning =
         analysisRunning && analysisRunningMode === "simple";
-    const detailedAnalysisStatus =
-        actions.detailedAnalysisStatus || t("ui_stats_detailed_not_started");
-    const simpleAnalysisStatus =
-        actions.simpleAnalysisStatus || t("ui_stats_waiting_simple_startup");
-    const analysisMessage =
-        asTableValue(actions.analysisMessage) || t("ui_stats_no_statistics");
+    const currentAnalysisStatus =
+        actions.analysisStatus || t("ui_stats_detailed_not_started");
     const analysisScanProgress = actions.analysisScanProgress || null;
     const analysisTotalValidFiles = Number(
         actions.analysisTotalValidFiles ?? 0,
@@ -49,44 +45,9 @@ export default function SettingsAnalysisGroup({
     const analysisDetailedParsedCount = Number(
         actions.analysisDetailedParsedCount ?? 0,
     );
-    const normalizedAnalysisMessage = analysisMessage.trim();
-    const normalizedSimpleAnalysisStatus =
-        asTableValue(simpleAnalysisStatus).trim();
-    const normalizedDetailedAnalysisStatus = asTableValue(
-        detailedAnalysisStatus,
-    ).trim();
-    const normalizedSimpleAnalysisStatusLower =
-        normalizedSimpleAnalysisStatus.toLocaleLowerCase();
-    const normalizedDetailedAnalysisStatusLower =
-        normalizedDetailedAnalysisStatus.toLocaleLowerCase();
-    const simpleAnalysisTerminalStatusOnly =
-        !simpleAnalysisRunning &&
-        normalizedSimpleAnalysisStatusLower === "simple analysis: completed." &&
-        normalizedAnalysisMessage.length > 0;
-    const preferAnalysisProgressTotal =
-        analysisRunning ||
-        normalizedDetailedAnalysisStatusLower.includes("stopping") ||
-        normalizedDetailedAnalysisStatusLower.includes("stopped");
-    const showAnalysisMessage =
-        normalizedAnalysisMessage.length > 0 &&
-        normalizedAnalysisMessage !== normalizedSimpleAnalysisStatus &&
-        normalizedAnalysisMessage !== normalizedDetailedAnalysisStatus;
-    const showSimpleAnalysisStatus =
-        normalizedSimpleAnalysisStatus.length > 0 &&
-        !simpleAnalysisTerminalStatusOnly &&
-        (simpleAnalysisRunning ||
-            (!detailedAnalysisRunning &&
-                normalizedSimpleAnalysisStatus !==
-                    t("ui_stats_waiting_simple_startup")));
+    const normalizedAnalysisStatus = asTableValue(currentAnalysisStatus).trim();
     const generalAnalysisStatus =
-        (detailedAnalysisRunning
-            ? normalizedDetailedAnalysisStatus
-            : showAnalysisMessage
-              ? normalizedAnalysisMessage
-              : showSimpleAnalysisStatus
-                ? normalizedSimpleAnalysisStatus
-                : normalizedDetailedAnalysisStatus
-        ).trim() || t("ui_stats_analysis_idle");
+        normalizedAnalysisStatus || t("ui_stats_analysis_idle");
 
     const logicalCoreCount = getLogicalCoreCount();
     const defaultAnalysisWorkerThreads = getDefaultAnalysisWorkerThreads();
@@ -222,7 +183,7 @@ export default function SettingsAnalysisGroup({
                     languageManager,
                     analysisTotalValidFiles,
                     analysisDetailedParsedCount,
-                    preferAnalysisProgressTotal,
+                    analysisRunning,
                 )}
             </div>
         </section>

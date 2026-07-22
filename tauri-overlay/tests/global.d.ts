@@ -38,10 +38,12 @@ declare global {
         __emitMockConfigEvent?: (eventName: string, payload: JsonValue) => void;
         __setMockStatsPayload?: (payload: StatsStatePayload) => void;
         __SCO_ACTION_REQUESTS__: TestConfigRequestRecord[];
+        __SCO_ANALYSIS_STATUS_REQUESTS__: TestConfigRequestRecord[];
         __SCO_CONFIG_GET_REQUESTS__: TestConfigRequestRecord[];
         __SCO_CONFIG_APPLY_REQUESTS__: TestJsonObject[];
         __SCO_CONFIG_SAVE_REQUESTS__: TestJsonObject[];
         __SCO_FOLDER_PICKER_REQUESTS__: TestConfigRequestRecord[];
+        __SCO_STATS_ACTION_REQUESTS__: TestConfigRequestRecord[];
         __SCO_STATS_REQUESTS__: TestConfigRequestRecord[];
         __SCO_TAB_REQUESTS__: TestConfigRequestRecord[];
     }

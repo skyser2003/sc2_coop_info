@@ -1,12 +1,9 @@
 import * as React from "react";
-import { listen } from "@tauri-apps/api/event";
 import type {
     AppSettings,
-    AnalysisCompletedPayload,
-    ReplayScanProgressPayload,
+    AnalysisStatusPayload,
 } from "../../../bindings/overlay";
 import {
-    attachAnalysisStatusStreamRequest,
     loadStatisticsRequest,
     postStatsActionRequest,
     showReplayRequest,
@@ -23,9 +20,7 @@ import type {
     StatsHelpers,
 } from "../types";
 import type { TabDataState } from "./useConfigTabData";
-
-const SCO_REPLAY_SCAN_PROGRESS_EVENT = "sco://replay-scan-progress";
-const SCO_ANALYSIS_COMPLETED_EVENT = "sco://analysis-completed";
+import { useConfigAnalysisStatus } from "./useConfigAnalysisStatus";
 
 type StatsRefreshMode = "debounced" | "immediate";
 
@@ -59,6 +54,7 @@ type UseConfigStatsArgs = {
 };
 
 type UseConfigStatsResult = {
+    analysisStatus: AnalysisStatusPayload | null;
     refreshStatistics: (
         silent?: boolean,
         customFilters?: StatisticsFilters | null,
@@ -356,6 +352,10 @@ export function useConfigStats({
     setTabData,
     tabData,
 }: UseConfigStatsArgs): UseConfigStatsResult {
+    const frontendLoaded = draft !== null;
+    const observesStatistics = frontendLoaded && activeTab === "statistics";
+    const { analysisStatus, refreshAnalysisStatus } =
+        useConfigAnalysisStatus(frontendLoaded);
     const [statsState, setStatsState] =
         React.useState<StatisticsState>(defaultStatsState);
     const statsFiltersRef = React.useRef<StatisticsFilters>(
@@ -371,12 +371,7 @@ export function useConfigStats({
     });
     const pendingStatsFilterTimingRef =
         React.useRef<PendingStatsFilterTiming | null>(null);
-    const analysisStatusAttachedRef = React.useRef<boolean>(false);
     const tabDataRef = React.useRef<TabDataState>(tabData);
-    const refreshStatisticsRef = React.useRef<
-        UseConfigStatsResult["refreshStatistics"] | null
-    >(null);
-    const eventRefreshInFlightRef = React.useRef<boolean>(false);
 
     React.useEffect(() => {
         tabDataRef.current = tabData;
@@ -608,153 +603,42 @@ export function useConfigStats({
         }
     }
 
-    refreshStatisticsRef.current = refreshStatistics;
-
-    function requestStatsRefreshFromEvent(): void {
-        if (eventRefreshInFlightRef.current) {
+    React.useEffect(() => {
+        if (
+            !observesStatistics ||
+            analysisStatus === null ||
+            tabData.statistics === null
+        ) {
             return;
         }
-        eventRefreshInFlightRef.current = true;
-        void (async () => {
-            try {
-                await refreshStatisticsRef.current?.(true, null, true);
-            } finally {
-                eventRefreshInFlightRef.current = false;
-            }
-        })();
-    }
 
-    React.useEffect(() => {
-        let isMounted = true;
-        let unlisten: null | (() => void) = null;
-        (async () => {
-            try {
-                console.log(
-                    "[SCO/ui] subscribing to analysis completed event",
-                    SCO_ANALYSIS_COMPLETED_EVENT,
-                );
-                unlisten = await listen<AnalysisCompletedPayload>(
-                    SCO_ANALYSIS_COMPLETED_EVENT,
-                    (event) => {
-                        if (!isMounted) {
-                            return;
-                        }
-                        console.log("[SCO/ui] analysis completed event", event);
-                        const payload = event?.payload;
-                        if (
-                            payload &&
-                            typeof payload === "object" &&
-                            typeof payload.message === "string"
-                        ) {
-                            safeStatus(payload.message);
-                        }
-                        requestStatsRefreshFromEvent();
-                    },
-                );
-            } catch (error) {
-                console.warn(
-                    "[SCO/ui] Failed to subscribe to analysis completed event",
-                    error,
-                );
-            }
-        })();
-
-        return () => {
-            isMounted = false;
-            if (typeof unlisten === "function") {
-                unlisten();
-            }
-        };
-    }, []);
-
-    React.useEffect(() => {
-        if (draft === null || analysisStatusAttachedRef.current) {
-            return;
+        const analysisFinished =
+            tabData.statistics.analysis_running &&
+            !analysisStatus.analysis_running;
+        setTabData((current) => ({
+            ...current,
+            statistics: current.statistics
+                ? {
+                      ...current.statistics,
+                      ready: analysisStatus.ready,
+                      analysis_running: analysisStatus.analysis_running,
+                      analysis_running_mode:
+                          analysisStatus.analysis_running_mode,
+                      simple_analysis_status:
+                          analysisStatus.simple_analysis_status,
+                      detailed_analysis_status:
+                          analysisStatus.detailed_analysis_status,
+                      detailed_parsed_count:
+                          analysisStatus.detailed_parsed_count,
+                      total_valid_files: analysisStatus.total_valid_files,
+                      scan_progress: analysisStatus.scan_progress,
+                  }
+                : current.statistics,
+        }));
+        if (analysisFinished) {
+            void refreshStatistics(true, null, true);
         }
-        analysisStatusAttachedRef.current = true;
-        console.log("[SCO/ui] attach analysis status stream request");
-        void attachAnalysisStatusStreamRequest()
-            .then((payload) => {
-                console.log(
-                    "[SCO/ui] attach analysis status stream response",
-                    payload,
-                );
-                if (!payload || !payload.stats) {
-                    return;
-                }
-                setTabData((current) => ({
-                    ...current,
-                    statistics: mergeStatisticsPayload(
-                        current.statistics,
-                        payload.stats as StatisticsPayload,
-                    ),
-                }));
-            })
-            .catch((error) => {
-                console.warn("Failed to attach analysis status stream", error);
-            });
-    }, [draft]);
-
-    React.useEffect(() => {
-        let isMounted = true;
-        let unlisten: null | (() => void) = null;
-        (async () => {
-            if (!isMounted) {
-                return;
-            }
-
-            try {
-                unlisten = await listen<ReplayScanProgressPayload>(
-                    SCO_REPLAY_SCAN_PROGRESS_EVENT,
-                    (event) => {
-                        if (!isMounted) {
-                            return;
-                        }
-                        console.log(
-                            "[SCO/ui] replay scan progress event",
-                            event,
-                        );
-                        const progress = event?.payload;
-                        if (!progress || typeof progress !== "object") {
-                            return;
-                        }
-                        const typedProgress =
-                            progress as StatisticsPayload["scan_progress"];
-                        setTabData((current) => ({
-                            ...current,
-                            statistics: current.statistics
-                                ? {
-                                      ...current.statistics,
-                                      scan_progress: typedProgress,
-                                  }
-                                : current.statistics,
-                        }));
-                        if (
-                            progressIsTerminal(typedProgress) ||
-                            (tabDataRef.current.statistics === null &&
-                                progressIsActive(typedProgress))
-                        ) {
-                            requestStatsRefreshFromEvent();
-                        }
-                    },
-                );
-            } catch (error) {
-                console.warn(
-                    "Failed to subscribe to scan progress events",
-                    error,
-                );
-            }
-        })();
-
-        return () => {
-            isMounted = false;
-            if (typeof unlisten === "function") {
-                unlisten();
-            }
-        };
-    }, []);
-
-    const observesStatistics = activeTab === "statistics";
+    }, [analysisStatus, observesStatistics]);
 
     React.useEffect(() => {
         if (!observesStatistics) {
@@ -787,7 +671,7 @@ export function useConfigStats({
     }, [observesStatistics, statsState.selectedMap, tabData.statistics]);
 
     React.useEffect(() => {
-        if (!observesStatistics) {
+        if (draft === null || !observesStatistics) {
             return undefined;
         }
         if (tabData.statistics === null) {
@@ -823,7 +707,7 @@ export function useConfigStats({
             refreshStatistics(true);
         }, refreshDelayMs);
         return () => clearTimeout(timer);
-    }, [observesStatistics, statsState.filters]);
+    }, [draft, observesStatistics, statsState.filters]);
 
     async function startSimpleAnalysis(): Promise<void> {
         console.log("[SCO/ui] startSimpleAnalysis request");
@@ -831,7 +715,10 @@ export function useConfigStats({
             postStatsActionRequest("start_simple_analysis"),
         );
         console.log("[SCO/ui] startSimpleAnalysis response", result);
-        applyStatsActionPayload(result, setTabData);
+        if (observesStatistics) {
+            applyStatsActionPayload(result, setTabData);
+        }
+        await refreshAnalysisStatus();
     }
 
     async function runDetailedAnalysis(): Promise<void> {
@@ -840,7 +727,10 @@ export function useConfigStats({
             postStatsActionRequest("run_detailed_analysis"),
         );
         console.log("[SCO/ui] runDetailedAnalysis response", result);
-        applyStatsActionPayload(result, setTabData);
+        if (observesStatistics) {
+            applyStatsActionPayload(result, setTabData);
+        }
+        await refreshAnalysisStatus();
     }
 
     async function stopDetailedAnalysis(): Promise<void> {
@@ -849,7 +739,10 @@ export function useConfigStats({
             postStatsActionRequest("stop_detailed_analysis"),
         );
         console.log("[SCO/ui] stopDetailedAnalysis response", result);
-        applyStatsActionPayload(result, setTabData);
+        if (observesStatistics) {
+            applyStatsActionPayload(result, setTabData);
+        }
+        await refreshAnalysisStatus();
     }
 
     async function dumpData(): Promise<void> {
@@ -862,7 +755,10 @@ export function useConfigStats({
             postStatsActionRequest("delete_parsed_data"),
         );
         console.log("[SCO/ui] deleteParsedData response", result);
-        applyStatsActionPayload(result, setTabData);
+        if (observesStatistics) {
+            applyStatsActionPayload(result, setTabData);
+        }
+        await refreshAnalysisStatus();
     }
 
     async function setDetailedAnalysisAtStart(enabled: boolean): Promise<void> {
@@ -989,6 +885,7 @@ export function useConfigStats({
     }
 
     return {
+        analysisStatus,
         refreshStatistics,
         statsState,
         statsActions: {

@@ -2,7 +2,7 @@ use crate::replay_info::{GamesRowPayload, ReplayChatPayload};
 use crate::replay_visual::ReplayVisualPayload;
 use crate::{
     AppSettings, LocalizedLabels, MonitorOption, OverlayRandomizerCatalog, PlayerRowPayload,
-    RandomizerResult, ReplayScanProgressPayload, WeeklyRowPayload,
+    RandomizerResult, ReplayScanProgressPayload, StatsState, WeeklyRowPayload,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -352,6 +352,44 @@ pub struct StatsStatePayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub query: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct AnalysisStatusPayload {
+    status: &'static str,
+    ready: bool,
+    analysis_running: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    analysis_running_mode: Option<String>,
+    current_status: String,
+    simple_analysis_status: String,
+    detailed_analysis_status: String,
+    #[ts(type = "number")]
+    detailed_parsed_count: u64,
+    #[ts(type = "number")]
+    total_valid_files: u64,
+    scan_progress: ReplayScanProgressPayload,
+}
+
+impl AnalysisStatusPayload {
+    pub fn new(stats: &StatsState, scan_progress: ReplayScanProgressPayload) -> Self {
+        Self {
+            status: "ok",
+            ready: stats.ready(),
+            analysis_running: stats.analysis_running(),
+            analysis_running_mode: stats
+                .analysis_running_mode()
+                .map(|mode| mode.key().to_string()),
+            current_status: stats.current_analysis_status().to_string(),
+            simple_analysis_status: stats.simple_analysis_status().to_string(),
+            detailed_analysis_status: stats.detailed_analysis_status().to_string(),
+            detailed_parsed_count: stats.detailed_parsed_count(),
+            total_valid_files: stats.total_valid_files(),
+            scan_progress,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, TS)]
