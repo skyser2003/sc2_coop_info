@@ -626,152 +626,6 @@ export default function SettingsTab({
                                 onChange={onChange}
                                 read={read}
                             />
-                            <section className={styles.mainSettingsGroup}>
-                                <h3 className={styles.mainSettingsGroupTitle}>
-                                    {t("ui_settings_etc")}
-                                </h3>
-                                <Grid
-                                    container
-                                    className={[
-                                        styles.mainSettingsGroupFields,
-                                        styles.mainSettingsInlineNumbers,
-                                    ]
-                                        .filter(Boolean)
-                                        .join(" ")}
-                                    spacing={1.25}
-                                >
-                                    <Grid size={12}>
-                                        <Grid
-                                            container
-                                            columns={10}
-                                            spacing={1.25}
-                                            alignItems="center"
-                                            className={
-                                                styles.mainSettingsRowGrid
-                                            }
-                                        >
-                                            <Grid size={4}>
-                                                <span
-                                                    className={
-                                                        styles.mainRowLabel
-                                                    }
-                                                >
-                                                    {t(
-                                                        "ui_settings_language_label",
-                                                    )}
-                                                </span>
-                                            </Grid>
-                                            <Grid size={6}>
-                                                <select
-                                                    className={[
-                                                        styles.input,
-                                                        styles.mainFixedSelect,
-                                                    ]
-                                                        .filter(Boolean)
-                                                        .join(" ")}
-                                                    value={String(
-                                                        read(
-                                                            ["language"],
-                                                            "en",
-                                                        ) || "en",
-                                                    )}
-                                                    onChange={(event) =>
-                                                        onChange(
-                                                            ["language"],
-                                                            event.target.value,
-                                                        )
-                                                    }
-                                                >
-                                                    <option value="en">
-                                                        {t(
-                                                            "ui_language_english",
-                                                        )}
-                                                    </option>
-                                                    <option value="ko">
-                                                        {t(
-                                                            "ui_language_korean",
-                                                        )}
-                                                    </option>
-                                                </select>
-                                            </Grid>
-                                        </Grid>
-                                    </Grid>
-                                    <Grid size={12}>
-                                        <Grid
-                                            container
-                                            columns={10}
-                                            spacing={1.25}
-                                            alignItems="center"
-                                            className={
-                                                styles.mainSettingsRowGrid
-                                            }
-                                        >
-                                            <Grid size={4}>
-                                                <span
-                                                    className={
-                                                        styles.mainRowLabel
-                                                    }
-                                                >
-                                                    {t("ui_settings_monitor")}
-                                                </span>
-                                            </Grid>
-                                            <Grid size={6}>
-                                                <select
-                                                    className={[
-                                                        styles.input,
-                                                        styles.mainFixedSelect,
-                                                    ]
-                                                        .filter(Boolean)
-                                                        .join(" ")}
-                                                    value={Number(
-                                                        read(["monitor"], 1) ||
-                                                            1,
-                                                    )}
-                                                    onChange={(event) =>
-                                                        onChange(
-                                                            ["monitor"],
-                                                            Math.max(
-                                                                1,
-                                                                Number(
-                                                                    event.target
-                                                                        .value,
-                                                                ) || 1,
-                                                            ),
-                                                        )
-                                                    }
-                                                >
-                                                    {monitorOptions.map(
-                                                        (option) => (
-                                                            <option
-                                                                key={
-                                                                    option.index
-                                                                }
-                                                                value={
-                                                                    option.index
-                                                                }
-                                                            >
-                                                                {option.label}
-                                                            </option>
-                                                        ),
-                                                    )}
-                                                </select>
-                                            </Grid>
-                                        </Grid>
-                                    </Grid>
-                                    <Grid size={12}>
-                                        {boolField(
-                                            t("ui_settings_enable_logging"),
-                                            ["enable_logging"],
-                                        )}
-                                    </Grid>
-                                    <Grid size={12}>
-                                        {boolField(
-                                            t("ui_settings_dark_theme"),
-                                            ["dark_theme"],
-                                        )}
-                                    </Grid>
-                                </Grid>
-                            </section>
                         </div>
                     </div>
                 </Grid>
@@ -999,83 +853,213 @@ export default function SettingsTab({
                     </div>
                 </Grid>
                 <Grid size={4}>
-                    <div
-                        className={[
-                            styles.mainSettingsBox,
-                            styles.mainSettingsBottom,
-                        ]
-                            .filter(Boolean)
-                            .join(" ")}
-                    >
+                    <div className={styles.mainSettingsGroups}>
                         <div
                             className={[
                                 styles.mainSettingsBox,
-                                styles.mainBottomLeft,
+                                styles.mainSettingsBottom,
                             ]
                                 .filter(Boolean)
                                 .join(" ")}
                         >
-                            <button
-                                type="button"
-                                className={styles.buttonNormal}
-                                onClick={actions.overlayScreenshot}
-                                disabled={actions.isBusy}
+                            <div
+                                className={[
+                                    styles.mainSettingsBox,
+                                    styles.mainBottomLeft,
+                                ]
+                                    .filter(Boolean)
+                                    .join(" ")}
                             >
-                                {t("ui_settings_overlay_screenshot")}
-                            </button>
-                            <button
-                                type="button"
-                                className={styles.buttonNormal}
-                                onClick={actions.parseReplayPrompt}
-                                disabled={actions.isBusy}
+                                <button
+                                    type="button"
+                                    className={styles.buttonNormal}
+                                    onClick={actions.overlayScreenshot}
+                                    disabled={actions.isBusy}
+                                >
+                                    {t("ui_settings_overlay_screenshot")}
+                                </button>
+                                <button
+                                    type="button"
+                                    className={styles.buttonNormal}
+                                    onClick={actions.parseReplayPrompt}
+                                    disabled={actions.isBusy}
+                                >
+                                    {t("ui_settings_parse_replay")}
+                                </button>
+                                <button
+                                    type="button"
+                                    className={styles.buttonNormal}
+                                    onClick={actions.createDesktopShortcut}
+                                    disabled={actions.isBusy}
+                                >
+                                    {t("ui_settings_create_desktop_shortcut")}
+                                </button>
+                                <button
+                                    type="button"
+                                    className={styles.buttonNormal}
+                                    onClick={checkUpdate}
+                                >
+                                    {t("ui_settings_check_for_update")}
+                                </button>
+                            </div>
+                            <div
+                                className={[
+                                    styles.mainSettingsBox,
+                                    styles.mainBottomRight,
+                                ]
+                                    .filter(Boolean)
+                                    .join(" ")}
                             >
-                                {t("ui_settings_parse_replay")}
-                            </button>
-                            <button
-                                type="button"
-                                className={styles.buttonNormal}
-                                onClick={actions.createDesktopShortcut}
-                                disabled={actions.isBusy}
-                            >
-                                {t("ui_settings_create_desktop_shortcut")}
-                            </button>
-                            <button
-                                type="button"
-                                className={styles.buttonNormal}
-                                onClick={checkUpdate}
-                            >
-                                {t("ui_settings_check_for_update")}
-                            </button>
+                                <button
+                                    type="button"
+                                    className={styles.buttonNormal}
+                                    onClick={actions.resetMainSettings}
+                                    disabled={
+                                        actions.isBusy ||
+                                        !actions.hasPendingChanges
+                                    }
+                                >
+                                    {t("ui_settings_reset")}
+                                </button>
+                                <button
+                                    type="button"
+                                    className={styles.buttonNormal}
+                                    onClick={actions.applyMainSettings}
+                                    disabled={
+                                        actions.isBusy ||
+                                        !actions.hasPendingChanges
+                                    }
+                                >
+                                    {t("ui_settings_apply")}
+                                </button>
+                            </div>
                         </div>
-                        <div
-                            className={[
-                                styles.mainSettingsBox,
-                                styles.mainBottomRight,
-                            ]
-                                .filter(Boolean)
-                                .join(" ")}
-                        >
-                            <button
-                                type="button"
-                                className={styles.buttonNormal}
-                                onClick={actions.resetMainSettings}
-                                disabled={
-                                    actions.isBusy || !actions.hasPendingChanges
-                                }
+                        <section className={styles.mainSettingsGroup}>
+                            <h3 className={styles.mainSettingsGroupTitle}>
+                                {t("ui_settings_etc")}
+                            </h3>
+                            <Grid
+                                container
+                                className={[
+                                    styles.mainSettingsGroupFields,
+                                    styles.mainSettingsInlineNumbers,
+                                ]
+                                    .filter(Boolean)
+                                    .join(" ")}
+                                spacing={1.25}
                             >
-                                {t("ui_settings_reset")}
-                            </button>
-                            <button
-                                type="button"
-                                className={styles.buttonNormal}
-                                onClick={actions.applyMainSettings}
-                                disabled={
-                                    actions.isBusy || !actions.hasPendingChanges
-                                }
-                            >
-                                {t("ui_settings_apply")}
-                            </button>
-                        </div>
+                                <Grid size={12}>
+                                    <Grid
+                                        container
+                                        columns={10}
+                                        spacing={1.25}
+                                        alignItems="center"
+                                        className={styles.mainSettingsRowGrid}
+                                    >
+                                        <Grid size={4}>
+                                            <span
+                                                className={styles.mainRowLabel}
+                                            >
+                                                {t(
+                                                    "ui_settings_language_label",
+                                                )}
+                                            </span>
+                                        </Grid>
+                                        <Grid size={6}>
+                                            <select
+                                                className={[
+                                                    styles.input,
+                                                    styles.mainFixedSelect,
+                                                ]
+                                                    .filter(Boolean)
+                                                    .join(" ")}
+                                                value={String(
+                                                    read(["language"], "en") ||
+                                                        "en",
+                                                )}
+                                                onChange={(event) =>
+                                                    onChange(
+                                                        ["language"],
+                                                        event.target.value,
+                                                    )
+                                                }
+                                            >
+                                                <option value="en">
+                                                    {t("ui_language_english")}
+                                                </option>
+                                                <option value="ko">
+                                                    {t("ui_language_korean")}
+                                                </option>
+                                            </select>
+                                        </Grid>
+                                    </Grid>
+                                </Grid>
+                                <Grid size={12}>
+                                    <Grid
+                                        container
+                                        columns={10}
+                                        spacing={1.25}
+                                        alignItems="center"
+                                        className={styles.mainSettingsRowGrid}
+                                    >
+                                        <Grid size={4}>
+                                            <span
+                                                className={styles.mainRowLabel}
+                                            >
+                                                {t("ui_settings_monitor")}
+                                            </span>
+                                        </Grid>
+                                        <Grid size={6}>
+                                            <select
+                                                className={[
+                                                    styles.input,
+                                                    styles.mainFixedSelect,
+                                                ]
+                                                    .filter(Boolean)
+                                                    .join(" ")}
+                                                value={Number(
+                                                    read(["monitor"], 1) || 1,
+                                                )}
+                                                onChange={(event) =>
+                                                    onChange(
+                                                        ["monitor"],
+                                                        Math.max(
+                                                            1,
+                                                            Number(
+                                                                event.target
+                                                                    .value,
+                                                            ) || 1,
+                                                        ),
+                                                    )
+                                                }
+                                            >
+                                                {monitorOptions.map(
+                                                    (option) => (
+                                                        <option
+                                                            key={option.index}
+                                                            value={option.index}
+                                                        >
+                                                            {option.label}
+                                                        </option>
+                                                    ),
+                                                )}
+                                            </select>
+                                        </Grid>
+                                    </Grid>
+                                </Grid>
+                                <Grid size={12}>
+                                    {boolField(
+                                        t("ui_settings_enable_logging"),
+                                        ["enable_logging"],
+                                    )}
+                                </Grid>
+                                <Grid size={12}>
+                                    {boolField(t("ui_settings_dark_theme"), [
+                                        "dark_theme",
+                                    ])}
+                                </Grid>
+                            </Grid>
+                        </section>
                     </div>
                 </Grid>
             </Grid>
