@@ -10,6 +10,7 @@ import type {
     OverlayRandomizerCatalog,
     OverlayScreenshotResultPayload,
     PerformanceVisibilityPayload,
+    Sc2Server,
 } from "../../bindings/overlay";
 
 import { createLanguageManager } from "../i18n/languageManager";
@@ -325,36 +326,49 @@ function SettingsEditor({
         }
     }
 
-    async function setLatestFirstWinBonusTime(value: string): Promise<void> {
+    async function setFirstWinBonusTime(
+        server: Sc2Server,
+        value: string,
+    ): Promise<void> {
         try {
             setIsBusy(true);
             const payload = await postConfigActionRequest(
-                "set_latest_today_win_bonus_time",
-                { time: value },
+                "set_first_win_bonus_time",
+                { server, time: value },
             );
             setSettings((current) => {
                 if (current === null) {
                     return current;
                 }
-                return setAtPath(
+                const withServerTime = setAtPath(
                     current,
-                    ["latest_today_win_bonus_time"],
+                    ["first_win_bonus_times", server],
                     value,
+                );
+                return setAtPath(
+                    withServerTime,
+                    ["latest_first_win_bonus_server"],
+                    server,
                 );
             });
             setDraft((current) => {
                 if (current === null) {
                     return current;
                 }
-                const nextDraft = setAtPath(
+                const withServerTime = setAtPath(
                     current,
-                    ["latest_today_win_bonus_time"],
+                    ["first_win_bonus_times", server],
                     value,
+                );
+                const nextDraft = setAtPath(
+                    withServerTime,
+                    ["latest_first_win_bonus_server"],
+                    server,
                 );
                 draftRef.current = nextDraft;
                 return nextDraft;
             });
-            safeStatus(payload.message || "Latest first win bonus time saved.");
+            safeStatus(payload.message || "First win bonus time saved.");
         } catch (error) {
             safeStatus(`Failed to save first win bonus time: ${error.message}`);
         } finally {
@@ -555,7 +569,7 @@ function SettingsEditor({
                     deleteParsedData: statsActions.deleteParsedData,
                     applyMainSettings,
                     resetMainSettings,
-                    setLatestFirstWinBonusTime,
+                    setFirstWinBonusTime,
                     monitorOptions: monitorCatalog,
                     isHotkeyClearKey,
                     isHotkeyModifierKey,

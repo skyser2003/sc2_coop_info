@@ -1,4 +1,5 @@
 import type { JsonValue } from "../types";
+import type { Sc2Server } from "../../../bindings/overlay";
 
 export type SettingsActions = {
     isBusy: boolean;
@@ -17,7 +18,10 @@ export type SettingsActions = {
     startSimpleAnalysis: () => Promise<void> | void;
     stopDetailedAnalysis: () => Promise<void> | void;
     deleteParsedData: () => Promise<void> | void;
-    setLatestFirstWinBonusTime: (value: string) => Promise<void> | void;
+    setFirstWinBonusTime: (
+        server: Sc2Server,
+        value: string,
+    ) => Promise<void> | void;
     applyMainSettings: () => Promise<void> | void;
     resetMainSettings: () => void;
     isHotkeyClearKey: (key: string) => boolean;

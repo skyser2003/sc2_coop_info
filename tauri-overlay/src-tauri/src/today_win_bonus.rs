@@ -8,7 +8,10 @@ use std::{
 };
 use xcap::Monitor;
 
-use crate::{ActiveWindowDetector, AppSettings, FirstWinBonusTimerPayload, MonitorSettingsOps};
+use crate::{
+    ActiveWindowDetector, AppSettings, FirstWinBonusServerScope, FirstWinBonusServerTimerPayload,
+    FirstWinBonusTimerPayload, MonitorSettingsOps, Sc2Server,
+};
 
 mod detector;
 mod digit_reader;
@@ -105,6 +108,82 @@ impl FirstWinBonusTimerStatus {
         )
     }
 
+    fn selected_server_statuses(
+        settings: &AppSettings,
+        now: DateTime<Utc>,
+    ) -> Vec<(Sc2Server, Self)> {
+        let servers = match settings.first_win_bonus_server_scope() {
+            FirstWinBonusServerScope::Latest => settings
+                .latest_first_win_bonus_server()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            FirstWinBonusServerScope::All => Sc2Server::all().to_vec(),
+        };
+
+        servers
+            .into_iter()
+            .map(|server| {
+                (
+                    server,
+                    Self::from_latest_acquired_time(settings.first_win_bonus_time(server), now),
+                )
+            })
+            .collect()
+    }
+
+    fn summary_status(statuses: &[(Sc2Server, Self)]) -> Self {
+        if statuses.iter().any(|(_, status)| status.available()) {
+            return Self::new(true, 0, None);
+        }
+
+        statuses
+            .iter()
+            .filter(|(_, status)| status.next_available_time().is_some())
+            .min_by_key(|(_, status)| status.seconds_until_available())
+            .map(|(_, status)| status.clone())
+            .unwrap_or_else(|| Self::new(false, 0, None))
+    }
+
+    pub fn any_selected_server_available(settings: &AppSettings, now: DateTime<Utc>) -> bool {
+        let statuses = Self::selected_server_statuses(settings, now);
+        if statuses.is_empty()
+            && matches!(
+                settings.first_win_bonus_server_scope(),
+                FirstWinBonusServerScope::Latest
+            )
+        {
+            return Self::from_latest_acquired_time(settings.latest_today_win_bonus_time(), now)
+                .available();
+        }
+        statuses.iter().any(|(_, status)| status.available())
+    }
+
+    pub fn payload_for_settings(
+        settings: &AppSettings,
+        now: DateTime<Utc>,
+        visible: bool,
+    ) -> FirstWinBonusTimerPayload {
+        let statuses = Self::selected_server_statuses(settings, now);
+        if statuses.is_empty()
+            && matches!(
+                settings.first_win_bonus_server_scope(),
+                FirstWinBonusServerScope::Latest
+            )
+        {
+            return Self::from_latest_acquired_time(settings.latest_today_win_bonus_time(), now)
+                .into_payload(visible);
+        }
+        let summary = Self::summary_status(&statuses);
+        let mut payload = summary.into_payload(visible);
+        payload.server_timers = Some(
+            statuses
+                .into_iter()
+                .map(|(server, status)| status.into_server_payload(server))
+                .collect(),
+        );
+        payload
+    }
+
     pub fn available(&self) -> bool {
         self.available
     }
@@ -120,6 +199,18 @@ impl FirstWinBonusTimerStatus {
     pub fn into_payload(self, visible: bool) -> FirstWinBonusTimerPayload {
         FirstWinBonusTimerPayload {
             visible,
+            available: self.available,
+            seconds_until_available: self.seconds_until_available,
+            next_available_time: self
+                .next_available_time
+                .map(|time| time.to_rfc3339_opts(SecondsFormat::Secs, true)),
+            server_timers: None,
+        }
+    }
+
+    fn into_server_payload(self, server: Sc2Server) -> FirstWinBonusServerTimerPayload {
+        FirstWinBonusServerTimerPayload {
+            server,
             available: self.available,
             seconds_until_available: self.seconds_until_available,
             next_available_time: self

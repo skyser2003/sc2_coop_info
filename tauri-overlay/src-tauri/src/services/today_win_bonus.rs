@@ -1,4 +1,4 @@
-use serde_json::Value;
+use s2coop_analyzer::cache_overall_stats_generator::CacheReplayEntry;
 use std::path::Path;
 use std::sync::{
     Arc,
@@ -11,9 +11,36 @@ use tauri::{Manager, Wry};
 
 use crate::{
     ActiveWindowDetector, ActiveWindowListener, AppSettings, BackendState,
-    FirstWinBonusDisplayMode, FirstWinBonusTimerPayload, PathManagerOps, ReplayCacheDatabase,
-    Sc2GameState, Sc2GameStateTransition, TauriOverlayOps, overlay_info, today_win_bonus,
+    FirstWinBonusDisplayMode, FirstWinBonusTimerPayload, PathManagerOps, ReplayAnalysis,
+    ReplayAnalysisOps, ReplayCacheDatabase, Sc2GameState, Sc2GameStateTransition, Sc2Server,
+    TauriOverlayOps, overlay_info, today_win_bonus,
 };
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct FirstWinBonusReplayContext {
+    server: Sc2Server,
+    modified_time_seconds: u64,
+}
+
+impl FirstWinBonusReplayContext {
+    fn new(server: Sc2Server, modified_time_seconds: u64) -> Option<Self> {
+        if modified_time_seconds == 0 {
+            return None;
+        }
+        Some(Self {
+            server,
+            modified_time_seconds,
+        })
+    }
+
+    fn server(&self) -> Sc2Server {
+        self.server
+    }
+
+    fn modified_time_seconds(&self) -> u64 {
+        self.modified_time_seconds
+    }
+}
 
 struct TodayWinBonusPersistResult {
     saved_time: Option<String>,
@@ -44,7 +71,11 @@ impl TodayWinBonusPersistResult {
 }
 
 impl TauriOverlayOps {
-    pub fn spawn_today_win_bonus_scan(app: tauri::AppHandle<Wry>, replay_file: String) {
+    pub fn spawn_today_win_bonus_scan(
+        app: tauri::AppHandle<Wry>,
+        replay_file: String,
+        replay_server: Option<Sc2Server>,
+    ) {
         thread::spawn(move || {
             const SCAN_DURATION: Duration = Duration::from_secs(45);
 
@@ -65,6 +96,10 @@ impl TauriOverlayOps {
                     }
                 }
             };
+            let replay_context = replay_server.and_then(|server| {
+                replay_file_modified_time_seconds
+                    .and_then(|seconds| FirstWinBonusReplayContext::new(server, seconds))
+            });
             crate::sco_info!(
                 "[SCO/today-win-bonus] scan started replay='{}' replay_file_modified_time_seconds='{}' duration_secs={} interval_secs=1 initial_capture_method='{}' fallback_after_failures={}",
                 replay_file,
@@ -93,7 +128,8 @@ impl TauriOverlayOps {
                         captured = captured.saturating_add(1);
                         let persist_result = TauriOverlayOps::persist_today_win_bonus_detected_time(
                             &state,
-                            replay_file_modified_time_seconds,
+                            replay_context,
+                            Some(&replay_file),
                         );
                         (saved_time, save_error) = persist_result.into_parts();
                         ended_reason = "detected";
@@ -146,54 +182,132 @@ impl TauriOverlayOps {
 
     fn persist_today_win_bonus_detected_time(
         state: &BackendState,
-        replay_file_modified_time_seconds: Option<u64>,
+        replay_context: Option<FirstWinBonusReplayContext>,
+        replay_file: Option<&str>,
     ) -> TodayWinBonusPersistResult {
-        let latest_observed_replay_time_seconds = state.latest_replay_file_modified_time_seconds();
-        let fallback_replay_time_seconds = if latest_observed_replay_time_seconds.is_none()
-            && replay_file_modified_time_seconds.is_none()
-        {
-            match TauriOverlayOps::latest_cached_replay_time_seconds_for_today_win_bonus() {
-                Ok(seconds) => seconds,
-                Err(error) => {
+        let replay_context = replay_context.or_else(|| {
+            TauriOverlayOps::cached_replay_context_for_today_win_bonus(replay_file)
+                .map_err(|error| {
                     crate::sco_warn!(
-                        "[SCO/today-win-bonus] failed to read latest cached replay time: {error}"
+                        "[SCO/today-win-bonus] failed to resolve replay server and time: {error}"
                     );
-                    None
-                }
-            }
-        } else {
-            None
-        };
-        let acquired_time =
-            today_win_bonus::FirstWinBonusAcquiredTime::latest_replay_time_with_fallback(
-                replay_file_modified_time_seconds,
-                latest_observed_replay_time_seconds,
-                fallback_replay_time_seconds,
-            );
-        let Some(saved_time) = acquired_time.and_then(|time| time.to_rfc3339()) else {
+                    error
+                })
+                .ok()
+                .flatten()
+        });
+        let Some(replay_context) = replay_context else {
             return TodayWinBonusPersistResult::failed(
-                "No latest replay time was available for today's win bonus".to_string(),
+                "No replay server and time were available for today's win bonus".to_string(),
+            );
+        };
+        let Some(saved_time) =
+            today_win_bonus::FirstWinBonusAcquiredTime::from_replay_file_modified_time_seconds(
+                replay_context.modified_time_seconds(),
+            )
+            .and_then(|time| time.to_rfc3339())
+        else {
+            return TodayWinBonusPersistResult::failed(
+                "The replay time for today's win bonus was invalid".to_string(),
             );
         };
 
-        match state.persist_single_setting_value(
-            today_win_bonus::TODAY_WIN_BONUS_SETTINGS_KEY,
-            Value::String(saved_time.clone()),
+        match TauriOverlayOps::persist_first_win_bonus_time(
+            state,
+            replay_context.server(),
+            &saved_time,
         ) {
             Ok(()) => TodayWinBonusPersistResult::saved(saved_time),
-            Err(error) => {
-                TodayWinBonusPersistResult::saved(saved_time).with_error(error.to_string())
-            }
+            Err(error) => TodayWinBonusPersistResult::saved(saved_time).with_error(error),
         }
     }
 
-    fn latest_cached_replay_time_seconds_for_today_win_bonus() -> Result<Option<u64>, String> {
+    fn cached_replay_context_for_today_win_bonus(
+        replay_file: Option<&str>,
+    ) -> Result<Option<FirstWinBonusReplayContext>, String> {
         let cache_path = PathManagerOps::get_cache_path();
         let database = ReplayCacheDatabase::open_for_cache_path(&cache_path)
             .map_err(|error| error.to_string())?;
+        let entry = match replay_file {
+            Some(file) => database.load_entry_by_file(file),
+            None => database.load_latest_entry(),
+        }
+        .map_err(|error| error.to_string())?;
+        let Some(entry) = entry else {
+            return Ok(None);
+        };
+        let Some(server) = Sc2Server::from_region_code(&entry.region) else {
+            return Ok(None);
+        };
+        let modified_time_seconds =
+            today_win_bonus::FirstWinBonusAcquiredTime::from_replay_file_modified_time(Path::new(
+                &entry.file,
+            ))
+            .ok()
+            .flatten()
+            .map(|time| time.replay_file_modified_time_seconds())
+            .or_else(|| ReplayAnalysisOps::parse_replay_timestamp_seconds(&entry.date));
+
+        Ok(modified_time_seconds
+            .and_then(|seconds| FirstWinBonusReplayContext::new(server, seconds)))
+    }
+
+    pub fn persist_first_win_bonus_time(
+        state: &BackendState,
+        server: Sc2Server,
+        saved_time: &str,
+    ) -> Result<(), String> {
+        let mut saved_settings = AppSettings::from_saved_file();
+        saved_settings.set_first_win_bonus_time(server, saved_time.to_string());
+        saved_settings.write_saved_settings_file()?;
+
+        let mut active_settings = state.read_settings_memory();
+        active_settings.set_first_win_bonus_time(server, saved_time.to_string());
+        state.replace_active_settings(&active_settings);
+        Ok(())
+    }
+
+    fn latest_replay_server_for_legacy_migration(
+        state: &BackendState,
+        settings: &AppSettings,
+    ) -> Result<Option<Sc2Server>, String> {
+        if let Some(root) = settings.resolve_replay_root()
+            && let Some(path) = ReplayAnalysis::collect_replay_paths(&root, 1)
+                .into_iter()
+                .next()
+            && let Ok(resources) = state.replay_analysis_resources()
+            && let Some(entry) = CacheReplayEntry::parse_basic_with_resources(&path, &resources)
+            && let Some(server) = Sc2Server::from_region_code(&entry.region)
+        {
+            return Ok(Some(server));
+        }
+
+        let database = ReplayCacheDatabase::open_for_cache_path(&PathManagerOps::get_cache_path())
+            .map_err(|error| error.to_string())?;
         database
-            .load_latest_entry_date_seconds()
+            .load_latest_entry()
             .map_err(|error| error.to_string())
+            .map(|entry| entry.and_then(|entry| Sc2Server::from_region_code(&entry.region)))
+    }
+
+    fn migrate_legacy_first_win_bonus_time(state: &BackendState) -> Result<bool, String> {
+        let mut settings = AppSettings::from_saved_file();
+        if settings.latest_today_win_bonus_time().is_none() {
+            return Ok(false);
+        }
+        let Some(server) =
+            TauriOverlayOps::latest_replay_server_for_legacy_migration(state, &settings)?
+        else {
+            return Ok(false);
+        };
+        if !settings.migrate_legacy_first_win_bonus_time(server) {
+            return Ok(false);
+        }
+        state.write_settings_file(&settings)?;
+        crate::sco_info!(
+            "[SCO/today-win-bonus] migrated legacy first win bonus timer to server={server:?}"
+        );
+        Ok(true)
     }
 
     pub fn log_sc2_game_state_transition(transition: Option<Sc2GameStateTransition>, reason: &str) {
@@ -225,7 +339,7 @@ impl TauriOverlayOps {
         match today_win_bonus_capture.capture_focused_sc2_window_detection() {
             Ok(Some(detection)) if detection.found_today_win_bonus() => {
                 let persist_result =
-                    TauriOverlayOps::persist_today_win_bonus_detected_time(&state, None);
+                    TauriOverlayOps::persist_today_win_bonus_detected_time(&state, None, None);
                 (saved_time, save_error) = persist_result.into_parts();
                 result = if saved_time.is_some() {
                     "detected"
@@ -263,11 +377,11 @@ impl TauriOverlayOps {
         settings: &AppSettings,
         visible: bool,
     ) -> FirstWinBonusTimerPayload {
-        today_win_bonus::FirstWinBonusTimerStatus::from_latest_acquired_time(
-            settings.latest_today_win_bonus_time(),
+        today_win_bonus::FirstWinBonusTimerStatus::payload_for_settings(
+            settings,
             chrono::Utc::now(),
+            visible,
         )
-        .into_payload(visible)
     }
 
     fn first_win_bonus_timer_should_be_visible(
@@ -285,13 +399,14 @@ impl TauriOverlayOps {
             return false;
         }
 
-        let status = today_win_bonus::FirstWinBonusTimerStatus::from_latest_acquired_time(
-            settings.latest_today_win_bonus_time(),
-            chrono::Utc::now(),
-        );
         match settings.first_win_bonus_display_mode() {
             FirstWinBonusDisplayMode::Hidden => false,
-            FirstWinBonusDisplayMode::AvailableOnly => status.available(),
+            FirstWinBonusDisplayMode::AvailableOnly => {
+                today_win_bonus::FirstWinBonusTimerStatus::any_selected_server_available(
+                    settings,
+                    chrono::Utc::now(),
+                )
+            }
             FirstWinBonusDisplayMode::Always => true,
         }
     }
@@ -384,6 +499,11 @@ impl TauriOverlayOps {
 
     pub fn spawn_first_win_bonus_timer_task(app: tauri::AppHandle<Wry>) {
         thread::spawn(move || {
+            if let Err(error) =
+                TauriOverlayOps::migrate_legacy_first_win_bonus_time(&app.state::<BackendState>())
+            {
+                crate::sco_warn!("[SCO/today-win-bonus] legacy timer migration failed: {error}");
+            }
             thread::sleep(Duration::from_secs(4));
 
             let mut sc2_focused = ActiveWindowDetector::focused_window_is_sc2().unwrap_or(false);

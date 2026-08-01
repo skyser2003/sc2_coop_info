@@ -369,4 +369,46 @@ test.describe("Config route settings", () => {
                 },
             });
     });
+
+    test("first win bonus settings support all servers and per-server records", async ({
+        page,
+    }) => {
+        await installTauriMock(page, null, [], {
+            settings: {
+                first_win_bonus_server_scope: "all",
+                first_win_bonus_times: {
+                    america: "2026-07-31T10:00:00Z",
+                    europe: "2026-07-31T11:00:00Z",
+                    asia: "2026-07-31T12:00:00Z",
+                },
+            },
+        });
+        await page.goto("/", { waitUntil: "domcontentloaded" });
+
+        const serverScope = page.locator("select").filter({
+            has: page.locator("option", { hasText: "Latest server only" }),
+        });
+        await expect(serverScope).toHaveValue("all");
+        await expect(page.getByText("America", { exact: true })).toBeVisible();
+        await expect(page.getByText("Europe", { exact: true })).toBeVisible();
+        await expect(page.getByText("Asia", { exact: true })).toBeVisible();
+        await expect(
+            page.getByRole("button", { name: "Set manually" }),
+        ).toHaveCount(3);
+
+        await serverScope.selectOption("latest");
+        await page.getByRole("button", { name: /^Save$/ }).click();
+
+        await expect
+            .poll(() =>
+                page.evaluate(() => {
+                    const requests =
+                        window["__SCO_CONFIG_SAVE_REQUESTS__"] || [];
+                    return requests[requests.length - 1] || null;
+                }),
+            )
+            .toMatchObject({
+                first_win_bonus_server_scope: "latest",
+            });
+    });
 });

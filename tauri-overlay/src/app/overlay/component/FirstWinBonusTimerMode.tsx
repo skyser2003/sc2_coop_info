@@ -1,5 +1,16 @@
 import { LanguageManager } from "../../i18n/languageManager";
-import type { FirstWinBonusTimerPayload } from "../../../bindings/overlay";
+import type {
+    FirstWinBonusServerTimerPayload,
+    FirstWinBonusTimerPayload,
+    Sc2Server,
+} from "../../../bindings/overlay";
+
+type FirstWinBonusTimerDisplayEntry = {
+    server: Sc2Server | null;
+    available: boolean;
+    secondsUntilAvailable: number;
+    nextAvailableTime?: string;
+};
 
 function formatDuration(totalSeconds: number): string {
     const boundedSeconds = Math.max(0, Math.floor(totalSeconds));
@@ -31,6 +42,51 @@ function formatNextAvailableTime(value?: string): string | null {
     return `${year}-${month}-${day} ${hours12}:${minutes} ${period}`;
 }
 
+function serverLabel(
+    server: Sc2Server,
+    languageManager: LanguageManager,
+): string {
+    const labelIds: Readonly<Record<Sc2Server, string>> = {
+        america: "ui_sc2_server_america",
+        europe: "ui_sc2_server_europe",
+        asia: "ui_sc2_server_asia",
+    };
+    return languageManager.translate(labelIds[server]);
+}
+
+function serverTimerEntry(
+    timer: FirstWinBonusServerTimerPayload,
+): FirstWinBonusTimerDisplayEntry {
+    return {
+        server: timer.server,
+        available: timer.available,
+        secondsUntilAvailable: Number(timer.seconds_until_available),
+        nextAvailableTime: timer.next_available_time,
+    };
+}
+
+function statusText(
+    entry: FirstWinBonusTimerDisplayEntry,
+    languageManager: LanguageManager,
+): string {
+    const hasDetectedTime =
+        entry.nextAvailableTime != null &&
+        entry.nextAvailableTime.trim() !== "";
+    if (!hasDetectedTime) {
+        return languageManager.translate(
+            "ui_overlay_first_win_bonus_unmeasured",
+        );
+    }
+    if (entry.available) {
+        return languageManager.translate(
+            "ui_overlay_first_win_bonus_available",
+        );
+    }
+    return languageManager
+        .translate("ui_overlay_first_win_bonus_remaining")
+        .replace("{{time}}", formatDuration(entry.secondsUntilAvailable));
+}
+
 export default function FirstWinBonusTimerMode({
     payload,
     visible,
@@ -42,32 +98,22 @@ export default function FirstWinBonusTimerMode({
     immediate: boolean;
     overlayLanguageManager: LanguageManager;
 }) {
-    const available = payload?.available === true;
-    const secondsUntilAvailable = Number(payload?.seconds_until_available ?? 0);
-    const hasDetectedLatestFirstWinBonus =
-        payload?.next_available_time != null &&
-        payload.next_available_time.trim() !== "";
-    const unmeasured = payload != null && !hasDetectedLatestFirstWinBonus;
-    const nextAvailableTime = available
-        ? null
-        : formatNextAvailableTime(payload?.next_available_time);
-    const statusText =
-        payload == null
-            ? ""
-            : unmeasured
-              ? overlayLanguageManager.translate(
-                    "ui_overlay_first_win_bonus_unmeasured",
-                )
-              : available
-                ? overlayLanguageManager.translate(
-                      "ui_overlay_first_win_bonus_available",
-                  )
-                : overlayLanguageManager
-                      .translate("ui_overlay_first_win_bonus_remaining")
-                      .replace(
-                          "{{time}}",
-                          formatDuration(secondsUntilAvailable),
-                      );
+    const serverTimers = payload?.server_timers ?? [];
+    const entries: readonly FirstWinBonusTimerDisplayEntry[] =
+        serverTimers.length > 0
+            ? serverTimers.map(serverTimerEntry)
+            : payload == null
+              ? []
+              : [
+                    {
+                        server: null,
+                        available: payload.available,
+                        secondsUntilAvailable: Number(
+                            payload.seconds_until_available,
+                        ),
+                        nextAvailableTime: payload.next_available_time,
+                    },
+                ];
 
     return (
         <div
@@ -84,12 +130,34 @@ export default function FirstWinBonusTimerMode({
                     "ui_overlay_first_win_bonus_title",
                 )}
             </div>
-            {nextAvailableTime != null ? (
-                <div className="first-win-bonus-next-time">
-                    {nextAvailableTime}
-                </div>
-            ) : null}
-            <div className="first-win-bonus-value">{statusText}</div>
+            {entries.map((entry, index) => {
+                const nextAvailableTime = entry.available
+                    ? null
+                    : formatNextAvailableTime(entry.nextAvailableTime);
+                return (
+                    <div
+                        className="first-win-bonus-server-row"
+                        key={entry.server ?? `legacy-${index}`}
+                    >
+                        {entry.server != null ? (
+                            <div className="first-win-bonus-server">
+                                {serverLabel(
+                                    entry.server,
+                                    overlayLanguageManager,
+                                )}
+                            </div>
+                        ) : null}
+                        {nextAvailableTime != null ? (
+                            <div className="first-win-bonus-next-time">
+                                {nextAvailableTime}
+                            </div>
+                        ) : null}
+                        <div className="first-win-bonus-value">
+                            {statusText(entry, overlayLanguageManager)}
+                        </div>
+                    </div>
+                );
+            })}
         </div>
     );
 }

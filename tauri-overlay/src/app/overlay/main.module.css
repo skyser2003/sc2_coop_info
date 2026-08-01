@@ -615,6 +615,17 @@
     line-height: 1.1;
 }
 
+.overlayPageRoot :global(.first-win-bonus-server-row) {
+    margin-top: 0.6vh;
+}
+
+.overlayPageRoot :global(.first-win-bonus-server) {
+    color: #80dfff;
+    font-size: 1.45vh;
+    font-weight: bold;
+    line-height: 1.1;
+}
+
 .overlayPageRoot :global(.first-win-bonus-value) {
     color: #a8ff94;
     font-size: 1.75vh;

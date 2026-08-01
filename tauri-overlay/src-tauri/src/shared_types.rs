@@ -72,6 +72,57 @@ pub enum FirstWinBonusDisplayMode {
     Always,
 }
 
+#[derive(
+    Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize, TS,
+)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+#[ts(rename_all = "snake_case")]
+pub enum FirstWinBonusServerScope {
+    #[default]
+    Latest,
+    All,
+}
+
+#[derive(
+    Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize, TS,
+)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+#[ts(rename_all = "snake_case")]
+pub enum Sc2Server {
+    #[default]
+    America,
+    Europe,
+    Asia,
+}
+
+impl Sc2Server {
+    pub const fn all() -> [Self; 3] {
+        [Self::America, Self::Europe, Self::Asia]
+    }
+
+    pub fn from_region_code(region: &str) -> Option<Self> {
+        match region.trim().to_ascii_uppercase().as_str() {
+            "NA" | "US" => Some(Self::America),
+            "EU" => Some(Self::Europe),
+            "KR" | "ASIA" => Some(Self::Asia),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../src/bindings/overlay.ts")]
+pub struct FirstWinBonusServerTimerPayload {
+    pub server: Sc2Server,
+    pub available: bool,
+    #[ts(type = "number")]
+    pub seconds_until_available: u64,
+    #[ts(optional)]
+    pub next_available_time: Option<String>,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, TS)]
 #[ts(export, export_to = "../src/bindings/overlay.ts")]
 pub struct FirstWinBonusTimerPayload {
@@ -81,6 +132,9 @@ pub struct FirstWinBonusTimerPayload {
     pub seconds_until_available: u64,
     #[ts(optional)]
     pub next_available_time: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub server_timers: Option<Vec<FirstWinBonusServerTimerPayload>>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]

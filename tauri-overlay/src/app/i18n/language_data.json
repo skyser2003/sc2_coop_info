@@ -72,6 +72,34 @@
         "en": "Always display",
         "ko": "항상 표시"
     },
+    "ui_settings_first_win_bonus_group": {
+        "en": "First win bonus records",
+        "ko": "첫 승 보너스 기록"
+    },
+    "ui_settings_first_win_bonus_servers_shown": {
+        "en": "Servers shown",
+        "ko": "표시할 서버"
+    },
+    "ui_settings_first_win_bonus_servers_latest": {
+        "en": "Latest server only",
+        "ko": "최근 서버만"
+    },
+    "ui_settings_first_win_bonus_servers_all": {
+        "en": "All  servers",
+        "ko": "모든 서버"
+    },
+    "ui_sc2_server_america": {
+        "en": "America",
+        "ko": "아메리카"
+    },
+    "ui_sc2_server_europe": {
+        "en": "Europe",
+        "ko": "유럽"
+    },
+    "ui_sc2_server_asia": {
+        "en": "Asia",
+        "ko": "아시아"
+    },
     "ui_settings_first_win_bonus_manual_label": {
         "en": "Latest first win bonus time",
         "ko": "최근 첫 승 보너스 시간"
@@ -85,8 +113,8 @@
         "ko": "설정되지 않음"
     },
     "ui_settings_first_win_bonus_manual_prompt": {
-        "en": "Enter latest first win bonus time (YYYY-MM-DD HH:mm).",
-        "ko": "최근 첫 승 보너스 시간을 입력하세요 (YYYY-MM-DD HH:mm)."
+        "en": "Enter the latest {{server}} first win bonus time (YYYY-MM-DD HH:mm).",
+        "ko": "{{server}} 서버의 최근 첫 승 보너스 시간을 입력하세요 (YYYY-MM-DD HH:mm)."
     },
     "ui_settings_first_win_bonus_manual_invalid": {
         "en": "Invalid time. Use YYYY-MM-DD HH:mm.",
@@ -407,8 +435,8 @@
         "ko": "지금 가능"
     },
     "ui_overlay_first_win_bonus_unmeasured": {
-        "en": "Never measured",
-        "ko": "측정된 적 없음"
+        "en": "-",
+        "ko": "-"
     },
     "ui_overlay_first_win_bonus_remaining": {
         "en": "Available in {{time}}",

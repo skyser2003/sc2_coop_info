@@ -6,8 +6,8 @@ use crate::{
     AppSettings, BackendState, ConfigPayload, ConfigPlayersPayload, ConfigWeekliesPayload,
     OverlayActionResponse, PathManagerOps, ReplayAnalysis, ReplayCacheDatabase, ReplayCachePage,
     ReplayCachePageResult, ReplayCachePlayerNote, ReplayCachePlayerSortKey,
-    ReplayCachePlayersPageQuery, ReplayCacheSortDirection, TauriOverlayOps, monitor_settings,
-    overlay_info, randomizer, today_win_bonus,
+    ReplayCachePlayersPageQuery, ReplayCacheSortDirection, Sc2Server, TauriOverlayOps,
+    monitor_settings, overlay_info, randomizer,
 };
 
 use super::DEFAULT_CONFIG_ROWS_PER_PAGE;
@@ -357,7 +357,14 @@ impl ConfigCommands {
                     },
                 ))
             }
-            "set_latest_today_win_bonus_time" => {
+            "set_first_win_bonus_time" => {
+                let server = body
+                    .as_ref()
+                    .and_then(|payload| payload.get("server"))
+                    .cloned()
+                    .ok_or_else(|| "First win bonus server is required".to_string())?;
+                let server = serde_json::from_value::<Sc2Server>(server)
+                    .map_err(|_| "Invalid first win bonus server".to_string())?;
                 let latest_time = body
                     .as_ref()
                     .and_then(|payload| payload.get("time"))
@@ -370,13 +377,10 @@ impl ConfigCommands {
                     .with_timezone(&chrono::Utc)
                     .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
-                state.persist_single_setting_value(
-                    today_win_bonus::TODAY_WIN_BONUS_SETTINGS_KEY,
-                    Value::String(latest_time),
-                )?;
+                TauriOverlayOps::persist_first_win_bonus_time(&state, server, &latest_time)?;
 
                 Ok(OverlayActionResponse::success(
-                    "Latest first win bonus time saved.",
+                    "First win bonus time saved.",
                 ))
             }
             _ => {

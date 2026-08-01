@@ -10,7 +10,7 @@ use tauri::{Manager, Wry};
 
 use crate::{
     BackendState, PathManagerOps, ReplayAnalysis, ReplayCacheDatabase, ReplayCacheWriteQueue,
-    ReplayInfo, Sc2GameState, TauriOverlayOps, overlay_info,
+    ReplayInfo, Sc2GameState, Sc2Server, TauriOverlayOps, overlay_info,
 };
 
 pub enum ReplayWatcherMessage {
@@ -389,6 +389,9 @@ impl TauriOverlayOps {
 
         let main_names = state.configured_main_names();
         let main_handles = state.configured_main_handles();
+        let replay_server = cache_entry
+            .as_ref()
+            .and_then(|entry| Sc2Server::from_region_code(&entry.region));
         let replay = parsed.oriented_for_main_identity(&main_names, &main_handles);
         if replay.main_commander().trim().is_empty() && replay.ally_commander().trim().is_empty() {
             crate::sco_warn!(
@@ -432,7 +435,11 @@ impl TauriOverlayOps {
             .is_some_and(|transition| transition.current() == Sc2GameState::GameEnded);
         TauriOverlayOps::log_sc2_game_state_transition(game_state_transition, "replay_processed");
         if entered_game_end_state {
-            TauriOverlayOps::spawn_today_win_bonus_scan(app.clone(), replay.file.clone());
+            TauriOverlayOps::spawn_today_win_bonus_scan(
+                app.clone(),
+                replay.file.clone(),
+                replay_server,
+            );
         } else {
             crate::sco_debug!(
                 "[SCO/today-win-bonus] scan suppressed replay='{}' reason=not_game_end_transition map='{}' result='{}' main_comm='{}' ally_comm='{}'",

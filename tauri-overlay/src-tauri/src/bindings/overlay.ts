@@ -4,7 +4,7 @@ export type AnalysisCompletedPayload = { mode: string, message: string, };
 
 export type AnalysisStatusPayload = { status: string, ready: boolean, analysis_running: boolean, analysis_running_mode?: string, current_status: string, simple_analysis_status: string, detailed_analysis_status: string, detailed_parsed_count: number, total_valid_files: number, scan_progress: ReplayScanProgressPayload, };
 
-export type AppSettings = { start_with_windows: boolean, minimize_to_tray: boolean, start_minimized: boolean, auto_update: boolean, duration: number, show_player_winrates: boolean, show_replay_info_after_game: boolean, show_session: boolean, show_charts: boolean, hide_nicknames_in_overlay: boolean, account_folder: string, screenshot_folder: string, color_player1: string, color_player2: string, color_amon: string, color_mastery: string, "hotkey_show/hide": string | null, hotkey_show: string | null, hotkey_hide: string | null, hotkey_newer: string | null, hotkey_older: string | null, hotkey_winrates: string | null, enable_logging: boolean, dark_theme: boolean, language: string, monitor: number, performance_show: boolean, performance_hotkey: string | null, performance_processes: Array<string>, performance_geometry?: [number, number, number, number], rng_choices: { [key in string]: boolean }, player_notes: { [key in string]: string }, main_names: Array<string>, detailed_analysis_atstart: boolean, analysis_worker_threads: number, latest_today_win_bonus_time: string | null, first_win_bonus_display_mode: FirstWinBonusDisplayMode, };
+export type AppSettings = { start_with_windows: boolean, minimize_to_tray: boolean, start_minimized: boolean, auto_update: boolean, duration: number, show_player_winrates: boolean, show_replay_info_after_game: boolean, show_session: boolean, show_charts: boolean, hide_nicknames_in_overlay: boolean, account_folder: string, screenshot_folder: string, color_player1: string, color_player2: string, color_amon: string, color_mastery: string, "hotkey_show/hide": string | null, hotkey_show: string | null, hotkey_hide: string | null, hotkey_newer: string | null, hotkey_older: string | null, hotkey_winrates: string | null, enable_logging: boolean, dark_theme: boolean, language: string, monitor: number, performance_show: boolean, performance_hotkey: string | null, performance_processes: Array<string>, performance_geometry?: [number, number, number, number], rng_choices: { [key in string]: boolean }, player_notes: { [key in string]: string }, main_names: Array<string>, detailed_analysis_atstart: boolean, analysis_worker_threads: number, first_win_bonus_times: { [key in Sc2Server]?: string }, latest_first_win_bonus_server: Sc2Server | null, first_win_bonus_display_mode: FirstWinBonusDisplayMode, first_win_bonus_server_scope: FirstWinBonusServerScope, };
 
 export type ConfigChatPayload = { status: string, chat: ReplayChatPayload, };
 
@@ -22,7 +22,11 @@ export type EmptyPayload = Record<symbol, never>;
 
 export type FirstWinBonusDisplayMode = "hidden" | "available_only" | "always";
 
-export type FirstWinBonusTimerPayload = { visible: boolean, available: boolean, seconds_until_available: number, next_available_time?: string, };
+export type FirstWinBonusServerScope = "latest" | "all";
+
+export type FirstWinBonusServerTimerPayload = { server: Sc2Server, available: boolean, seconds_until_available: number, next_available_time?: string, };
+
+export type FirstWinBonusTimerPayload = { visible: boolean, available: boolean, seconds_until_available: number, next_available_time?: string, server_timers?: Array<FirstWinBonusServerTimerPayload>, };
 
 export type GamesRowPayload = { file: string, date: number, map: string, result: string, difficulty: string, p1: string, p2: string, slot1_commander: string, slot2_commander: string, enemy: string, main_commander: string, ally_commander: string, length: number, main_apm: number, ally_apm: number, main_kills: number, ally_kills: number, extension: boolean, brutal_plus: number, weekly: boolean, weekly_name?: string, mutators: Array<UiMutatorRow>, is_mutation: boolean, };
 
@@ -93,6 +97,8 @@ export type ReplayVisualUnit = { id: string, unit_type: string, display_name: st
 export type ReplayVisualUnitCount = { unit_type: string, display_name: string, count: number, };
 
 export type ReplayVisualUnitGroup = "buildings" | "attack_units" | "defense_buildings" | "enemy_assaults";
+
+export type Sc2Server = "america" | "europe" | "asia";
 
 export type StatsActionPayload = { status: string, result: OverlayActionResult, message: string, stats: StatsStatePayload | null, };
 

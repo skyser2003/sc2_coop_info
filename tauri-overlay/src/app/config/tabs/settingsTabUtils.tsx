@@ -3,6 +3,8 @@ import type { LanguageManager } from "../../i18n/languageManager";
 import type {
     AppSettings,
     FirstWinBonusDisplayMode,
+    FirstWinBonusServerScope,
+    Sc2Server,
 } from "../../../bindings/overlay";
 import type { DisplayValue, JsonValue } from "../types";
 import styles from "../configStyles";
@@ -14,6 +16,13 @@ const FIRST_WIN_BONUS_DISPLAY_MODES: readonly FirstWinBonusDisplayMode[] = [
     "available_only",
     "always",
 ];
+
+const FIRST_WIN_BONUS_SERVER_SCOPES: readonly FirstWinBonusServerScope[] = [
+    "latest",
+    "all",
+];
+
+export const SC2_SERVERS: readonly Sc2Server[] = ["america", "europe", "asia"];
 
 export function asTableValueCompat(value: DisplayValue): string {
     if (value === null || value === undefined) {
@@ -28,6 +37,15 @@ export function isFirstWinBonusDisplayMode(
     return (
         typeof value === "string" &&
         FIRST_WIN_BONUS_DISPLAY_MODES.some((mode) => mode === value)
+    );
+}
+
+export function isFirstWinBonusServerScope(
+    value: JsonValue | undefined,
+): value is FirstWinBonusServerScope {
+    return (
+        typeof value === "string" &&
+        FIRST_WIN_BONUS_SERVER_SCOPES.some((scope) => scope === value)
     );
 }
 

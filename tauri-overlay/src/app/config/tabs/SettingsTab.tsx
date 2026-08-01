@@ -3,7 +3,7 @@ import type { LanguageManager } from "../../i18n/languageManager";
 import { Grid } from "@mui/material";
 import { check, Update } from "@tauri-apps/plugin-updater";
 import { app } from "@tauri-apps/api";
-import type { AppSettings } from "../../../bindings/overlay";
+import type { AppSettings, Sc2Server } from "../../../bindings/overlay";
 import type { DisplayValue, JsonValue } from "../types";
 import styles from "../configStyles";
 import ColorField from "./ColorField";
@@ -16,8 +16,10 @@ import {
     getAtPathCompat,
     hotkeyStringFromEventCompat,
     isFirstWinBonusDisplayMode,
+    isFirstWinBonusServerScope,
     normalizeHexColor,
     parseManualFirstWinBonusTime,
+    SC2_SERVERS,
 } from "./settingsTabUtils";
 
 type SettingsTabProps = {
@@ -97,13 +99,31 @@ export default function SettingsTab({
     )
         ? firstWinBonusDisplayModeValue
         : "available_only";
-    const manualFirstWinBonusTimeText = formatManualFirstWinBonusTimeDisplay(
-        read(["latest_today_win_bonus_time"], null),
-        t("ui_settings_first_win_bonus_manual_never_set"),
+    const firstWinBonusServerScopeValue = read(
+        ["first_win_bonus_server_scope"],
+        "latest",
     );
-    const promptManualFirstWinBonusTime = () => {
+    const firstWinBonusServerScope = isFirstWinBonusServerScope(
+        firstWinBonusServerScopeValue,
+    )
+        ? firstWinBonusServerScopeValue
+        : "latest";
+    const firstWinBonusServerLabels: Readonly<Record<Sc2Server, string>> = {
+        america: t("ui_sc2_server_america"),
+        europe: t("ui_sc2_server_europe"),
+        asia: t("ui_sc2_server_asia"),
+    };
+    const manualFirstWinBonusTimeText = (server: Sc2Server): string =>
+        formatManualFirstWinBonusTimeDisplay(
+            read(["first_win_bonus_times", server], null),
+            t("ui_settings_first_win_bonus_manual_never_set"),
+        );
+    const promptManualFirstWinBonusTime = (server: Sc2Server) => {
         const value = window.prompt(
-            t("ui_settings_first_win_bonus_manual_prompt"),
+            t("ui_settings_first_win_bonus_manual_prompt").replace(
+                "{{server}}",
+                firstWinBonusServerLabels[server],
+            ),
             formatManualFirstWinBonusTimeDefault(new Date()),
         );
         if (value === null) {
@@ -116,7 +136,7 @@ export default function SettingsTab({
             return;
         }
 
-        void actions.setLatestFirstWinBonusTime(parsedTime);
+        void actions.setFirstWinBonusTime(server, parsedTime);
     };
 
     const hotkeyEntry = (
@@ -454,6 +474,151 @@ export default function SettingsTab({
                                     </Grid>
                                 </div>
                             </section>
+                            <section className={styles.mainSettingsGroup}>
+                                <h3 className={styles.mainSettingsGroupTitle}>
+                                    {t("ui_settings_first_win_bonus_group")}
+                                </h3>
+                                <Grid
+                                    container
+                                    className={[
+                                        styles.mainSettingsGroupFields,
+                                        styles.mainSettingsInlineNumbers,
+                                    ]
+                                        .filter(Boolean)
+                                        .join(" ")}
+                                    spacing={1.25}
+                                >
+                                    <Grid size={12}>
+                                        <Grid
+                                            container
+                                            columns={10}
+                                            spacing={1.25}
+                                            alignItems="center"
+                                            className={
+                                                styles.mainSettingsRowGrid
+                                            }
+                                        >
+                                            <Grid size={4}>
+                                                <span
+                                                    className={
+                                                        styles.mainRowLabel
+                                                    }
+                                                >
+                                                    {t(
+                                                        "ui_settings_first_win_bonus_servers_shown",
+                                                    )}
+                                                </span>
+                                            </Grid>
+                                            <Grid size={6}>
+                                                <select
+                                                    className={[
+                                                        styles.input,
+                                                        styles.mainFixedSelect,
+                                                    ]
+                                                        .filter(Boolean)
+                                                        .join(" ")}
+                                                    value={
+                                                        firstWinBonusServerScope
+                                                    }
+                                                    onChange={(event) => {
+                                                        const selectedScope =
+                                                            event.target.value;
+                                                        if (
+                                                            !isFirstWinBonusServerScope(
+                                                                selectedScope,
+                                                            )
+                                                        ) {
+                                                            return;
+                                                        }
+                                                        onChange(
+                                                            [
+                                                                "first_win_bonus_server_scope",
+                                                            ],
+                                                            selectedScope,
+                                                        );
+                                                    }}
+                                                >
+                                                    <option value="latest">
+                                                        {t(
+                                                            "ui_settings_first_win_bonus_servers_latest",
+                                                        )}
+                                                    </option>
+                                                    <option value="all">
+                                                        {t(
+                                                            "ui_settings_first_win_bonus_servers_all",
+                                                        )}
+                                                    </option>
+                                                </select>
+                                            </Grid>
+                                        </Grid>
+                                    </Grid>
+                                    {SC2_SERVERS.map((server) => (
+                                        <Grid size={12} key={server}>
+                                            <Grid
+                                                container
+                                                columns={10}
+                                                spacing={1.25}
+                                                alignItems="center"
+                                                className={
+                                                    styles.mainSettingsRowGrid
+                                                }
+                                            >
+                                                <Grid size={4}>
+                                                    <span
+                                                        className={
+                                                            styles.mainRowLabel
+                                                        }
+                                                    >
+                                                        {
+                                                            firstWinBonusServerLabels[
+                                                                server
+                                                            ]
+                                                        }
+                                                    </span>
+                                                </Grid>
+                                                <Grid size={6}>
+                                                    <div
+                                                        className={
+                                                            styles.mainInlineAction
+                                                        }
+                                                    >
+                                                        <button
+                                                            type="button"
+                                                            className={
+                                                                styles.buttonNormal
+                                                            }
+                                                            onClick={() =>
+                                                                promptManualFirstWinBonusTime(
+                                                                    server,
+                                                                )
+                                                            }
+                                                            disabled={
+                                                                actions.isBusy
+                                                            }
+                                                        >
+                                                            {t(
+                                                                "ui_settings_first_win_bonus_manual_button",
+                                                            )}
+                                                        </button>
+                                                        <span
+                                                            className={[
+                                                                styles.mainInlineValue,
+                                                                styles.mono,
+                                                            ]
+                                                                .filter(Boolean)
+                                                                .join(" ")}
+                                                        >
+                                                            {manualFirstWinBonusTimeText(
+                                                                server,
+                                                            )}
+                                                        </span>
+                                                    </div>
+                                                </Grid>
+                                            </Grid>
+                                        </Grid>
+                                    ))}
+                                </Grid>
+                            </section>
                             <SettingsAnalysisGroup
                                 actions={actions}
                                 asTableValue={asTableValue}
@@ -590,65 +755,6 @@ export default function SettingsTab({
                                                         ),
                                                     )}
                                                 </select>
-                                            </Grid>
-                                        </Grid>
-                                    </Grid>
-                                    <Grid size={12}>
-                                        <Grid
-                                            container
-                                            columns={10}
-                                            spacing={1.25}
-                                            alignItems="center"
-                                            className={
-                                                styles.mainSettingsRowGrid
-                                            }
-                                        >
-                                            <Grid size={4}>
-                                                <span
-                                                    className={
-                                                        styles.mainRowLabel
-                                                    }
-                                                >
-                                                    {t(
-                                                        "ui_settings_first_win_bonus_manual_label",
-                                                    )}
-                                                </span>
-                                            </Grid>
-                                            <Grid size={6}>
-                                                <div
-                                                    className={
-                                                        styles.mainInlineAction
-                                                    }
-                                                >
-                                                    <button
-                                                        type="button"
-                                                        className={
-                                                            styles.buttonNormal
-                                                        }
-                                                        onClick={
-                                                            promptManualFirstWinBonusTime
-                                                        }
-                                                        disabled={
-                                                            actions.isBusy
-                                                        }
-                                                    >
-                                                        {t(
-                                                            "ui_settings_first_win_bonus_manual_button",
-                                                        )}
-                                                    </button>
-                                                    <span
-                                                        className={[
-                                                            styles.mainInlineValue,
-                                                            styles.mono,
-                                                        ]
-                                                            .filter(Boolean)
-                                                            .join(" ")}
-                                                    >
-                                                        {
-                                                            manualFirstWinBonusTimeText
-                                                        }
-                                                    </span>
-                                                </div>
                                             </Grid>
                                         </Grid>
                                     </Grid>

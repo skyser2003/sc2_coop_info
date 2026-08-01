@@ -531,11 +531,11 @@ impl OverlayInfoOps {
 
     fn first_win_bonus_timer_hide_payload(state: &BackendState) -> FirstWinBonusTimerPayload {
         let settings = state.read_settings_memory();
-        crate::today_win_bonus::FirstWinBonusTimerStatus::from_latest_acquired_time(
-            settings.latest_today_win_bonus_time(),
+        crate::today_win_bonus::FirstWinBonusTimerStatus::payload_for_settings(
+            &settings,
             chrono::Utc::now(),
+            false,
         )
-        .into_payload(false)
     }
 
     pub fn emit_first_win_bonus_timer<R: Runtime>(

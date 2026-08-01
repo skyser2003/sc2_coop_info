@@ -81,8 +81,10 @@ function buildSettings(): AppSettings {
         main_names: [],
         detailed_analysis_atstart: false,
         analysis_worker_threads: 1,
-        latest_today_win_bonus_time: null,
+        first_win_bonus_times: {},
+        latest_first_win_bonus_server: null,
         first_win_bonus_display_mode: "always",
+        first_win_bonus_server_scope: "latest",
     };
 }
 

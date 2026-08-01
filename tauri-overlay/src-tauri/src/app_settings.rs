@@ -21,7 +21,10 @@ use crate::{
     path_manager,
     performance_overlay::PerformanceGeometry,
     replay_analysis::ReplayAnalysis,
-    shared_types::{FirstWinBonusDisplayMode, LocalizedLabels, OverlayInitColorsDurationPayload},
+    shared_types::{
+        FirstWinBonusDisplayMode, FirstWinBonusServerScope, LocalizedLabels,
+        OverlayInitColorsDurationPayload, Sc2Server,
+    },
 };
 
 pub type RandomizerChoices = BTreeMap<String, bool>;
@@ -67,8 +70,13 @@ pub struct AppSettings {
     main_names: Vec<String>,
     detailed_analysis_atstart: bool,
     analysis_worker_threads: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(skip)]
     latest_today_win_bonus_time: Option<String>,
+    first_win_bonus_times: BTreeMap<Sc2Server, String>,
+    latest_first_win_bonus_server: Option<Sc2Server>,
     first_win_bonus_display_mode: FirstWinBonusDisplayMode,
+    first_win_bonus_server_scope: FirstWinBonusServerScope,
     #[serde(skip)]
     #[ts(skip)]
     present_keys: BTreeSet<String>,
@@ -362,8 +370,24 @@ impl AppSettings {
         self.latest_today_win_bonus_time.as_deref()
     }
 
+    pub fn first_win_bonus_times(&self) -> &BTreeMap<Sc2Server, String> {
+        &self.first_win_bonus_times
+    }
+
+    pub fn first_win_bonus_time(&self, server: Sc2Server) -> Option<&str> {
+        self.first_win_bonus_times.get(&server).map(String::as_str)
+    }
+
+    pub fn latest_first_win_bonus_server(&self) -> Option<Sc2Server> {
+        self.latest_first_win_bonus_server
+    }
+
     pub fn first_win_bonus_display_mode(&self) -> FirstWinBonusDisplayMode {
         self.first_win_bonus_display_mode
+    }
+
+    pub fn first_win_bonus_server_scope(&self) -> FirstWinBonusServerScope {
+        self.first_win_bonus_server_scope
     }
 
     pub fn present_keys(&self) -> &BTreeSet<String> {
@@ -400,8 +424,26 @@ impl AppSettings {
         self.latest_today_win_bonus_time = value;
     }
 
+    pub fn set_first_win_bonus_time(&mut self, server: Sc2Server, value: String) {
+        self.first_win_bonus_times.insert(server, value);
+        self.latest_first_win_bonus_server = Some(server);
+        self.latest_today_win_bonus_time = None;
+    }
+
+    pub fn migrate_legacy_first_win_bonus_time(&mut self, server: Sc2Server) -> bool {
+        let Some(value) = self.latest_today_win_bonus_time.take() else {
+            return false;
+        };
+        self.set_first_win_bonus_time(server, value);
+        true
+    }
+
     pub fn set_first_win_bonus_display_mode(&mut self, value: FirstWinBonusDisplayMode) {
         self.first_win_bonus_display_mode = value;
+    }
+
+    pub fn set_first_win_bonus_server_scope(&mut self, value: FirstWinBonusServerScope) {
+        self.first_win_bonus_server_scope = value;
     }
 }
 
@@ -947,7 +989,10 @@ impl Default for AppSettings {
             detailed_analysis_atstart: false,
             analysis_worker_threads: Self::default_analysis_worker_threads(),
             latest_today_win_bonus_time: None,
+            first_win_bonus_times: BTreeMap::new(),
+            latest_first_win_bonus_server: None,
             first_win_bonus_display_mode: FirstWinBonusDisplayMode::AvailableOnly,
+            first_win_bonus_server_scope: FirstWinBonusServerScope::Latest,
             present_keys: Default::default(),
         };
 

@@ -1,9 +1,10 @@
 use chrono::{TimeZone, Utc};
 use image::{Rgba, RgbaImage};
 use sco_tauri_overlay::{
-    FirstWinBonusAcquiredTime, FirstWinBonusTimerStatus, ImageprocTodayWinBonusDigitReader,
-    ScreenRect, TodayWinBonusCaptureFallbackState, TodayWinBonusDetection, TodayWinBonusDetector,
-    TodayWinBonusDigitReader, WINDOW_CAPTURE_FAILURES_BEFORE_REGION_FALLBACK,
+    AppSettings, FirstWinBonusAcquiredTime, FirstWinBonusServerScope, FirstWinBonusTimerStatus,
+    ImageprocTodayWinBonusDigitReader, Sc2Server, ScreenRect, TodayWinBonusCaptureFallbackState,
+    TodayWinBonusDetection, TodayWinBonusDetector, TodayWinBonusDigitReader,
+    WINDOW_CAPTURE_FAILURES_BEFORE_REGION_FALLBACK,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
@@ -524,4 +525,57 @@ fn ignores_all_non_first_win_fixture_images_without_external_ocr() {
     for fixture_path in fixture_paths {
         assert_does_not_detect_first_win_fixture(&fixture_path);
     }
+}
+
+#[test]
+fn sc2_server_maps_supported_replay_regions() {
+    assert_eq!(Sc2Server::from_region_code("NA"), Some(Sc2Server::America));
+    assert_eq!(Sc2Server::from_region_code("EU"), Some(Sc2Server::Europe));
+    assert_eq!(Sc2Server::from_region_code("KR"), Some(Sc2Server::Asia));
+    assert_eq!(Sc2Server::from_region_code("PTR"), None);
+}
+
+#[test]
+fn first_win_bonus_payload_uses_only_the_latest_server_by_default() {
+    let now = Utc
+        .with_ymd_and_hms(2026, 5, 20, 12, 0, 0)
+        .single()
+        .expect("valid current time");
+    let mut settings = AppSettings::default();
+    settings.set_first_win_bonus_time(Sc2Server::America, "2026-05-20T10:00:00Z".to_string());
+    settings.set_first_win_bonus_time(Sc2Server::Europe, "2026-05-20T11:00:00Z".to_string());
+
+    let payload = FirstWinBonusTimerStatus::payload_for_settings(&settings, now, true);
+    let timers = payload
+        .server_timers
+        .expect("latest server payload should include a timer");
+
+    assert_eq!(timers.len(), 1);
+    assert_eq!(timers[0].server, Sc2Server::Europe);
+    assert_eq!(timers[0].seconds_until_available, 21 * 60 * 60);
+}
+
+#[test]
+fn first_win_bonus_payload_includes_all_three_servers_in_server_order() {
+    let now = Utc
+        .with_ymd_and_hms(2026, 5, 20, 12, 0, 0)
+        .single()
+        .expect("valid current time");
+    let mut settings = AppSettings::default();
+    settings.set_first_win_bonus_time(Sc2Server::America, "2026-05-19T10:00:00Z".to_string());
+    settings.set_first_win_bonus_time(Sc2Server::Europe, "2026-05-20T11:00:00Z".to_string());
+    settings.set_first_win_bonus_server_scope(FirstWinBonusServerScope::All);
+
+    let payload = FirstWinBonusTimerStatus::payload_for_settings(&settings, now, true);
+    let timers = payload
+        .server_timers
+        .expect("all-server payload should include timers");
+
+    assert_eq!(timers.len(), 3);
+    assert_eq!(timers[0].server, Sc2Server::America);
+    assert!(timers[0].available);
+    assert_eq!(timers[1].server, Sc2Server::Europe);
+    assert_eq!(timers[1].seconds_until_available, 21 * 60 * 60);
+    assert_eq!(timers[2].server, Sc2Server::Asia);
+    assert_eq!(timers[2].next_available_time, None);
 }

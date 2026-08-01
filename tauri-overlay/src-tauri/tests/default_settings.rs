@@ -1,4 +1,6 @@
-use sco_tauri_overlay::{AppSettings, FirstWinBonusDisplayMode};
+use sco_tauri_overlay::{
+    AppSettings, FirstWinBonusDisplayMode, FirstWinBonusServerScope, Sc2Server,
+};
 use serde_json::Value;
 use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -34,9 +36,15 @@ fn merge_settings_with_defaults_uses_requested_overlay_defaults() {
     assert_eq!(merged.hotkey_winrates(), Some("Ctrl+Alt+-"));
     assert_eq!(merged.performance_hotkey(), None);
     assert_eq!(merged.latest_today_win_bonus_time(), None);
+    assert!(merged.first_win_bonus_times().is_empty());
+    assert_eq!(merged.latest_first_win_bonus_server(), None);
     assert_eq!(
         merged.first_win_bonus_display_mode(),
         FirstWinBonusDisplayMode::AvailableOnly
+    );
+    assert_eq!(
+        merged.first_win_bonus_server_scope(),
+        FirstWinBonusServerScope::Latest
     );
     assert_eq!(
         merged.analysis_worker_threads(),
@@ -80,6 +88,53 @@ fn merge_settings_with_defaults_preserves_first_win_bonus_display_mode() {
     assert_eq!(
         merged.first_win_bonus_display_mode(),
         FirstWinBonusDisplayMode::Always
+    );
+}
+
+#[test]
+fn merge_settings_with_defaults_preserves_per_server_first_win_bonus_settings() {
+    let merged = AppSettings::merge_settings_with_defaults(json!({
+        "first_win_bonus_times": {
+            "america": "2026-05-18T12:34:56Z",
+            "asia": "2026-05-19T01:02:03Z"
+        },
+        "latest_first_win_bonus_server": "asia",
+        "first_win_bonus_server_scope": "all"
+    }));
+
+    assert_eq!(
+        merged.first_win_bonus_time(Sc2Server::America),
+        Some("2026-05-18T12:34:56Z")
+    );
+    assert_eq!(
+        merged.first_win_bonus_time(Sc2Server::Asia),
+        Some("2026-05-19T01:02:03Z")
+    );
+    assert_eq!(
+        merged.latest_first_win_bonus_server(),
+        Some(Sc2Server::Asia)
+    );
+    assert_eq!(
+        merged.first_win_bonus_server_scope(),
+        FirstWinBonusServerScope::All
+    );
+}
+
+#[test]
+fn legacy_first_win_bonus_time_migrates_to_assumed_replay_server() {
+    let mut merged = AppSettings::merge_settings_with_defaults(json!({
+        "latest_today_win_bonus_time": "2026-05-18T12:34:56Z"
+    }));
+
+    assert!(merged.migrate_legacy_first_win_bonus_time(Sc2Server::Europe));
+    assert_eq!(merged.latest_today_win_bonus_time(), None);
+    assert_eq!(
+        merged.first_win_bonus_time(Sc2Server::Europe),
+        Some("2026-05-18T12:34:56Z")
+    );
+    assert_eq!(
+        merged.latest_first_win_bonus_server(),
+        Some(Sc2Server::Europe)
     );
 }
 

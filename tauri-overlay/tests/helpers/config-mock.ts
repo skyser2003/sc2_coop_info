@@ -52,7 +52,8 @@ type ConfigMockSettingsValue =
     | boolean
     | null
     | readonly string[]
-    | Record<string, boolean>;
+    | Record<string, boolean>
+    | Record<string, string>;
 
 export type ConfigMockSettings = Record<string, ConfigMockSettingsValue>;
 
