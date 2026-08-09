@@ -51,7 +51,7 @@ jobs:
               with:
                   tagName: v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
                   releaseName: "SC2_Coop_Info v__VERSION__"
-                  releaseBody: "Feature: Added non-official coop maps parsing support\nFeature: Added OBS window capture support\nFeature: Show patch notes on wlilent"
+                  releaseBody: "Bug fix: Corrected email address\nBug fix: Fixed version label showing in settings"
                   releaseDraft: false
                   prerelease: false
                   projectPath: "./tauri-overlay"
