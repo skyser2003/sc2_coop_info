@@ -35,7 +35,40 @@ impl FrontendIndex {
 
 #[derive(Deserialize)]
 struct TauriAppConfig {
+    windows: Vec<TauriWindowConfig>,
     security: TauriSecurityConfig,
+}
+
+impl TauriAppConfig {
+    fn window(&self, label: &str) -> Option<&TauriWindowConfig> {
+        self.windows
+            .iter()
+            .find(|window| window.matches_label(label))
+    }
+}
+
+#[derive(Deserialize)]
+struct TauriWindowConfig {
+    label: String,
+    transparent: Option<bool>,
+    #[serde(rename = "windowClassname")]
+    window_classname: Option<String>,
+}
+
+impl TauriWindowConfig {
+    fn matches_label(&self, label: &str) -> bool {
+        self.label == label
+    }
+
+    fn is_transparent(&self) -> bool {
+        self.transparent.unwrap_or(false)
+    }
+
+    fn uses_obs_windows_graphics_capture_class(&self) -> bool {
+        self.window_classname
+            .as_deref()
+            .is_some_and(|class_name| class_name.contains("Chrome"))
+    }
 }
 
 #[derive(Deserialize)]
@@ -184,4 +217,22 @@ fn packaged_capability_allows_autostart_plugin_commands() {
     let permissions = capability.permission_identifiers();
 
     assert!(permissions.contains("autostart:default"));
+}
+
+#[test]
+fn transparent_overlays_prefer_obs_windows_graphics_capture() {
+    let config = TauriConfig::load();
+
+    for label in ["overlay", "sc2-overlay", "performance"] {
+        let window = config
+            .app
+            .window(label)
+            .unwrap_or_else(|| panic!("{label} window should be configured"));
+
+        assert!(window.is_transparent());
+        assert!(
+            window.uses_obs_windows_graphics_capture_class(),
+            "{label} should use a class that makes OBS Automatic capture select Windows Graphics Capture"
+        );
+    }
 }

@@ -14,7 +14,8 @@
         "windows": [
             {
                 "label": "config",
-                "title": "SC2 Coop Info",
+                "title": "SC2 Main Window",
+                "windowClassname": "SC2OverlayChromeWindow",
                 "url": "/#/config",
                 "width": 1600,
                 "height": 1080,
@@ -25,7 +26,8 @@
             },
             {
                 "label": "overlay",
-                "title": "SC2 Info overlay",
+                "title": "SC2 Replay Overlay",
+                "windowClassname": "SC2OverlayChromeWindow",
                 "width": 1400,
                 "height": 900,
                 "visible": false,
@@ -40,7 +42,8 @@
             },
             {
                 "label": "sc2-overlay",
-                "title": "SC2 Info live overlay",
+                "title": "SC2 Client Overlay",
+                "windowClassname": "SC2LiveOverlayChromeWindow",
                 "width": 1400,
                 "height": 900,
                 "visible": false,
@@ -55,7 +58,8 @@
             },
             {
                 "label": "performance",
-                "title": "SC2 Performance",
+                "title": "SC2 Performance Overlay",
+                "windowClassname": "SC2PerformanceChromeWindow",
                 "width": 400,
                 "height": 600,
                 "visible": false,

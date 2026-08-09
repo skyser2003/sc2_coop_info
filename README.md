@@ -1,4 +1,5 @@
 # SC2 Coop Info
+
 - [English](README.md)
 - [한국어](README.ko.md)
 
@@ -7,9 +8,11 @@ Rust/Tauri desktop overlay and replay-analysis tool for **StarCraft II Co-op**.
 This repository is a modernized continuation of the original **SC2 Coop Overlay** project by **FluffyMaguro**. The goal here is to preserve the original overlay's usefulness and feature set while moving the implementation to a Rust-first stack with a Tauri desktop shell.
 
 Original project:
+
 - https://github.com/FluffyMaguro/SC2_Coop_Overlay
 
 Release page for this repository:
+
 - https://github.com/skyser2003/sc2_coop_info/releases
 
 ## Respect To The Original Project
@@ -85,6 +88,15 @@ The config window currently includes these tabs:
 - Separate transparent performance window
 - Tracks selected processes
 - Supports its own hotkey and saved geometry
+
+## OBS Window Capture Setup
+
+Add two separate **Window Capture** sources in OBS:
+
+- `SC2 Replay Overlay` This source shows replay results after a game ends.
+- `SC2 Client overlay` This source shows player notes and first-win bonus timers while the StarCraft II client is open.
+
+If a window is not listed in OBS, show that overlay with its configured hotkey before opening the Window Capture properties.  For `SC2 Client Overlay`, it can only be shown after launching the game.
 
 ## Screenshots
 

@@ -1,4 +1,5 @@
 # SC2 Coop Info
+
 - [English](README.md)
 - [한국어](README.ko.md)
 
@@ -7,9 +8,11 @@
 이 저장소는 **FluffyMaguro**가 만들었던 **SC2 Coop Overlay**를 현대적인 기술 스택으로 다시 구현하고 발전시키기 위한 프로젝트입니다. 원작이 제공하던 기능성과 사용 흐름은 최대한 유지하면서, Rust 중심 구조와 Tauri 데스크톱 셸 기반으로 옮기는 것을 목표로 하고 있습니다.
 
 원본 프로젝트:
+
 - https://github.com/FluffyMaguro/SC2_Coop_Overlay
 
 이 저장소의 릴리스 페이지:
+
 - https://github.com/skyser2003/sc2_coop_info/releases
 
 ## 원본 프로젝트에 대해
@@ -85,6 +88,15 @@
 - 별도의 투명한 성능 창
 - 선택한 프로세스 추적
 - 전용 단축키 및 저장된 창 위치/크기 지원
+
+## OBS 창 캡처 설정
+
+OBS에 다음 두 개의 **창 캡처** 소스를 각각 추가하세요.
+
+- `SC2 Replay Overlay` 창을 선택합니다. 이 소스는 게임 종료 후 리플레이 결과를 표시합니다.
+- `SC2 Client Overlay` 창을 선택합니다. 이 소스는 플레이어 메모와 첫 승 보너스 타이머를 표시합니다.
+
+OBS의 창 목록에 원하는 창이 없다면, 창 캡처 속성을 열기 전에 설정된 단축키로 해당 오버레이를 먼저 표시하세요.  `SC2 Client Overlay`의 경우, 게임을 켠 상태에서 띄울 수 있습니다.
 
 ## 스크린샷
 
