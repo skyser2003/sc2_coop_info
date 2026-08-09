@@ -171,7 +171,7 @@ impl GamesPageReplayOps {
         };
         let paths = ReplayAnalysis::collect_replay_paths(&root, 0)
             .into_iter()
-            .filter(|path| DetailedReplayAnalyzer::is_mm_replay_path(path))
+            .filter(|path| DetailedReplayAnalyzer::is_games_tab_custom_replay_path(path))
             .filter(|path| Self::path_is_not_cached(path, cached_files))
             .collect::<Vec<_>>();
         if paths.is_empty() {

@@ -106,12 +106,29 @@ impl ReplayAnalysisResources {
 }
 
 impl DetailedReplayAnalyzer {
+    pub fn is_games_tab_custom_replay_path(path: &Path) -> bool {
+        Self::is_mm_replay_path(path)
+            || path
+                .file_name()
+                .and_then(|file_name| file_name.to_str())
+                .is_some_and(Self::replay_file_name_contains_coop)
+    }
+
     pub fn is_mm_replay_path(path: &Path) -> bool {
         Self::is_mm_replay_file(&path.to_string_lossy())
     }
 
     pub fn is_mm_replay_file(file: &str) -> bool {
         file.contains("[MM]")
+    }
+
+    fn replay_file_name_contains_coop(file_name: &str) -> bool {
+        let normalized_file_name = file_name
+            .chars()
+            .filter(|character| character.is_alphanumeric())
+            .flat_map(|character| character.to_lowercase())
+            .collect::<String>();
+        normalized_file_name.contains("coop")
     }
 
     fn replay_game_speed_code(details: &ReplayDetails, init_data: &ReplayInitData) -> i64 {
