@@ -264,6 +264,42 @@
         "en": "Etc",
         "ko": "기타"
     },
+    "ui_patch_notes_title": {
+        "en": "Patch notes",
+        "ko": "패치 노트"
+    },
+    "ui_patch_notes_now": {
+        "en": "now",
+        "ko": "현재"
+    },
+    "ui_patch_notes_latest": {
+        "en": "latest",
+        "ko": "최신"
+    },
+    "ui_patch_notes_loading": {
+        "en": "Loading patch notes…",
+        "ko": "패치 노트를 불러오는 중…"
+    },
+    "ui_patch_notes_error": {
+        "en": "Patch notes could not be loaded.",
+        "ko": "패치 노트를 불러올 수 없습니다."
+    },
+    "ui_patch_notes_retry": {
+        "en": "Retry",
+        "ko": "다시 시도"
+    },
+    "ui_patch_notes_empty": {
+        "en": "No releases are available.",
+        "ko": "사용 가능한 릴리스가 없습니다."
+    },
+    "ui_patch_notes_no_content": {
+        "en": "No patch notes provided.",
+        "ko": "제공된 패치 노트가 없습니다."
+    },
+    "ui_patch_notes_show_more": {
+        "en": "Show more",
+        "ko": "더 보기"
+    },
     "ui_tab_settings": {
         "en": "Settings",
         "ko": "설정"

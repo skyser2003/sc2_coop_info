@@ -65,6 +65,7 @@ function SettingsEditor({
     const [isBusy, setIsBusy] = useState(false);
     const [selectedReplayFile, setSelectedReplayFile] = useState("");
     const [gamesSearch, setGamesSearch] = useState("");
+    const [settingsReloadNumber, setSettingsReloadNumber] = useState(0);
     const [performanceEditModeEnabled, setPerformanceEditModeEnabled] =
         useState(false);
     const {
@@ -548,6 +549,8 @@ function SettingsEditor({
         ) : (
             renderTabContent(active, draft, settings, updateField, {
                 tabData,
+                appVersion,
+                settingsReloadNumber,
                 isDev,
                 isBusy,
                 settingsActions: {
@@ -786,6 +789,13 @@ function SettingsEditor({
                         to={getTabRoute(tab.id)}
                         sx={{ marginRight: "7px" }}
                         disabled={draft === null}
+                        onClick={() => {
+                            if (tab.id === "settings") {
+                                setSettingsReloadNumber(
+                                    (current) => current + 1,
+                                );
+                            }
+                        }}
                     />
                 ))}
             </Tabs>

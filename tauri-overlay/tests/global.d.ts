@@ -27,6 +27,7 @@ declare global {
         query?: string;
         request?: TestTauriRequest;
         settings?: TestJsonObject;
+        url?: string;
     };
     type TestConfigRequestRecord = TestTauriRequest | null;
 
@@ -43,6 +44,7 @@ declare global {
         __SCO_CONFIG_APPLY_REQUESTS__: TestJsonObject[];
         __SCO_CONFIG_SAVE_REQUESTS__: TestJsonObject[];
         __SCO_FOLDER_PICKER_REQUESTS__: TestConfigRequestRecord[];
+        __SCO_OPEN_URL_REQUESTS__: string[];
         __SCO_STATS_ACTION_REQUESTS__: TestConfigRequestRecord[];
         __SCO_STATS_REQUESTS__: TestConfigRequestRecord[];
         __SCO_TAB_REQUESTS__: TestConfigRequestRecord[];

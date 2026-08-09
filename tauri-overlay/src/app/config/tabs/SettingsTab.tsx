@@ -7,6 +7,7 @@ import type { AppSettings, Sc2Server } from "../../../bindings/overlay";
 import type { DisplayValue, JsonValue } from "../types";
 import styles from "../configStyles";
 import ColorField from "./ColorField";
+import PatchNotesPanel from "./PatchNotesPanel";
 import SettingsAnalysisGroup from "./SettingsAnalysisGroup";
 import type { SettingsActions } from "./settingsTabTypes";
 import {
@@ -23,6 +24,8 @@ import {
 } from "./settingsTabUtils";
 
 type SettingsTabProps = {
+    appVersion: string;
+    reloadNumber: number;
     draft: AppSettings | null;
     onChange: (path: string[], value: JsonValue) => void;
     getAtPath?: (
@@ -38,6 +41,8 @@ type SettingsTabProps = {
 };
 
 export default function SettingsTab({
+    appVersion,
+    reloadNumber,
     draft,
     onChange,
     getAtPath = getAtPathCompat,
@@ -1060,6 +1065,11 @@ export default function SettingsTab({
                                 </Grid>
                             </Grid>
                         </section>
+                        <PatchNotesPanel
+                            appVersion={appVersion}
+                            languageManager={languageManager}
+                            reloadNumber={reloadNumber}
+                        />
                     </div>
                 </Grid>
             </Grid>

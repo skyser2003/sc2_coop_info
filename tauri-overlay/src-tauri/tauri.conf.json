@@ -74,7 +74,7 @@
             }
         ],
         "security": {
-            "csp": "default-src 'self'; script-src 'self' 'nonce-c2NvT3ZlcmxheUdh' https://*.googletagmanager.com; style-src 'self' 'unsafe-inline' 'nonce-sco-overlay-mui'; style-src-elem 'self' 'unsafe-inline' 'nonce-sco-overlay-mui'; style-src-attr 'unsafe-inline'; img-src 'self' data: blob: https://*.google-analytics.com https://*.googletagmanager.com; font-src 'self' data:; connect-src 'self' data: https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com;",
+            "csp": "default-src 'self'; script-src 'self' 'nonce-c2NvT3ZlcmxheUdh' https://*.googletagmanager.com; style-src 'self' 'unsafe-inline' 'nonce-sco-overlay-mui'; style-src-elem 'self' 'unsafe-inline' 'nonce-sco-overlay-mui'; style-src-attr 'unsafe-inline'; img-src 'self' data: blob: https://*.google-analytics.com https://*.googletagmanager.com; font-src 'self' data:; connect-src 'self' data: https://api.github.com https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com;",
             "capabilities": [
                 {
                     "identifier": "event-handler",

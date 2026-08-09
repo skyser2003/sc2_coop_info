@@ -46,6 +46,13 @@ export type ConfigMockPlayerRow = {
     last_seen: number;
 };
 
+export type ConfigMockGitHubRelease = {
+    tag_name: string;
+    body: string | null;
+    draft: boolean;
+    html_url: string;
+};
+
 type ConfigMockSettingsValue =
     | string
     | number
@@ -70,6 +77,8 @@ export type ConfigMockPageRequest = {
 
 export type ConfigMockOptions = {
     games?: readonly ConfigMockGameRow[];
+    githubReleases?: readonly ConfigMockGitHubRelease[];
+    onGitHubReleaseRequest?: () => void;
     players?: readonly ConfigMockPlayerRow[];
     stats?: StatsStatePayload;
     weeklies?: readonly ConfigMockSettings[];
@@ -93,6 +102,7 @@ type ConfigMockInvokeRequest = {
     query?: string;
     request?: ConfigMockPageRequest;
     settings?: ConfigMockSettings;
+    url?: string;
 };
 
 type ConfigMockInitOptions = {
@@ -171,6 +181,17 @@ export async function installConfigMock(
     page: Page,
     options: ConfigMockOptions = {},
 ): Promise<void> {
+    await page.route(
+        "https://api.github.com/repos/skyser2003/sc2_coop_info/releases?per_page=10",
+        async (route) => {
+            options.onGitHubReleaseRequest?.();
+            await route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify(options.githubReleases ?? []),
+            });
+        },
+    );
     await page.addInitScript(
         ({ games, players, stats, weeklies, settings: initialSettings }) => {
             type BrowserGameRow = ConfigMockGameRow;
@@ -354,6 +375,7 @@ export async function installConfigMock(
             window.__SCO_CONFIG_APPLY_REQUESTS__ = [];
             window.__SCO_CONFIG_SAVE_REQUESTS__ = [];
             window.__SCO_FOLDER_PICKER_REQUESTS__ = [];
+            window.__SCO_OPEN_URL_REQUESTS__ = [];
             window.__SCO_STATS_ACTION_REQUESTS__ = [];
             window.__SCO_STATS_REQUESTS__ = [];
             window.__SCO_TAB_REQUESTS__ = [];
@@ -421,6 +443,12 @@ export async function installConfigMock(
                         return null;
                     }
                     if (command === "plugin:event|emit") {
+                        return null;
+                    }
+                    if (command === "plugin:opener|open_url") {
+                        if (typeof request?.url === "string") {
+                            window.__SCO_OPEN_URL_REQUESTS__.push(request.url);
+                        }
                         return null;
                     }
                     if (command === "is_dev") {

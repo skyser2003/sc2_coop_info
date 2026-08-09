@@ -69,6 +69,8 @@ type PlayersTabState = React.ComponentProps<typeof PlayersTab>["state"];
 type ConfigStatsResult = ReturnType<typeof useConfigStats>;
 type ExtraState = {
     tabData: TabDataState;
+    appVersion: string;
+    settingsReloadNumber: number;
     isDev: boolean;
     isBusy: boolean;
     settingsActions: SettingsTabActions;
@@ -678,6 +680,8 @@ function renderMainSettingsTab(
     onChange: PathValueUpdater,
     actions: SettingsTabActions,
     languageManager: LanguageManagerInstance,
+    appVersion: string,
+    reloadNumber: number,
 ): React.ReactNode {
     return (
         <SettingsTab
@@ -688,6 +692,8 @@ function renderMainSettingsTab(
             hotkeyStringFromEvent={hotkeyStringFromEvent}
             actions={actions}
             languageManager={languageManager}
+            appVersion={appVersion}
+            reloadNumber={reloadNumber}
         />
     );
 }
@@ -739,6 +745,8 @@ function renderTabContent(
             onChange,
             extraState.settingsActions,
             extraState.languageManager,
+            extraState.appVersion,
+            extraState.settingsReloadNumber,
         );
     }
     if (tab.id === "games") {

@@ -329,8 +329,45 @@
 .configPage.configPage .masteryDistributionPrestigePanel,
 .configPage.configPage .randomizerTableShell,
 .configPage.configPage .mainSettingsGroup,
-.configPage.configPage .mainSettingsBox {
+.configPage.configPage .mainSettingsBox,
+.configPage.configPage .patchNotesPanel {
     background: var(--config-surface-soft);
+}
+
+.configPage.configPage .patchNotesPanel,
+.configPage.configPage .patchNoteCard {
+    border-color: var(--config-border);
+}
+
+.configPage.configPage .patchNoteCard {
+    background: var(--config-surface);
+}
+
+.configPage.configPage .patchNotesTitleLink,
+.configPage.configPage .patchNoteVersionLink {
+    color: var(--config-link-text);
+}
+
+.configPage.configPage .patchNotesTitleLink:hover,
+.configPage.configPage .patchNoteVersionLink:hover {
+    color: var(--config-link-hover-text);
+}
+
+.configPage.configPage .patchNoteLabelNow {
+    background: var(--config-accent-soft);
+    border-color: var(--config-accent-border);
+    color: var(--config-link-text);
+}
+
+.configPage.configPage .patchNoteLabelLatest {
+    background: var(--config-chip-bg);
+    border-color: var(--config-border);
+    color: var(--config-chip-text);
+}
+
+.configPage.configPage .patchNoteBody,
+.configPage.configPage .patchNotesStatus {
+    color: var(--config-subtle-strong);
 }
 
 .configPage.configPage .masteryDistributionLineGraph {

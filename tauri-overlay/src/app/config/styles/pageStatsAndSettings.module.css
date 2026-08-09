@@ -794,3 +794,115 @@
 .configPage .groupField {
     margin-top: 8px;
 }
+
+.configPage .patchNotesPanel {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    background: rgba(8, 15, 30, 0.48);
+}
+
+.configPage .patchNotesTitleLink,
+.configPage .patchNoteVersionLink {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+}
+
+.configPage .patchNotesTitleLink:hover,
+.configPage .patchNoteVersionLink:hover {
+    color: #ffffff;
+}
+
+.configPage .patchNotesScroll {
+    display: grid;
+    gap: 8px;
+    max-block-size: 30rem;
+    padding-right: 5px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+}
+
+.configPage .patchNoteCard {
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid #29374c;
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.74);
+}
+
+.configPage .patchNoteCard h4 {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin: 0 0 5px;
+    color: #bfdbfe;
+    font-size: 14px;
+}
+
+.configPage .patchNoteLabels {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.configPage .patchNoteLabel {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: 18px;
+    padding: 1px 7px;
+    border: 1px solid #3b82f6;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.3;
+    letter-spacing: 0.02em;
+    text-transform: lowercase;
+}
+
+.configPage .patchNoteLabelNow {
+    background: rgba(37, 99, 235, 0.2);
+    color: #bfdbfe;
+}
+
+.configPage .patchNoteLabelLatest {
+    border-color: #475569;
+    background: rgba(71, 85, 105, 0.22);
+    color: #cbd5e1;
+}
+
+.configPage .patchNoteBody {
+    margin: 0;
+    color: #cbd5e1;
+    font-size: 13px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.configPage .patchNotesStatus {
+    margin: 0;
+    padding: 12px 4px;
+    color: #a7b5cf;
+    text-align: center;
+}
+
+.configPage .patchNotesStatus p {
+    margin: 0 0 8px;
+}
+
+.configPage .patchNotesMore {
+    display: flex;
+    justify-content: center;
+    padding: 4px 0 1px;
+}
+
+.configPage .patchNotesMore button {
+    width: 100%;
+}
