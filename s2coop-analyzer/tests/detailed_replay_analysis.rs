@@ -1,6 +1,6 @@
 use s2coop_analyzer::cache_overall_stats_generator::{ProtocolBuildValue, ReplayBuildInfo};
 use s2coop_analyzer::tauri_replay_analysis_impl::{ParsedReplayInput, ParsedReplayPlayer};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 fn sample_parser_with_commanders(main_commander: &str, ally_commander: &str) -> ParsedReplayInput {
     ParsedReplayInput {
@@ -84,6 +84,7 @@ fn parser_player_overrides_preserve_non_empty_slot_commanders() {
 
     parser.apply_player_overrides(
         &commander_by_player,
+        &HashSet::new(),
         &mastery_by_player,
         &prestige_by_player,
     );
@@ -104,10 +105,31 @@ fn parser_player_overrides_fill_missing_commanders_from_events() {
 
     parser.apply_player_overrides(
         &commander_by_player,
+        &HashSet::new(),
         &mastery_by_player,
         &prestige_by_player,
     );
 
     assert_eq!(parser.player(1).unwrap().commander, "Han & Horner");
     assert_eq!(parser.player(2).unwrap().commander, "Vorazun");
+}
+
+#[test]
+fn parser_player_overrides_replace_asset_fallbacks_for_custom_games_tab_replays() {
+    let mut parser = sample_parser_with_commanders("Swann", "Swann");
+    let commander_by_player =
+        HashMap::from([(1_i64, "Maar".to_string()), (2_i64, "Zeratul".to_string())]);
+    let commander_override_players = HashSet::from([1_i64, 2_i64]);
+    let mastery_by_player = HashMap::from([(1_i64, [0_i64; 6]), (2_i64, [0_i64; 6])]);
+    let prestige_by_player = HashMap::<i64, String>::new();
+
+    parser.apply_player_overrides(
+        &commander_by_player,
+        &commander_override_players,
+        &mastery_by_player,
+        &prestige_by_player,
+    );
+
+    assert_eq!(parser.player(1).unwrap().commander, "Maar");
+    assert_eq!(parser.player(2).unwrap().commander, "Zeratul");
 }

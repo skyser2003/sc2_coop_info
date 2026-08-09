@@ -114,8 +114,109 @@ impl DetailedReplayAnalyzer {
                 .is_some_and(Self::replay_file_name_contains_coop)
     }
 
+    pub fn coop_plus_commander_name_from_upgrade(upgrade_name: &str) -> Option<String> {
+        let suffix = upgrade_name
+            .strip_prefix("Mastery")?
+            .trim_start_matches(|character: char| !character.is_alphanumeric());
+        let candidate = Self::leading_pascal_case_word(suffix);
+        Self::validated_custom_commander_name(candidate)
+    }
+
+    pub fn nexus_coop_commander_name_from_upgrade(upgrade_name: &str) -> Option<String> {
+        let candidate = if let Some(marker_index) = upgrade_name.find("Mastery") {
+            if marker_index == 0 {
+                return None;
+            }
+            upgrade_name[..marker_index]
+                .trim_matches(|character: char| !character.is_alphanumeric())
+        } else {
+            let marker_index = upgrade_name.find("Commander")?;
+            if upgrade_name[marker_index + "Commander".len()..]
+                .chars()
+                .any(char::is_alphanumeric)
+            {
+                return None;
+            }
+            upgrade_name[..marker_index]
+                .trim_matches(|character: char| !character.is_alphanumeric())
+        };
+        Self::validated_custom_commander_name(candidate)
+    }
+
+    pub fn commander_name_from_numbered_unit_variant(
+        unit_name: &str,
+        known_commander_names: &HashSet<String>,
+    ) -> Option<String> {
+        let base_name = unit_name.trim_end_matches(|character: char| character.is_ascii_digit());
+        if base_name.len() == unit_name.len()
+            || !known_commander_names
+                .iter()
+                .any(|commander_name| commander_name.eq_ignore_ascii_case(base_name))
+        {
+            return None;
+        }
+
+        Some(unit_name.to_string())
+    }
+
+    fn validated_custom_commander_name(candidate: &str) -> Option<String> {
+        if candidate.is_empty() || !candidate.chars().any(char::is_alphabetic) {
+            return None;
+        }
+
+        let normalized_candidate = candidate.to_ascii_lowercase();
+        if matches!(
+            normalized_candidate.as_str(),
+            "ally"
+                | "coop"
+                | "cooperative"
+                | "enemy"
+                | "generic"
+                | "level"
+                | "player"
+                | "points"
+                | "selection"
+                | "talent"
+                | "talents"
+        ) {
+            return None;
+        }
+
+        Some(candidate.to_string())
+    }
+
+    fn leading_pascal_case_word(value: &str) -> &str {
+        let mut saw_lowercase = false;
+        for (index, character) in value.char_indices() {
+            if !character.is_alphanumeric() {
+                return &value[..index];
+            }
+            if index > 0 && character.is_uppercase() && saw_lowercase {
+                return &value[..index];
+            }
+            saw_lowercase |= character.is_lowercase();
+        }
+        value
+    }
+
     pub fn is_mm_replay_path(path: &Path) -> bool {
         Self::is_mm_replay_file(&path.to_string_lossy())
+    }
+
+    pub fn is_nexus_coop_replay_path(path: &Path) -> bool {
+        path.file_name()
+            .and_then(|file_name| file_name.to_str())
+            .map(Self::normalized_replay_file_name)
+            .is_some_and(|file_name| file_name.contains("nexuscoop"))
+    }
+
+    pub fn is_coop_plus_replay_path(path: &Path) -> bool {
+        let Some(file_name) = path.file_name().and_then(|file_name| file_name.to_str()) else {
+            return false;
+        };
+        let normalized_file_name = Self::normalized_replay_file_name(file_name);
+        normalized_file_name.contains("coopplus")
+            || Self::normalized_replay_file_name_preserving_plus(file_name).contains("coop+")
     }
 
     pub fn is_mm_replay_file(file: &str) -> bool {
@@ -123,12 +224,23 @@ impl DetailedReplayAnalyzer {
     }
 
     fn replay_file_name_contains_coop(file_name: &str) -> bool {
-        let normalized_file_name = file_name
+        Self::normalized_replay_file_name(file_name).contains("coop")
+    }
+
+    fn normalized_replay_file_name(file_name: &str) -> String {
+        file_name
             .chars()
             .filter(|character| character.is_alphanumeric())
             .flat_map(|character| character.to_lowercase())
-            .collect::<String>();
-        normalized_file_name.contains("coop")
+            .collect::<String>()
+    }
+
+    fn normalized_replay_file_name_preserving_plus(file_name: &str) -> String {
+        file_name
+            .chars()
+            .filter(|character| character.is_alphanumeric() || *character == '+')
+            .flat_map(|character| character.to_lowercase())
+            .collect::<String>()
     }
 
     fn replay_game_speed_code(details: &ReplayDetails, init_data: &ReplayInitData) -> i64 {

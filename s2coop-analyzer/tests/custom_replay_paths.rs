@@ -35,3 +35,36 @@ fn games_tab_custom_replay_path_ignores_unrelated_file_names_and_parent_folders(
         );
     }
 }
+
+#[test]
+fn nexus_coop_replay_path_is_identified_after_normalization() {
+    assert!(DetailedReplayAnalyzer::is_nexus_coop_replay_path(
+        Path::new("Replays/Nexus Co-op Dead of Night.SC2Replay")
+    ));
+    assert!(!DetailedReplayAnalyzer::is_nexus_coop_replay_path(
+        Path::new("Replays/[Co-op+] Part and Parcel.SC2Replay")
+    ));
+}
+
+#[test]
+fn coop_plus_replay_path_is_identified_without_matching_other_coop_maps() {
+    for path in [
+        "Replays/[Co-op+] Part and Parcel.SC2Replay",
+        "Replays/Coop Plus Part and Parcel.SC2Replay",
+    ] {
+        assert!(
+            DetailedReplayAnalyzer::is_coop_plus_replay_path(Path::new(path)),
+            "expected Co-op+ replay path: {path}"
+        );
+    }
+
+    for path in [
+        "Replays/Nexus Co-op Dead of Night.SC2Replay",
+        "Replays/Cooperative Mission.SC2Replay",
+    ] {
+        assert!(
+            !DetailedReplayAnalyzer::is_coop_plus_replay_path(Path::new(path)),
+            "unexpected Co-op+ replay path: {path}"
+        );
+    }
+}

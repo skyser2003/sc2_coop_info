@@ -207,6 +207,7 @@ impl ParsedReplayInput {
     pub fn apply_player_overrides(
         &mut self,
         commander_by_player: &HashMap<i64, String>,
+        commander_override_players: &HashSet<i64>,
         mastery_by_player: &HashMap<i64, [i64; 6]>,
         prestige_by_player: &HashMap<i64, String>,
     ) {
@@ -217,7 +218,7 @@ impl ParsedReplayInput {
                 continue;
             };
 
-            if player.commander.trim().is_empty()
+            if (player.commander.trim().is_empty() || commander_override_players.contains(&pid))
                 && let Some(commander_name) = commander_by_player
                     .get(&pid)
                     .filter(|value| !value.trim().is_empty())

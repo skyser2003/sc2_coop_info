@@ -1,6 +1,13 @@
 mod report_helpers;
 use super::*;
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum CustomCommanderSignalPriority {
+    CompatibilityUpgrade,
+    MasteryUpgrade,
+    NumberedUnitVariant,
+}
+
 impl DetailedReplayAnalyzer {
     pub fn analyze_single_detailed(
         replay_path: &Path,
@@ -20,6 +27,25 @@ impl DetailedReplayAnalyzer {
 }
 
 impl DetailedReplayAnalyzer {
+    fn accept_custom_commander_candidate(
+        commander_by_player: &mut HashMap<i64, String>,
+        signal_priority_by_player: &mut HashMap<i64, CustomCommanderSignalPriority>,
+        player_id: i64,
+        commander_name: String,
+        signal_priority: CustomCommanderSignalPriority,
+    ) -> Option<String> {
+        if signal_priority_by_player
+            .get(&player_id)
+            .is_some_and(|current_priority| *current_priority >= signal_priority)
+        {
+            return None;
+        }
+
+        signal_priority_by_player.insert(player_id, signal_priority);
+        commander_by_player.insert(player_id, commander_name.clone());
+        Some(commander_name)
+    }
+
     pub(super) fn build_stats_counter_dictionaries(
         dictionaries: &CacheGenerationData<'_>,
     ) -> StatsCounterDictionaries {
@@ -129,6 +155,8 @@ impl DetailedReplayAnalyzer {
 
         let main_player = i64::from(parser.selected_main_player_pid(main_player_handles));
         let ally_player = if main_player == 2 { 1 } else { 2 };
+        let is_coop_plus_replay = Self::is_coop_plus_replay_path(Path::new(&parser.file));
+        let is_nexus_coop_replay = Self::is_nexus_coop_replay_path(Path::new(&parser.file));
 
         let main_player_row = parser.player(main_player as u8);
         let ally_player_row = parser.player(ally_player as u8);
@@ -166,6 +194,12 @@ impl DetailedReplayAnalyzer {
         let salvage_units_set = &analysis_sets.salvage_units;
         let unit_add_losses_to_set = &analysis_sets.unit_add_losses_to;
         let commander_no_units_values_set = &analysis_sets.commander_no_units_values;
+        let known_commander_names = dictionaries
+            .replay_analysis_data
+            .commander_upgrades
+            .values()
+            .cloned()
+            .collect::<HashSet<String>>();
 
         let mut amon_player_ids_set = ReplayPlayerIdSet::from_values([3_i64, 4_i64]);
         for (mission_name, player_ids) in dictionaries.amon_player_ids.iter() {
@@ -185,6 +219,9 @@ impl DetailedReplayAnalyzer {
         let mut dt_ht_ignore = vec![0_i64; 17];
         let mut killcounts = vec![0_i64; 18];
         let mut commander_by_player = HashMap::<i64, String>::new();
+        let mut games_tab_custom_commander_players = HashSet::<i64>::new();
+        let mut custom_commander_priority_by_player =
+            HashMap::<i64, CustomCommanderSignalPriority>::new();
         let mut mastery_by_player = HashMap::from([(1_i64, [0_i64; 6]), (2_i64, [0_i64; 6])]);
         let mut prestige_by_player = HashMap::<i64, String>::new();
         let mut outlaw_order: Vec<String> = Vec::new();
@@ -347,17 +384,65 @@ impl DetailedReplayAnalyzer {
                         }
                     }
 
-                    if let Some(commander_name) = update.commander_name() {
-                        commander_by_player.insert(upg_pid, commander_name.to_string());
-                        vespene_drone_identifier.update_commanders(upg_pid, commander_name);
+                    let games_tab_custom_commander_candidate = if is_nexus_coop_replay {
+                        Self::nexus_coop_commander_name_from_upgrade(&upg_name).map(
+                            |commander_name| {
+                                let priority = if upg_name.contains("Mastery") {
+                                    CustomCommanderSignalPriority::MasteryUpgrade
+                                } else {
+                                    CustomCommanderSignalPriority::CompatibilityUpgrade
+                                };
+                                (commander_name, priority)
+                            },
+                        )
+                    } else if is_coop_plus_replay {
+                        Self::coop_plus_commander_name_from_upgrade(&upg_name).map(
+                            |commander_name| {
+                                (
+                                    commander_name,
+                                    CustomCommanderSignalPriority::MasteryUpgrade,
+                                )
+                            },
+                        )
+                    } else {
+                        None
+                    };
+                    let detected_commander_name =
+                        if let Some((custom_commander_name, signal_priority)) =
+                            games_tab_custom_commander_candidate
+                        {
+                            let accepted_commander_name = Self::accept_custom_commander_candidate(
+                                &mut commander_by_player,
+                                &mut custom_commander_priority_by_player,
+                                upg_pid,
+                                custom_commander_name,
+                                signal_priority,
+                            );
+                            if accepted_commander_name.is_some() {
+                                games_tab_custom_commander_players.insert(upg_pid);
+                            }
+                            accepted_commander_name
+                        } else if games_tab_custom_commander_players.contains(&upg_pid) {
+                            None
+                        } else {
+                            update.commander_name().map(|commander_name| {
+                                commander_by_player.insert(upg_pid, commander_name.to_string());
+                                commander_name.to_string()
+                            })
+                        };
+                    if let Some(detected_commander_name) = detected_commander_name {
+                        vespene_drone_identifier
+                            .update_commanders(upg_pid, detected_commander_name.as_str());
 
                         if let Some(target) = update.target() {
                             match target {
                                 StatsCounterTarget::Main => {
-                                    main_stats_counter.update_commander(commander_name);
+                                    main_stats_counter
+                                        .update_commander(detected_commander_name.as_str());
                                 }
                                 StatsCounterTarget::Ally => {
-                                    ally_stats_counter.update_commander(commander_name);
+                                    ally_stats_counter
+                                        .update_commander(detected_commander_name.as_str());
                                 }
                             }
                         }
@@ -405,6 +490,35 @@ impl DetailedReplayAnalyzer {
                         continue;
                     };
                     let handler_started = timings.start();
+                    let control_player_id = event.m_control_player_id.unwrap_or_default();
+                    let numbered_commander_name = is_nexus_coop_replay
+                        .then(|| {
+                            Self::commander_name_from_numbered_unit_variant(
+                                event.m_unit_type_name.as_deref().unwrap_or_default(),
+                                &known_commander_names,
+                            )
+                        })
+                        .flatten();
+                    if matches!(control_player_id, 1 | 2)
+                        && let Some(numbered_commander_name) = numbered_commander_name
+                        && let Some(numbered_commander_name) =
+                            Self::accept_custom_commander_candidate(
+                                &mut commander_by_player,
+                                &mut custom_commander_priority_by_player,
+                                control_player_id,
+                                numbered_commander_name,
+                                CustomCommanderSignalPriority::NumberedUnitVariant,
+                            )
+                    {
+                        games_tab_custom_commander_players.insert(control_player_id);
+                        vespene_drone_identifier
+                            .update_commanders(control_player_id, numbered_commander_name.as_str());
+                        if control_player_id == main_player {
+                            main_stats_counter.update_commander(numbered_commander_name.as_str());
+                        } else if control_player_id == ally_player {
+                            ally_stats_counter.update_commander(numbered_commander_name.as_str());
+                        }
+                    }
                     let event_fields = UnitBornOrInitEventFields::new(
                         event.m_unit_type_name.as_deref().unwrap_or_default(),
                         event.m_creator_ability_name.as_deref(),
@@ -412,7 +526,7 @@ impl DetailedReplayAnalyzer {
                             DetailedReplayAnalyzer::replay_event_unitid(event).unwrap_or_default(),
                             DetailedReplayAnalyzer::replay_creator_unitid(event),
                         ),
-                        event.m_control_player_id.unwrap_or_default(),
+                        control_player_id,
                         event.game_loop,
                         UnitEventPosition::new(
                             event.m_x.unwrap_or_default(),
@@ -740,6 +854,7 @@ impl DetailedReplayAnalyzer {
         let overrides_started = timings.start();
         parser.apply_player_overrides(
             &commander_by_player,
+            &games_tab_custom_commander_players,
             &mastery_by_player,
             &prestige_by_player,
         );
