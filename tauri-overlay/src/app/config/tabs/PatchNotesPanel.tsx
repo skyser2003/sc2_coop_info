@@ -139,13 +139,13 @@ export default function PatchNotesPanel({
                                     <span
                                         className={[
                                             styles.patchNoteLabel,
-                                            styles.patchNoteLabelNow,
+                                            styles.patchNoteLabelCurrent,
                                         ]
                                             .filter(Boolean)
                                             .join(" ")}
                                         data-testid="patch-note-label"
                                     >
-                                        {t("ui_patch_notes_now")}
+                                        {t("ui_patch_notes_current")}
                                     </span>
                                 ) : null}
                                 {releaseIndex === 0 ? (

@@ -92,7 +92,7 @@ test.describe("Settings patch notes", () => {
             ]);
     });
 
-    test("shows now before latest when the current version is newest", async ({
+    test("shows current before latest when the current version is newest", async ({
         page,
     }) => {
         const releases = [...mockReleases()];
@@ -112,7 +112,7 @@ test.describe("Settings patch notes", () => {
 
         const firstPatchNote = page.getByTestId("patch-note").first();
         await expect(firstPatchNote.getByTestId("patch-note-label")).toHaveText(
-            ["now", "latest"],
+            ["current", "latest"],
         );
     });
 

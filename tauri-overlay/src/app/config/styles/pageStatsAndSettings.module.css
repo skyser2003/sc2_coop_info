@@ -866,7 +866,7 @@
     text-transform: lowercase;
 }
 
-.configPage .patchNoteLabelNow {
+.configPage .patchNoteLabelCurrent {
     background: rgba(37, 99, 235, 0.2);
     color: #bfdbfe;
 }

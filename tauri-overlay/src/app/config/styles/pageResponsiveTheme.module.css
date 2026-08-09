@@ -353,7 +353,7 @@
     color: var(--config-link-hover-text);
 }
 
-.configPage.configPage .patchNoteLabelNow {
+.configPage.configPage .patchNoteLabelCurrent {
     background: var(--config-accent-soft);
     border-color: var(--config-accent-border);
     color: var(--config-link-text);

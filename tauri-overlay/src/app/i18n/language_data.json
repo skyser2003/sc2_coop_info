@@ -268,8 +268,8 @@
         "en": "Patch notes",
         "ko": "패치 노트"
     },
-    "ui_patch_notes_now": {
-        "en": "now",
+    "ui_patch_notes_current": {
+        "en": "current",
         "ko": "현재"
     },
     "ui_patch_notes_latest": {
