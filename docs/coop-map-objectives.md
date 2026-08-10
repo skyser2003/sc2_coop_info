@@ -1,28 +1,46 @@
 # Co-op Map Objective Reference
 
-This is a backup reference for replay objective work. It is not wired into runtime code.
+This document is the entry point for deterministic co-op objective reconstruction
+from replay data. Detailed specifications live in
+[`docs/coop-map-objectives/`](./coop-map-objectives/README.md).
 
-| Map | Main objective | Main marker count | Sub / bonus objective | Sub marker count | Replay interpretation notes |
-| --- | --- | ---: | --- | ---: | --- |
-| Chain of Ascension | Help Ji'nara win Rak'Shir and advance through the lane to the Pit of Sacrifice. | 4 | Destroy Slayn Elementals. | 2 | Main milestones can be represented by the last Hybrid death in each major Hybrid wave. |
-| Cradle of Death | Escort trucks and destroy Xel'Naga constructs. | 4 | Destroy Logistics Headquarters targets. | 2 | Main and bonus targets are separate object types; truck deaths are not bonus completion. |
-| Dead of Night | Destroy all infested structures while surviving night attacks. | 151 | Destroy the Virophage. | 1 | For overlay markers, ignore main objective and instead show day/night transitions.  They are separate from main objective markers. |
-| Lock & Load | Capture and hold all Celestial Locks. | 5 | Destroy the Xel'Naga Construct. | 1 | Earlier overlay plan ignored main objective markers for this map. |
-| Malwarfare | Escort Aurana and complete the five terminal / security phases. | 5 | Secure optional Purifier data / escort objectives. | 2 | Bonus completion is tied to the optional downloader / escort objective state. |
-| Miner Evacuation | Launch evacuation ships. | 7 | Destroy the two optional bonus bosses. | 2 | Main objective may be success or failed ship loss; failed ship markers should be distinct from destroyed enemy objectives. |
-| Mist Opportunities | Protect Stetmann's harvesting bots through terrazine collection waves. | 5 | Destroy terrazine tanks. | 2 | Bot deaths are destroyed-objective events but should count as objective successes when the objective is to kill enemy-controlled bots. |
-| Oblivion Express | Destroy trains before they escape. | 9 | Destroy fast bonus trains. | 2 | Train escape should be ignored for objective markers; train destruction is the marker. |
-| Part and Parcel | Build / power the Balius and defeat Hybrid bosses. | 3 | Destroy optional trains. | 2 | Multiple Hybrid unit deaths in one fight should collapse to one main marker. |
-| Rifts to Korhal | Destroy Void Shards / rifts. | 5 | Destroy pirate capital ships. | 2 | Main markers are best treated as site completions rather than every matching unit event. |
-| Scythe of Amon | Destroy Void Slivers. | 5 | Preserve / rescue Warp Prisms. | 3 | Bonus failures are Warp Prism deaths; successful bonus events should stay separate. |
-| Temple of the Past | Defend the temple until mission completion. | 5 | Destroy Zenith Stones. | 3 | Void Thrasher waves are useful main objective milestone markers. |
-| The Vermillion Problem | Collect xenon crystals before the lava timer ends. | 20 | Destroy the molten salamander. | 1 | Earlier overlay plan ignored main objective markers for this map. |
-| Void Launch | Destroy shuttles before they reach warp conduits. | 7 | Protect research vessels. | 3 | Only destroyed shuttles should count as main objective markers. |
-| Void Thrashing | Destroy Void Thrashers. | 4 | Destroy the Archangel. | 1 | Multiple Void Thrasher unit deaths in one wave/site should collapse to one main marker. |
+The specifications were derived from the map archives referenced by local replays,
+then cross-checked against the replay analyzer's tracker-event handling. They
+distinguish the map's authoritative objective state from states that can actually be
+reconstructed from tracker events.
 
-## Source Links
+## Common mission conditions
 
-- StarCraft2Coop mission guides: https://starcraft2coop.com/missions
-- Liquipedia co-op missions overview: https://liquipedia.net/starcraft2/Co-op_Missions
-- Liquipedia Void Launch objective summary: https://liquipedia.net/starcraft2/Void_Launch
-- Liquipedia Void Thrashing bonus summary: https://liquipedia.net/starcraft2/Void_Thrashing
+These conditions apply to all 15 standard co-op maps and are not repeated in each
+map's primary-outcome table.
+
+| Condition | Deterministic outcome | Scope and replay handling |
+| --- | --- | --- |
+| Base defeat | The mission is `failed` when all destroyable structures belonging to either allied player are destroyed. In map-script terms, that player's surviving `PreventDefeat` structure group is empty. | This determines the overall mission and primary-objective failure. It does not automatically determine bonus state; map-specific bonus cleanup still applies. |
+| Incomplete replay | An active objective is `unresolved` when replay data ends before its completion or failure trigger. | Preserve every outcome already observed. A replay loss/player result of `0` alone must not convert remaining objectives to `failed`. |
+
+No other success or failure condition is common to all 15 maps. Objective timers,
+protected-unit deaths, escape or loss limits, region entry, and bonus cleanup are
+map-specific.
+
+| Map | Primary progress model | Bonus objectives | Specification |
+| --- | --- | ---: | --- |
+| Chain of Ascension | Four Hybrid groups, then the Rak'Shir endpoint | 2 | [Chain of Ascension](./coop-map-objectives/Chain%20of%20Ascension.md) |
+| Cradle of Death | Four two-truck facility deliveries | 2 | [Cradle of Death](./coop-map-objectives/Cradle%20of%20Death.md) |
+| Dead of Night | Dynamic infestation count plus day/night cycle | 1 | [Dead of Night](./coop-map-objectives/Dead%20of%20Night.md) |
+| Lock & Load | Five reversible Celestial Locks | 1 | [Lock & Load](./coop-map-objectives/Lock%20%26%20Load.md) |
+| Malwarfare | Four lock downloads plus final docking | 2 | [Malwarfare](./coop-map-objectives/Malwarfare.md) |
+| Miner Evacuation | Four or five launches with a ship-loss limit | 2 | [Miner Evacuation](./coop-map-objectives/Miner%20Evacuation.md) |
+| Mist Opportunities | Five bot waves containing eleven bots | 2 | [Mist Opportunities](./coop-map-objectives/Mist%20Opportunities.md) |
+| Oblivion Express | Nine destroyed trains with a miss limit | 2 | [Oblivion Express](./coop-map-objectives/Oblivion%20Express.md) |
+| Part and Parcel | Three 70-part rounds and three Hybrid bosses | 2 | [Part and Parcel](./coop-map-objectives/Part%20and%20Parcel.md) |
+| Rifts to Korhal | Ten Void Shards in four timed stages | 2 | [Rifts to Korhal](./coop-map-objectives/Rifts%20to%20Korhal.md) |
+| Scythe of Amon | Five Void Slivers and a shared deadline | 3 | [Scythe of Amon](./coop-map-objectives/Scythe%20of%20Amon.md) |
+| Temple of the Past | Survive to 26:10.8; Thrasher kills are optional milestones | 3 | [Temple of the Past](./coop-map-objectives/Temple%20of%20the%20Past.md) |
+| The Vermillion Problem | Twenty carrier drop-offs and a paused lava timer | 1 | [The Vermillion Problem](./coop-map-objectives/The%20Vermillion%20Problem.md) |
+| Void Launch | Seven shuttle waves with an escape limit | 3 | [Void Launch](./coop-map-objectives/Void%20Launch.md) |
+| Void Thrashing | Ten Void Thrashers in four timed groups | 1 | [Void Thrashing](./coop-map-objectives/Void%20Thrashing.md) |
+
+Do not treat the compact progress model as the objective truth. For example,
+Temple's five Thrasher encounters are useful overlay milestones, but its primary
+objective is to keep the temple alive until the survival timer expires.
